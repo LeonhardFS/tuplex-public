@@ -2253,6 +2253,46 @@ TEST_F(WrapperTest, NYC311) {
     }
 }
 
+// issue #15, reported by singlecheeze - passing dictionaries
+TEST_F(WrapperTest, PassingTuplesWithDicts) {
+    using namespace tuplex;
+    using namespace std;
+
+    auto ctx_opts = "{\"webui.enable\": false,"
+                    " \"driverMemory\": \"8MB\","
+                    " \"partitionSize\": \"256KB\","
+                    "\"executorCount\": 0,"
+                    "\"resolveWithInterpreterOnly\": true}";
+
+    auto fix_zip_codes_c = "def fix_zip_codes(zips):\n"
+                           "    if not zips:\n"
+                           "         return None\n"
+                           "    # Truncate everything to length 5 \n"
+                           "    s = zips[:5]\n"
+                           "    \n"
+                           "    # Set 00000 zip codes to nan\n"
+                           "    if s == '00000':\n"
+                           "         return None\n"
+                           "    else:\n"
+                           "         return s";
+
+    auto service_path = "../resources/pipelines/311/311_nyc_sample.csv";
+
+    PythonContext ctx("", "", ctx_opts);
+    {
+        // get python object
+        auto listObj = python::runAndGet("tups = [('STOCK', {'opens': [99, 100], 'closes': [100, 101]})]", "tups");
+        auto list = boost::python::list(boost::python::handle<>(listObj));
+
+        ctx.parallelize(list).show();
+
+        std::cout<<std::endl;
+    }
+}
+
+// @TODO: create test which uses a dictionary containing a numpy object. -> i.e., if object is not supported convert to pyobject!
+
+
 
 //// debug any python module...
 ///** Takes a path and adds it to sys.paths by calling PyRun_SimpleString.

@@ -208,6 +208,10 @@ namespace python {
     }
 
     std::string TypeFactory::getDesc(const int _hash) const {
+
+        if(_hash < 0)
+            return "unknown";
+
         assert(_hash >= 0);
         assert(_typeMap.find(_hash) != _typeMap.end());
 

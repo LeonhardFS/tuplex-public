@@ -398,6 +398,80 @@ namespace python {
         return f;
     }
 
+
+    tuplex::Field pythonToField(PyObject *obj);
+
+
+    /*!
+     * converts a python object to a JSON str. Fails by returning an empty string.
+     */
+    std::string object_to_json(PyObject *obj) {
+        if(!obj)
+            return "";
+
+        auto jsonModule = PyImport_ImportModule("json");
+        assert(jsonModule);
+
+        PyObject_Print(jsonModule, stdout, 0); std::cout<<std::endl;
+
+        auto moduleDict = PyModule_GetDict(jsonModule); assert(moduleDict);
+        PyObject_Print(moduleDict, stdout, 0); std::cout<<std::endl;
+        auto dumpsFunc = PyDict_GetItemString(moduleDict, "dumps");
+        PyObject_Print(dumpsFunc, stdout, 0); std::cout<<std::endl;
+
+
+        assert(dumpsFunc);
+        auto resObj = PyObject_CallOneArg(dumpsFunc, obj);
+        if(PyErr_Occurred()) {
+            PyErr_Clear();
+            return "";
+        }
+        assert(resObj);
+        auto str =  PyString_AsString(resObj); // should be valid json!
+        if(PyErr_Occurred()) {
+            PyErr_Clear();
+            return "";
+        }
+        return str;
+    }
+
+    /*!
+     * converts a python object to a dictionary field
+     */
+    tuplex::Field dictToField(PyObject* obj) {
+        using namespace tuplex;
+
+        assert(obj);
+
+        // must be internal python dictionary
+        if(!PyDict_CheckExact(obj)) {
+            // pickle object, if it fails, fatal error
+            return python::createPickledField(obj);
+        }
+
+        // special case, empty dict.
+        if(PyDict_Size(obj) == 0)
+            return Field::empty_dict();
+
+        // it's an exact dictionary:
+        // --> can it be converted to JSON representation?
+        // call here internal JSON module...
+
+        // if this fails, use pickled field.
+        std::string json_str = object_to_json(obj);
+        if(json_str.empty())
+            return python::createPickledField(obj);
+
+        // type inference over JSON to check if specific or not. I.e., if anywhere in the type hierarchy generic
+        // appears this can't be represented as Tuplex object.
+        auto type = mapPythonClassToTuplexType(obj);
+        if(python::Type::UNKNOWN == type || type.isGeneric())
+            return python::createPickledField(obj);
+
+        // return dict with JSON representation
+        return Field::from_str_data(json_str, type);
+    }
+
     tuplex::Field pythonToField(PyObject* obj) {
         using namespace tuplex;
         using namespace std;
@@ -429,8 +503,7 @@ namespace python {
         } else if(PyBool_Check(obj)) { // important to call this before isinstance long since isinstance also return long for bool
             // boolean
             return Field(PyBool_AsBool(obj));
-        }
-        else if(PyLong_CheckExact(obj)) {
+        } else if(PyLong_CheckExact(obj)) {
             // is it an integer that doesn't fit into 8 bytes?
             static_assert(sizeof(long long) == sizeof(int64_t), "long long is not 64bit");
             auto value = PyLong_AsLongLong(obj);
@@ -445,103 +518,14 @@ namespace python {
         } else if(PyFloat_CheckExact(obj)) {
             // f64
             return Field(PyFloat_AS_DOUBLE(obj));
-        }  else if(PyUnicode_Check(obj)) { // allow subtypes because of general access
+        }  else if(PyUnicode_Check(obj)) {
+            // allow subtypes because of general access
             // string
             // maybe check in future also for PyBytes_Type
             return Field(PyUnicode_AsUTF8(obj));
-        } else if (PyDict_Check(obj)) { // allow subtypes because of general access
-            // shortcut: empty dict?
-            if(PyDict_Size(obj) == 0)
-                return Field::empty_dict();
-
-            auto dictType = mapPythonClassToTuplexType(obj);
-            std::string dictStr;
-            PyObject *key = nullptr, *val = nullptr;
-            Py_ssize_t pos = 0;  // must be initialized to 0 to start iteration, however internal iterator variable. Don't use semantically.
-            dictStr += "{";
-            while(PyDict_Next(obj, &pos, &key, &val)) {
-                // create key
-                auto keyStr = PyString_AsString(PyObject_Str(key));
-                auto keyType = mapPythonClassToTuplexType(key);
-                python::Type valType;
-
-                // create value, mimicking cJSON printing standards
-                std::string valStr;
-                if(PyObject_IsInstance(val, (PyObject*)&PyUnicode_Type)) {
-                    valType = python::Type::STRING;
-                    valStr = PyString_AsString(val);
-                    // explicitly escape the escape characters
-                    for(int i = valStr.length() - 1; i>=0; i--) {
-                        char escapeChar = '0';
-                        switch(valStr[i]) {
-                            case '\"': escapeChar = '\"'; break;
-                            case '\\': escapeChar = '\\'; break;
-                            case '\b': escapeChar = 'b'; break;
-                            case '\f': escapeChar = 'f'; break;
-                            case '\n': escapeChar = 'n'; break;
-                            case '\r': escapeChar = 'r'; break;
-                            case '\t': escapeChar = 't'; break;
-                        }
-                        if(escapeChar != '0') {
-                            valStr[i] = '\\';
-                            valStr.insert(i+1, 1, escapeChar);
-                        }
-                    }
-                    valStr = "\"" + valStr + "\"";
-                } else if (PyObject_IsInstance(val, (PyObject *) &PyLong_Type) ||
-                           PyObject_IsInstance(val, (PyObject *) &PyFloat_Type)) {
-                    double dval;
-                    if(PyObject_IsInstance(val, (PyObject *) &PyLong_Type)) {
-                        valType = python::Type::I64;
-                        dval = PyLong_AsDouble(val);
-                    }
-                    else {
-                        valType = python::Type::F64;
-                        dval = PyFloat_AsDouble(val);
-                    }
-
-                    // TODO: cJSON does not support nan/inf
-                    // taken from cJSON::print_number
-                    unsigned char number_buffer[32];
-                    int length = 0;
-                    if (dval * 0 != 0) { // check for nan or +/- infinity. This special vals are encoded as NULL
-                        length = sprintf((char*)number_buffer, "null");
-                    } else {
-                        double test = 0.0;
-                        // Try 15 decimal places of precision to avoid nonsignificant nonzero digits
-                        length = sprintf((char*)number_buffer, "%1.15g", dval);
-
-                        // Check whether the original double can be recovered
-                        if ((sscanf((char*)number_buffer, "%lg", &test) != 1) || ((double)test != dval)) {
-                            // If not, print with 17 decimal places of precision
-                            length = sprintf((char*)number_buffer, "%1.17g", dval);
-                        }
-                    }
-                    // sprintf failed or buffer overrun occurred
-                    if ((length < 0) || (length > (int)(sizeof(number_buffer) - 1))) {
-                        Logger::instance().defaultLogger().error("Failure when serializing python dictionary to cJSON");
-                        throw std::runtime_error("Failure when serializing python dictionary to cJSON");
-                    }
-
-                    valStr = std::string((char*)number_buffer);
-                } else if(PyObject_IsInstance(obj, (PyObject*)&PyBool_Type)) {
-                    valType = python::Type::BOOLEAN;
-                    valStr = (PyBool_AsBool(val)) ? "true" : "false";
-                } else {
-                    Logger::instance().defaultLogger().error("Unsupported type for dictionary value: " + valType.desc());
-                    throw std::runtime_error("Unsupported type for dictionary value: " + valType.desc());
-                }
-                std::string newKeyStr = tuplexTypeToCharacter(keyType) + tuplexTypeToCharacter(valType) + keyStr;
-
-                dictStr += "\"";
-                dictStr += newKeyStr;
-                dictStr += "\":";
-                dictStr += valStr;
-                dictStr += ",";
-            }
-            dictStr = dictStr.substr(0, dictStr.length() - 1) + "}";
-            return Field::from_str_data(dictStr, dictType);
-        } else if(PyList_Check(obj)) {
+        } else if (PyDict_CheckExact(obj)) {
+            return dictToField(obj);
+        } else if(PyList_CheckExact(obj)) {
             // recursive
             auto numElements = PyList_Size(obj);
             if(0 == numElements)
@@ -552,6 +536,18 @@ namespace python {
             for(unsigned i = 0; i < numElements; ++i) {
                 v.push_back(pythonToField(PyList_GET_ITEM(obj, i)));
             }
+
+            // check they're the same type
+            assert(v.size() >= 1);
+            auto field_type = v.front().getType();
+            for(const auto& f : v) {
+                if(f.getType() != field_type) {
+                    // @TODO: what about decref at this point?
+                    return createPickledField(obj);
+                }
+            }
+
+            // homogenous list, return.
             return Field(List::from_vector(v));
         } else if(obj == Py_None) {
             return Field::null();
