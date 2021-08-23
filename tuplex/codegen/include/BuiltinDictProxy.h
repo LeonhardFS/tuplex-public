@@ -22,7 +22,8 @@
 
 // basically for each object we need
 // 1.) representation as C++ object (field)
-// 2.) code-generated logic
+// 2.) code-generated logic (i.e., codegen specialization)
+// 3.) to/from python object
 
 namespace tuplex {
     namespace codegen {
@@ -32,15 +33,15 @@ namespace tuplex {
             // BuiltinDictProxy (--> specializedDictType)
             BuiltinDictProxy(const python::Type& specializedDictType) : _specializedType(specializedDictType) {
                 // use cJSON as default for now...
-                _impl = make_shared<cJSONDictProxyImpl>();
+                _impl = std::make_shared<cJSONDictProxyImpl>();
             }
 
             // use both codegen/non-codegen version
             // putItem
             BuiltinDictProxy& putItem(const Field& key, const Field& value) { assert(_impl); _impl->putItem(key, value); return *this; }
-            BuiltinDictProxy& putItem(const python::Type& keyType, const SerializableValue& key, const python::Type& valueType, const SerializableValue& value) { assert(_impl); _impl->(keyType, key, valueType, value); return *this; }
+            BuiltinDictProxy& putItem(const python::Type& keyType, const SerializableValue& key, const python::Type& valueType, const SerializableValue& value) { assert(_impl); _impl->putItem(keyType, key, valueType, value); return *this; }
 
-//            // getItem
+//            // getItemß
 //            BuiltinDictProxy& getItem(const Field& key);
 //            BuiltinDictProxy& getItem(const python::Type& keyType, const SerializableValue& key);
 //
@@ -60,7 +61,7 @@ namespace tuplex {
             }
 
             python::Type specializedDictType() const {
-                return _specializedDictType;
+                return _specializedType;
             }
 
             // codegenToMemory

@@ -29,6 +29,32 @@ if (CCACHE_FOUND AND CCACHE_SUPPORT)
     set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK "ccache")
 endif()
 
+## helper function from https://github.com/avast/retdec/pull/349/files
+#function(append_if condition value)
+#    if (${condition})
+#        foreach(variable ${ARGN})
+#            set(${variable} "${${variable}} ${value}" PARENT_SCOPE)
+#        endforeach(variable)
+#    endif()
+#endfunction()
+#
+## source for this snippet: https://github.com/avast/retdec/pull/349/files
+## i.e. Suppress superfluous randlib warnings about "*.a" having no symbols on MacOSX.
+#if (APPLE)
+#    set(CMAKE_C_ARCHIVE_CREATE   "<CMAKE_AR> Scr <TARGET> <LINK_FLAGS> <OBJECTS>")
+#    set(CMAKE_CXX_ARCHIVE_CREATE "<CMAKE_AR> Scr <TARGET> <LINK_FLAGS> <OBJECTS>")
+#    set(CMAKE_C_ARCHIVE_FINISH   "<CMAKE_RANLIB> -no_warning_for_no_symbols -c <TARGET>")
+#    set(CMAKE_CXX_ARCHIVE_FINISH "<CMAKE_RANLIB> -no_warning_for_no_symbols -c <TARGET>")
+#endif()
+#if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR
+#        CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
+#        CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+#    # Unify visibility to meet llvm's default.
+#    include(CheckCXXCompilerFlag)
+#    check_cxx_compiler_flag("-fvisibility-inlines-hidden" SUPPORTS_FVISIBILITY_INLINES_HIDDEN_FLAG)
+#    append_if(SUPPORTS_FVISIBILITY_INLINES_HIDDEN_FLAG "-fvisibility-inlines-hidden" CMAKE_CXX_FLAGS)
+#endif()
+
 
 # Option on whether to use shared libraries or perform a static link.
 # Must be identical to how AWS SDK was installed. E.g., when installing brew aws-sdk-cpp the default is

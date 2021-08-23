@@ -13,6 +13,7 @@
 
 #include <TypeSystem.h>
 #include <Row.h>
+#include <CodegenHelper.h>
 
 namespace tuplex {
     namespace codegen {
