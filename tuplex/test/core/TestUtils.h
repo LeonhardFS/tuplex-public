@@ -200,4 +200,105 @@ template<typename T> void EXPECT_IN_VECTOR(const std::vector<T>& v, const T& x) 
     ASSERT_TRUE(it != v.end());
 }
 
+
+// often, we need to test for a couple recurring test cases.
+inline std::vector<tuplex::Field> primitive_test_values(bool numeric_types=true,
+                                                 bool strings=true,
+                                                 bool empty_compound_types=true) {
+    using namespace tuplex;
+    using namespace std;
+
+    vector<Field> v;
+
+    if(strings) {
+        // a couple string test cases
+        v.push_back(Field(""));
+        v.push_back(Field("hello world!"));
+
+        // test string with all printable chars...
+        // -> this is helpful when testing for formatting overlap cases...
+        std::string printable_chars;
+        for(int i = 0; i < 256; ++i) {
+            char buf[2] = {'\0', '\0'};
+            buf[0] = i;
+            if(isprint(i))
+                printable_chars += std::string(buf);
+        }
+        v.push_back(Field(printable_chars));
+    }
+
+    if(numeric_types) {
+        vector<Field> values{Field((int64_t)-42), Field((int64_t)0), Field((int64_t)42),
+        Field(-3.1415965), Field(0.0), Field(3.1415965), Field(INFINITY), Field(-INFINITY), Field(NAN),
+                Field(true), Field(false)};
+
+        std::copy(values.begin(), values.end(), std::back_inserter(v));
+    }
+
+    if(empty_compound_types) {
+        v.push_back(Field::null());
+        v.push_back(Field::empty_tuple());
+        v.push_back(Field::empty_list());
+        v.push_back(Field::empty_dict());
+    }
+
+    return v;
+}
+
+inline std::vector<tuplex::Field> compound_test_values(bool tuples=true, bool dicts=true, bool lists=true) {
+    using namespace tuplex;
+    using namespace std;
+
+    vector<Field> v;
+
+    // get the primitives & then compose compounds out of them!
+    auto prims = primitive_test_values();
+
+    // 1.) tuples
+    if(tuples) {
+        v.push_back(Field::empty_tuple());
+
+        // tuple of single element
+        for(const auto& f : prims) {
+            v.push_back(Field(Tuple(f)));
+        }
+        // tuple of combo of two elements
+        for(const auto& a : prims) {
+            for(const auto& b : prims) {
+                v.push_back(Field(Tuple(a, b)));
+            }
+        }
+
+        // one large tuple of all types
+        v.push_back(Field(Tuple::from_vector(prims)));
+
+        // nested tuples...
+        // --> basically perform fold
+        v.push_back((Field(Tuple(prims.front(), Tuple(prims.front())))));
+
+        // nest (a(b(...)
+        Field nested = prims[0];
+        for(int i = 1; i < prims.size(); ++i)
+            nested = Field(Tuple(prims[i], nested));
+        v.push_back(nested);
+    }
+
+    // 2.) dicts
+    // @TODO:
+
+
+    // compound of compounds??
+    // i.e. mixing tuplex/dicts/primitives/...
+
+    return v;
+}
+
+
+
+
+
+
+
+
+
 #endif //TUPLEX_TESTUTILS_H

@@ -43,7 +43,8 @@ namespace tuplex {
             //                                                                          SerializableValue value) {
 
         private:
-            cJSON *_root;
+            cJSON *_root;   // a map of the elements
+            cJSON *_typeMap; // a map of strings -> types (nested)
 
             /*!
             * returns a string representing a type prefix when storing type information in cJSON object as well.

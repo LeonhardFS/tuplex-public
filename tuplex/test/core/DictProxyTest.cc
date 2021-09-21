@@ -71,7 +71,53 @@ TEST_F(DictProxyTest, PutItemTest) {
     codegen::BuiltinDictProxy dict_proxy(python::Type::UNKNOWN);
 
     // create test setups (4 values, all combos)
-    vector<Field> test_values{Field((int64_t)0), Field(10.0), Field(false), Field::null(), Field("hello world"), Field(Tuple(10, 20)), Field(Tuple(3.141, 10, false, "test")), Field(List(1.0, 3.0, 4.0))};
+    vector<Field> test_values{Field((int64_t)0),
+                              Field(10.0),
+                              Field(false),
+                              Field::null(),
+                              Field("hello world"),
+                              Field(Tuple(10, 20)),
+                              Field(Tuple(3.141, 10, false, "test")),
+                              Field(List(1.0, 3.0, 4.0))};
+
+
+    // put all sorts of elements in the cJSON proxy.
+    // then, get & check type is the same...
+    vector<Field> primitive_values = primitive_test_values();
+
+    for(auto f : primitive_values) {
+        cout<<f.toPythonString()<<endl;
+    }
+
+    // 1. constant key,value dict type
+    // -> insert a, b
+    // 2. mixed dict type
+    // -> insert into same dict
+    codegen::BuiltinDictProxy dict_proxy(python::Type::UNKNOWN);
+    for(const auto& a : primitive_values)
+        for(const auto& b : primitive_values) {
+           dict_proxy.putItem(a, b);
+           codegen::BuiltinDictProxy specialized_proxy(python::Type::makeDictionaryType(a.getType(), b.getType()));
+           specialized_proxy.putItem(a, b);
+
+           // checks:
+           auto a_res = dict_proxy.getItem(a);
+           EXPECT_EQ(a_res, a);
+           auto b_res = specialized_proxy.getItem(a);
+           EXPECT_EQ(b_res, b);
+        }
+
+
+
+
+//    // compound types of primitives (i.e. combos)
+//    auto compound_values = compound_test_values();
+//    for(auto f : compound_values) {
+//        cout<<f.toPythonString()<<endl;
+//    }
+
+    exit(0);
+
 
     // NOTE: list/dict is not hashable in python!
     // 
