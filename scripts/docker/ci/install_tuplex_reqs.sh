@@ -7,10 +7,13 @@
 # compile dependencies yum style
 
 yum install -y libedit-devel libzip-devel \
-  pkgconfig openssl-devel libxml2-devel zlib-devel  \
+  pkgconfig openssl-devel libxml2-devel  \
   uuid libuuid-devel libffi-devel graphviz-devel \
   gflags-devel ncurses-devel \
   awscli java-1.8.0-openjdk-devel libyaml-devel file-devel ninja-build zip unzip
+
+# zlib is now cloudflare zlib, add /opt/lib to LD_LIBRARY_PATH!
+export LD_LIBRARY_PATH=/opt/lib:$LD_LIBRARY_PATH
 
 # LLVM9 is broken on Ubuntu 20.04, hence manually install...
 

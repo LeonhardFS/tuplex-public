@@ -11,6 +11,7 @@ RUN mkdir -p /opt/sbin
 ADD install_boost.sh /opt/sbin/install_boost.sh
 ADD install_tuplex_reqs.sh /opt/sbin/install_tuplex_reqs.sh
 ADD install_llvm9.sh /opt/sbin/install_llvm9.sh
+ADD install_zlib.sh /opt/sbin/install_zlib.sh
 # cmake not required to be installed, because recent image has cmake 3.20
 # it uses gcc 9.3.1
 
@@ -33,6 +34,9 @@ RUN bash /opt/sbin/install_llvm9.sh
 
 # install curl now
 RUN bash /opt/sbin/install_curl.sh
+
+# install zlib
+RUN bash /opt/sbin/install_zlib.sh
 
 # install boost-python for 3.7, 3.8, 3.9, 3.10
 RUN bash /opt/sbin/install_boost.sh /opt/python/cp37-cp37m/bin/python3.7 /opt/boost/python3.7
