@@ -243,17 +243,49 @@ if(BUILD_WITH_ORC)
     endif()
 
     if (NOT APPLE)
-        message(STATUS "Adding byproducts to external project")
-        set(SNAPPY_LIBRARIES ${EXTERNAL_INSTALL_LOCATION}/lib/libsnappy.a)
-        set(ZSTD_LIBRARIES ${EXTERNAL_INSTALL_LOCATION}/lib/libzstd.a)
-        set(ZLIB_LIBRARIES ${EXTERNAL_INSTALL_LOCATION}/lib/libz.a)
-        set(LZ4_LIBRARIES ${EXTERNAL_INSTALL_LOCATION}/lib/liblz4.a)
-        set(ORC_THIRD_PARTY_LIBS
-            ${SNAPPY_LIBRARIES}
-            ${ZSTD_LIBRARIES}
-            ${ZLIB_LIBRARIES}
-            ${LZ4_LIBRARIES})
+   message(STATUS "Adding byproducts to external project")
+
+   # set variables per default to EXTERNAL_INSTALL_LOCATION if not env var has been defined
+   if(DEFINED ENV{SNAPPY_HOME})
+     set(SNAPPY_HOME $ENV{SNAPPY_HOME})
+   endif()
+
+   if(DEFINED ENV{ZLIB_HOME})
+     set(ZLIB_HOME $ENV{ZLIB_HOME})
     endif()
+
+    if(DEFINED ENV{ZSTD_HOME})
+     set(ZSTD_HOME $ENV{ZSTD_HOME})
+    endif()
+
+    if(DEFINED ENV{LZ4_HOME})
+     set(LZ4_HOME $ENV{LZ4_HOME})
+    endif()
+
+   set(SNAPPY_LIBRARIES ${EXTERNAL_INSTALL_LOCATION}/lib/libsnappy.a)
+   set(ZSTD_LIBRARIES ${EXTERNAL_INSTALL_LOCATION}/lib/libzstd.a)
+   set(ZLIB_LIBRARIES ${EXTERNAL_INSTALL_LOCATION}/lib/libz.a)
+   set(LZ4_LIBRARIES ${EXTERNAL_INSTALL_LOCATION}/lib/liblz4.a)
+
+   if(NOT "${SNAPPY_HOME}" STREQUAL "")
+    set(SNAPPY_LIBRARIES ${SNAPPY_HOME}/lib/libsnappy.a)
+   endif()
+   if(NOT "${ZSTD_HOME}" STREQUAL "")
+    set(ZSTD_LIBRARIES ${ZSTD_HOME}/lib/libzstd.a)
+   endif()
+   if(NOT "${ZLIB_HOME}" STREQUAL "")
+    set(ZLIB_LIBRARIES ${ZLIB_HOME}/lib/libz.a)
+   endif()
+   if(NOT "${LZ4_HOME}" STREQUAL "")
+    set(LZ4_LIBRARIES ${LZ4_HOME}/lib/liblz4.a)
+   endif()
+   
+   set(ORC_THIRD_PARTY_LIBS
+       ${SNAPPY_LIBRARIES}
+       ${ZSTD_LIBRARIES}
+       ${ZLIB_LIBRARIES}
+       ${LZ4_LIBRARIES})
+endif()
 
     ExternalProject_Add(orc
             GIT_REPOSITORY https://github.com/apache/orc.git
