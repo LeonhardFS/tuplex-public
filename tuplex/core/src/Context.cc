@@ -20,10 +20,12 @@
 #include <Signals.h>
 #ifdef BUILD_WITH_AWS
 #include <ee/aws/AWSLambdaBackend.h>
+#include <Context.h>
+
 #endif
 
 namespace tuplex {
-    Context::Context(const ContextOptions& options) : _datasetIDGenerator(0) {
+    Context::Context(const ContextOptions& options) : _datasetIDGenerator(0), _compilePolicy(compilePolicyFromOptions(options)) {
         // init metrics
         _lastJobMetrics = std::make_unique<JobMetrics>();
         // make sure this is called without holding the GIL
@@ -44,7 +46,7 @@ namespace tuplex {
         // init AWS SDK to get access to S3 filesystem
         auto aws_credentials = AWSCredentials::get();
         Timer timer;
-        bool aws_init_rc = initAWS(aws_credentials, options.AWS_REQUESTER_PAY());
+        bool aws_init_rc = initAWS(aws_credentials, options.AWS_NETWORK_SETTINGS(), options.AWS_REQUESTER_PAY());
         logger.debug("initialized AWS SDK in " + std::to_string(timer.time()) + "s");
 #endif
 
@@ -69,7 +71,8 @@ namespace tuplex {
                         throw std::runtime_error("Requesting Tuplex Lambda backend, but initialization failed.");
                 }
 
-                _ee = std::make_unique<AwsLambdaBackend>(AWSCredentials::get(), "tplxlam", options);
+                // @TODO: function name should come from options!
+                _ee = std::make_unique<AwsLambdaBackend>(AWSCredentials::get(), "tuplex-lambda-runner", options);
 #endif
                 break;
             }
@@ -82,6 +85,7 @@ namespace tuplex {
 
     // destructor needs to free memory of datasets!
     Context::~Context() {
+        using namespace std;
 
         if(!_datasets.empty())
             for(DataSet* ptr : _datasets) {
@@ -262,7 +266,7 @@ namespace tuplex {
             numPartitions++;
             int numWrittenRowsInPartition = 0;
             if(!partition)
-                return makeError("no memory left to hold data");
+                return makeError("no memory left to hold data in driver memory");
 
             uint8_t* base_ptr = (uint8_t*)partition->lock();
 
@@ -372,7 +376,7 @@ namespace tuplex {
         DataSet *dsptr = createDataSet(schema);
 
         dsptr->_operator = addOperator(
-                new FileInputOperator(pattern, this->_options, hasHeader, delimiter, quotechar, null_values, columns,
+                FileInputOperator::fromCsv(pattern, this->_options, hasHeader, delimiter, quotechar, null_values, columns,
                                       index_based_type_hints, column_based_type_hints));
         auto op = ((FileInputOperator*)dsptr->_operator);
 
@@ -430,10 +434,72 @@ namespace tuplex {
         int dataSetID = getNextDataSetID();
         DataSet *dsptr = createDataSet(schema);
 
-        dsptr->_operator = addOperator(new FileInputOperator(pattern, this->_options, null_values));
+        dsptr->_operator = addOperator(FileInputOperator::fromText(pattern, this->_options, null_values));
 
         auto detectedColumns = ((FileInputOperator*)dsptr->_operator)->columns();
         dsptr->setColumns(detectedColumns);
+
+        // set dataset to operator
+        dsptr->_operator->setDataSet(dsptr);
+
+        // signal check
+        if(check_and_forward_signals()) {
+#ifndef NDEBUG
+            Logger::instance().defaultLogger().info("received signal handler sig, returning error dataset");
+#endif
+            return makeError("job aborted (signal received)");
+        }
+
+        return *dsptr;
+    }
+
+    DataSet& Context::orc(const std::string &pattern,
+                          const std::vector<std::string>& columns) {
+        using namespace std;
+
+#ifndef BUILD_WITH_ORC
+        return makeError(MISSING_ORC_MESSAGE);
+#endif
+
+        Schema schema;
+        int dataSetID = getNextDataSetID();
+        DataSet *dsptr = createDataSet(schema);
+        dsptr->_operator = addOperator(
+                FileInputOperator::fromOrc(pattern, this->_options));
+        auto op = ((FileInputOperator*)dsptr->_operator);
+
+        // check whether files were found, else return empty dataset!
+        if(op->getURIs().empty()) {
+            // note: dataset will be destroyed by context
+            auto& ds = makeEmpty();
+            op->setDataSet(&ds);
+            return ds;
+        }
+
+        auto detectedColumns = ((FileInputOperator*)dsptr->_operator)->columns();
+        dsptr->setColumns(detectedColumns);
+
+        // check if columns are given
+        if(!columns.empty()) {
+            // compare with detected
+            if(!detectedColumns.empty()) {
+                bool identical = detectedColumns.size() == columns.size();
+                for(int i = 0; i < std::min(detectedColumns.size(), columns.size()); ++i) {
+                    if(detectedColumns[i] != columns[i])
+                        identical = false;
+                }
+
+                if(!identical) {
+                    // make error dataset
+                    std::stringstream errStream;
+                    errStream<<"detected columns "<<detectedColumns<<" do not match given columns "<<columns;
+                    return makeError(errStream.str());
+                }
+            }
+
+            dsptr->setColumns(columns);
+            ((FileInputOperator*)dsptr->_operator)->setColumns(columns);
+        }
 
         // set dataset to operator
         dsptr->_operator->setDataSet(dsptr);
@@ -467,5 +533,14 @@ namespace tuplex {
 
     Executor* Context::getDriver() const {
         assert(_ee); return _ee->driver();
+    }
+
+    codegen::CompilePolicy Context::compilePolicyFromOptions(const ContextOptions &options) {
+        auto p = codegen::CompilePolicy();
+        p.allowUndefinedBehavior = options.UNDEFINED_BEHAVIOR_FOR_OPERATORS();
+        p.allowNumericTypeUnification = options.AUTO_UPCAST_NUMBERS();
+        p.sharedObjectPropagation = options.OPT_SHARED_OBJECT_PROPAGATION();
+        p.normalCaseThreshold = options.NORMALCASE_THRESHOLD();
+        return p;
     }
 }

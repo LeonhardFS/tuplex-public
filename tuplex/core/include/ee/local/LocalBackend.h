@@ -77,7 +77,7 @@ namespace tuplex {
          * @param combine whether this is an aggregate (e.g. if we should call the aggregate combiner, rather than simply merging the hashtables)
          * @return the final hashtable sink
          */
-        HashTableSink createFinalHashmap(std::vector<IExecutorTask*>& tasks, int hashtableKeyByteWidth, bool combine);
+        HashTableSink createFinalHashmap(const std::vector<const IExecutorTask*>& tasks, int hashtableKeyByteWidth, bool combine);
 
         // hash join stage
         void executeHashJoinStage(HashJoinStage* hstage);
@@ -87,7 +87,6 @@ namespace tuplex {
 
 
         MessageHandler& logger() const { return Logger::instance().logger("local ee"); }
-
 
         // write output (may be already in correct format!)
         void writeOutput(TransformStage* tstage, std::vector<IExecutorTask*>& sortedTasks);

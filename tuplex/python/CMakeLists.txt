@@ -81,7 +81,6 @@ target_compile_definitions(${MODULE_NAME} PRIVATE PYMODULE=${PYMODULE})
 # Declare the library
 target_link_libraries(${MODULE_NAME}
         ${Boost_LIBRARIES}
-        ${PYTHON_LIBRARIES}
         ${Python3_LIBRARIES}
         libcodegen
         libcore
@@ -96,6 +95,7 @@ FILE(COPY ${CMAKE_CURRENT_SOURCE_DIR}/tuplex/__init__.py
         ${CMAKE_CURRENT_SOURCE_DIR}/tuplex/context.py
         ${CMAKE_CURRENT_SOURCE_DIR}/tuplex/metrics.py
         ${CMAKE_CURRENT_SOURCE_DIR}/tuplex/exceptions.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/tuplex/distributed.py
         DESTINATION ${PYTHON_DIST_DIR}/tuplex)
 
 FILE(COPY ${CMAKE_CURRENT_SOURCE_DIR}/tuplex/utils/__init__.py
@@ -137,6 +137,7 @@ FILE(COPY ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_tuples.py
           ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_import.py
           ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_math.py
           ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_aggregates.py
+          ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_webui.py
           ${CMAKE_CURRENT_SOURCE_DIR}/tests/helper.py
         DESTINATION ${PYTHON_DIST_DIR}/tests)
 FILE(COPY ${CMAKE_CURRENT_SOURCE_DIR}/tuplex/libexec/__init__.py DESTINATION ${PYTHON_DIST_DIR}/tuplex/libexec)

@@ -71,6 +71,8 @@ namespace tuplex {
 
         std::shared_ptr<JobMetrics> _lastJobMetrics;
 
+        codegen::CompilePolicy _compilePolicy;
+        codegen::CompilePolicy compilePolicyFromOptions(const ContextOptions& options);
     protected:
         inline int getNextDataSetID() { return _datasetIDGenerator++; };
 
@@ -178,6 +180,15 @@ namespace tuplex {
         DataSet& text(const std::string &pattern, const std::vector<std::string>& null_values=std::vector<std::string>{});
 
         /*!
+         * reads orc files with into memory.
+         * @param pattern file pattern to search for
+         * @param columns optional columns/header preset. Also makes sense for headerless files
+         * @return Dataset
+         */
+        DataSet& orc(const std::string &pattern,
+                     const std::vector<std::string>& columns=std::vector<std::string>());
+
+        /*!
          * creates an error dataset
          * @param error
          * @return
@@ -200,6 +211,12 @@ namespace tuplex {
 
         std::string name() const { return _name; }
         void setName(const std::string& name) { _name = name; }
+
+        /*!
+         * get the compile policy associated with this context
+         * @return
+         */
+        const codegen::CompilePolicy& compilePolicy() const { return _compilePolicy; }
 
         /*!
          * gets a JobMetrics object

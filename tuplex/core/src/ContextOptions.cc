@@ -27,6 +27,9 @@
 #include <Environment.h>
 
 #include <PythonHelpers.h>
+#include <Utils.h>
+#include <StringUtils.h>
+#include <nlohmann/json.hpp>
 
 namespace tuplex {
 
@@ -186,7 +189,11 @@ namespace tuplex {
         ContextOptions co;
 
         // set scratch dir to /tmp/tuplex-scratch-space-<user>
-        auto temp_cache_path = "/tmp/tuplex-cache-" + getUserName();
+        auto user_name = getUserName();
+        if("" == user_name) {
+            user_name = "tuplex"; // use as default if user name detection fails.
+        }
+        auto temp_cache_path = "/tmp/tuplex-cache-" + user_name;
         auto temp_mongodb_path = temp_cache_path + "/mongodb";
 #ifdef NDEBUG
         // release options
@@ -230,14 +237,18 @@ namespace tuplex {
                      {"tuplex.interleaveIO", "true"},
                      {"tuplex.aws.scratchDir", ""},
                      {"tuplex.aws.requestTimeout", "600"},
-                     {"tuplex.aws.connectTimeout", "30"},
+                     {"tuplex.aws.connectTimeout", "1"},
                      {"tuplex.aws.maxConcurrency", "100"},
                      {"tuplex.aws.httpThreadCount", std::to_string(std::max(8u, std::thread::hardware_concurrency()))},
                      {"tuplex.aws.region", "us-east-1"},
                      {"tuplex.aws.lambdaMemory", "1536"},
                      {"tuplex.aws.lambdaTimeout", "600"},
                      {"tuplex.aws.requesterPay", "false"},
-                     {"tuplex.resolveWithInterpreterOnly", "false"}};
+                     {"tuplex.resolveWithInterpreterOnly", "false"},
+                     {"tuplex.network.caFile", ""},
+                     {"tuplex.network.caPath", ""},
+                     {"tuplex.network.verifySSL", "false"},  // if default is going to be changed to true, ship cacert.pem from Amazon to avoid issues.
+                     {"tuplex.redirectToPythonLogging", "false"}};
 #else
         // DEBUG options
         co._store = {{"tuplex.useLLVMOptimizer", "false"},
@@ -280,14 +291,18 @@ namespace tuplex {
                      {"tuplex.interleaveIO", "true"},
                      {"tuplex.aws.scratchDir", ""},
                      {"tuplex.aws.requestTimeout", "600"},
-                     {"tuplex.aws.connectTimeout", "30"},
+                     {"tuplex.aws.connectTimeout", "1"},
                      {"tuplex.aws.maxConcurrency", "100"},
                      {"tuplex.aws.httpThreadCount", std::to_string(std::min(8u, std::thread::hardware_concurrency()))},
                      {"tuplex.aws.region", "us-east-1"},
                      {"tuplex.aws.lambdaMemory", "1536"},
                      {"tuplex.aws.lambdaTimeout", "600"},
                      {"tuplex.aws.requesterPay", "false"},
-                     {"tuplex.resolveWithInterpreterOnly", "true"}};
+                     {"tuplex.resolveWithInterpreterOnly", "true"},
+                     {"tuplex.network.caFile", ""},
+                     {"tuplex.network.caPath", ""},
+                     {"tuplex.network.verifySSL", "false"},
+                     {"tuplex.redirectToPythonLogging", "false"}}; // experimental feature, deactivate for now.
 #endif
 
         // update with tuplex env
@@ -297,6 +312,9 @@ namespace tuplex {
         return co;
     }
 
+    std::string ContextOptions::NETWORK_CA_FILE() const { return _store.at("tuplex.network.caFile"); }
+    std::string ContextOptions::NETWORK_CA_PATH() const { return _store.at("tuplex.network.caPath"); }
+    bool ContextOptions::NETWORK_VERIFY_SSL() const { return stringToBool(_store.at("tuplex.network.verifySSL")); }
     bool ContextOptions::USE_WEBUI() const { return stringToBool(_store.at("tuplex.webui.enable")); }
     std::string ContextOptions::WEBUI_DATABASE_HOST() const { return _store.at("tuplex.webui.mongodb.url"); }
     uint16_t ContextOptions::WEBUI_DATABASE_PORT() const { return std::stoi(_store.at("tuplex.webui.mongodb.port")); }
@@ -706,5 +724,32 @@ namespace tuplex {
             Logger::instance().defaultLogger().error("found unknown backend '" + b + "', defaulting to local execution.");
             return Backend::LOCAL;
         }
+    }
+
+    std::string ContextOptions::asJSON() const {
+        nlohmann::json json;
+
+        for(const auto& keyval : _store) {
+            // convert to correct type (match basically)
+            if(keyval.second.empty())
+                json[keyval.first] = keyval.second;
+            else if(isBoolString(keyval.second))
+                json[keyval.first] = parseBoolString(keyval.second);
+            else if(isIntegerString(keyval.second.c_str()))
+                json[keyval.first] = std::stoi(keyval.second);
+            else if(isFloatString(keyval.second.c_str()))
+                json[keyval.first] = std::stod(keyval.second);
+            else
+                json[keyval.first] = keyval.second;
+        }
+        return json.dump();
+    }
+
+    NetworkSettings ContextOptions::AWS_NETWORK_SETTINGS() const {
+        NetworkSettings ns;
+        ns.verifySSL = this->NETWORK_VERIFY_SSL();
+        ns.caFile = this->NETWORK_CA_FILE();
+        ns.caPath = this->NETWORK_CA_PATH();
+        return ns;
     }
 }

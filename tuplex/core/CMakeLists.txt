@@ -8,28 +8,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(YAMLCPP REQUIRED)
 
-# fix for Mac OS X/ brew, find openSSL
-## check for ICU
-IF(BREW_FOUND)
-    IF(APPLE)
-        # MESSAGE("brew on Mac found")
-        EXECUTE_PROCESS(COMMAND brew --prefix openssl OUTPUT_VARIABLE OSSL_ROOT_DIR ERROR_VARIABLE BREW_OPENSSL_NOTFOUND OUTPUT_STRIP_TRAILING_WHITESPACE)
-        IF(BREW_OPENSSL_NOTFOUND)
-            MESSAGE("did not find brewed openssl, you might install it via brew install openssl")
-        ELSE()
-            set(ENV{OPENSSL_ROOT_DIR} /usr/local/opt/openssl)
-            MESSAGE(STATUS "found brewed openssl under: ${OSSL_ROOT_DIR}")
-        ENDIF()
-
-    ELSEIF(UNIX)
-        #MESSAGE("brew on Unix found")
-    ENDIF()
-ENDIF()
-
-set(CURL_LIBRARY "-lcurl")
-find_package(CURL REQUIRED)
-
-
 # building with AWS backend support?
 if(BUILD_WITH_AWS)
     # locate aws sdk & include lambda component
@@ -44,6 +22,22 @@ if(BUILD_WITH_AWS)
     protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS proto/Lambda.proto)
     message(STATUS "protobuf sources: ${PROTO_SRCS}")
     message(STATUS "protobuf headers: ${PROTO_HDRS}")
+endif()
+
+
+# CURL:
+# Note: AWS SDK is only compatible with curl build against OpenSSL. Check this here!
+# on linux, use ldd -v $(which curl) | grep OPENSSL which should yield a result.
+find_package(CURL REQUIRED)
+if(LINUX)
+    message(STATUS "@TODO: check that curl was build against openssl")
+    # ldd -v /usr/lib64/libcurl.so.4 | grep '(NSS'
+
+    message(STATUS "CURL libraries: ${CURL_LIBRARIES}")
+    message(STATUS "CURL include dirs: ${CURL_INCLUDE_DIR}")
+
+    # this here should NOT yield any lines...!
+    # ldd -v /usr/lib64/libcurl.so.4 | grep '(NSS'
 endif()
 
 include_directories("include")

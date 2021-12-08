@@ -11,6 +11,10 @@
 #ifndef TUPLEX_UTILS_H
 #define TUPLEX_UTILS_H
 
+// standard message strings
+#define MISSING_ORC_MESSAGE ("Tuplex was not built with ORC support. To build Tuplex with ORC, set BUILD_WITH_ORC=ON.")
+
+
 #include "Base.h"
 #include "StringUtils.h"
 #include "StatUtils.h"
@@ -39,11 +43,20 @@ namespace std {
 }
 #endif
 
+#include "third_party/levenshtein-sse.h"
 
 // helper code to allow tuples in maps.
 #include <boost/functional/hash.hpp>
 #include <tuple>
 #include <cstdint>
+
+#include "Network.h"
+
+// Posix helpers
+#include <dirent.h>
+#include <errno.h>
+#include <glob.h>
+#include <libgen.h>
 
 static_assert(__cplusplus >= 201402L, "need at least C++ 14 to compile this file");
 // check https://blog.galowicz.de/2016/02/20/short_file_macro/
@@ -250,13 +263,143 @@ namespace tuplex {
     extern bool stringToBool(const std::string& s);
 
     /*!
-     * check whether local file exsists or not.
+     * check whether local file exsists or not. This applies to a file in the wider sense! I.e., directory/link/pipe etc.
      * @param Filename
      * @return
      */
     inline bool fileExists(const std::string &local_path) {
         // from https://stackoverflow.com/questions/12774207/fastest-way-to-check-if-a-file-exist-using-standard-c-c11-c
         return access( local_path.c_str(), 0 ) == 0;
+    }
+
+    /*!
+     * check whether local path is a file
+     * @param local_path
+     * @return true if regular file, false in error case or if not true
+     */
+    inline bool isFile(const std::string& local_path) {
+        // https://linux.die.net/man/2/stat
+        struct stat statbuf;
+        if (stat(local_path.c_str(), &statbuf) != 0)
+            return false;
+        return S_ISREG(statbuf.st_mode);
+    }
+
+    inline std::string parentPath(const std::string& local_path) {
+        // check dirname & whether dir could be accessed
+        // create copy in order to allow modification
+        const char* path = local_path.c_str();
+        char* parent = new char[strlen(path) + 1];
+        memcpy(parent, path, strlen(path) + 1);
+
+        auto parent_path = dirname(parent);
+        std::string s_parent(parent_path);
+        delete [] parent;
+        return s_parent;
+    }
+
+    /*!
+     * check whether path is writable using access
+     * @param local_path
+     * @return true/false
+     */
+    inline bool isWritable(const std::string& local_path) {
+        const char* path = local_path.c_str();
+
+        // does file exist?
+        if(fileExists(local_path))
+            return 0 == access(path, W_OK);
+        else {
+            // check dirname & whether dir could be accessed
+            // create copy in order to allow modification
+            char* parent = new char[strlen(path) + 1];
+            memcpy(parent, path, strlen(path) + 1);
+
+            auto parent_path = dirname(parent);
+            auto accessible = 0 == access(parent_path, W_OK);
+            delete [] parent;
+            return accessible;
+        }
+    }
+
+    /*!
+     * check whether local path is a directory
+     * @param local_path
+     * @return true if directory, false in error case or if not true
+     */
+    inline bool isDirectory(const std::string& local_path) {
+        // https://linux.die.net/man/2/stat
+        struct stat statbuf;
+        if (stat(local_path.c_str(), &statbuf) != 0)
+            return false;
+        return S_ISDIR(statbuf.st_mode);
+    }
+
+    /*!
+     * check whether local directory exists and can be opened.
+     * @param local_path
+     * @return true/false
+     */
+    inline bool dirExists(const std::string& local_path) {
+        // from stackoverflow.
+        DIR* dir = opendir(local_path.c_str());
+        if (dir) {
+            closedir(dir);
+            return true;
+        } else if (ENOENT == errno) {
+            // directory does not exist.
+            return false;
+        } else {
+            // opendir() failed for some other reason, e.g. access problems
+            return false;
+        }
+    }
+
+    /*!
+     * returns the current working directory
+     * @return as string
+     */
+    extern std::string current_working_directory();
+
+    /*!
+     * creates a new, empty local directory.
+     * @param base_path where to create, per default assumes CWD
+     * @param max_tries how often to try
+     * @return path of newly created empty dir. "" if tries exhausted.
+     */
+    extern std::string create_temporary_directory(const std::string& base_path = current_working_directory(), size_t max_tries=1000);
+
+    inline std::vector<std::string> glob(const std::string& pattern, std::ostream& err_stream=std::cerr) {
+        using namespace std;
+
+        auto pattern_str = pattern.c_str();
+
+        // from https://stackoverflow.com/questions/8401777/simple-glob-in-c-on-unix-system
+        // glob struct resides on the stack
+        glob_t glob_result;
+        memset(&glob_result, 0, sizeof(glob_result));
+
+        // do the glob operation
+        int return_value = ::glob(pattern_str, GLOB_TILDE | GLOB_MARK, NULL, &glob_result);
+        if(return_value != 0) {
+            globfree(&glob_result);
+
+            // special case, no match
+            if(GLOB_NOMATCH == return_value) {
+                return {};
+            }
+
+            err_stream << "glob() failed with return_value " << return_value << std::endl;
+        }
+
+        // collect all the filenames into a std::list<std::string>
+        vector<string> paths;
+        for(size_t i = 0; i < glob_result.gl_pathc; ++i)
+            paths.emplace_back( glob_result.gl_pathv[i]);
+
+        // cleanup
+        globfree(&glob_result);
+        return paths;
     }
 
     /*!
@@ -294,6 +437,37 @@ namespace tuplex {
         }
         return std::to_string(i) + "th";
     }
+
+    /*!
+     * match needle against dictionary and find closest match based on Levenshtein distance
+     * @param needle string
+     * @param dictionary strings
+     * @return position in dictionary, or -1 in error case
+     */
+    inline int fuzzyMatch(const std::string& needle, const std::vector<std::string>& dictionary) {
+        using namespace std;
+        using namespace levenshteinSSE;
+
+        if(dictionary.empty())
+            return -1;
+
+        if(dictionary.size() == 1)
+            return 0;
+
+        int best_index = 0;
+        int lowest_score = numeric_limits<int>::max();
+        for(int i = 1; i < dictionary.size(); ++i) {
+            const auto& word = dictionary[i];
+            auto score = levenshtein(needle, word);
+
+            if(score < lowest_score) {
+                best_index = i;
+                lowest_score = score;
+            }
+        }
+        return best_index;
+    }
+
 
     template<typename T> std::ostream &operator <<(std::ostream &os, const std::vector<T> &v) {
         using namespace std;
@@ -497,6 +671,45 @@ namespace tuplex {
         }
         return -1;
     }
+
+    /*!
+     * converts a timepoint to an ISO8601 date.
+     * @param tp
+     * @return string with ISO8601 formatting
+     */
+    inline std::string chronoToISO8601(const std::chrono::time_point<std::chrono::system_clock>& tp) {
+
+        // cf. https://stackoverflow.com/questions/24686846/get-current-time-in-milliseconds-or-hhmmssmmm-format/35157784#35157784
+
+        std::time_t time = std::chrono::system_clock::to_time_t(tp);
+        std::tm* now_tm = std::localtime(&time);
+        long long timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(tp.time_since_epoch()).count();
+        std::ostringstream ss;
+        ss << std::setfill('0')
+                  << std::put_time(now_tm, "%FT%H:%M:")
+                  << std::setw(2) << (timestamp / 1000) % 60 << '.'
+                  << std::setw(3) << timestamp % 1000
+                  << std::put_time(now_tm, "%z");
+
+        return ss.str();
+    }
+
+
+    template <typename ...Args> void tuplex_trace_func(int line, const char* fileName, Args&& ...args) {
+#ifndef NDEBUG
+//        std::ostringstream stream;
+//        stream<<fileName<<":"<<line<<": ";
+//        (stream << ... << std::forward<Args>(args))<<"\n";
+//
+//        // which file?
+//        // fprintf(stderr)?
+//        std::cerr<<stream.str()<<std::endl;
+//        std::cerr.flush();
+#endif
+    }
 }
+
+// define trace macro
+#define TUPLEX_TRACE(...) tuplex_trace_func(__LINE__, __FILE__, __VA_ARGS__)
 
 #endif //TUPLEX_UTILS_H

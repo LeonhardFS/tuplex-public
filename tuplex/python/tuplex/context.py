@@ -11,13 +11,13 @@
 
 import logging
 
-from .libexec.tuplex import _Context, _DataSet
+from .libexec.tuplex import _Context, _DataSet, getDefaultOptionsAsJSON
 from .dataset import DataSet
 import os
 import glob
 import sys
 import cloudpickle
-from tuplex.utils.common import flatten_dict, load_conf_yaml, stringify_dict, unflatten_dict, save_conf_yaml, in_jupyter_notebook, is_in_interactive_mode, current_user, host_name
+from tuplex.utils.common import flatten_dict, load_conf_yaml, stringify_dict, unflatten_dict, save_conf_yaml, in_jupyter_notebook, in_google_colab, is_in_interactive_mode, current_user, is_shared_lib, host_name, ensure_webui, pythonize_options, logging_callback, registerLoggingCallback
 import uuid
 import json
 from .metrics import Metrics
@@ -59,7 +59,7 @@ class Context:
             logDir (str): Tuplex produces a log file `log.txt` per default. Specify with `logDir` where to store it.
             historyDir (str): Tuplex stores the database and logs within this dir when the webui is enabled.
             normalcaseThreshold (float): used to detect the normal case
-            webui (bool): whether to use the WebUI interface. By default true.
+            webui.enable (bool): whether to use the WebUI interface. By default true.
             webui.url (str): URL where to connect to for history server. Default: localhost
             webui.port (str): port to use when connecting to history server. Default: 6543
             webui.mongodb.url (str): URL where to connect to MongoDB storage. If empty string, Tuplex will start and exit a local mongodb instance.
@@ -78,8 +78,12 @@ class Context:
         """
         runtime_path = os.path.join(os.path.dirname(__file__), 'libexec', 'tuplex_runtime')
         paths = glob.glob(runtime_path + '*')
-        if len(paths) != 1:
 
+        if len(paths) != 1:
+            # filter based on type (runtime must be shared object!)
+            paths = list(filter(is_shared_lib, paths))
+
+        if len(paths) != 1:
             if len(paths) == 0:
                 logging.error("found no tuplex runtime (tuplex_runtime.so). Faulty installation?")
             else:
@@ -89,10 +93,24 @@ class Context:
         # pass configuration options
         # (1) check if conf is a dictionary or a string
         options = dict()
+
+        # put meaningful defaults for special environments...
+        if in_google_colab():
+            logging.debug('Detected Google Colab environment, adjusting options...')
+
+            # do not use a lot of memory, restrict...
+            options['tuplex.driverMemory'] = '64MB'
+            options['tuplex.executorMemory'] = '64MB'
+            options['tuplex.inputSplitSize'] = '16MB'
+            options['tuplex.partitionSize'] = '4MB'
+            options['tuplex.runTimeMemory'] = '16MB'
+            options['tuplex.webui.enable'] = False
+
         if conf:
             if isinstance(conf, str):
                 # need to load yaml file
-                options = flatten_dict(load_conf_yaml(conf))
+                loaded_options = flatten_dict(load_conf_yaml(conf))
+                options.update(loaded_options)
             elif isinstance(conf, dict):
                 # update dict with conf
                 options.update(flatten_dict(conf))
@@ -109,6 +127,8 @@ class Context:
             mode = 'shell'
         if in_jupyter_notebook():
             mode = 'jupyter'
+        if in_google_colab():
+            mode = 'colab'
         host = host_name()
 
         # pass above options as env.user, ...
@@ -121,13 +141,54 @@ class Context:
         if 'tuplex.runTimeLibrary' in options:
             runtime_path = options['tuplex.runTimeLibrary']
 
-        # @Todo: autostart mongodb & history server if they are not running yet...
+        # normalize keys to be of format tuplex.<key>
+        supported_keys = json.loads(getDefaultOptionsAsJSON()).keys()
+        key_set = set(options.keys())
+        for k in key_set:
+            if k not in supported_keys and 'tuplex.' + k in supported_keys:
+                options['tuplex.' + k] = options[k]
+
+        # check if redirect to python logging module should happen or not
+        if 'tuplex.redirectToPythonLogging' in options.keys():
+            py_opts = pythonize_options(options)
+            if py_opts['tuplex.redirectToPythonLogging']:
+                logging.info('Redirecting C++ logging to Python')
+                registerLoggingCallback(logging_callback)
+        else:
+            # check what default options say
+            defaults = pythonize_options(json.loads(getDefaultOptionsAsJSON()))
+            if defaults['tuplex.redirectToPythonLogging']:
+                logging.info('Redirecting C++ logging to Python')
+                registerLoggingCallback(logging_callback)
+
+        # autostart mongodb & history server if they are not running yet...
+        # deactivate webui for google colab per default
+        if 'tuplex.webui.enable' not in options:
+            # for google colab env, disable webui per default.
+            if in_google_colab():
+                options['tuplex.webui.enable'] = False
+
+        # fetch default options for webui ...
+        webui_options = {k: v for k, v in json.loads(getDefaultOptionsAsJSON()).items() if 'webui' in k or 'scratch' in k}
+
+        # update only non-existing options!
+        for k, v in webui_options.items():
+            if k not in options.keys():
+                options[k] = v
+
+        # pythonize
+        options = pythonize_options(options)
+
+        if options['tuplex.webui.enable']:
+            ensure_webui(options)
 
         # last arg are the options as json string serialized b.c. of boost python problems
+        logging.debug('Creating C++ context object')
         self._context = _Context(name, runtime_path, json.dumps(options))
-        pyth_metrics = self._context.getMetrics()
-        assert pyth_metrics
-        self.metrics = Metrics(pyth_metrics)
+        logging.debug('C++ object created.')
+        python_metrics = self._context.getMetrics()
+        assert python_metrics, 'internal error: metrics object should be valid'
+        self.metrics = Metrics(python_metrics)
         assert self.metrics
 
     def parallelize(self, value_list, columns=None, schema=None):
@@ -238,6 +299,22 @@ class Context:
         ds = DataSet()
         ds._dataSet = self._context.text(pattern, null_values)
         return ds
+
+    def orc(self, pattern, columns=None):
+        """ reads orc files.
+        Args:
+            pattern (str): a file glob pattern, e.g. /data/file.csv or /data/\*.csv or /\*/\*csv
+            columns (list): optional list of columns, will be used as header for the CSV file.
+        Returns:
+            tuplex.dataset.DataSet: A Tuplex Dataset object that allows further ETL operations
+        """
+
+        assert isinstance(pattern, str), 'file pattern must be given as str'
+        assert isinstance(columns, list) or columns is None, 'columns must be a list or None'
+
+        ds = DataSet()
+        ds._dataSet = self._context.orc(pattern, columns)
+        return ds
     
     def options(self, nested=False):
         """ retrieves all framework parameters as dictionary
@@ -310,3 +387,21 @@ class Context:
         # TODO: change to list of files actually having been removed.
         assert self._context
         return self._context.rm(pattern)
+
+    @property
+    def uiWebURL(self):
+        """
+        retrieve URL of webUI if running
+        Returns:
+            None if webUI was disabled, else URL as string
+        """
+        options = self.options()
+        if not options['tuplex.webui.enable']:
+            return None
+
+        hostname = options['tuplex.webui.url']
+        port = options['tuplex.webui.port']
+        url = '{}:{}'.format(hostname, port)
+        if not url.startswith('http://') or url.startswith('https://'):
+            url = 'http://' + url
+        return url

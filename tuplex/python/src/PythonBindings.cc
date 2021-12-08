@@ -14,6 +14,7 @@
 #include <PythonException.h>
 #include <PythonContext.h>
 #include <PythonMetrics.h>
+#include <PythonCommon.h>
 
 using namespace boost::python;
 
@@ -49,11 +50,13 @@ PYMODULE {
             .def("withColumn", &tuplex::PythonDataSet::withColumn)
             .def("selectColumns", &tuplex::PythonDataSet::selectColumns)
             .def("renameColumn", &tuplex::PythonDataSet::renameColumn)
+            .def("renameColumnByPosition", &tuplex::PythonDataSet::renameColumnByPosition)
             .def("join", &tuplex::PythonDataSet::join)
             .def("leftJoin", &tuplex::PythonDataSet::leftJoin)
             .def("columns", &tuplex::PythonDataSet::columns)
             .def("cache", &tuplex::PythonDataSet::cache)
             .def("tocsv", &tuplex::PythonDataSet::tocsv)
+            .def("toorc", &tuplex::PythonDataSet::toorc)
             .def("unique", &tuplex::PythonDataSet::unique)
             .def("aggregate", &tuplex::PythonDataSet::aggregate)
             .def("aggregateByKey", &tuplex::PythonDataSet::aggregateByKey)
@@ -64,6 +67,7 @@ PYMODULE {
             .def(init<std::string>()) // default C++ ctor
             .def("csv", &tuplex::PythonContext::csv)
             .def("text", &tuplex::PythonContext::text)
+            .def("orc", &tuplex::PythonContext::orc)
             .def("parallelize", &tuplex::PythonContext::parallelize)
             .def("options", &tuplex::PythonContext::options)
             .def("getMetrics", &tuplex::PythonContext::getMetrics)
@@ -78,4 +82,11 @@ PYMODULE {
             .def("getTotalCompilationTime", &tuplex::PythonMetrics::getTotalCompilationTime)
             .def("getTotalExceptionCount", &tuplex::PythonMetrics::getTotalExceptionCount)
             .def("getJSONString", &tuplex::PythonMetrics::getJSONString);
+
+
+    // global method to access default options as json
+    def("getDefaultOptionsAsJSON", &tuplex::getDefaultOptionsAsJSON);
+
+    // global method to register a new logging function
+    def("registerLoggingCallback", &tuplex::registerPythonLoggingCallback);
 }

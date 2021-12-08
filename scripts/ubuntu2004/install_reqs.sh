@@ -23,12 +23,18 @@ apt-get install -y build-essential software-properties-common wget libedit-dev l
   uuid-dev git libffi-dev libmagic-dev \
   doxygen doxygen-doc doxygen-latex doxygen-gui graphviz \
   libgflags-dev libncurses-dev \
-  awscli openjdk-8-jdk libyaml-dev
+  awscli openjdk-8-jdk libyaml-dev ninja-build gcc-10 g++-10 autoconf libtool m4
 
 # use GCC 10, as Tuplex doesn't work with GCC 9
 update-alternatives --remove-all gcc
 update-alternatives --remove-all g++
 update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 100 --slave /usr/bin/g++ g++ /usr/bin/g++-10
+
+# update to make sure everything is compiled using gcc-10
+ldconfig
+export CC=gcc-10
+export CXX=g++-10
+
 
 # LLVM 9 packages (prob not all of them needed, but here for complete install)
 wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh &&
@@ -91,7 +97,7 @@ mkdir -p /tmp/celero-v2.6.0 &&
   git checkout tags/v2.6.0 &&
   mkdir build &&
   cd build &&
-  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_FLAGS=$CXX_FLAGS .. &&
+  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_FLAGS="-fPIC" .. &&
   make -j 32 &&
   make install &&
   cd &&
@@ -133,10 +139,10 @@ git clone https://github.com/awslabs/aws-lambda-cpp.git && \
 
 # pcre2
 cd /tmp &&
-  curl -O https://ftp.pcre.org/pub/pcre/pcre2-10.34.zip &&
-  unzip pcre2-10.34.zip &&
-  rm pcre2-10.34.zip &&
-  pushd pcre2-10.34 &&
+  curl -LO https://github.com/PhilipHazel/pcre2/releases/download/pcre2-10.39/pcre2-10.39.zip &&
+  unzip pcre2-10.39.zip &&
+  rm pcre2-10.39.zip &&
+  pushd pcre2-10.39 &&
   ./configure --prefix=/opt --enable-jit=auto --disable-shared CFLAGS="-O2 -fPIC" && make -j 32 && make install
 popd
 
@@ -150,6 +156,16 @@ popd
 
 # install python packages for tuplex (needs cloudpickle to compile, numpy to run certain tests)
 pip3 install cloudpickle numpy
+
+# protobuf 3.12
+cd /tmp &&
+curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v3.12.0/protobuf-cpp-3.12.0.tar.gz &&
+tar xf protobuf-cpp-3.12.0.tar.gz &&
+pushd protobuf-3.12.0 &&
+./autogen.sh && ./configure "CFLAGS=-fPIC" "CXXFLAGS=-fPIC" &&
+make -j4 && make install && ldconfig &&
+pushd
+
 
 # setup bash aliases
 echo "alias antlr='java -jar /opt/lib/antlr-4.8-complete.jar'" >>"$HOME/.bashrc"

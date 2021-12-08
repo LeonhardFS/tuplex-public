@@ -14,6 +14,7 @@
 #include <physical/ResolveTask.h>
 #include <physical/TransformTask.h>
 #include <physical/SimpleFileWriteTask.h>
+#include <physical/SimpleOrcWriteTask.h>
 
 #include <memory>
 
@@ -29,6 +30,17 @@
 #include <int_hashmap.h>
 
 namespace tuplex {
+
+
+    void freeTasks(std::vector<IExecutorTask*>& tasks) {
+        // delete tasks
+        for(auto& task : tasks) {
+            // delete task
+            delete task;
+            task = nullptr;
+        }
+        tasks.clear();
+    }
 
     LocalBackend::LocalBackend(const tuplex::ContextOptions &options) : _compiler(nullptr), _options(options) {
 
@@ -53,13 +65,15 @@ namespace tuplex {
         // connect to history server if given
         if(options.USE_WEBUI()) {
 
+            TUPLEX_TRACE("initializing REST/Curl interface");
             // init rest interface if required (check if already done by AWS!)
             RESTInterface::init();
-
+            TUPLEX_TRACE("creating history server connector");
             _historyConn = HistoryServerConnector::connect(options.WEBUI_HOST(),
                                                            options.WEBUI_PORT(),
                                                            options.WEBUI_DATABASE_HOST(),
                                                            options.WEBUI_DATABASE_PORT());
+            TUPLEX_TRACE("connection established");
         }
 
         // init local threads
@@ -104,29 +118,27 @@ namespace tuplex {
     void LocalBackend::execute(tuplex::PhysicalStage *stage) {
         assert(stage);
 
-        // reset history server
-        _historyServer.reset();
-
         if(!stage)
             return;
 
         // history server connection should be established
         bool useWebUI = _options.USE_WEBUI();
         // register new job
-        if(useWebUI) {
+        // checks if we should use the WebUI and if we are starting a new
+        // job (hence there are no stages that come before the current stage
+        // we are executing).
+        if(useWebUI && stage->predecessors().empty()) {
+            _historyServer.reset();
             _historyServer = HistoryServerConnector::registerNewJob(_historyConn,
                     "local backend", stage->plan(), _options);
             if(_historyServer) {
                 logger().info("track job under " + _historyServer->trackURL());
-                _historyServer->sendStatus(JobStatus::SCHEDULED);
+                _historyServer->sendStatus(JobStatus::STARTED);
             }
-
+            stage->setHistoryServer(_historyServer);
             // attach to driver as well
             _driver->setHistoryServer(_historyServer.get());
         }
-
-        if(_historyServer)
-            _historyServer->sendStatus(JobStatus::STARTED);
 
         // check what type of stage it is
         auto tstage = dynamic_cast<TransformStage*>(stage);
@@ -139,12 +151,13 @@ namespace tuplex {
         } else
             throw std::runtime_error("unknown stage encountered in local backend!");
 
-        // detach from driver
-        _driver->setHistoryServer(nullptr);
-
         // send final message to history server to signal job ended
-        if(_historyServer) {
+        // checks whether the historyserver has been set as well as
+        // if all stages have been iterated through (we are currently on the
+        // last stage) because this means the job is finished.
+        if(_historyServer && stage->predecessors().size() == stage->plan()->getNumStages() - 1) {
             _historyServer->sendStatus(JobStatus::FINISHED);
+            _driver->setHistoryServer(nullptr);
         }
     }
 
@@ -510,7 +523,7 @@ namespace tuplex {
                         task->setFunctor(functor);
                         task->setInputFileSource(uri, normalCaseEnabled, tstage->fileInputOperatorID(), inputRowType, header,
                                                  !options.OPT_GENERATE_PARSER(),
-                                                 numColumns, 0, 0, delimiter, quotechar, colsToKeep, tstage->inputFormat());
+                                                 numColumns, 0, 0, delimiter, quotechar, colsToKeep, options.PARTITION_SIZE(), tstage->inputFormat());
                         // hash table or memory output?
                         if(tstage->outputMode() == EndPointMode::HASHTABLE) {
                             if (tstage->hashtableKeyByteWidth() == 8)
@@ -544,7 +557,7 @@ namespace tuplex {
                             task->setInputFileSource(uri, normalCaseEnabled, tstage->fileInputOperatorID(), inputRowType, header,
                                                      !options.OPT_GENERATE_PARSER(),
                                                      numColumns, 0, 0, delimiter,
-                                                     quotechar, colsToKeep, tstage->inputFormat());
+                                                     quotechar, colsToKeep, options.PARTITION_SIZE(), tstage->inputFormat());
                             // hash table or memory output?
                             if(tstage->outputMode() == EndPointMode::HASHTABLE) {
                                 if (tstage->hashtableKeyByteWidth() == 8)
@@ -580,7 +593,7 @@ namespace tuplex {
                                 task->setInputFileSource(uri, normalCaseEnabled, tstage->fileInputOperatorID(), inputRowType, header,
                                                          !options.OPT_GENERATE_PARSER(),
                                                          numColumns, rangeStart, rangeEnd - rangeStart, delimiter,
-                                                         quotechar, colsToKeep, tstage->inputFormat());
+                                                         quotechar, colsToKeep, options.PARTITION_SIZE(), tstage->inputFormat());
                                 // hash table or memory output?
                                 if(tstage->outputMode() == EndPointMode::HASHTABLE) {
                                     if (tstage->hashtableKeyByteWidth() == 8)
@@ -719,6 +732,9 @@ namespace tuplex {
         Timer stageTimer;
         Timer timer; // for detailed measurements.
 
+        // reset Partition stats
+        Partition::resetStatistics();
+
         // special case: no input, return & set empty result
         // Note: file names & sizes are also saved in input partition!
         if (tstage->inputMode() != EndPointMode::HASHTABLE
@@ -750,6 +766,13 @@ namespace tuplex {
             merge_except_rows = false;
         }
 
+        if (tstage->outputMode() == EndPointMode::FILE) {
+            // run output validation one more time here before execution (assume no changes then)
+            if(!validateOutputSpecification(tstage->outputURI())) {
+                throw std::runtime_error("Failed to validate output specification,"
+                                         " can not write to " + tstage->outputURI().toString() + " (directory not empty?)");
+            }
+        }
 
         // Processing of a transform stage works as follows:
         // 1.)  compile all functions required for the next steps
@@ -997,26 +1020,27 @@ namespace tuplex {
             case EndPointMode::MEMORY: {
                 // memory output, fetch partitions & ecounts
                 vector<Partition *> output;
-                vector<Partition*> general_output; // partitions which violate the normal case
-                vector<Partition*> unresolved;
-                vector<tuple<size_t, PyObject*>> nonconforming_rows; // rows where the output type does not fit,
+                vector<Partition*> generalOutput; // partitions which violate the normal case
+                vector<Partition*> remainingExceptions;
+                vector<tuple<size_t, PyObject*>> nonConformingRows; // rows where the output type does not fit,
                                                                      // need to manually merged.
                 unordered_map<tuple<int64_t, ExceptionCode>, size_t> ecounts;
                 size_t rowDelta = 0;
                 for (const auto& task : completedTasks) {
-                    // update exception counts
-                    ecounts = merge_ecounts(ecounts, getExceptionCounts(task));
-
                     auto taskOutput = getOutputPartitions(task);
-                    auto exceptions = getRemainingExceptions(task);
-                    auto typeViolations = generalCasePartitions(task);
-                    auto nonConforming = getNonConformingRows(task);
+                    auto taskRemainingExceptions = getRemainingExceptions(task);
+                    auto taskGeneralOutput = generalCasePartitions(task);
+                    auto taskNonConformingRows = getNonConformingRows(task);
+                    auto taskExceptionCounts = getExceptionCounts(task);
+
+                    // update exception counts
+                    ecounts = merge_ecounts(ecounts, taskExceptionCounts);
 
                     // update nonConforming with delta
-                    for(int i = 0; i < nonConforming.size(); ++i) {
-                        auto t = nonConforming[i];
+                    for(int i = 0; i < taskNonConformingRows.size(); ++i) {
+                        auto t = taskNonConformingRows[i];
                         t = std::make_tuple(std::get<0>(t) + rowDelta, std::get<1>(t));
-                        nonConforming[i] = t;
+                        taskNonConformingRows[i] = t;
                     }
 
                     // debug trace issues
@@ -1026,37 +1050,21 @@ namespace tuplex {
                         task_name = "udf trafo task";
                     if(task->type() == TaskType::RESOLVE)
                         task_name = "resolve";
-                    // cout<<"*** found task: "<<task_name<<" ***"<<endl;
-                    // cout<<"*** num output partitions: "<<taskOutput.size()<<" ***"<<endl;
-                    // cout<<"*** num general case partitions: "<<typeViolations.size()<<" ***"<<endl;
-                    // cout<<"*** num exception partitions: "<<exceptions.size()<<" ***"<<endl;
-                    // cout<<"*** non conforming rows: "<<nonConforming.size()<<" ***"<<endl;
 
-                    // std::copy (b.begin(), b.end(), std::back_inserter(a));
                     std::copy(taskOutput.begin(), taskOutput.end(), std::back_inserter(output));
-                    std::copy(typeViolations.begin(), typeViolations.end(), std::back_inserter(general_output));
-                    std::copy(nonConforming.begin(), nonConforming.end(), std::back_inserter(nonconforming_rows));
+                    std::copy(taskRemainingExceptions.begin(), taskRemainingExceptions.end(), std::back_inserter(remainingExceptions));
+                    std::copy(taskGeneralOutput.begin(), taskGeneralOutput.end(), std::back_inserter(generalOutput));
+                    std::copy(taskNonConformingRows.begin(), taskNonConformingRows.end(), std::back_inserter(nonConformingRows));
 
                     // compute the delta used to offset records!
                     for(auto p : taskOutput)
                         rowDelta += p->getNumRows();
-                    for(auto p : typeViolations)
+                    for(auto p : taskGeneralOutput)
                         rowDelta += p->getNumRows();
-                    rowDelta += nonConforming.size();
+                    rowDelta += taskNonConformingRows.size();
                 }
 
-
-                // debug output
-                // using namespace std;
-                // cout<<"*** num output partitions: "<<output.size()<<" ***"<<endl;
-                // cout<<"*** num unresolved partitions: "<<unresolved.size()<<" ***"<<endl;
-
-                // @TODO: set in Context sample up for unresolved exceptions!
-                // => limit by max per op per type
-                // => general case partitions set as artificial exceptions to keep around...
-
-                // set to stage output
-                tstage->setMemoryResult(output, general_output, nonconforming_rows, ecounts);
+                tstage->setMemoryResult(output, generalOutput, nonConformingRows, remainingExceptions, ecounts);
                 break;
             }
             case EndPointMode::HASHTABLE: {
@@ -1066,7 +1074,7 @@ namespace tuplex {
                 if(completedTasks.empty()) {
                     tstage->setHashResult(nullptr, nullptr);
                 } else {
-                    auto hsink = createFinalHashmap(completedTasks, tstage->hashtableKeyByteWidth(), combineOutputHashmaps);
+                    auto hsink = createFinalHashmap({completedTasks.cbegin(), completedTasks.cend()}, tstage->hashtableKeyByteWidth(), combineOutputHashmaps);
                     tstage->setHashResult(hsink.hm, hsink.null_bucket);
                 }
                 break;
@@ -1112,10 +1120,17 @@ namespace tuplex {
 
         // send final result count (exceptions + co)
         if(_historyServer) {
-            auto rs = tstage->resultSet();
-            assert(rs);
+            size_t numOutputRows = 0;
+            if (tstage->outputMode() == EndPointMode::HASHTABLE) {
+                for (const auto& task : completedTasks) {
+                    numOutputRows += task->getNumOutputRows();
+                }
+            } else {
+                auto rs = tstage->resultSet();
+                assert(rs);
+                numOutputRows = rs->rowCount();
+            }
             auto ecounts = tstage->exceptionCounts();
-            auto numOutputRows = rs->rowCount();
             _historyServer->sendStageResult(tstage->number(), numInputRows, numOutputRows, ecounts);
         }
 
@@ -1124,6 +1139,15 @@ namespace tuplex {
             ss<<"[Transform Stage] Stage "<<tstage->number()<<" completed "<<completedTasks.size()<<" sink tasks in "<<timer.time()<<"s";
             Logger::instance().defaultLogger().info(ss.str());
         }
+
+        freeTasks(completedTasks);
+
+        // update metrics
+        metrics.setDiskSpillStatistics(tstage->number(),
+                                       Partition::statisticSwapInCount(),
+                                       Partition::statisticSwapInBytesRead(),
+                                       Partition::statisticSwapOutCount(),
+                                       Partition::statisticSwapOutBytesWritten());
 
         // info how long the trafo stage took
         std::stringstream ss;
@@ -1149,7 +1173,7 @@ namespace tuplex {
 
             // special case: create a global hash output result and put it into the FIRST resolve task.
             Timer timer;
-            hsink = createFinalHashmap(tasks, tstage->hashtableKeyByteWidth(), combineHashmaps);
+            hsink = createFinalHashmap({tasks.cbegin(), tasks.cend()}, tstage->hashtableKeyByteWidth(), combineHashmaps);
             logger().info("created combined normal-case result in " + std::to_string(timer.time()) + "s");
             hasNormalHashSink = true;
         }
@@ -1451,7 +1475,8 @@ namespace tuplex {
         driverCallback();
 
         // Let all the threads do their work & also work on the driver!
-        wq.workUntilAllTasksFinished(*driver());
+        bool flushToPython = _options.REDIRECT_TO_PYTHON_LOGGING();
+        wq.workUntilAllTasksFinished(*driver(), flushToPython);
 
         // release here runtime memory...
         runtime::rtfree_all();
@@ -1468,38 +1493,23 @@ namespace tuplex {
         return wq.popCompletedTasks();
     }
 
-    // ensure output folder exists. => separate function here, b.c. it slows down pipeline by a lot!
-    void ensureOutputFolderExists(const URI& baseURI) {
-        std::string base; // base which to use to form string
-        std::string ext; // base
-
-        auto path = baseURI.toPath();
-        auto ext_pos = path.rfind('.'); // searches for extension
-        auto slash_pos = path.rfind('/');
-
-        // two cases: 1) extension found 2.) extension not found
-        bool isFolder = (ext_pos == std::string::npos) ||
-                (path.back() == '/') || ((slash_pos != std::string::npos) && (ext_pos < slash_pos));
-
-        if(isFolder) {
-
-#ifndef NDEBUG
-            Logger::instance().logger("io").info("outputting data as parts into folder " + path);
-#endif
-
-            // no extension
-            // i.e. output in folder!
-            if(!baseURI.isLocal())
-                throw std::runtime_error("VFS not supporting mkdir yet!");
-
-            // check if folder exists, if so delete its contents (overwrite mode!)
-            // then, put part files in it!
-            auto vfs = VirtualFileSystem::fromURI(baseURI);
-            if(baseURI.exists())
-                vfs.remove(baseURI);
-
-            // create dir
-            vfs.create_dir(baseURI);
+    /*!
+     * get default file extension for supported file formats
+     * @param fmt
+     * @return string
+     */
+    std::string fileFormatDefaultExtension(FileFormat fmt) {
+        switch (fmt) {
+            case FileFormat::OUTFMT_TEXT:
+                return ".txt";
+            case FileFormat::OUTFMT_TUPLEX:
+                return ".bin";
+            case FileFormat::OUTFMT_CSV:
+                return ".csv";
+            case FileFormat::OUTFMT_ORC:
+                return ".orc";
+            default:
+                throw std::runtime_error("file format: " + std::to_string((int) fmt) + " not yet supported!");
         }
     }
 
@@ -1535,8 +1545,7 @@ namespace tuplex {
                 // --> call ensureOutputFolderExists before using this function here!
 
                 // change to correct file format extension
-                assert(fmt == FileFormat::OUTFMT_CSV);
-                return URI(path + "/part" + std::to_string(partNo) + ".csv");
+                return URI(path + "/part" + std::to_string(partNo) + fileFormatDefaultExtension(fmt));
             } else {
                 base = path.substr(0, ext_pos);
                 ext = path.substr(ext_pos + 1);
@@ -1793,17 +1802,17 @@ namespace tuplex {
     }
 
 
-    HashTableSink getHashSink(IExecutorTask* exec_task) {
+    HashTableSink getHashSink(const IExecutorTask* exec_task) {
         if(!exec_task)
             return HashTableSink();
 
         switch(exec_task->type()) {
             case TaskType::UDFTRAFOTASK: {
-                auto task = dynamic_cast<TransformTask*>(exec_task); assert(task);
+                auto task = dynamic_cast<const TransformTask*>(exec_task); assert(task);
                 return task->hashTableSink();
             }
             case TaskType::RESOLVE: {
-                auto task = dynamic_cast<ResolveTask*>(exec_task); assert(task);
+                auto task = dynamic_cast<const ResolveTask*>(exec_task); assert(task);
                 return task->hashTableSink();
             }
             default:
@@ -1811,7 +1820,7 @@ namespace tuplex {
         }
     }
 
-    HashTableSink LocalBackend::createFinalHashmap(std::vector<IExecutorTask*>& tasks, int hashtableKeyByteWidth, bool combine) {
+    HashTableSink LocalBackend::createFinalHashmap(const std::vector<const IExecutorTask*>& tasks, int hashtableKeyByteWidth, bool combine) {
         if(tasks.empty()) {
             HashTableSink sink;
             if(hashtableKeyByteWidth == 8) sink.hm = int64_hashmap_new();
@@ -1856,12 +1865,10 @@ namespace tuplex {
                     }
                 }
 
-                if(hashtableKeyByteWidth == 8) int64_hashmap_free(task_sink.hm); // remove hashmap (keys and buckets already handled)
-                else hashmap_free(task_sink.hm); // remove hashmap (keys and buckets already handled)
-
-                // delete task
-                delete tasks[i];
-                tasks[i] = nullptr;
+                if(hashtableKeyByteWidth == 8)
+                    int64_hashmap_free(task_sink.hm); // remove hashmap (keys and buckets already handled)
+                else
+                    hashmap_free(task_sink.hm); // remove hashmap (keys and buckets already handled)
             }
             return sink;
         }
@@ -1871,9 +1878,8 @@ namespace tuplex {
         using namespace std;
 
         Timer timer;
-        // check output format to be CSV
+        // check output format to be supported
         assert(tstage->outputMode() == EndPointMode::FILE);
-        assert(tstage->outputFormat() == FileFormat::OUTFMT_CSV);
 
         // now simply go over the partitions and write the full buffers out
         // check all the params from TrafoStage
@@ -1884,8 +1890,6 @@ namespace tuplex {
         UDF udf = tstage->outputPathUDF();
         auto fmt = tstage->outputFormat();
 
-        // create folder if not clear
-        ensureOutputFolderExists(uri);
         // count number of output rows in tasks
         size_t numTotalOutputRows = 0;
         vector<Partition *> outputs; // collect all output partitions in this vector
@@ -1947,16 +1951,47 @@ namespace tuplex {
 
             if(bytesInList >= bytesPerExecutor) {
                 // spawn task
-                //const URI& uri, uint8_t *header, size_t header_length, const std::vector<Partition *> &partitions
-                wtasks.emplace_back(new SimpleFileWriteTask(outputURI(udf, uri, partNo++, fmt), header, header_length, partitions));
+                // const URI& uri, uint8_t *header, size_t header_length, const std::vector<Partition *> &partitions
+                IExecutorTask* wtask;
+                switch(tstage->outputFormat()) {
+                    case FileFormat::OUTFMT_CSV:
+                        wtask = new SimpleFileWriteTask(outputURI(udf, uri, partNo++, fmt), header, header_length, partitions);
+                        break;
+                    case FileFormat::OUTFMT_ORC:
+#ifdef BUILD_WITH_ORC
+                        wtask = new SimpleOrcWriteTask(outputURI(udf, uri, partNo++, fmt), partitions, tstage->outputSchema(), outOptions["columnNames"]);
+#else
+                        throw std::runtime_error(MISSING_ORC_MESSAGE);
+#endif
+                        break;
+                    default:
+                        throw std::runtime_error("file output format not supported.");
+                }
+                wtasks.emplace_back(wtask);
                 partitions.clear();
                 bytesInList = 0;
             }
         }
         // add last task (remaining partitions)
         if(!partitions.empty()) {
-            auto wtask = new SimpleFileWriteTask(outputURI(udf, uri, partNo++, fmt), header, header_length, partitions);
-            wtasks.emplace_back(std::move(wtask));
+            IExecutorTask* wtask;
+            switch (tstage->outputFormat()) {
+                case FileFormat::OUTFMT_CSV: {
+                    wtask = new SimpleFileWriteTask(outputURI(udf, uri, partNo++, fmt), header, header_length, partitions);
+                    break;
+                }
+                case FileFormat::OUTFMT_ORC: {
+#ifdef BUILD_WITH_ORC
+                    wtask = new SimpleOrcWriteTask(outputURI(udf, uri, partNo++, fmt), partitions, tstage->outputSchema(), outOptions["columnNames"]);
+#else
+                    throw std::runtime_error(MISSING_ORC_MESSAGE);
+#endif
+                    break;
+                }
+                default:
+                    throw std::runtime_error("file output format not supported.");
+            }
+            wtasks.emplace_back(wtask);
             partitions.clear();
         }
 

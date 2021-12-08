@@ -119,13 +119,14 @@ namespace tuplex {
     }
 
     void TransformStage::setMemoryResult(const std::vector<Partition *> &partitions,
-                                         const std::vector<Partition*>& unresolved_exceptions,
+                                         const std::vector<Partition*>& generalCase,
                                          const std::vector<std::tuple<size_t, PyObject*>>& interpreterRows,
+                                         const std::vector<Partition*>& remainingExceptions,
                                          const std::unordered_map<std::tuple<int64_t, ExceptionCode>, size_t> &ecounts) {
         setExceptionCounts(ecounts);
-        _unresolved_exceptions = unresolved_exceptions;
+        _unresolved_exceptions = generalCase;
 
-        if (partitions.empty() && interpreterRows.empty() && unresolved_exceptions.empty())
+        if (partitions.empty() && interpreterRows.empty() && generalCase.empty())
             _rs = emptyResultSet();
         else {
             std::vector<Partition *> limitedPartitions;
@@ -158,7 +159,7 @@ namespace tuplex {
 
             // put ALL partitions to result set
             _rs = std::make_shared<ResultSet>(schema, limitedPartitions,
-                                              unresolved_exceptions, interpreterRows,
+                                              generalCase, interpreterRows,
                                               outputLimit());
         }
     }
@@ -725,7 +726,7 @@ namespace tuplex {
 
         // lazy compile
         if(!_syms) {
-            logger.info("lazy init symbols");
+            logger.debug("lazy init symbols");
             _syms = std::make_shared<JITSymbols>();
         }
 
@@ -740,18 +741,26 @@ namespace tuplex {
         if(!mod)
             throw std::runtime_error("invalid bitcode");
 
-        logger.info("parse module in " + std::to_string(timer.time()));
+        logger.debug("parse module in " + std::to_string(timer.time()));
 
         // because in Lambda there's no context yet, use some dummy object...
         JobMetrics dummy_metrics;
         JobMetrics& metrics = PhysicalStage::plan() ? PhysicalStage::plan()->getContext().metrics() : dummy_metrics;
+
+        std::string unoptimizedIR;
+        std::string optimizedIR = "Not currently optimized.";
+        if (_historyServer) {
+            unoptimizedIR = code();
+        }
 
         logger.info("retrieved metrics object");
 
         // step 1: run optimizer if desired
         if(optimizer) {
             optimizer->optimizeModule(*mod.get());
-
+            if (_historyServer) {
+                optimizedIR = code();
+            }
             double llvm_optimization_time = timer.time();
             metrics.setLLVMOptimizationTime(llvm_optimization_time);
             logger.info("Optimization via LLVM passes took " + std::to_string(llvm_optimization_time) + " ms");
@@ -759,7 +768,7 @@ namespace tuplex {
             timer.reset();
         }
 
-        logger.info("registering symbols...");
+        logger.debug("registering symbols...");
         // step 2: register callback functions with compiler
         if(registerSymbols && !writeMemoryCallbackName().empty())
             jit.registerSymbol(writeMemoryCallbackName(), TransformTask::writeRowCallback(false));
@@ -854,12 +863,10 @@ namespace tuplex {
         ss<<"Compiled code paths for stage "<<number()<<" in "<<std::fixed<<std::setprecision(2)<<compilation_time_via_llvm_this_number<<" ms";
 
         logger.info(ss.str());
-        // @TODO: missing, send code to history server if desired...
-        // if(_historyServer) {
-        //            auto unoptimizedCode = code + (resolveCode ? tstage->resolveCode() : "");
-        //            std::string optimizedCode = "no optimization here yet";
-        //            _historyServer->sendStagePlan("Stage" + std::to_string(tstage->number()), unoptimizedCode, optimizedCode, "");
-        //        }
+
+        if(_historyServer) {
+            _historyServer->sendStagePlan("Stage" + std::to_string(number()), unoptimizedIR, optimizedIR, "");
+        }
         return _syms;
     }
 

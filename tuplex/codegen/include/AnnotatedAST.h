@@ -15,7 +15,7 @@
 #include <Logger.h>
 #include <SymbolTable.h>
 #include <ClosureEnvironment.h>
-#include <ASTHelpers.h>
+#include <IFailable.h>
 
 #include <llvm/ADT/APFloat.h>
 #include <llvm/ADT/STLExtras.h>
@@ -38,21 +38,18 @@ namespace tuplex {
         };
 
         // class holding an abstract syntax tree
-        class AnnotatedAST {
+        class AnnotatedAST : public IFailable {
         private:
 
             // name of the function/last statement within the IR module
             std::string _irFuncName;
             std::map<std::string, python::Type> _typeHints;
 
-            bool _allowNumericTypeUnification;
-
             std::vector<std::string> _typingErrMessages; // error messages produced by type annotator.
 
             // holds the AST tree after successful parsing
             ASTNode *_root;
             bool _typesDefined; // lazy check variable whether types are already defined or not
-            CompileError _typeError; // temporary variable for dealing with unsupported type
 
             ClosureEnvironment _globals; // global variables + modules
 
@@ -74,9 +71,9 @@ namespace tuplex {
             // updates function ast with type & also updates the param nodes...
             void setFunctionType(ASTNode* node, const python::Type& type);
         public:
-            AnnotatedAST(): _root(nullptr), _typesDefined(false), _allowNumericTypeUnification(false), _typeError(CompileError::TYPE_ERROR_NONE) {}
+            AnnotatedAST(): _root(nullptr), _typesDefined(false) {}
 
-            AnnotatedAST(const AnnotatedAST& other) : _root(nullptr), _typesDefined(other._typesDefined), _globals(other._globals), _allowNumericTypeUnification(other._allowNumericTypeUnification), _typeError(other._typeError) {
+            AnnotatedAST(const AnnotatedAST& other) : _root(nullptr), _typesDefined(other._typesDefined), _globals(other._globals) {
                 cloneFrom(other);
             }
 
@@ -95,13 +92,10 @@ namespace tuplex {
 
             /*!
              * constructs annotated ast from string.
-             * @param s
+             * @param s python source code to parse
              * @return false if string could not be parsed.
              */
-            bool parseString(const std::string& s, bool allowNumericTypeUnification);
-
-            void allowNumericTypeUnification(bool allow) { _allowNumericTypeUnification = allow; }
-            inline bool allowNumericTypeUnification() const { return _allowNumericTypeUnification; }
+            bool parseString(const std::string& s);
             void setGlobals(const ClosureEnvironment& globals) { _globals = globals; }
             const ClosureEnvironment& globals() const { return _globals; }
 
@@ -119,11 +113,11 @@ namespace tuplex {
 
             /*!
              * generates code for a python UDF function
-             * @param allowUndefinedBehavior whether generated code allows for undefined behavior, i.e. division by zero, ...
-             * @param sharedObjectPropagation whether to share read-only objects across rows
+             * @param env LLVM module where to generate code into
+             * @param policy UDF compiler policy to use
              * @return bool if code can be generated, false if not
              */
-            bool generateCode(LLVMEnvironment *env, bool allowUndefinedBehavior, bool sharedObjectPropagation);
+            bool generateCode(LLVMEnvironment *env, const codegen::CompilePolicy& policy);
 
             /*!
              * function name to call this udf in LLVM IR
@@ -163,9 +157,11 @@ namespace tuplex {
             AnnotatedAST& removeParameterTypes();
 
             /*!
-             * throw exception for unsupported types
+             * checks _compileErrors in IFailable and throws an exception if return type is not supported and not resolved through fallback mode.
+             * currently returning list of lists/tuples/dicts/multi-types will raise exception.
+             * TODO: Add support for returning list of tuples/dicts and use fallback mode for other cases
              */
-            void checkTypeError();
+            void checkReturnError();
 
             /*!
              * set/upcast return type to target type
@@ -181,11 +177,12 @@ namespace tuplex {
 
             /*!
              * annotates the tree with final types. If this is not possible, returns false
+             * @param pokicy compiler policy
              * @param silentMode determines whether the type inference should log out problems or not
              * @param removeBranches whether to use RemoveDeadBranchesVisitor to prune AST
              * @return whether types could be successfully annotated/defined for all AST nodes
              */
-            bool defineTypes(bool silentMode=false, bool removeBranches=false);
+            bool defineTypes(const codegen::CompilePolicy& policy, bool silentMode=false, bool removeBranches=false);
 
 
             /*!

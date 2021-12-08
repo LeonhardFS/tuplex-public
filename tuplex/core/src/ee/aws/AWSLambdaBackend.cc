@@ -21,6 +21,10 @@
 #include <aws/lambda/model/UpdateFunctionConfigurationResult.h>
 #include <aws/core/utils/threading/Executor.h>
 #include <aws/core/auth/AWSCredentials.h>
+#include <aws/core/utils/json/JsonSerializer.h>
+
+// only exists in newer SDKs...
+// #include <aws/lambda/model/Architecture.h>
 
 // protobuf header
 #include <Lambda.pb.h>
@@ -29,6 +33,8 @@
 
 #include <google/protobuf/util/json_util.h>
 #include <iomanip>
+
+#include <utility>
 
 namespace tuplex {
 
@@ -98,8 +104,20 @@ namespace tuplex {
 
         // to avoid thread exhaust of system, use pool thread executor with 8 threads
         clientConfig.executor = Aws::MakeShared<Aws::Utils::Threading::PooledThreadExecutor>(_tag.c_str(), _options.AWS_NUM_HTTP_THREADS());
-        clientConfig.region = _options.AWS_REGION().c_str(); // hard-coded here
-        clientConfig.scheme = Aws::Http::Scheme::HTTPS;
+        if(_options.AWS_REGION().empty())
+            clientConfig.region = _credentials.default_region.c_str();
+        else
+            clientConfig.region = _options.AWS_REGION().c_str(); // hard-coded here
+
+        // verify zone
+        if(!isValidAWSZone(clientConfig.region.c_str())) {
+            logger().warn("Specified AWS zone '" + std::string(clientConfig.region.c_str()) + "' is not a valid AWS zone. Defaulting to " + _credentials.default_region + " zone.");
+            clientConfig.region = _credentials.default_region.c_str();
+        }
+
+        //clientConfig.userAgent = "tuplex"; // should be perhaps set as well.
+        auto ns = _options.AWS_NETWORK_SETTINGS();
+        applyNetworkSettings(ns, clientConfig);
 
         // change aws settings here
         Aws::Auth::AWSCredentials cred(_credentials.access_key.c_str(), _credentials.secret_key.c_str());
@@ -107,6 +125,7 @@ namespace tuplex {
 
         Aws::Lambda::Model::ListFunctionsRequest list_req;
         const Aws::Lambda::Model::FunctionConfiguration *fc = nullptr; // holds lambda conf
+        Aws::String fc_json_str;
         auto outcome = client->ListFunctions(list_req);
         if(!outcome.IsSuccess()) {
             std::stringstream ss;
@@ -121,7 +140,8 @@ namespace tuplex {
             // search for the function of interest
             for(const auto& f : funcs) {
                 if(f.GetFunctionName().c_str() == _functionName) {
-                    fc = &f;
+                    fc_json_str = f.Jsonize().View().WriteCompact();
+                    fc = new Aws::Lambda::Model::FunctionConfiguration(Aws::Utils::Json::JsonValue(fc_json_str));
                     break;
                 }
             }
@@ -132,6 +152,33 @@ namespace tuplex {
                 logger().info("Found AWS Lambda function " + _functionName + " (" + std::to_string(fc->GetMemorySize()) + "MB)");
             }
         }
+
+        // check architecture of function (only newer AWS SDKs support this...)
+        {
+            using namespace Aws::Utils::Json;
+            using namespace Aws::Utils;
+            auto fc_json = Aws::Utils::Json::JsonValue(fc_json_str);
+            if(fc_json.View().ValueExists("Architectures")) {
+                Array<JsonView> architecturesJsonList = fc_json.View().GetArray("Architectures");
+                std::vector<std::string> architectures;
+                for(unsigned architecturesIndex = 0; architecturesIndex < architecturesJsonList.GetLength(); ++architecturesIndex)
+                   architectures.push_back(std::string(architecturesJsonList[architecturesIndex].AsString().c_str()));
+                // there should be one architecture
+                if(architectures.size() != 1) {
+                    logger().warn(
+                            "AWS Lambda changed specification, update how to deal with mulit-architecture functions");
+                    if(!architectures.empty())
+                        _functionArchitecture = architectures.front();
+                }
+                else {
+                    _functionArchitecture = architectures.front();
+                }
+            } else {
+                _functionArchitecture = "x86_64";
+            }
+        }
+
+        logger().info("Using Lambda running on " + _functionArchitecture);
 
         // limit concurrency + mem of function manually (TODO: uncomment for faster speed!), if it doesn't fit options
         // i.e. aws lambda put-function-concurrency --function-name tplxlam --reserved-concurrent-executions $MAX_CONCURRENCY
@@ -164,6 +211,8 @@ namespace tuplex {
 
         // concurrency?
         // PutFunctionConcurrency
+
+        delete fc;
 
         return client;
     }
@@ -241,6 +290,8 @@ namespace tuplex {
 
     void AwsLambdaBackend::execute(PhysicalStage *stage) {
         using namespace std;
+
+        reset();
 
         auto tstage = dynamic_cast<TransformStage *>(stage);
         if (!tstage)
@@ -573,7 +624,7 @@ namespace tuplex {
         // if(options.SCRATCH_DIR().prefix() != "s3://") // @TODO: check further it's a dir...
         //     throw std::runtime_error("need to provide as scratch dir an s3 path to Lambda backend");
 
-        initAWS(credentials, options.AWS_REQUESTER_PAY());
+        initAWS(credentials, options.AWS_NETWORK_SETTINGS(), options.AWS_REQUESTER_PAY());
 
         // several options are NOT supported currently in AWS Lambda Backend, hence
         // force them to what works
@@ -595,14 +646,15 @@ namespace tuplex {
         _lambdaSizeInMB = options.AWS_LAMBDA_MEMORY();
         _lambdaTimeOut = options.AWS_LAMBDA_TIMEOUT();
 
-        // adjust params if necessary
-        if(_lambdaSizeInMB < AWS_MINIMUM_TUPLEX_MEMORY_REQUIREMENT_MB || _lambdaSizeInMB % 64 != 0 || _lambdaSizeInMB > AWS_MAXIMUM_LAMBDA_MEMORY_MB) {
-            _lambdaSizeInMB = std::max(std::min(AWS_MINIMUM_LAMBDA_MEMORY_MB, core::ceilToMultiple(_lambdaSizeInMB, 64ul)), AWS_MAXIMUM_LAMBDA_MEMORY_MB);
-            logger().info("adjusted lambda size to " + std::to_string(_lambdaSizeInMB));
-        }
+        logger().info("Execution over lambda with " + std::to_string(_lambdaSizeInMB) + "MB");
+
+        // Lambda supports 1MB increments. Hence, no adjustment to 64MB granularity anymore necessary as in prior to Dec 2020.
+        _lambdaSizeInMB = std::min(std::max(AWS_MINIMUM_LAMBDA_MEMORY_MB, _lambdaSizeInMB), AWS_MAXIMUM_LAMBDA_MEMORY_MB);
+        logger().info("Adjusted lambda size to " + std::to_string(_lambdaSizeInMB) + "MB");
+
         if(_lambdaTimeOut < 10 || _lambdaTimeOut > 15 * 60) {
-            _lambdaTimeOut = std::max(std::min(10ul, _lambdaTimeOut), 15 * 60ul); // min 10s, max 15min
-            logger().info("adjusted lambda timeout to " + std::to_string(_lambdaTimeOut));
+            _lambdaTimeOut = std::min(std::max(AWS_MINIMUM_TUPLEX_TIMEOUT_REQUIREMENT, _lambdaTimeOut), AWS_MAXIMUM_LAMBDA_TIMEOUT); // min 5s, max 15min
+            logger().info("Adjusted lambda timeout to " + std::to_string(_lambdaTimeOut));
         }
 
         // init lambda client (Note: must be called AFTER aws init!)
@@ -813,6 +865,19 @@ namespace tuplex {
         return billed;
     }
 
+    size_t AwsLambdaBackend::getMBMs() {
+        std::lock_guard<std::mutex> lock(_mutex);
+
+        // sum up billed mb ms
+        size_t billed = 0;
+        for(auto info : _infos) {
+            size_t billedDurationInMs = info.billedDurationInMs;
+            size_t memorySizeInMb = info.memorySizeInMb;
+            billed += billedDurationInMs * memorySizeInMb;
+        }
+        return billed;
+    }
+
     URI AwsLambdaBackend::scratchDir(const std::vector<URI> &hints) {
         // is URI valid? return
         if(_scratchDir != URI::INVALID)
@@ -871,5 +936,11 @@ namespace tuplex {
         return hints;
     }
 
+    void AwsLambdaBackend::reset() {
+        _tasks.clear();
+        _infos.clear();
+
+        // other reset? @TODO.
+    }
 }
 #endif

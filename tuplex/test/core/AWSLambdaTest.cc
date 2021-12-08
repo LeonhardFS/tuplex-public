@@ -9,11 +9,10 @@
 //--------------------------------------------------------------------------------------------------------------------//
 
 #ifdef BUILD_WITH_AWS
-#ifndef BUILD_FOR_CI
 
 #include "TestUtils.h"
 #include <ee/aws/AWSLambdaBackend.h>
-#include <ee/aws/AWSCommon.h>
+#include <AWSCommon.h>
 #include <VirtualFileSystem.h>
 #include <PosixFileSystemImpl.h>
 
@@ -24,12 +23,21 @@ protected:
         PyTest::SetUp();
 
         using namespace tuplex;
-        initAWS(AWSCredentials::get());
+
+        // to speedup testing, if we anyways skip the tests, can skip init here too.
+        // !!! Dangerous !!!
+#ifndef SKIP_AWS_TESTS
+        initAWS(AWSCredentials::get(), NetworkSettings(), true);
         VirtualFileSystem::addS3FileSystem();
+#endif
     }
 };
 
 TEST_F(AWSTest, BucketOperations) {
+#ifdef SKIP_AWS_TESTS
+    GTEST_SKIP();
+#endif
+
     using namespace tuplex;
     using namespace std;
 
@@ -49,6 +57,10 @@ TEST_F(AWSTest, BucketOperations) {
 }
 
 TEST_F(AWSTest, FolderCopy) {
+#ifdef SKIP_AWS_TESTS
+    GTEST_SKIP();
+#endif
+
     using namespace tuplex;
     using namespace std;
 
@@ -124,6 +136,10 @@ TEST_F(AWSTest, FolderCopy) {
 }
 
 TEST_F(AWSTest, FileUploadAndDownload) {
+#ifdef SKIP_AWS_TESTS
+    GTEST_SKIP();
+#endif
+
     using namespace tuplex;
     using namespace std;
 
@@ -165,6 +181,10 @@ TEST_F(AWSTest, FileUploadAndDownload) {
 }
 
 TEST_F(AWSTest, SimpleLambdaInvoke) {
+#ifdef SKIP_AWS_TESTS
+    GTEST_SKIP();
+#endif
+
     using namespace std;
     using namespace tuplex;
 
@@ -184,5 +204,117 @@ TEST_F(AWSTest, SimpleLambdaInvoke) {
     for(int i = 0; i < N; ++i)
         EXPECT_EQ(v[i].toPythonString(), ref[i].toPythonString());
 }
-#endif // BUILD_FOR_CI
+
+TEST_F(AWSTest, MultipleLambdaInvoke) {
+#ifdef SKIP_AWS_TESTS
+    GTEST_SKIP();
+#endif
+
+    using namespace std;
+    using namespace tuplex;
+
+    Context c(microLambdaOptions());
+
+    // computes some simple function in the cloud
+    vector<Row> data;
+    vector<Row> ref;
+    int N = 5;
+    for(int i = 0; i < N; ++i) {
+        data.push_back(Row(i));
+        ref.push_back(Row(i, i*i));
+    }
+
+    auto v = c.parallelize(data).map(UDF("lambda x: (x, x*x)")).collectAsVector();
+    ASSERT_EQ(v.size(), N);
+    for(int i = 0; i < N; ++i)
+        EXPECT_EQ(v[i].toPythonString(), ref[i].toPythonString());
+
+    // 2nd invocation
+    v = c.parallelize(data).map(UDF("lambda x: (x, x*x)")).collectAsVector();
+    ASSERT_EQ(v.size(), N);
+    for(int i = 0; i < N; ++i)
+        EXPECT_EQ(v[i].toPythonString(), ref[i].toPythonString());
+}
+
+TEST_F(AWSTest, RequesterPays) {
+#ifdef SKIP_AWS_TESTS
+    GTEST_SKIP();
+#endif
+
+    using namespace std;
+    using namespace tuplex;
+
+    Context c(microLambdaOptions());
+
+    // make sure this is public??
+    auto v = c.csv("s3://tuplex-public/test.csv").collectAsVector();
+    ASSERT_GT(v.size(), 0);
+}
+
+
+TEST_F(AWSTest, ReadSingleCSVFile) {
+#ifdef SKIP_AWS_TESTS
+    GTEST_SKIP();
+#endif
+
+    using namespace std;
+    using namespace tuplex;
+
+    Context c(microLambdaOptions());
+
+    // make sure this is public??
+    auto v = c.csv("s3://tuplex-public/test.csv").collectAsVector();
+    ASSERT_GT(v.size(), 0);
+}
+
+// c.csv('s3://tuplex-public/data/100GB/zillow_00001.csv').show(5)
+
+TEST_F(AWSTest, ShowFromSingleFile) {
+#ifdef SKIP_AWS_TESTS
+    GTEST_SKIP();
+#endif
+
+    using namespace std;
+    using namespace tuplex;
+    auto opt = microLambdaOptions();
+    opt.set("tuplex.aws.lambdaMemory", "6432");
+    Context c(opt);
+
+    // make sure this is public??
+    c.csv("s3://tuplex-public/data/100GB/zillow_00001.csv").show(5);
+}
+
+TEST_F(AWSTest, BucketList) {
+#ifdef SKIP_AWS_TESTS
+    GTEST_SKIP();
+#endif
+
+    using namespace std;
+    using namespace tuplex;
+
+    Context c(microLambdaOptions());
+
+    vector<URI> uris;
+    auto vfs = VirtualFileSystem::fromURI("s3://");
+
+    vfs.ls("s3://tuplex-public", uris);
+
+    for(auto uri : uris) {
+        cout<<uri.toString()<<endl;
+    }
+
+    // list buckets
+    vfs.ls("s3://", uris);
+    for(auto uri : uris) {
+        cout<<uri.toString()<<endl;
+    }
+    uris.clear();
+    vfs.ls("s3:///", uris); // <-- special case, list here too!
+    for(auto uri : uris) {
+        cout<<uri.toString()<<endl;
+    }
+    uris.clear();
+}
+
+
 #endif // BUILD_WITH_AWS

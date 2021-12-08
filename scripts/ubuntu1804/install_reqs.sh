@@ -23,7 +23,7 @@ apt-get install -y build-essential autoconf automake libtool software-properties
   uuid-dev git python3.7 python3.7-dev python3-pip libffi-dev \
   doxygen doxygen-doc doxygen-latex doxygen-gui graphviz \
   gcc-7 g++-7 libgflags-dev libncurses-dev \
-  awscli openjdk-8-jdk libyaml-dev libmagic-dev
+  awscli openjdk-8-jdk libyaml-dev libmagic-dev ninja-build
 
 # LLVM 9 packages (prob not all of them needed, but here for complete install)
 wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh &&
@@ -137,10 +137,10 @@ git clone https://github.com/awslabs/aws-lambda-cpp.git && \
 
 # pcre2
 cd /tmp &&
-  curl -O https://ftp.pcre.org/pub/pcre/pcre2-10.34.zip &&
-  unzip pcre2-10.34.zip &&
-  rm pcre2-10.34.zip &&
-  pushd pcre2-10.34 &&
+  curl -LO https://github.com/PhilipHazel/pcre2/releases/download/pcre2-10.39/pcre2-10.39.zip &&
+  unzip pcre2-10.39.zip &&
+  rm pcre2-10.39.zip &&
+  pushd pcre2-10.39 &&
   ./configure --prefix=/opt --enable-jit=auto --disable-shared CFLAGS="-O2 -fPIC" && make -j 32 && make install
 popd
 

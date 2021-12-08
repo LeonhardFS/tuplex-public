@@ -23,10 +23,10 @@ import types
 import itertools
 import sys
 
+from tuplex.utils.errors import TuplexException
 from tuplex.utils.globs import get_globals
 from tuplex.utils.source_vault import SourceVault, supports_lambda_closure
-from tuplex.utils.common import in_jupyter_notebook, is_in_interactive_mode
-from tuplex.utils.interactive_shell import TuplexShell
+from tuplex.utils.common import in_jupyter_notebook, in_google_colab, is_in_interactive_mode
 
 # only export get_source function, rest shall be private.
 __all__ = ['get_source', 'get_globals', 'supports_lambda_closure']
@@ -150,7 +150,7 @@ def get_function_code(f):
     function_name = f.__code__.co_name
     assert isinstance(function_name, str)
 
-    if in_jupyter_notebook():
+    if in_jupyter_notebook() or in_google_colab():
         return extract_function_code(function_name, get_jupyter_raw_code(function_name))
     else:
         return extract_function_code(function_name, dill.source.getsource(f))
@@ -167,10 +167,13 @@ def get_source(f):
         # use inspect module
         # need to clean out lambda...
         if f.__name__ == '<lambda>':
-
             # interpreter in interactive mode or not?
             # beware jupyter notebook also returns true for interactive mode!
-            if is_in_interactive_mode() and not in_jupyter_notebook():
+            if is_in_interactive_mode() and not in_jupyter_notebook() and not in_google_colab():
+
+                # import here, avoids also trouble with jupyter notebooks
+                from tuplex.utils.interactive_shell import TuplexShell
+
                 # for this to work, a dummy shell has to be instantiated
                 # through which all typing occurs. Thus, the history can
                 # be properly captured for source code lookup.
@@ -186,6 +189,10 @@ def get_source(f):
                 f_filename = f.__code__.co_filename
                 f_lineno = f.__code__.co_firstlineno
                 f_colno = f.__code__.co_firstcolno if hasattr(f.__code__, 'co_firstcolno') else None
+
+                # special case: some unknown jupyter magic has been used...
+                if (in_jupyter_notebook() or in_google_colab()) and (f_filename == '<timed exec>' or f_filename == '<timed eval>'):
+                    raise TuplexException('%%time magic not supported for Tuplex code')
 
                 src_info = inspect.getsourcelines(f)
 

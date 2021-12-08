@@ -75,10 +75,12 @@ namespace tuplex {
 #warning "limiting should make this hack irrelevant..."
         if (numElements < 0)
             numElements = std::numeric_limits<int64_t>::max();
-        std::vector<Row> v;
-        while (rs->hasNextRow() && v.size() < numElements) {
-            v.push_back(rs->getNextRow());
-        }
+
+        // std::vector<Row> v;
+        // while (rs->hasNextRow() && v.size() < numElements) {
+        //     v.push_back(rs->getNextRow());
+        // }
+        auto v = rs->getRows(numElements); // faster version instead of the loop above.
 
         Logger::instance().defaultLogger().debug("Result set converted to " + pluralize(v.size(), "row"));
         Logger::instance().defaultLogger().info(
@@ -105,15 +107,32 @@ namespace tuplex {
         if (isError())
             throw std::runtime_error("is error dataset!");
 
-        if (fmt != FileFormat::OUTFMT_CSV)
-            throw std::runtime_error("only csv output format yet supported!");
+        // when using uri mode
+        if(uri != URI::INVALID && !validateOutputSpecification(uri)) {
+            throw std::runtime_error("Failed to validate output specification,"
+                                     " can not write to " + uri.toString() + " (permissions? directory not empty?)");
+        }
 
         assert(_context);
         assert(_operator);
+
+        std::string name;
+        switch (fmt) {
+            case FileFormat::OUTFMT_CSV: {
+                name = "csv";
+                break;
+            }
+            case FileFormat::OUTFMT_ORC: {
+                name = "orc";
+                break;
+            }
+            default:
+                throw std::runtime_error("tofile file format not yet supported!");
+        }
+
         LogicalOperator *op = _context->addOperator(
-                new FileOutputOperator(_operator, uri, udf, "csv", FileFormat::OUTFMT_CSV, outputOptions,
+                new FileOutputOperator(_operator, uri, udf.withCompilePolicy(_context->compilePolicy()), name, fmt, outputOptions,
                                        fileCount, shardSize, limit));
-        ((FileOutputOperator*)op)->udf().getAnnotatedAST().allowNumericTypeUnification(_context->getOptions().AUTO_UPCAST_NUMBERS());
 
         if (!op->good()) {
             Logger::instance().defaultLogger().error("failed to create file output operator");
@@ -137,7 +156,7 @@ namespace tuplex {
 
         assert(_context);
         assert(this->_operator);
-        LogicalOperator *op = _context->addOperator(new MapOperator(this->_operator, udf, _columnNames, allowTypeUnification()));
+        LogicalOperator *op = _context->addOperator(new MapOperator(this->_operator, udf.withCompilePolicy(_context->compilePolicy()), _columnNames));
 
         if (!op->good()) {
             Logger::instance().defaultLogger().error("failed to create map operator");
@@ -227,8 +246,7 @@ namespace tuplex {
         LogicalOperator *op = _context->addOperator(new MapColumnOperator(this->_operator,
                                                                           columnName,
                                                                           columns(),
-                                                                          udf,
-                                                                          _context->getOptions().AUTO_UPCAST_NUMBERS()));
+                                                                          udf.withCompilePolicy(_context->compilePolicy())));
         if (!op->good()) {
             Logger::instance().defaultLogger().error("failed to create mapColumn operator");
             return _context->makeError("failed to add mapColumn operator to logical plan");
@@ -267,8 +285,7 @@ namespace tuplex {
                 new WithColumnOperator(this->_operator,
                                        _columnNames,
                                        columnName,
-                                       udf,
-                                       _context->getOptions().AUTO_UPCAST_NUMBERS()));
+                                       udf.withCompilePolicy(_context->compilePolicy())));
 
         if (!op->good()) {
             Logger::instance().defaultLogger().error("failed to create withColumn operator");
@@ -327,7 +344,7 @@ namespace tuplex {
         }
 
         // now it is a simple map operator
-        DataSet &ds = map(UDF(code));
+        DataSet &ds = map(UDF(code).withCompilePolicy(_context->compilePolicy()));
 
         // check if cols exist & update them
         auto columns = _operator->columns();
@@ -366,21 +383,60 @@ namespace tuplex {
         assert(_context);
         assert(_operator);
 
+        if(_columnNames.empty()) {
+            return _context->makeError("Dataset has no column names specified, try to use position based renameColumn function");
+        }
+
         // find old column in current columns
         auto it = std::find(_columnNames.begin(), _columnNames.end(), oldColumnName);
-        if(it == _columnNames.end())
-            return _context->makeError("renameColumn: could not find column '" + oldColumnName + "' in dataset's columns");
+        if(it == _columnNames.end()) {
+            // fuzzy match against existing columns
+            assert(_columnNames.size() >= 1);
+            auto closest_index = fuzzyMatch(oldColumnName, _columnNames);
+            assert(closest_index >= 0 && closest_index < _columnNames.size());
+            auto closest_name = _columnNames[closest_index];
+            return _context->makeError("renameColumn: could not find column '" + oldColumnName + "' in dataset's columns. Did you mean \"" + closest_name + "\"?");
+        }
 
         // position?
         auto idx = it - _columnNames.begin();
+        return renameColumn(idx, newColumnName);
+    }
+
+    size_t DataSet::numColumns() const {
+        assert(schema().getRowType().isTupleType());
+        return this->schema().getRowType().parameters().size();
+    }
+
+    DataSet& DataSet::renameColumn(int index, const std::string &newColumnName) {
+        using namespace std;
+
+        if(isError())
+            return *this;
+
+        assert(_context);
+        assert(_operator);
+
+        auto num_columns = numColumns();
+        if(index < 0)
+            return _context->makeError("index must be non-negative number");
+        if(index >= num_columns)
+            return _context->makeError("Dataset contains only " + std::to_string(num_columns) + ", can't rename the " +
+                                             ordinal(index + 1) + " column");
 
         // make copy
         vector<string> columnNames(_columnNames.begin(), _columnNames.end());
-        columnNames[idx] = newColumnName;
+
+        // are column names empty? If so, fill in with blanks!
+        if(columnNames.empty()) {
+            columnNames = vector<string>(num_columns, "");
+        }
+
+        columnNames[index] = newColumnName;
 
         // create dummy map operator
         // now it is a simple map operator
-        DataSet &ds = map(UDF(""));
+        DataSet &ds = map(UDF("").withCompilePolicy(_context->compilePolicy()));
 
         // set columns to restricted cols
         ds.setColumns(columnNames);
@@ -395,6 +451,15 @@ namespace tuplex {
             Logger::instance().defaultLogger().info("received signal handler sig, returning error dataset");
 #endif
             return _context->makeError("job aborted (signal received)");
+        }
+
+        // emit warning if non-unique names anymore
+        // ==> only for non-empty strings
+        std::vector<std::string> non_empty_names;
+        std::copy_if(columnNames.begin(), columnNames.end(), std::back_inserter(non_empty_names), [](const std::string& name) { return name != ""; });
+        std::set<std::string> unique_names(non_empty_names.begin(), non_empty_names.end());
+        if(unique_names.size() != non_empty_names.size()) {
+            Logger::instance().defaultLogger().info("Found duplicate column names. Note that this can negatively impact UDFs and subsequent operators.");
         }
 
         return ds;
@@ -459,7 +524,7 @@ namespace tuplex {
         }
 
         // now it is a simple map operator
-        DataSet &ds = map(UDF(code));
+        DataSet &ds = map(UDF(code).withCompilePolicy(_context->compilePolicy()));
 
         // set columns to restricted cols
         ds.setColumns(columnNames);
@@ -487,9 +552,8 @@ namespace tuplex {
         assert(_context);
         assert(this->_operator);
         LogicalOperator *op = _context->addOperator(new FilterOperator(this->_operator,
-                                                                       udf,
-                                                                       _columnNames,
-                                                                       _context->getOptions().AUTO_UPCAST_NUMBERS()));
+                                                                       udf.withCompilePolicy(_context->compilePolicy()),
+                                                                       _columnNames));
 
         if (!op->good()) {
 
@@ -529,8 +593,8 @@ namespace tuplex {
         assert(_context);
         assert(this->_operator);
         LogicalOperator *op = _context->addOperator(new ResolveOperator(this->_operator, ec,
-                                                                        udf, _columnNames,
-                                                                        _context->getOptions().AUTO_UPCAST_NUMBERS()));
+                                                                        udf.withCompilePolicy(_context->compilePolicy()),
+                                                                        _columnNames));
         if (!op->good()) {
             Logger::instance().defaultLogger().error("failed to create resolve operator");
             return _context->makeError("failed to add resolve operator to logical plan");
@@ -586,7 +650,7 @@ namespace tuplex {
 
         assert(_context && this->_operator);
 
-        LogicalOperator *op = _context->addOperator(new AggregateOperator(this->_operator, AggregateType::AGG_UNIQUE, false));
+        LogicalOperator *op = _context->addOperator(new AggregateOperator(this->_operator, AggregateType::AGG_UNIQUE));
 
         DataSet *dsptr = _context->createDataSet(op->getOutputSchema());
         dsptr->_operator = op;
@@ -614,11 +678,7 @@ namespace tuplex {
         assert(_context && this->_operator);
 
         LogicalOperator* op = _context->addOperator(new AggregateOperator(this->_operator, AggregateType::AGG_GENERAL,
-                                                                          _context->getOptions().AUTO_UPCAST_NUMBERS(),
-                                                                          aggCombine, aggUDF, aggInitial));
-
-        ((AggregateOperator*)op)->aggregatorUDF().getAnnotatedAST().allowNumericTypeUnification(_context->getOptions().AUTO_UPCAST_NUMBERS());
-        ((AggregateOperator*)op)->combinerUDF().getAnnotatedAST().allowNumericTypeUnification(_context->getOptions().AUTO_UPCAST_NUMBERS());
+                                                                          aggCombine.withCompilePolicy(_context->compilePolicy()), aggUDF.withCompilePolicy(_context->compilePolicy()), aggInitial));
 
         DataSet *dsptr = _context->createDataSet(op->getOutputSchema());
         dsptr->_operator = op;
@@ -648,11 +708,7 @@ namespace tuplex {
         assert(_context && this->_operator);
 
         LogicalOperator* op = _context->addOperator(new AggregateOperator(this->_operator, AggregateType::AGG_BYKEY,
-                                                                          _context->getOptions().AUTO_UPCAST_NUMBERS(),
-                                                                          aggCombine, aggUDF, aggInitial, keyColumns));
-
-        ((AggregateOperator*)op)->aggregatorUDF().getAnnotatedAST().allowNumericTypeUnification(_context->getOptions().AUTO_UPCAST_NUMBERS());
-        ((AggregateOperator*)op)->combinerUDF().getAnnotatedAST().allowNumericTypeUnification(_context->getOptions().AUTO_UPCAST_NUMBERS());
+                                                                          aggCombine.withCompilePolicy(_context->compilePolicy()), aggUDF.withCompilePolicy(_context->compilePolicy()), aggInitial, keyColumns));
 
         DataSet *dsptr = _context->createDataSet(op->getOutputSchema());
         dsptr->_operator = op;
@@ -813,9 +869,5 @@ namespace tuplex {
         } else {
             return false;
         }
-    }
-
-    bool DataSet::allowTypeUnification() const {
-        return _context->getOptions().AUTO_UPCAST_NUMBERS();
     }
 }

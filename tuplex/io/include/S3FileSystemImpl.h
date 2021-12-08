@@ -19,12 +19,15 @@
 #include <aws/core/utils/threading/Executor.h>
 #include "IFileSystemImpl.h"
 
+#include <Utils.h>
+
 namespace tuplex {
     class S3FileSystemImpl : public IFileSystemImpl {
         friend class S3File;
     public:
         S3FileSystemImpl() = delete;
-        S3FileSystemImpl(const std::string& access_key, const std::string& secret_key, const std::string& caFile, bool lambdaMode, bool requesterPay);
+        S3FileSystemImpl(const std::string& access_key, const std::string& secret_key, const std::string& session_token,
+                         const std::string& region, const NetworkSettings& ns, bool lambdaMode, bool requesterPay);
 
         Aws::S3::S3Client const& client() const { return *_client.get(); }
 
@@ -86,7 +89,7 @@ namespace tuplex {
         std::unique_ptr<VirtualFile> open_file(const URI& uri, VirtualFileMode vfm) override;
         VirtualFileSystemStatus touch(const URI& uri, bool overwrite=false) override;
         VirtualFileSystemStatus file_size(const URI& uri, uint64_t& size) override;
-        VirtualFileSystemStatus ls(const URI& parent, std::vector<URI>* uris) override;
+        VirtualFileSystemStatus ls(const URI& parent, std::vector<URI>& uris) override;
         std::unique_ptr<VirtualMappedFile> map_file(const URI &uri) override;
         std::vector<URI> glob(const std::string& pattern) override;
     };

@@ -57,7 +57,7 @@ namespace tuplex {
             }
         }
 
-        bool AnnotatedAST::generateCode(LLVMEnvironment *env, bool allowUndefinedBehavior, bool sharedObjectPropagation) {
+        bool AnnotatedAST::generateCode(LLVMEnvironment *env, const codegen::CompilePolicy& policy) {
             assert(env);
 
             auto& logger = Logger::instance().logger("codegen");
@@ -68,7 +68,7 @@ namespace tuplex {
             // fix types in the graph. I.e. no more sets,
             // each node gets a type assigned.
             // needed by the block generator
-            if(!defineTypes(false))
+            if(!defineTypes(policy, false))
                 return false;
 
             // note: this may screw up things!
@@ -76,7 +76,7 @@ namespace tuplex {
             assert(func->type() == ASTNodeType::Lambda || func->type() == ASTNodeType::Function);
 
             // actual code generation
-            tuplex::codegen::BlockGeneratorVisitor bgv(env, _typeHints, allowUndefinedBehavior, sharedObjectPropagation);
+            tuplex::codegen::BlockGeneratorVisitor bgv(env, _typeHints, policy);
             bgv.addGlobals(func, _globals);
 
             try {
@@ -190,11 +190,9 @@ namespace tuplex {
         }
 
 
-        bool AnnotatedAST::parseString(const std::string &s, bool allowNumericTypeUnification) {
+        bool AnnotatedAST::parseString(const std::string &s) {
             // for a clean restart, later cache in memory!
             release();
-
-            _allowNumericTypeUnification = allowNumericTypeUnification;
 
             // using ANTLR4 parser
             assert(!_root);
@@ -229,7 +227,6 @@ namespace tuplex {
             _typeHints = other._typeHints;
             _typesDefined = other._typesDefined;
             _globals = other._globals;
-            _allowNumericTypeUnification = other._allowNumericTypeUnification;
         }
 
         bool AnnotatedAST::writeGraphVizFile(const std::string &path) {
@@ -419,10 +416,11 @@ namespace tuplex {
             }
         }
 
-        bool AnnotatedAST::defineTypes(bool silentMode, bool removeBranches) {
+        bool AnnotatedAST::defineTypes(const codegen::CompilePolicy& policy, bool silentMode, bool removeBranches) {
 
             // reset err messages
             _typingErrMessages.clear();
+            clearCompileErrors();
 
             if(!_root)
                 return false;
@@ -448,7 +446,7 @@ namespace tuplex {
             hintFunctionParameters(findFunction(_root));
 
             // 2.2 run type annotator using the symbol table
-            TypeAnnotatorVisitor tav(*table, _allowNumericTypeUnification);
+            TypeAnnotatorVisitor tav(*table, policy); // TODO: global variable or function parameter?
             tav.setFailingMode(silentMode);
             table->resetScope();
             table->enterScope(); // enter builtin scope
@@ -458,19 +456,20 @@ namespace tuplex {
             // TypeAnnotatorVisitor may throw an exception when fatal error is reached, hence surround with try/catch
             try {
                 _root->accept(tav);
-                _typeError = tav.getTypeError();
+                addCompileErrors(table->getCompileErrors());
+                addCompileErrors(tav.getCompileErrors());
                 // table->exitScope(); // leave module/function level scope
                 // table->exitScope();  // leave global scope
                 // table->exitScope(); // leave builtin scope
 
                 // did tav fail? if so remove branches & try again
                 if(removeBranches) {
-                    _typeError = CompileError::TYPE_ERROR_NONE;
+                    clearCompileErrors();
                     RemoveDeadBranchesVisitor rdb;
                     _root->accept(rdb);
-                    _typeError = tav.getTypeError();
 
                     // run again
+                    table->clearCompileErrors();
                     table->resetScope();
                     tav.reset();
                     tav.setFailingMode(silentMode);
@@ -478,6 +477,8 @@ namespace tuplex {
                     table->enterScope(); // enter global scope
                     table->enterScope(); // enter module/function level scope
                     _root->accept(tav);
+                    addCompileErrors(table->getCompileErrors());
+                    addCompileErrors(tav.getCompileErrors());
                     table->resetScope();
                 }
             } catch(const std::runtime_error& e) {
@@ -533,9 +534,10 @@ namespace tuplex {
             return success;
         }
 
-        void AnnotatedAST::checkTypeError() {
-            if(_typeError != CompileError::TYPE_ERROR_NONE) {
-                throw std::runtime_error(compileErrorToStr(_typeError));
+        void AnnotatedAST::checkReturnError() {
+            auto err = getReturnError();
+            if(err != CompileError::COMPILE_ERROR_NONE) {
+                throw std::runtime_error(compileErrorToStr(err));
             }
         }
 

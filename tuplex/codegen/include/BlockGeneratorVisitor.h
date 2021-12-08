@@ -40,6 +40,9 @@
 #include <LambdaFunction.h>
 #include <FunctionRegistry.h>
 #include <stack>
+#include <IteratorContextProxy.h>
+
+#include <CodegenHelper.h>
 
 namespace tuplex {
 
@@ -107,6 +110,7 @@ namespace codegen {
                 //         assert(llvm::isa<llvm::Constant>(nullPtr));
                 // }
 
+                // iterator slot may not have ptr yet
                 return codegen::SerializableValue(builder.CreateLoad(ptr), builder.CreateLoad(sizePtr),
                         nullPtr ? builder.CreateLoad(nullPtr) : nullptr);
             }
@@ -115,7 +119,6 @@ namespace codegen {
                 assert(ptr && sizePtr);
 
                 if(val.val) {
-
                     // if tuples etc. are used, then there could be a pointer. When this happens, load & then assign
                     if(val.val->getType() == ptr->getType()) {
                         // load val
@@ -301,8 +304,7 @@ namespace codegen {
         LLVMEnvironment *_env;
 
         LambdaFunctionBuilder* _lfb;
-        bool _allowUndefinedBehaviour;
-        bool _sharedObjectPropagation;
+        const codegen::CompilePolicy& _policy;
 
         // currently the codegen is restricted to single lambda functions (no nested lambdas!)
         // this variable is used to store that.
@@ -344,6 +346,13 @@ namespace codegen {
         // store current iteration ending block and loop ending block for for and while loops
         std::deque<llvm::BasicBlock*> _loopBlockStack;
 
+        // store variable nodes in first iteration unrolled loop body.
+        // update their types to stabilized types after first iteration
+        // only references to existing NIdentifiers are stored here
+        std::deque<std::set<NIdentifier *>> _loopBodyIdentifiersStack;
+
+        std::shared_ptr<IteratorContextProxy> _iteratorContextProxy;
+
         void init() {
 
             if (!_blockStack.empty()) {
@@ -351,15 +360,9 @@ namespace codegen {
                 _blockStack = std::deque<SerializableValue>();
             }
 
-            if (!_loopBlockStack.empty()) {
-                _loopBlockStack = std::deque<llvm::BasicBlock*>();
-            }
-
-//            assert(_namedValues.size() == 0); // if this assert fails, additional cleaning is necessart
-//            _namedValues = std::map<std::string, SerializableValue>();
-            //_block = nullptr;
             _funcNames = std::stack<std::string>();
             _numLambdaFunctionsEncountered = 0;
+            _iteratorContextProxy = std::make_shared<IteratorContextProxy>(_env);
         }
 
         /*!
@@ -529,6 +532,22 @@ namespace codegen {
         // deal with the case when for loop expression is a tuple
         void visitUnrolledLoopSuite(NSuite*);
 
+        /*!
+         * helper function for visit(NFor *forStmt)
+         * assign value at curr of exprAlloc to all loop variables in loopVal, then emit loop body
+         * @param forStmt
+         * @param targetType
+         * @param exprType expression type
+         * @param loopVal a vector of loop variables
+         * @param exprAlloc SerializableValue of expression
+         * @param curr current index of expression, except in range this represents the actual value
+         */
+        void assignForLoopVariablesAndGenerateLoopBody(NFor *forStmt, const python::Type &targetType,
+                                                       const python::Type &exprType,
+                                                       const std::vector<std::pair<NIdentifier *, python::Type>> &loopVal,
+                                                       const SerializableValue &exprAlloc,
+                                                       llvm::Value *curr);
+
         inline bool earlyExit() const {
             // expression early exit check
             if(_lfb && _lfb->hasExited())
@@ -548,14 +567,14 @@ namespace codegen {
 
         BlockGeneratorVisitor(LLVMEnvironment *env,
                               const std::map<std::string, python::Type> &nameTypes,
-                              bool allowUndefinedBehaviour, bool sharedObjectPropagation) : IFailable(true), _nameTypes(nameTypes),
-                                                              _allowUndefinedBehaviour(allowUndefinedBehaviour),
-                                                              _sharedObjectPropagation(sharedObjectPropagation),
-                                                              _functionRegistry(new FunctionRegistry(*env, sharedObjectPropagation)),
+                              const codegen::CompilePolicy& policy) : IFailable(true), _nameTypes(nameTypes),
+                                                              _policy(policy),
+                                                              _functionRegistry(new FunctionRegistry(*env, _policy.sharedObjectPropagation)),
                                                               _logger(Logger::instance().logger("codegen")) {
             assert(env);
             _env = env;
             _lfb = nullptr;
+
             init();
         }
 
@@ -634,6 +653,22 @@ namespace codegen {
                                         const std::unordered_map<std::string, VariableRealization> &else_var_realizations);
 
         llvm::Value *generateConstantIntegerPower(llvm::IRBuilder<>& builder, llvm::Value *base, int64_t exponent);
+
+        /*!
+         * should get called when targetType is iteratorType
+         * use targetType and iteratorInfo annotation to get concrete LLVM type for iterator variable
+         * allocate iterator struct and update slot ptr if the current slot ptr type is different from the concrete LLVM type
+         * @param builder
+         * @param slot
+         * @param val
+         * @param targetType
+         * @param iteratorInfo
+         */
+        void updateIteratorVariableSlot(llvm::IRBuilder<> &builder,
+                                        VariableSlot *slot,
+                                        const SerializableValue &val,
+                                        const python::Type &targetType,
+                                        const std::shared_ptr<IteratorInfo> &iteratorInfo);
     };
 }
 }

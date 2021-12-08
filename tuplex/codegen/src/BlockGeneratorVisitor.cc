@@ -351,7 +351,7 @@ namespace tuplex {
             auto uR = upCast(builder, R, type);
 
             // exception handling if switched on
-            if (!_allowUndefinedBehaviour) {
+            if (!_policy.allowUndefinedBehavior) {
                 // check if right side is zero
                 auto iszero = type->isDoubleTy() ? builder.CreateFCmp(llvm::CmpInst::Predicate::FCMP_OEQ, uR,
                                                                       _env->f64Const(0.0)) :
@@ -523,7 +523,7 @@ namespace tuplex {
             auto uR = upCast(builder, R, type);
 
             // exception handling if switched on
-            if (!_allowUndefinedBehaviour) {
+            if (!_policy.allowUndefinedBehavior) {
                 // check if right side is zero
                 auto iszero = builder.CreateFCmp(llvm::CmpInst::Predicate::FCMP_OEQ, uR, _env->f64Const(0.0));
                 _lfb->addException(builder, ExceptionCode::ZERODIVISIONERROR, iszero);
@@ -568,7 +568,7 @@ namespace tuplex {
             auto uR = upCast(builder, R, type);
 
             // exception code (also throw div by zero exception here)
-            if (!_allowUndefinedBehaviour) {
+            if (!_policy.allowUndefinedBehavior) {
                 // check if right side is zero
                 auto iszero = type->isDoubleTy() ? builder.CreateFCmp(llvm::CmpInst::Predicate::FCMP_OEQ, uR,
                                                                       _env->f64Const(0.0)) :
@@ -634,7 +634,7 @@ namespace tuplex {
             auto uL = upCast(builder, L, _env->i64Type());
             auto uR = upCast(builder, R, _env->i64Type());
 
-            if (!_allowUndefinedBehaviour) {
+            if (!_policy.allowUndefinedBehavior) {
                 // check if shift count is negative; return ValueError
                 auto negcount = builder.CreateICmp(llvm::CmpInst::Predicate::ICMP_SLT, uR, _env->i64Const(0));
                 _lfb->addException(builder, ExceptionCode::VALUEERROR, negcount);
@@ -665,7 +665,7 @@ namespace tuplex {
             auto uL = upCast(builder, L, _env->i64Type());
             auto uR = upCast(builder, R, _env->i64Type());
 
-            if (!_allowUndefinedBehaviour) {
+            if (!_policy.allowUndefinedBehavior) {
                 // check if shift count is negative; return ValueError
                 auto negcount = builder.CreateICmp(llvm::CmpInst::Predicate::ICMP_SLT, uR, _env->i64Const(0));
                 _lfb->addException(builder, ExceptionCode::VALUEERROR, negcount);
@@ -959,6 +959,50 @@ namespace tuplex {
 
             assert(L);
             assert(R);
+
+            if(tt == TokenType::IS || tt == TokenType::ISNOT) {
+
+                // special case: left/right is not boolean
+                // --> Python allows that, it's bad coding style though.
+                // compile and hint.
+                if(leftType != python::Type::BOOLEAN || rightType != python::Type::BOOLEAN) {
+                    _logger.warn("SyntaxWarning: UDF contains is comparison between " + leftType.desc() + " and "
+                    + rightType.desc() + ". Better avoid, is should be only used to test against booleans or None.");
+
+                    // though upcast may be defined, for is this will be ignored.
+
+                    // only for integers there's actual code. Else, assume always false due to memory
+                    // address issue
+                    if(leftType == rightType && leftType == python::Type::I64) {
+                        _logger.warn("SyntaxWarning: Emitting code for integer is comparison, i.e. for integers in range [-5, 256] is behaves like ==");
+
+                        // result is: L == R && -5 <= L <= 256
+                        assert(L && R);
+                        auto equal = builder.CreateICmpEQ(L, R);
+                        auto upperBound = builder.CreateICmpSLE(L, _env->i64Const(256));
+                        auto lowerBound = builder.CreateICmpSGE(L, _env->i64Const(-5));
+                        // could short-circuit here, but & does fine as well...
+                        auto resValue = builder.CreateAnd(equal, builder.CreateAnd(upperBound, lowerBound));
+                        return _env->upcastToBoolean(builder, resValue);
+                    } else {
+                        return _env->boolConst(false);
+                    }
+                }
+
+                // rest of the code is for the boolean case
+                assert(leftType == python::Type::BOOLEAN || rightType == python::Type::BOOLEAN);
+
+                // one of the types must be boolean, otherwise compareInst with _isnull would've taken care.
+                if((leftType == python::Type::BOOLEAN) != (rightType == python::Type::BOOLEAN)) {
+                    // one of the types is boolean, other isn't. comparison results in false.
+                    return _env->boolConst(tt == TokenType::ISNOT);
+                }
+                
+                // both must be boolean.
+                auto cmpPredicate = (tt == TokenType::ISNOT) ? llvm::CmpInst::Predicate::ICMP_NE : llvm::CmpInst::Predicate::ICMP_EQ;
+                return _env->upcastToBoolean(builder, builder.CreateICmp(cmpPredicate, L, R));              
+            }
+
             // comparison of values without null
             auto superType = python::Type::superType(leftType.withoutOptions(), rightType.withoutOptions());
             if (superType == python::Type::UNKNOWN) {
@@ -981,10 +1025,11 @@ namespace tuplex {
 
 
         llvm::Value* BlockGeneratorVisitor::oneSidedNullComparison(llvm::IRBuilder<>& builder, const python::Type& type, const TokenType& tt, llvm::Value* isnull) {
-            assert(tt == TokenType::EQEQUAL || tt == TokenType::NOTEQUAL); // only for == or !=!
+            assert(tt == TokenType::EQEQUAL || tt == TokenType::NOTEQUAL || tt == TokenType::IS || tt == TokenType::ISNOT); // only for == or != or IS or ISNOT!
 
+            // we're comparing null to null, should only return true if operators are EQEQUAL or IS. 
             if(type == python::Type::NULLVALUE)
-                return _env->boolConst(tt == TokenType::EQEQUAL); // if == then true, if != then false
+                return _env->boolConst(tt == TokenType::EQEQUAL || tt == TokenType::IS); // if == then true, if != then false
 
             // option type? check isnull
             // else, super simple. Decide on tokentype
@@ -996,7 +1041,11 @@ namespace tuplex {
                 // the other side is null
                 // if isnull is true && equal => true
                 // if isnull is false && notequal => false (case 12 != None)
-                if(tt == TokenType::NOTEQUAL)
+                
+                // for IS NOT, if isnull is true, we want to return false.
+                // if isnull is false, we want to return true.
+                // therefore we negate. (similar to logic for NOTEQUAL).  
+                if(tt == TokenType::NOTEQUAL || tt == TokenType::ISNOT)
                     return _env->upcastToBoolean(builder, _env->i1neg(builder, isnull));
                 else
                     return _env->upcastToBoolean(builder, isnull);
@@ -1004,7 +1053,10 @@ namespace tuplex {
                 // the other side is null
                 // => 12 != null => true
                 // => 12 == null => false
-                return _env->boolConst(tt == TokenType::NOTEQUAL);
+                
+                // we are now comparing a non-null type to null.
+                // so we return true only if token is IS NOT or NOTEQUAL.
+                return _env->boolConst(tt == TokenType::NOTEQUAL || tt == TokenType::ISNOT);
             }
         }
 
@@ -1014,7 +1066,8 @@ namespace tuplex {
                                            const python::Type &rightType) {
 
             // None comparisons only work for == or !=, i.e. for all other ops throw exception
-            if (tt == TokenType::EQEQUAL || tt == TokenType::NOTEQUAL) {
+            if (tt == TokenType::EQEQUAL || tt == TokenType::NOTEQUAL || tt == TokenType::IS || tt == TokenType::ISNOT) {
+
                 // special case: one side is None
                 if(leftType == python::Type::NULLVALUE || rightType == python::Type::NULLVALUE) {
 
@@ -1043,7 +1096,7 @@ namespace tuplex {
                         assert(L);
                         assert(R);
 
-                        auto resVal = _env->CreateTernaryLogic(builder, L_isnull, [&] (llvm::IRBuilder<>& builder) { return _env->boolConst(tt == TokenType::NOTEQUAL); },
+                        auto resVal = _env->CreateTernaryLogic(builder, L_isnull, [&] (llvm::IRBuilder<>& builder) { return _env->boolConst(tt == TokenType::NOTEQUAL || tt == TokenType::ISNOT); },
                                                                [&] (llvm::IRBuilder<>& builder) { return compareInst(builder, L, leftType.withoutOptions(), tt, R, rightType); });
                         _lfb->setLastBlock(builder.GetInsertBlock());
                         return resVal;
@@ -1059,7 +1112,7 @@ namespace tuplex {
                         assert(L);
                         assert(R);
 
-                        auto resVal = _env->CreateTernaryLogic(builder, R_isnull, [&] (llvm::IRBuilder<>& builder) { return _env->boolConst(tt == TokenType::NOTEQUAL); },
+                        auto resVal = _env->CreateTernaryLogic(builder, R_isnull, [&] (llvm::IRBuilder<>& builder) { return _env->boolConst(tt == TokenType::NOTEQUAL || tt == TokenType::ISNOT); },
                                                                [&] (llvm::IRBuilder<>& builder) { return compareInst(builder, L, leftType, tt, R, rightType.withoutOptions()); });
                         _lfb->setLastBlock(builder.GetInsertBlock());
                         return resVal;
@@ -1076,7 +1129,7 @@ namespace tuplex {
                         // compareInst if both are NOT none
                         auto bothValid = builder.CreateAnd(L_isnull, R_isnull);
                         auto xorResult = builder.CreateXor(L_isnull, R_isnull);
-                        if (TokenType::EQEQUAL == tt)
+                        if (tt == TokenType::EQEQUAL || tt == TokenType::IS)
                             xorResult = builder.CreateNot(xorResult);
 
                         auto resVal = _env->CreateTernaryLogic(builder, bothValid, [&] (llvm::IRBuilder<>& builder) { return compareInst(builder, L, leftType.withoutOptions(), tt, R,
@@ -1730,6 +1783,11 @@ namespace tuplex {
             auto val = _blockStack.back();
             _blockStack.pop_back();
 
+            if(!_loopBodyIdentifiersStack.empty()) {
+                // assign statement in the first iteration unrolled loop body; record the identifier and update it's type later if needed
+                _loopBodyIdentifiersStack.back().insert(target);
+            }
+
             // check var stack on whether there's a slot
             auto slot = getSlot(target->_name);
             // exists? => reassign!
@@ -1742,6 +1800,11 @@ namespace tuplex {
                 // if not, simply alloc a new variable which takes the place.
 
                 auto targetType = target->getInferredType();
+
+                if(targetType.isIteratorType()) {
+                    updateIteratorVariableSlot(builder, slot, val, targetType, target->annotation().iteratorInfo);
+                    return;
+                }
 
                 if(targetType != slot->type || !slot->var.ptr) {
                     // LLVM endlifetime for this variable here, this hint helps the optimizer.
@@ -2699,6 +2762,11 @@ namespace tuplex {
 
             auto builder = _lfb->getLLVMBuilder();
 
+            if(!_loopBodyIdentifiersStack.empty()) {
+                // identifier used in the first iteration unrolled loop body; record the identifier and update it's type later if needed
+                _loopBodyIdentifiersStack.back().insert(id);
+            }
+
             // first check if a variable with this type exists
             // and is defined!
             auto slot = getSlot(id->_name);
@@ -3015,11 +3083,27 @@ namespace tuplex {
                     if (elementType == python::Type::BOOLEAN)
                         element_byte_size = 1; // single character elements
                     // allocate the array
-                    auto list_arr_malloc = builder.CreatePointerCast(_env->malloc(builder, _env->i64Const(element_byte_size * list->_elements.size())), llvmType->getStructElementType(2));
+                    llvm::Value *malloc_size = nullptr;
+                    if(elementType.isTupleType() && elementType.isFixedSizeType()) {
+                        // if tuple is fixed size, store the actual tuple struct
+                        // if tuple has varlen field, store a pointer to the tuple
+                        auto ft = FlattenedTuple::fromLLVMStructVal(_env, builder, vals[0].val, elementType);
+                        malloc_size = builder.CreateMul(ft.getSize(builder), _env->i64Const(list->_elements.size()));
+                    } else {
+                        malloc_size = _env->i64Const(element_byte_size * list->_elements.size());
+                    }
+                    auto list_arr_malloc = builder.CreatePointerCast(_env->malloc(builder, malloc_size), llvmType->getStructElementType(2));
                     // store the values
                     for(size_t i = 0; i < vals.size(); i++) {
                         auto list_el = builder.CreateGEP(list_arr_malloc, _env->i32Const(i));
-                        builder.CreateStore(vals[i].val, list_el);
+                        if(elementType.isTupleType() && !elementType.isFixedSizeType()) {
+                            // list_el has type struct.tuple**
+                            auto el_tuple = _env->CreateFirstBlockAlloca(builder, _env->pythonToLLVMType(elementType), "tuple_alloc");
+                            builder.CreateStore(vals[i].val, el_tuple);
+                            builder.CreateStore(el_tuple, list_el);
+                        } else {
+                            builder.CreateStore(vals[i].val, list_el);
+                        }
                     }
                     // store the new array back into the array pointer
                     auto list_arr = _env->CreateStructGEP(builder, listAlloc, 2);
@@ -3044,6 +3128,11 @@ namespace tuplex {
                         builder.CreateStore(list_sizearr_malloc, list_sizearr);
                     }
                 }
+
+                // TODO:
+                // --> change to passing around the pointer to the list, not the semi-loaded struct
+                // ---> THIS WILL HAVE IMPLICATIONS WHEREVER LISTS ARE USED.
+                // also listSize here is wrong. The listSize should be stored as part of the pointer. You can either pass 8 as listsize or null.
 
                 addInstruction(builder.CreateLoad(listAlloc), listSize);
             }
@@ -4210,7 +4299,12 @@ namespace tuplex {
                         funcName = ann.symbol->fullyQualifiedName(); // need this to lookup module entries!
 
                     // this creates a general call. Might create an exception block within the current function!
-                    ret = _functionRegistry->createGlobalSymbolCall(*_lfb, builder, funcName, argsType, retType, args);
+                    // handle iterator-related calls separately since an additional argument iteratorInfo is needed
+                    if(call->hasAnnotation() && call->annotation().iteratorInfo) {
+                        ret = _functionRegistry->createIteratorRelatedSymbolCall(*_lfb, builder, funcName, argsType, retType, args, call->annotation().iteratorInfo);
+                    } else {
+                        ret = _functionRegistry->createGlobalSymbolCall(*_lfb, builder, funcName, argsType, retType, args);
+                    }
 
                     // e.g., len(...) won't cause an exception, hence it is very fast...
                     // however, calling int(...), float(...) causes an exception potentially (i.e. parse error)
@@ -4397,7 +4491,7 @@ namespace tuplex {
             auto looppos = builder.CreateAlloca(builder.getInt64Ty(), 0, nullptr);
             auto newstrpos = builder.CreateAlloca(builder.getInt64Ty(), 0, nullptr);
 
-            if (!_allowUndefinedBehaviour) { // zero stride isn't allowed
+            if (!_policy.allowUndefinedBehavior) { // zero stride isn't allowed
                 auto strideIsZero = builder.CreateICmp(llvm::CmpInst::Predicate::ICMP_EQ, stride, _env->i64Const(0));
                 _lfb->addException(builder, ExceptionCode::VALUEERROR, strideIsZero);
             }
@@ -4591,7 +4685,7 @@ namespace tuplex {
                     stride_node->type() == ASTNodeType::Boolean)) {
                 int startpos = 0, endpos = 0, strideval = 0, size = 0;
 
-                if (!_allowUndefinedBehaviour) {
+                if (!_policy.allowUndefinedBehavior) {
                     auto strideIsZero = builder.CreateICmp(llvm::CmpInst::Predicate::ICMP_EQ, stride,
                                                            _env->i64Const(0));
                     _lfb->addException(builder, ExceptionCode::VALUEERROR, strideIsZero);
@@ -5105,15 +5199,14 @@ namespace tuplex {
             auto exprType = forStmt->expression->getInferredType();
             auto targetType = forStmt->target->getInferredType();
             auto targetASTType = forStmt->target->type();
-            std::vector<NIdentifier*> loopVal;
+            std::vector<std::pair<NIdentifier*, python::Type>> loopVal;
             if(targetASTType == ASTNodeType::Identifier) {
                 auto id = static_cast<NIdentifier*>(forStmt->target);
-                loopVal.push_back(id);
+                loopVal.emplace_back(id, id->getInferredType());
             } else if(targetASTType == ASTNodeType::Tuple || targetASTType == ASTNodeType::List) {
                 auto idTuple = getForLoopMultiTarget(forStmt->target);
-                assert(exprType.elementType().parameters().size() == idTuple.size());
                 loopVal.resize(idTuple.size());
-                std::transform(idTuple.begin(), idTuple.end(), loopVal.begin(), [](ASTNode* x){return static_cast<NIdentifier*>(x);});
+                std::transform(idTuple.begin(), idTuple.end(), loopVal.begin(), [](ASTNode* x){return std::make_pair(static_cast<NIdentifier*>(x), x->getInferredType());});
             } else {
                 fatal_error("Unsupported target type");
             }
@@ -5129,26 +5222,24 @@ namespace tuplex {
             // get parent function
             llvm::Function *parentFunc = _lfb->getLastBlock()->getParent();
 
-            // get entry block
-            auto *entryBB = _lfb->getLastBlock();
-            builder.SetInsertPoint(entryBB);
+            // entry block
+            builder.SetInsertPoint(_lfb->getLastBlock());
 
             // create loop blocks
             auto *condBB = llvm::BasicBlock::Create(_env->getContext(), "condBB", parentFunc);
-            auto *loopBB = llvm::BasicBlock::Create(_env->getContext(), "loopBB", parentFunc);
-            auto *iterEndBB = llvm::BasicBlock::Create(_env->getContext(), "iterEndBB", parentFunc);
-            auto *elseBB = llvm::BasicBlock::Create(_env->getContext(), "elseBB", parentFunc);
+            llvm::BasicBlock *loopBB=nullptr, *elseBB = nullptr;
             auto *afterLoop = llvm::BasicBlock::Create(_env->getContext(), "afterLoop", parentFunc);
-            // 'continue' will create an unconditional branch to 'iterEndBB'
+            // 'continue' will create an unconditional branch to 'condBB'
             // 'break' will create an unconditional branch to 'afterLoop'
             _loopBlockStack.push_back(afterLoop);
-            _loopBlockStack.push_back(iterEndBB);
+            _loopBlockStack.push_back(condBB);
 
-            // retrieve expression (list, string or range)
+            // retrieve expression (list, string, range, or iterator)
             auto exprAlloc = _blockStack.back();
             _blockStack.pop_back();
 
-            llvm::Value *start=nullptr, *step=nullptr, *end=nullptr;
+            llvm::Value *start=nullptr, *step=nullptr, *end=nullptr, *currPtr=nullptr, *curr=nullptr;
+            std::shared_ptr<IteratorInfo> iteratorInfo = nullptr;
             if(exprType.isListType()) {
                 start = _env->i64Const(0);
                 step = _env->i64Const(1);
@@ -5165,49 +5256,189 @@ namespace tuplex {
                 start = builder.CreateLoad(_env->CreateStructGEP(builder, exprAlloc.val, 0));
                 end = builder.CreateLoad(_env->CreateStructGEP(builder, exprAlloc.val, 1));
                 step = builder.CreateLoad(_env->CreateStructGEP(builder, exprAlloc.val, 2));
+            } else if(exprType.isIteratorType()) {
+                assert(forStmt->expression->hasAnnotation() && forStmt->expression->annotation().iteratorInfo);
+                iteratorInfo = forStmt->expression->annotation().iteratorInfo;
             } else {
                 fatal_error("unsupported expression type '" + exprType.desc() + "' in for loop encountered");
             }
-            builder.CreateBr(condBB);
 
-            // loop ending condition test
-            builder.SetInsertPoint(condBB);
-            llvm::PHINode *curr = builder.CreatePHI(_env->i64Type(), 2);
-            curr->addIncoming(start, entryBB);
-            curr->addIncoming(builder.CreateAdd(curr, step), iterEndBB);
-            llvm::Value *loopCond = nullptr;
-            if(exprType == python::Type::RANGE) {
-                // step can be negative in range
-                loopCond = builder.CreateICmpSLT(builder.CreateMul(curr, step), builder.CreateMul(end, step));
-            } else {
-                loopCond = builder.CreateICmpSLT(curr, end);
+            bool typeChange = forStmt->hasAnnotation() && forStmt->annotation().numTimesVisited > 0;
+            bool skipLoopBody = typeChange && double(forStmt->annotation().zeroIterationCount) / double(forStmt->annotation().numTimesVisited) > _policy.normalCaseThreshold;
+            bool unrollFirstIteration = !skipLoopBody && forStmt->annotation().typeChangedAndStableCount > forStmt->annotation().typeStableCount;
+            if(typeChange && !skipLoopBody) {
+                // loop body should have at least 1 iteration, otherwise normal case violation
+                llvm::Value *loopCond = nullptr;
+                if(exprType.isIteratorType()) {
+                    // if expression (testlist) is an iterator. Check if iterator exhausted
+                    if(exprType == python::Type::EMPTYITERATOR) {
+                        // empty iterator is always exhausted
+                        loopCond = _env->i1Const(false);
+                    } else {
+                        // increment iterator index by 1 and check if it is exhausted
+                        auto iteratorExhausted = _iteratorContextProxy->updateIteratorIndex(builder, exprAlloc.val, iteratorInfo);
+                        // decrement iterator index by 1
+                        _iteratorContextProxy->incrementIteratorIndex(builder, exprAlloc.val, iteratorInfo, -1);
+                        // loopCond = !iteratorExhausted i.e. if iterator exhausted, ends the loop
+                        loopCond = builder.CreateICmpEQ(iteratorExhausted, _env->i1Const(false));
+                    }
+                } else {
+                    // expression is list, string or range. Check if start exceeds end.
+                    if(exprType == python::Type::RANGE) {
+                        // step can be negative in range. Check if curr * stepSign < end * stepSign
+                        // positive step -> stepSign = 1, negative step -> stepSign = -1
+                        // stepSign = (step >> 63) | 1 , use arithmetic shift
+                        auto stepSign = builder.CreateOr(builder.CreateAShr(step, _env->i64Const(63)), _env->i64Const(1));
+                        loopCond = builder.CreateICmpSLT(builder.CreateMul(start, stepSign), builder.CreateMul(end, stepSign));
+                    } else {
+                        loopCond = builder.CreateICmpSLT(start, end);
+                    }
+                }
+                auto loopEnd = builder.CreateICmpEQ(loopCond, _env->i1Const(false));
+                _lfb->addException(builder, ExceptionCode::NORMALCASEVIOLATION, loopEnd);
             }
-            builder.CreateCondBr(loopCond, loopBB, elseBB);
 
-            // handle loop body
-            builder.SetInsertPoint(loopBB);
-            _lfb->setLastBlock(loopBB);
+            if(!exprType.isIteratorType()) {
+                currPtr = _env->CreateFirstBlockAlloca(builder, _env->i64Type(), "curr");
+            }
 
+            if(unrollFirstIteration) {
+                // run first iteration separately
+                // first iteration is guaranteed to exist, or an exception would have been raised earlier
+                _logger.debug("first iteration of for loop unrolled to allow type-stability during loop");
+                if(exprType.isIteratorType()) {
+                    // increment iterator index by 1
+                    _iteratorContextProxy->incrementIteratorIndex(builder, exprAlloc.val, iteratorInfo, 1);
+                } else {
+                    builder.CreateStore(builder.CreateAdd(start, step), currPtr);
+                }
+                _lfb->setLastBlock(builder.GetInsertBlock());
+                // emit loop body
+                _loopBodyIdentifiersStack.emplace_back(std::set<NIdentifier *>());
+                assignForLoopVariablesAndGenerateLoopBody(forStmt, targetType, exprType, loopVal, exprAlloc, start);
+                // update variables in loop body to stabilized types
+                // so that in the rest of iterations types are stable
+                auto currIdentifiers = _loopBodyIdentifiersStack.back();
+                auto currNameTable = forStmt->annotation().stabilizedTypes;
+                for (const auto &id : currIdentifiers) {
+                    auto it = currNameTable.find(id->_name);
+                    if(it != currNameTable.end() && id->getInferredType() != it->second) {
+                        id->setInferredType(it->second);
+                    }
+                }
+                _loopBodyIdentifiersStack.pop_back();
+                if(blockOpen(_lfb->getLastBlock())) {
+                    builder.SetInsertPoint(_lfb->getLastBlock());
+                    builder.CreateBr(condBB);
+                }
+            } else {
+                if(!exprType.isIteratorType()) {
+                    builder.CreateStore(start, currPtr);
+                }
+                builder.CreateBr(condBB);
+            }
+
+            // loop ending condition test. If loop ends, jump to elseBB (if exists) or afterLoop, otherwise jump to loopBB (the main loop body).
+            // loopCond indicates whether loop should continue. i.e. loopCond == false will end the loop.
+            llvm::Value *loopCond = nullptr;
+            builder.SetInsertPoint(condBB);
+            if(exprType.isIteratorType()) {
+                // if expression (testlist) is an iterator. Check if iterator exhausted
+                if(exprType == python::Type::EMPTYITERATOR) {
+                    // empty iterator is always exhausted
+                    loopCond = _env->i1Const(false);
+                } else {
+                    // increment iterator index by 1 and check if it is exhausted
+                    auto iteratorExhausted = _iteratorContextProxy->updateIteratorIndex(builder, exprAlloc.val, iteratorInfo);
+                    // loopCond = !iteratorExhausted i.e. if iterator exhausted, ends the loop
+                    loopCond = builder.CreateICmpEQ(iteratorExhausted, _env->i1Const(false));
+                }
+            } else {
+                // expression is list, string or range. Check if curr exceeds end.
+                curr = builder.CreateLoad(currPtr);
+                if(exprType == python::Type::RANGE) {
+                    // step can be negative in range. Check if curr * stepSign < end * stepSign
+                    // positive step -> stepSign = 1, negative step -> stepSign = -1
+                    // stepSign = (step >> 63) | 1 , use arithmetic shift
+                    auto stepSign = builder.CreateOr(builder.CreateAShr(step, _env->i64Const(63)), _env->i64Const(1));
+                    loopCond = builder.CreateICmpSLT(builder.CreateMul(curr, stepSign), builder.CreateMul(end, stepSign));
+                } else {
+                    loopCond = builder.CreateICmpSLT(curr, end);
+                }
+                builder.CreateStore(builder.CreateAdd(curr, step), currPtr);
+            }
+
+            if(!skipLoopBody) {
+                loopBB = llvm::BasicBlock::Create(_env->getContext(), "loopBB", parentFunc);
+                if(forStmt->suite_else) {
+                    elseBB = llvm::BasicBlock::Create(_env->getContext(), "elseBB", parentFunc);
+                    builder.CreateCondBr(loopCond, loopBB, elseBB);
+                } else {
+                    builder.CreateCondBr(loopCond, loopBB, afterLoop);
+                }
+
+                // handle loop body
+                builder.SetInsertPoint(loopBB);
+                _lfb->setLastBlock(loopBB);
+                assignForLoopVariablesAndGenerateLoopBody(forStmt, targetType, exprType, loopVal, exprAlloc, curr);
+                if(blockOpen(_lfb->getLastBlock())) {
+                    builder.SetInsertPoint(_lfb->getLastBlock());
+                    builder.CreateBr(condBB);
+                }
+            } else {
+                // should skip loop body, thus add exception for entering loop body
+                _logger.debug("loop body optimized away, as attained in tracing for loop expression evaluates to an empty iterable in majority cases");
+                _lfb->addException(builder, ExceptionCode::NORMALCASEVIOLATION, loopCond);
+                if(forStmt->suite_else) {
+                    elseBB = llvm::BasicBlock::Create(_env->getContext(), "elseBB", parentFunc);
+                    builder.CreateBr(elseBB);
+                } else{
+                    builder.CreateBr(afterLoop);
+                }
+            }
+            _loopBlockStack.pop_back();
+            _loopBlockStack.pop_back();
+
+            // handle else
+            if(forStmt->suite_else) {
+                builder.SetInsertPoint(elseBB);
+                _lfb->setLastBlock(elseBB);
+                forStmt->suite_else->accept(*this);
+            }
+
+            if(blockOpen(_lfb->getLastBlock())) {
+                builder.SetInsertPoint(_lfb->getLastBlock());
+                builder.CreateBr(afterLoop);
+            }
+
+            builder.SetInsertPoint(afterLoop);
+            _lfb->setLastBlock(afterLoop);
+        }
+
+        void
+        BlockGeneratorVisitor::assignForLoopVariablesAndGenerateLoopBody(NFor *forStmt, const python::Type &targetType,
+                                                                         const python::Type &exprType,
+                                                                         const std::vector<std::pair<NIdentifier *, python::Type>> &loopVal,
+                                                                         const SerializableValue &exprAlloc,
+                                                                         llvm::Value *curr) {
+            auto builder = _lfb->getLLVMBuilder();
             if(exprType.isListType()) {
                 if(exprType != python::Type::EMPTYLIST) {
+                    auto currVal = builder.CreateLoad(builder.CreateGEP(builder.CreateExtractValue(exprAlloc.val, {2}), curr));
                     if(targetType == python::Type::I64 || targetType == python::Type::F64) {
                         // loop variable is of type i64 or f64 (has size 8)
-                        auto currVal = builder.CreateLoad(builder.CreateGEP(builder.CreateExtractValue(exprAlloc.val, {2}), curr));
                         addInstruction(currVal, _env->i64Const(8));
                     } else if(targetType == python::Type::STRING || targetType.isDictionaryType()) {
                         // loop variable is of type string or dictionary (need to extract size)
-                        auto currVal = builder.CreateLoad(builder.CreateGEP(builder.CreateExtractValue(exprAlloc.val, {2}), curr));
                         auto currSize = builder.CreateLoad(builder.CreateGEP(builder.CreateExtractValue(exprAlloc.val, {3}), curr));
                         addInstruction(currVal, currSize);
                     } else if(targetType == python::Type::BOOLEAN) {
                         // loop variable is of type bool (has size 1)
-                        auto currVal = builder.CreateLoad(builder.CreateGEP(builder.CreateExtractValue(exprAlloc.val, {2}), curr));
                         addInstruction(currVal, _env->i64Const(1));
                     } else if(targetType.isTupleType()) {
                         // target is of tuple type
                         // either target is a single identifier and needs to be assigned the entire tuple
                         // or target has multiple identifiers and each corresponds to a value in the tuple
-                        auto currVal = builder.CreateLoad(builder.CreateGEP(builder.CreateExtractValue(exprAlloc.val, {2}), curr)); // get pointer to the tuple
                         FlattenedTuple ft = FlattenedTuple::fromLLVMStructVal(_env, builder, currVal, targetType);
                         // add value to stack for all identifiers in target
                         if(loopVal.size() == 1) {
@@ -5226,49 +5457,70 @@ namespace tuplex {
                 }
             } else if(exprType == python::Type::STRING) {
                 // target is a single character
-                auto currVal = builder.CreateGEP(exprAlloc.val, curr);
-                addInstruction(currVal, _env->i64Const(2));
+                // allocate new string (1-byte character with a 1-byte null terminator)
+                auto currCharPtr = builder.CreateGEP(exprAlloc.val, curr);
+                auto currSize = _env->i64Const(2);
+                auto currVal = builder.CreatePointerCast(_env->malloc(builder, currSize), _env->i8ptrType());
+                builder.CreateStore(builder.CreateLoad(currCharPtr), currVal);
+                auto nullCharPtr = builder.CreateGEP(_env->i8Type(), currVal, _env->i32Const(1));
+                builder.CreateStore(_env->i8Const(0), nullCharPtr);
+                addInstruction(currVal, currSize);
             } else if(exprType == python::Type::RANGE) {
                 addInstruction(curr, _env->i64Const(8));
+            } else if(exprType.isIteratorType()) {
+                if(exprType != python::Type::EMPTYITERATOR) {
+                    auto currVal = _iteratorContextProxy->getIteratorNextElement(builder, exprType.yieldType(), exprAlloc.val, forStmt->expression->annotation().iteratorInfo);
+                    if(exprType.yieldType().isListType()) {
+                        if(loopVal.size() == 1) {
+                            addInstruction(currVal.val, currVal.size);
+                        } else {
+                            // multiple identifiers, add each value in list to stack in reverse order
+                            for (int i = loopVal.size() - 1; i >= 0 ; --i) {
+                                auto idVal = builder.CreateLoad(builder.CreateGEP(builder.CreateExtractValue(currVal.val, {2}), _env->i32Const(i)));
+                                auto idType = loopVal[i].second;
+                                if(idType == python::Type::I64 || targetType == python::Type::F64) {
+                                    addInstruction(idVal, _env->i64Const(8));
+                                } else if(idType == python::Type::BOOLEAN) {
+                                    addInstruction(idVal, _env->i64Const(1));
+                                } else if(idType == python::Type::STRING || idType.isDictionaryType()) {
+                                    auto idValSize = builder.CreateLoad(builder.CreateGEP(builder.CreateExtractValue(currVal.val, {3}), _env->i32Const(i)));
+                                    addInstruction(idVal, idValSize);
+                                } else if(idType.isTupleType()) {
+                                    FlattenedTuple ft = FlattenedTuple::fromLLVMStructVal(_env, builder, idVal, idType);
+                                    addInstruction(idVal, ft.getSize(builder));
+                                } else {
+                                    fatal_error("unsupported target type '" + idType.desc() + "' in for loop encountered");
+                                }
+                            }
+                        }
+                    } else if(exprType.yieldType().isTupleType()) {
+                        FlattenedTuple ft = FlattenedTuple::fromLLVMStructVal(_env, builder, currVal.val, targetType);
+                        // add value to stack for all identifiers in target
+                        if(loopVal.size() == 1) {
+                            addInstruction(currVal.val, currVal.size);
+                        } else {
+                            // multiple identifiers, add each value in tuple to stack in reverse order
+                            for (int i = loopVal.size() - 1; i >= 0 ; --i) {
+                                auto idVal = ft.getLoad(builder, {i}); // get the value for the ith identifier from tuple
+                                addInstruction(idVal.val, idVal.size);
+                            }
+                        }
+                    } else {
+                        addInstruction(currVal.val, currVal.size);
+                    }
+                }
             } else {
                 fatal_error("unsupported expression type '" + exprType.desc() + "' in for loop encountered");
             }
 
-            if(exprType != python::Type::EMPTYLIST) {
+            if(exprType != python::Type::EMPTYLIST && exprType != python::Type::EMPTYITERATOR) {
                 // assign value for each identifier in target
                 for (const auto & id : loopVal) {
-                    assignToSingleVariable(id, id->getInferredType());
+                    assignToSingleVariable(id.first, id.second);
                 }
                 // codegen for body
                 forStmt->suite_body->accept(*this);
             }
-
-            if(blockOpen(_lfb->getLastBlock())) {
-                builder.SetInsertPoint(_lfb->getLastBlock());
-                builder.CreateBr(iterEndBB);
-            }
-
-            builder.SetInsertPoint(iterEndBB);
-            builder.CreateBr(condBB);
-
-            _loopBlockStack.pop_back();
-            _loopBlockStack.pop_back();
-
-            // handle else
-            builder.SetInsertPoint(elseBB);
-            _lfb->setLastBlock(elseBB);
-
-            if(forStmt->suite_else) {
-                forStmt->suite_else->accept(*this);
-            }
-
-            if(blockOpen(_lfb->getLastBlock())) {
-                builder.SetInsertPoint(_lfb->getLastBlock());
-                builder.CreateBr(afterLoop);
-            }
-
-            builder.SetInsertPoint(afterLoop);
-            _lfb->setLastBlock(afterLoop);
         }
 
         void BlockGeneratorVisitor::visit(NWhile *whileStmt) {
@@ -5282,15 +5534,68 @@ namespace tuplex {
             // get parent function
             llvm::Function *parentFunc = _lfb->getLastBlock()->getParent();
 
+            // entry block
+            builder.SetInsertPoint(_lfb->getLastBlock());
+
             // create loop blocks
             auto *condBB = llvm::BasicBlock::Create(_env->getContext(), "condBB", parentFunc);
-            auto *loopBB = llvm::BasicBlock::Create(_env->getContext(), "loopBB", parentFunc);
-            auto *elseBB = llvm::BasicBlock::Create(_env->getContext(), "elseBB", parentFunc);
+            llvm::BasicBlock *loopBB=nullptr, *elseBB = nullptr;
             auto *afterLoop = llvm::BasicBlock::Create(_env->getContext(), "afterLoop", parentFunc);
             _loopBlockStack.push_back(afterLoop);
             _loopBlockStack.push_back(condBB);
-            builder.SetInsertPoint(_lfb->getLastBlock());
-            builder.CreateBr(condBB);
+
+            bool typeChange = whileStmt->hasAnnotation() && whileStmt->annotation().numTimesVisited > 0;
+            // type change in loop but loop ends before first iteration? -> normal case violation
+            // will check this in firstIterationCondBB and condBB to avoid visiting while condition before loop starts
+            bool skipLoopBody = typeChange && double(whileStmt->annotation().zeroIterationCount) / double(whileStmt->annotation().numTimesVisited) > _policy.normalCaseThreshold;
+            bool unrollFirstIteration = !skipLoopBody && whileStmt->annotation().typeChangedAndStableCount > whileStmt->annotation().typeStableCount;
+
+            // isFirstIteration: true before first iteration completes
+            auto isFirstIterationPtr = _env->CreateFirstBlockAlloca(builder, _env->i1Type(), "firstIterationCompleted");
+            builder.CreateStore(_env->i1Const(true), isFirstIterationPtr);
+
+            // check if we need to separate the first iteration
+            if(unrollFirstIteration) {
+                // run first iteration separately
+                _logger.debug("first iteration of while loop unrolled to allow type-stability during loop");
+                _loopBodyIdentifiersStack.emplace_back(std::set<NIdentifier *>());
+                // emit condition expression
+                whileStmt->expression->accept(*this);
+                if(earlyExit()) {
+                    while(_blockStack.size() > num_stack_before)
+                        _blockStack.pop_back();
+                    return;
+                }
+                builder.SetInsertPoint(_lfb->getLastBlock());
+                // retrieve condition value
+                auto cond = _blockStack.back();
+                _blockStack.pop_back();
+                // convert condition value to i1
+                auto whileCond = _env->truthValueTest(builder, cond, whileStmt->expression->getInferredType());
+                auto loopEnds = _env->i1neg(builder, whileCond);
+                _lfb->addException(builder, ExceptionCode::NORMALCASEVIOLATION, loopEnds);
+                builder.CreateStore(_env->i1Const(false), isFirstIterationPtr);
+                _lfb->setLastBlock(builder.GetInsertBlock());
+                // loop body
+                whileStmt->suite_body->accept(*this);
+                // update variables in loop body to stabilized types
+                // so that in the rest of iterations types are stable
+                auto currIdentifiers = _loopBodyIdentifiersStack.back();
+                auto currNameTable = whileStmt->annotation().stabilizedTypes;
+                for (const auto &id : currIdentifiers) {
+                    auto it = currNameTable.find(id->_name);
+                    if(it != currNameTable.end() && id->getInferredType() != it->second) {
+                        id->setInferredType(it->second);
+                    }
+                }
+                _loopBodyIdentifiersStack.pop_back();
+                if(blockOpen(_lfb->getLastBlock())) {
+                    builder.SetInsertPoint(_lfb->getLastBlock());
+                    builder.CreateBr(condBB);
+                }
+            } else {
+                builder.CreateBr(condBB);
+            }
 
             builder.SetInsertPoint(condBB);
             _lfb->setLastBlock(condBB);
@@ -5310,26 +5615,49 @@ namespace tuplex {
 
             // convert condition value to i1
             auto whileCond = _env->truthValueTest(builder, cond, whileStmt->expression->getInferredType());
-            builder.CreateCondBr(whileCond, loopBB, elseBB);
+            if(!skipLoopBody) {
+                loopBB = llvm::BasicBlock::Create(_env->getContext(), "loopBB", parentFunc);
+                // type change in loop but loop ends before first iteration? -> normal case violation
+                if(typeChange) {
+                    auto loopEnd = _env->i1neg(builder, whileCond);
+                    auto isFirstIteration = builder.CreateLoad(isFirstIterationPtr);
+                    _lfb->addException(builder, ExceptionCode::NORMALCASEVIOLATION, builder.CreateAnd(isFirstIteration, loopEnd));
+                    builder.CreateStore(builder.CreateAnd(isFirstIteration, _env->i1Const(false)), isFirstIterationPtr);
+                }
 
-            // handle loop body
-            builder.SetInsertPoint(loopBB);
-            _lfb->setLastBlock(loopBB);
-            whileStmt->suite_body->accept(*this);
+                if(whileStmt->suite_else) {
+                    elseBB = llvm::BasicBlock::Create(_env->getContext(), "elseBB", parentFunc);;
+                    builder.CreateCondBr(whileCond, loopBB, elseBB);
+                } else {
+                    builder.CreateCondBr(whileCond, loopBB, afterLoop);
+                }
 
-            if(blockOpen(_lfb->getLastBlock())) {
-                builder.SetInsertPoint(_lfb->getLastBlock());
-                builder.CreateBr(condBB);
+                // handle loop body
+                builder.SetInsertPoint(loopBB);
+                _lfb->setLastBlock(loopBB);
+                whileStmt->suite_body->accept(*this);
+                if(blockOpen(_lfb->getLastBlock())) {
+                    builder.SetInsertPoint(_lfb->getLastBlock());
+                    builder.CreateBr(condBB);
+                }
+            } else {
+                // should skip loop body, thus add exception for entering loop body
+                _logger.debug("loop body optimized away, as attained in tracing while condition for first iteration not holds in majority cases");
+                _lfb->addException(builder, ExceptionCode::NORMALCASEVIOLATION, whileCond);
+                if(whileStmt->suite_else) {
+                    elseBB = llvm::BasicBlock::Create(_env->getContext(), "elseBB", parentFunc);
+                    builder.CreateBr(elseBB);
+                } else{
+                    builder.CreateBr(afterLoop);
+                }
             }
-
             _loopBlockStack.pop_back();
             _loopBlockStack.pop_back();
 
             // handle else
-            builder.SetInsertPoint(elseBB);
-            _lfb->setLastBlock(elseBB);
-
             if(whileStmt->suite_else) {
+                builder.SetInsertPoint(elseBB);
+                _lfb->setLastBlock(elseBB);
                 whileStmt->suite_else->accept(*this);
             }
 
@@ -5548,6 +5876,30 @@ namespace tuplex {
             phi->addIncoming(upcast_base_zero_power, bbBaseZero);
             phi->addIncoming(upcast_power, bbBaseNonZero);
             return phi;
+        }
+
+        void BlockGeneratorVisitor::updateIteratorVariableSlot(llvm::IRBuilder<> &builder, VariableSlot *slot,
+                                                               const SerializableValue &val,
+                                                               const python::Type &targetType,
+                                                               const std::shared_ptr<IteratorInfo> &iteratorInfo) {
+            if (targetType != slot->type) {
+                // set curr slot to iteratorType if it's not.
+                slot->type = targetType;
+            }
+
+            llvm::Type *newPtrType = nullptr;
+            if(targetType == python::Type::EMPTYITERATOR) {
+                newPtrType = _env->i64Type();
+            } else {
+                newPtrType = llvm::PointerType::get(_env->createOrGetIteratorType(iteratorInfo), 0);
+            }
+
+            if(!slot->var.ptr || slot->var.ptr->getType() != newPtrType) {
+                // Since python iteratorType to llvm iterator type is a one-to-many mapping,
+                // may need to update ptr later even if current slot type is iteratorType
+                slot->var.ptr = _env->CreateFirstBlockAlloca(builder, newPtrType, slot->var.name);
+            }
+            slot->var.store(builder, val);
         }
     }
 }
