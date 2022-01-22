@@ -1,0 +1,37 @@
+body {
+  margin-left: 12%;
+  margin-right: 12%;
+}
+
+.nav-top-item {
+  display: inline-block;
+  margin-left: 40px;
+  font-size: 18px;
+}
+
+.footer-item {
+  display: inline-block;
+  margin-left: 40px;
+  font-size: 14px;
+}
+
+.navbar-light .navbar-nav .nav-link {
+    color: #506690;
+}
+
+nav ul li a:hover {
+  color: var(--bs-blue) !important;
+}
+
+.nav-btn {
+  min-width:  100px;
+  font-size: 18px;
+}
+
+.about-page-text {
+  font-size: 18px;
+}
+
+span {
+  color: var(--bs-blue);
+}
