@@ -1,0 +1,7 @@
+history/
+thistory/
+stdout.txt
+.ipynb_checkpoints/
+*.log
+*.egg-info/
+db/

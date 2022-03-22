@@ -1,3 +1,0 @@
-recursive-include tuplex/libexec *
-include *.so
-include *.dll

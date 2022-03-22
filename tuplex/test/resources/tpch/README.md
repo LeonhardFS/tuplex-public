@@ -1,1 +1,0 @@
-contains tpch data generated via dbgen and scalefactor 0.01
