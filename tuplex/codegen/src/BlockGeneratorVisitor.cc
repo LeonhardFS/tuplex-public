@@ -1632,15 +1632,20 @@ namespace tuplex {
             // map type to LLVM
             // allocate variable in first block! (important because of loops!)
             // get rid off option!
+            if(python::Type::UNKNOWN == t) {
+                ptr = nullptr;
+                sizePtr = nullptr;
+                nullPtr = nullptr;
+            } else {
+                // only string, bool, int, f64 so far supported!
+                ptr = env.CreateFirstBlockAlloca(builder,
+                                                 env.pythonToLLVMType(t.isOptionType() ? t.getReturnType() : t), name);
+                // alloc size
+                sizePtr = env.CreateFirstBlockAlloca(builder, env.i64Type(), name + "_size");
 
-            // only string, bool, int, f64 so far supported!
-            ptr = env.CreateFirstBlockAlloca(builder, env.pythonToLLVMType(t.isOptionType() ? t.getReturnType() : t), name);
-            // alloc size
-            sizePtr = env.CreateFirstBlockAlloca(builder, env.i64Type(), name + "_size");
-
-            // option type? then alloc isnull!
-            nullPtr = t.isOptionType() ? env.CreateFirstBlockAlloca(builder, env.i1Type()) : nullptr;
-
+                // option type? then alloc isnull!
+                nullPtr = t.isOptionType() ? env.CreateFirstBlockAlloca(builder, env.i1Type()) : nullptr;
+            }
             this->name = name;
         }
 
