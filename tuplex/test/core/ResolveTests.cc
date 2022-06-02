@@ -182,31 +182,7 @@ TEST_F(Resolve, LargeTracingTest) {
     }
 
     Context c(microTestOptions());
-
-    // map!
-    // auto res = c.parallelize(rows).map(UDF("lambda a, b, c: (a / b, c[a])")).resolve(ExceptionCode::ZERODIVISIONERROR, UDF("lambda a, b, c: (0.0, c[a])")).collect();
-
-    // mapColumn!
-    //c.parallelize(rows, {"a", "b", "c"}).mapColumn("c", UDF("lambda x: x[8] + '_hello'")).collect();
-
-    // withColumn!
-    //c.parallelize(rows, {"a", "b", "c"}).withColumn("d", UDF("lambda x: x['c'][8] + '_hello'")).collect();
-
-    // filter
-    // that works too ...
     auto res = c.parallelize(rows).filter(UDF("lambda a, b, c: a / b > 1.5")).resolve(ExceptionCode::ZERODIVISIONERROR, UDF("lambda a, b, c: True")).collect();
-
-
-    // @TODO: resolver which throws too...
-
-
-    // @TODO
-    // this is an interesting special case because of the short circuiting...
-    //auto res = c.parallelize(rows).filter(UDF("lambda a, b, c: c[a] == 'a' and a / b > 1.5")).resolve(ExceptionCode::ZERODIVISIONERROR, UDF("lambda a, b, c: False")).collect();
-
-    // to be implemented:
-    // auto res = c.parallelize(rows).filter(UDF("lambda a, b, c: not c[a] == 'a'")).resolve(ExceptionCode::ZERODIVISIONERROR, UDF("lambda a, b, c: False")).collect();
-    // auto res = c.parallelize(rows).filter(UDF("lambda a, b, c: c[a] != 'a'")).resolve(ExceptionCode::ZERODIVISIONERROR, UDF("lambda a, b, c: False")).collect();
 }
 
 TEST_F(Resolve, FilterMapMix) {
@@ -446,11 +422,6 @@ TEST_F(Resolve, FilterResolve) {
         EXPECT_EQ(res[j], ref[j]);
 }
 
-
-// @TODO: Better testing infrastructure for exception handling
-// However, may be difficult when architecture shall not be ruined...
-// maybe test via history server connection?
-
 TEST_F(Resolve, ResolverThrowingExceptions) {
     // reset log
     logStream.str("");
@@ -681,11 +652,6 @@ TEST_F(Resolve, AllOperators) {
     EXPECT_EQ(resMColumn[0], Row(42, 10.0 / 7.0));
     EXPECT_EQ(resMColumn[1], Row(3, 0.0));
     EXPECT_EQ(resMColumn[2], Row(4, 10.0 /  5.0));
-
-
-    // filter + map done before
-
-    // @TODO: add a couple more tests here...
 }
 
 TEST(ResolvePython, SimplePythonString) {
@@ -1023,66 +989,6 @@ TEST_F(Resolve, DemoStringMap) {
     EXPECT_EQ(res[3], Row("0"));
 }
 
-
-// TODO: Need a test here for bad/wrongly formatted input rows and how they should be fixed!
-TEST_F(Resolve, BadCSVInputRows) {
-
-    // Bad CSV input rows resolution not yet supported...
-    // to be implemented
-#warning "fix this at a later stage, no time because of paper stress"
-
-//    using namespace std;
-//    using namespace tuplex;
-//
-//    // write test file
-//    ofstream ofs("test.csv");
-//
-//    ofs<<"firstname,surname,income\n";
-//    ofs<<"# this is a bad input row\n";
-//    ofs<<"Manuel,Neuer,48000\n";
-//    ofs<<"Miroslav,Klose,52000\n";
-//    ofs<<"# this is another bad input row\n";
-//    ofs.close();
-//
-//    Context c(microTestOptions());
-//
-//    std::stringstream ss;
-//    auto res = c.csv("test.csv")
-//            .filter(UDF("lambda x: x['income'] > 50000"))
-//            .map(UDF("lambda x: {'firstname' : x['firstname']}"))
-//            .collectAsVector(ss);
-//
-//    for(auto r : res)
-//        std::cout<<r.toPythonString()<<std::endl; // why is this so off??
-//    ASSERT_EQ(res.size(), 1);
-//    EXPECT_EQ(res[0], Row("Miroslav"));
-//    std::cout<<ss.str()<<std::endl;
-//
-//    // with ignore
-//    ss.str("");
-//    auto res2 = c.csv("test.csv")
-//            .ignore(ExceptionCode::BADPARSE_STRING_INPUT)
-//            .filter(UDF("lambda x: x['income'] < 50000"))
-//            .map(UDF("lambda x: {'firstname' : x['firstname']}"))
-//            .collectAsVector(ss);
-//
-//    ASSERT_EQ(res.size(), 1);
-//    EXPECT_EQ(res[0], Row("Manuel"));
-//    std::cout<<ss.str()<<std::endl;
-//
-//
-//    // with resolve
-//    auto res3 =  c.csv("test.csv")
-//            .resolve(ExceptionCode::BADPARSE_STRING_INPUT, UDF("lambda x: ('Unknown', '', 60000)"))
-//            .filter(UDF("lambda x: x['income'] > 50000"))
-//            .map(UDF("lambda x: {'firstname' : x['firstname']}"))
-//            .collectAsVector(std::cout);
-//
-//    EXPECT_TRUE(false); // todo... add checks for things above...
-//
-//    remove("test.csv");
-}
-
 TEST_F(Resolve, NoProjectionPushdown) {
     using namespace tuplex;
 
@@ -1157,7 +1063,6 @@ TEST_F(Resolve, UpcastResolverType) {
     auto options = microTestOptions();
     options.set("tuplex.autoUpcast", "true"); // else following tests won't work.
     ASSERT_TRUE(options.AUTO_UPCAST_NUMBERS());
-    // @TODO: check that the fallback solution also works.
 
     Context c(options);
 
@@ -1212,5 +1117,3 @@ TEST_F(Resolve, UpcastResolverType) {
     EXPECT_EQ(v[0].toPythonString(), Row(4.0).toPythonString());
     EXPECT_EQ(v[1].toPythonString(), Row(7.0).toPythonString());
 }
-
-// @TODO: nested

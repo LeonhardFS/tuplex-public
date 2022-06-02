@@ -131,7 +131,6 @@ TEST_F(JoinTest, InnerJoinInt64Option) {
 }
 
 // inner join using strings
-// => TODO: need to also make this work with integers... => can be done simpler...
 TEST_F(JoinTest, SimpleColumnBasedInnerJoinStr) {
     using namespace tuplex;
     using namespace std;
@@ -459,27 +458,3 @@ TEST_F(JoinTest, SimpleIntJoins) {
     EXPECT_EQ(res4[1], Row(1, 5, 2, "two"));
     EXPECT_EQ(res4[2], Row(2, 8, 1, "one"));
 }
-//
-//TEST_F(JoinTest, FilterPushdown_OnKeyColumn) {
-//    using namespace std;
-//    using namespace tuplex;
-//
-//    // @TODO: activate filter pushdown as option...
-//    // @TODO: ignore/resolve operators following a filter should be pushed with it down!
-//    auto co = microTestOptions();
-//    co.set("tuplex.csv.selectionPushdown", "true");
-//    Context c(co);
-//
-//    auto& ds1 = c.parallelize({Row(1, 2, 3), Row(1, 2, 4), Row(2, 1, 1)}, vector<string>{"a", "b", "c"});
-//    auto& ds2 = c.parallelize({Row(1, "one"), Row(2, "two"), Row(3, "three")}, vector<string>{"x", "y"});
-//
-//    // join and filter then on
-//    auto& ds = ds1.join(ds2, std::string("b"), std::string("x"))
-//            .mapColumn("c", UDF("lambda x: x * x"))
-//            .withColumn("d", UDF("lambda t: t['a'] > 0"))
-//            .filter(UDF("lambda t: t['b'] < 10"))
-//            .filter(UDF("lambda t: 0 < t['y'] < 6"))
-//            .selectColumns(vector<string>{"a", "b", "y"});
-//
-//    ds.collect();
-//}

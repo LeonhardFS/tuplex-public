@@ -173,19 +173,6 @@ TEST(LLVMENV, BitmapTest) {
     }
 }
 
-TEST(LLVMENV, strCastFunctions) {
-    using namespace tuplex::codegen;
-    using namespace tuplex;
-    using namespace std;
-
-    JITCompiler jit;
-
-    // test f64ToStr/i64ToStr...
-
-    // @TODO
-}
-
-
 llvm::Type* createStructType(llvm::LLVMContext& ctx, const python::Type &type, const std::string &twine) {
     using namespace llvm;
 
@@ -241,8 +228,6 @@ llvm::Type* createStructType(llvm::LLVMContext& ctx, const python::Type &type, c
     // define bitmap on the fly
     for(const auto& el: T.parameters()) {
         auto t = el.isOptionType() ? el.getReturnType() : el; // get rid of most outer options
-
-        // @TODO: special case empty tuple! also doesn't need to be represented
 
         if(python::Type::BOOLEAN == t) {
             // i8

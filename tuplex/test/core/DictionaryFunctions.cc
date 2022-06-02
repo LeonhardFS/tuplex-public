@@ -180,7 +180,6 @@ TEST_F(DictionaryFunctions, TestFunctionsMaps) {
     auto v3 = ds.map(UDF(code3)).collectAsVector();
     auto v4 = ds.map(UDF(code4)).collectAsVector();
 
-    // TODO: Should the compiler throw an error when rewriteDictAccessInAST() doesn't find the column name? (right now it just prints an error with IFailable)
     ASSERT_EQ(v1.size(), 1);
     EXPECT_EQ(v1[0].toPythonString(), "(10,'hello',30)");
     ASSERT_EQ(v2.size(), 1);

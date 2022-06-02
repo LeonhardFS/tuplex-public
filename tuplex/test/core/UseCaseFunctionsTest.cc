@@ -47,8 +47,6 @@ TEST_F(UseCaseFunctionsTest, LenCall) {
     EXPECT_EQ(v[3], Row((int)strlen("")));
 }
 
-// @Todo: Test len on tuples as well + python tests.... No time yet to implement...
-
 TEST_F(UseCaseFunctionsTest, UpperCall) {
     using namespace tuplex;
 
@@ -108,14 +106,6 @@ TEST_F(UseCaseFunctionsTest, IntCast) {
     EXPECT_EQ(v[1], Row(0));
     EXPECT_EQ(v[2], Row(-10));
     EXPECT_EQ(v[3], Row(42));
-
-
-    // TODO: New broken test: calling constructor with no arguments breaks
-//    auto v1 = context->parallelize({Row("123")})
-//            .map(UDF("lambda x: int()")).collectAsVector();
-//
-//    ASSERT_EQ(v1.size(), 1);
-//    EXPECT_EQ(v1[0], Row(0));
 }
 
 TEST_F(UseCaseFunctionsTest, IntCastII) {
@@ -638,7 +628,6 @@ TEST_F(UseCaseFunctionsTest, VariableOverwrite) {
     // is an example where string is returned!
     using namespace tuplex;
 
-    // @TODO: some symbol table issue here! Needs to be fixed...
     auto code = "def f(x):\n"
                 "    x = 'hello'\n"
                 "    return x";
@@ -798,20 +787,6 @@ TEST_F(UseCaseFunctionsTest, NestedIf) {
 
     for(auto r : res)
         cout<<r.toPythonString()<<endl;
-
-
-    //   Row r1(89.0, option<double>::none, option<double>::none);
-    //    Row r2(option<double>::none, 1.0, 211.0);
-    //
-    //    auto res = context->parallelize({r1, r2}, {"ActualElapsedTime", "DivReachedDest", "DivActualElapsedTime"}).withColumn("ActualElapsedTime", UDF(fillInTimes_C)).collectAsVector();
-    //
-    //    for(auto r : res)
-    //        cout<<r.toPythonString()<<endl;
-
-    // @TODO: check what happens in the case options for DivActualElapsedTime gets specialized to NULL.
-    // -> first type annotator visitor for float(null) fails!
-    // -> requires speculation!
-
 }
 
 TEST_F(UseCaseFunctionsTest, regexSearch) {
@@ -1087,33 +1062,6 @@ TEST(Mini, RyuDistanceConversion) {
     d2fixed_buffered_n(distance, 6, buffer);
     cout<<"ryu: "<<buffer<<endl;
 }
-
-// // @TODO: fix this here...
-// TEST_F(UseCaseFunctionsTest, TypingForNullCase) {
-//     using namespace tuplex;
-//     using namespace std;
-//
-//     auto fillInTimes_C = "def fillInTimesUDF(row):\n"
-//                          "    ACTUAL_ELAPSED_TIME = row['ActualElapsedTime']\n"
-//                          "    if row['DivReachedDest']:\n"
-//                          "        if float(row['DivReachedDest']) > 0:\n"
-//                          "            return float(row['DivActualElapsedTime'])\n"
-//                          "        else:\n"
-//                          "            return ACTUAL_ELAPSED_TIME\n"
-//                          "    else:\n"
-//                          "        return ACTUAL_ELAPSED_TIME";
-//
-//     Context c(microTestOptions());
-//     c.parallelize({Row(Field::null(), 34.0, Field::null())}, vector<string>{"ActualElapsedTime",
-//                                                                             "DivReachedDest",
-//                                                                             "DivActualElapsedTime"}).withColumn("ActualElapsedTime", UDF(fillInTimes_C)).collectAsVector();
-//
-//
-//     // Note: in flights query there's a single row failure for tuplex
-//     // i.e. one value error by above function for file 2019_09 --> probably fixing this test should fix the other thing as well
-//     // the row ist stored in resources/pipelines/flights/value_error.single-row.csv
-//     // => i.e. fix that one
-// }
 
 TEST_F(UseCaseFunctionsTest, ZillowResolveFuncs) {
     using namespace tuplex;

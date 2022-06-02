@@ -42,8 +42,6 @@ TEST_F(PythonHelperTest, pythonToTuplexSimpleTypes) {
     auto x3 = PyBool_FromLong(1);
     auto x4 = PyString_FromString("Hello world!");
     auto x5 = PyTuple_New(0);
-    // @Todo: add None type + some python object
-
 
     Row r1 = pythonToRow(x1);
     Row r2 = pythonToRow(x2);
@@ -159,12 +157,9 @@ TEST_F(PythonHelperTest, typeMap) {
     auto t3 = python::Type::makeDictionaryType(python::Type::STRING, python::Type::BOOLEAN);
     EXPECT_EQ(t3, python::mapPythonClassToTuplexType(c3));
 
-    // @TODO: to represent dicts as struct type, there should be also specific type -> generic type
     PyObject* c4 = PyDict_New();
     PyDict_SetItemString(c3, "x", Py_True);
     PyDict_SetItemString(c3, "y", PyFloat_FromDouble(3.141));
-
-    // EXPECT_EQ(...) some struct type here...
 
     // dict => generic type, i.e. mixed key/val types.
     PyObject *c5 = PyDict_New();

@@ -210,7 +210,6 @@ TEST(PythonPipeline, DictUnpacking) {
 }
 
 TEST(PythonPipeline, Resolvers) {
-    // todo:
     // add resolvers for:
     // 1.) CSV parsing 2.) any other functions...
 
@@ -229,9 +228,6 @@ TEST(PythonPipeline, Resolvers) {
     ppb.withColumn(1002, "b", UDF("lambda x: x['b'] + 1")); // not necessary, overwrite!
     ppb.withColumn(1003, "c", UDF("lambda x: x['a'] + x['b']"));
     ppb.pythonOutput();
-
-    // @TODO: could have here output with type check + resolver! --> add this later as soon as something like ORC
-    // or so is used.
 
     std::cout<<std::endl;
     std::cout<<"TEST CODE is:\n"<<std::endl;
@@ -390,7 +386,7 @@ TEST(PythonPipeline, BasicJoin) {
 
     auto b5 = PyObject_GetItem(reinterpret_cast<PyObject *>(hm_wrapped), python::PyString_FromString("test"));
     ASSERT_TRUE(b5);
-    EXPECT_EQ(python::PyString_AsString(b5), "[(42,), (True,), (3.141,), ('hello',), (None,), ((),), ([],), ({},)]"); // @TODO:
+    EXPECT_EQ(python::PyString_AsString(b5), "[(42,), (True,), (3.141,), ('hello',), (None,), ((),), ([],), ({},)]");
 
     auto args = PyTuple_New(2);
     PyTuple_SET_ITEM(args, 0, inputStr);
@@ -496,7 +492,7 @@ TEST(PythonPipeline, BasicIntJoin) {
 
     auto b5 = PyObject_GetItem(reinterpret_cast<PyObject *>(hm_wrapped), PyLong_FromLong(10));
     ASSERT_TRUE(b5);
-    EXPECT_EQ(python::PyString_AsString(b5), "[(42,), (True,), (3.141,), ('hello',), (None,), ((),), ([],), ({},)]"); // @TODO:
+    EXPECT_EQ(python::PyString_AsString(b5), "[(42,), (True,), (3.141,), ('hello',), (None,), ((),), ([],), ({},)]");
 
     auto args = PyTuple_New(2);
     PyTuple_SET_ITEM(args, 0, inputStr);

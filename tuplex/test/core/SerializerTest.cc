@@ -72,10 +72,7 @@ TEST(Serializer, TupleSupport) {
     EXPECT_EQ(tup.getField(1).getInt(), 42L);
     auto ntup = *((Tuple*)tup.getField(2).getPtr());
     EXPECT_EQ(ntup.numElements(), 2);
-    // @Todo: string comparison
     EXPECT_EQ(ntup.getField(1).getDouble(), 20.0);
-    // @Todo: string comparison #2
-#warning "incomplete test here..."
 }
 
 TEST(Serializer, TupleWithOptions) {

@@ -277,54 +277,6 @@ TEST_F(CacheTest, NullValueOptIfAlt) {
     ASSERT_EQ(vIA.size(), 11);
 }
 
-//TEST_F(CacheTest, SpecializedVsNonSpecialized) {
-//    ASSERT_TRUE(false); // test this here...
-//}
-//
-//TEST_F(CacheTest, CheckWithPythonObjects) {
-//    ASSERT_TRUE(false); //check this here...
-//}
-
-
-//// @TODO: fix this, i.e. case when null value vs. str join in null-value opt
-////        does not lead to any result
-////        ==> should work somehow...
-//TEST_F(CacheTest, NullValueOptJoinWithHashResolve) {
-//
-//    // NOTE: this test here fails, because resolve tasks with hashtable endpoint are not supported yet.
-//    // => setting threshold .6 produces null key column
-//
-//    // check whether null-value optimization works with a join where one parent is cached!
-//    using namespace tuplex;
-//    using namespace std;
-//
-//    auto opt_nopt = microTestOptions();
-//    // enable NullValue Optimization
-//    opt_nopt.set("tuplex.useLLVMOptimizer", "true");
-//    opt_nopt.set("tuplex.optimizer.generateParser", "true");
-//    opt_nopt.set("tuplex.executorCount", "0");
-//    opt_nopt.set("tuplex.optimizer.mergeExceptionsInOrder", "false");
-//    opt_nopt.set("tuplex.optimizer.nullValueOptimization", "true");
-//    opt_nopt.set("tuplex.normalcaseThreshold", "0.6"); // set lower, so optimization is more aggressive which will result in more exceptions typically.
-//    Context c(opt_nopt);
-//
-//    // use flights example
-//    Timer timer;
-//    string path = "../resources/pipelines/flights/GlobalAirportDatabase.txt"; // 760KB or so
-//    auto& dsAirports = c.csv(path,
-//                             vector<string>{"ICAOCode", "IATACode", "AirportName", "AirportCity", "Country", "LatitudeDegrees", "LatitudeMinutes",
-//                                            "LatitudeSeconds", "LatitudeDirection", "LongitudeDegrees", "LongitudeMinutes",
-//                                            "LongitudeSeconds", "LongitudeDirection", "Altitude", "LatitudeDecimal", "LongitudeDecimal"},
-//                             option<bool>::none, option<char>(':'), '"', vector<string>{"", "N/A"}).cache();
-//    cout<<"caching airports in memory took: "<<timer.time()<<"s"<<endl;
-//
-//    // mini merge (build forced to right!)
-//    auto& ds = c.parallelize({Row("ATL", "FRA", 20), Row("FRA", "BOS", 10), Row("JFK", "ATL", 5), Row("BOS", "JFK", 12)},
-//                             vector<string>{"Origin", "Dest", "Delay"}); // 4 rows
-//
-//    ds.leftJoin(dsAirports, string("Origin"), string("IATACode")).show();
-//}
-
 TEST_F(CacheTest, NullValueOptJoinNoCachedErrors) {
 
     // NOTE: here the cached file produces no errors for the normal-case, hence we can generate
@@ -360,26 +312,3 @@ TEST_F(CacheTest, NullValueOptJoinNoCachedErrors) {
 
     ds.leftJoin(dsAirports, string("Origin"), string("IATACode")).show();
 }
-
-//// @TODO: test optimizations with cached flights query (zillow trivially should work when above stuff works)
-//TEST_F(CacheTest, Parallelize) {
-//
-//}
-
-
-// multiple caches after each other...
-// i.e. cache().cache().cache() => should still work!
-
-
-// i.e. for the testfile, use
-// 10
-// 10
-// NULL
-// badrow
-
-// => 10, 10 is i64 common case
-// => NULL is Option[i64] general case
-// => badrow is python case (don't know what it's supposed to mean)
-
-
-//@TODO: future API: provide custom data

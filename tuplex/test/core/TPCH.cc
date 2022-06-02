@@ -137,12 +137,6 @@ TEST_F(TpchTest, Q6_AggDictRewrite) {
     ASSERT_EQ(res.size(), 1);
     EXPECT_EQ(res[0].getInt(0), lines.size());
 
-    // following syntactic sugar doesn't work, b.c. UDF needs to know what to rewrite. @TODO: change that
-    // this is in general supported.
-    // .aggregate(UDF("lambda a, b: a + b"), UDF("lambda a, x: a + x['l_extendedprice'] * x['l_discount']"), Row(0.0))
-
-    // @TODO: check functions are submitted in correct order!!!
-
     // Hyper reference value: 1193053.2252999984
     auto& ds = c.csv(path, lineitem_columns, false,'|')
             .mapColumn("l_shipdate", UDF("lambda x: int(x.replace('-', ''))"))

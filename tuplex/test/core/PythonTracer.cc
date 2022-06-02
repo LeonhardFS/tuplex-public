@@ -27,12 +27,6 @@ TEST_F(TracerTest, SimpleTrace) {
     using namespace tuplex;
     using namespace std;
 
-    // @TODO: Need to test here all the functions in
-    // 1. Zillow workload ??
-    // 2. Flight workload ??
-    // 3. 311 workload ??
-    // 4. log workload ??
-
     const std::string code = "lambda x: x + 1";
 
     auto ast = tuplex::parseToAST(code);
@@ -67,26 +61,14 @@ TEST_F(TracerTest, ZillowExtractBd) {
     using namespace tuplex;
     using namespace std;
 
-    // @TODO: Need to test here all the functions in
-    // 1. Zillow workload ??
-    // 2. Flight workload ??
-    // 3. 311 workload ??
-    // 4. log workload ??
-
     auto ast = tuplex::parseToAST(code);
     ASSERT_TRUE(ast);
 
     python::lockGIL();
 
-//    jsonToPyObject("{\"facts and features\": \"3 bds , 1 ba , 1,560 sqft\"}");
-//
 
     PyObject *in = PyDict_New();
     PyDict_SetItemString(in, "facts and features", python::PyString_FromString("3 bds , 1 ba , 1,560 sqft"));
-//
-//    auto obj = PyDict_GetItem(in, python::PyString_FromString("facts and features"));
-//    PyObject_Print(obj, stdout, 0);
-//    cout<<endl;
 
     // quick dict
     TraceVisitor tv;
@@ -222,33 +204,3 @@ TEST_F(TracerTest, UseCaseFunctions) {
 
     python::unlockGIL();
 }
-
-
-// test here normal case/exception case compile for special null value opt case
-//   auto fillInTimes_C = "def fillInTimesUDF(row):\n"
-//                             "    ACTUAL_ELAPSED_TIME = row['ActualElapsedTime']\n"
-//                             "    if row['DivReachedDest']:\n"
-//                             "        if float(row['DivReachedDest']) > 0:\n"
-//                             "            return float(row['DivActualElapsedTime'])\n"
-//                             "        else:\n"
-//                             "            return ACTUAL_ELAPSED_TIME\n"
-//                             "    else:\n"
-//                             "        return ACTUAL_ELAPSED_TIME";
-
-// => ACTUAL_ELAPSED_TIME: f64
-// => DIV_REACHED_DEST:  null (could be detected! then, branches need to be erased...)
-// => DIV_ACTUAL_ELAPSED_TIME: null
-
-// i.e. if inferSchema fails, then use TraceVisitor for sample. Then, add special node to jump out of compute. (some ASTNode)
-// and throw internal exception.
-// ==> this means, that slower code path is required. Two options here: 1.) can compile resolve code 2.) can't compile resolve code, need, interpreter...
-// when creating the plan, need some way to figure out whether more conservative code needs to be created or not...
-// @TODO.
-// => use Neumann style code generation.
-
-// TODO: test with function and ambiguous returns
-// e.g. def f(x):
-//         if x > 10:
-//              return x
-//         else:
-//              return 'hello world'

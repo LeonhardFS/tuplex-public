@@ -378,8 +378,6 @@ TEST_F(FlightDataTest, LeftJoin) {
     string path = "../resources/joins/flight_mini_sample_2019_01.csv";
     string airport_path = "../resources/joins/GlobalAirportDatabase_leftjoin.txt"; // restricted set of airports so not for any ORIGIN entry in the above sample there is an airport...
 
-    // TODO: add to csv reader null_values as configurable option...
-
     ClosureEnvironment ce;
     ce.importModuleAs("string", "string");
 
@@ -495,9 +493,6 @@ std::vector<std::string> leftJoinPipelineIII(tuplex::Context& ctx) {
             .selectColumns(vector<string>{"added", "FL_DATE", "DEP_DELAY", "AirportCity", "AirportName"})
             .filter(UDF("lambda x: len(x['AirportName']) > 0 if x['AirportName'] else False"))
             .collectAsVector();
-
-    // TODO: booleans and/or not yet working correctly
-    // => .filter(UDF("lambda x: x['AirportName'] and len(x['AirportName']) > 0"))
 
     vector<string> stringifiedResult;
     for(auto r : res)
@@ -693,8 +688,6 @@ TEST_F(FlightDataTest, ProjectionPushdown) {
 
     // pipeline III: withCol, mapCol, filter + map before/after join operators...
     {
-        // TODO: pushdown of filter which accesses a renamed column? => test for that!!!
-
         auto ref = leftJoinPipelineIII(c_ref);
         std::cout<<"reference:\n----\n";
         for(auto r : ref) {
@@ -728,8 +721,6 @@ TEST_F(FlightDataTest, ProjectionPushdown) {
     // pipeline V: couple ops, but no projection pushdown possible...
     // ==> i.e. add renames but NO real map!
 }
-
-// @TODO: write a test for selection pushdown with the following variants:
 
 // 1.) include 2x map, filter, join, withColumn, mapColumn
 // mapColumn after
@@ -798,18 +789,10 @@ TEST_F(FlightDataTest, LargeFilePipeline) {
     using namespace tuplex;
     using namespace std;
 
-    //    // @TODO: glob for ~ doesn't work yet.
-    // @TODO: sampling is off, produces many errors because of assuming either NULL or not NULL
-    // ==> for test forced to option types!
-
     // production
     auto opt = testOptions();
     opt.set("tuplex.runTimeMemory", "128MB"); // join might require a lot of runtime memory!!!
-    //opt.set("tuplex.executorCount", "0"); // single-threaded
     opt.set("tuplex.useLLVMOptimizer", "false"); // deactivate
-
-    //// TODO: fix here null values!!!
-    // opt.set("tuplex.optimizer.generateParser", "true");
 
     opt.set("tuplex.optimizer.generateParser", "false");
     opt.set("tuplex.optimizer.nullValueOptimization", "false");
@@ -822,10 +805,6 @@ TEST_F(FlightDataTest, LargeFilePipeline) {
     opt.set("tuplex.csv.selectionPushdown", "true");
 
     Context c(opt);
-
-    // @TODO: no automatic selection of smaller table yet here, need to implement that..
-    // @TODO: There still seems to be a bug with None/Null for FIRST_DEP_TIME ??? ==> problem is in generated parser! I.e. fix this there...
-    // @TODO: To speed up code generation, pass pointers! get rid off some weird legacy code...
 
     auto& ds = flightPipeline(c);
     ds.tocsv(URI("tuplex_output.csv"));
@@ -855,19 +834,3 @@ TEST_F(FlightDataTest, FallbackPythonDict) {
     ASSERT_NE(v.size(), 0);
 
 }
-
-
-
-// TODO: following code doesn't work yet
-//     auto cleanCode_c = "def cleanCode(t):\n"
-//                       "  t = t[\"CANCELLATION_CODE\"]\n"
-//                       "  if t == 'A':\n"
-//                       "    return 'carrier'\n"
-//                       "  elif t == 'B':\n"
-//                       "    return 'weather'\n"
-//                       "  elif t == 'C':\n"
-//                       "    return 'national air system'\n"
-//                       "  elif t == 'D':\n"
-//                       "    return 'security'\n"
-//                       "  else:\n"
-//                       "    return None";

@@ -93,8 +93,6 @@ TEST(UDF, NoneReturn) {
 
 
     // Note: the optimizer should determine the normal case!
-
-    // todo: special check: x ==> this is difficult to compile!
     UDF udf3("lambda x: 'null' if x else x");
     udf3.hintInputSchema(Schema(Schema::MemoryLayout::ROW, python::Type::propagateToTupleType(python::Type::makeOptionType(python::Type::STRING))));
     EXPECT_EQ(udf3.getOutputSchema().getRowType(), python::Type::propagateToTupleType(python::Type::makeOptionType(python::Type::STRING)));
@@ -104,7 +102,6 @@ TEST(UDF, NoneReturn) {
     EXPECT_EQ(udf4.getOutputSchema().getRowType(), python::Type::propagateToTupleType(python::Type::makeOptionType(python::Type::STRING)));
 
     // Now, type inference with functions. They expect real types -> type partially, i.e. in codegen exception should be generated!
-    // TODO: could also type all of this via tracing!
     UDF udf5("lambda x: len(x) if x else 0");
     udf5.hintInputSchema(Schema(Schema::MemoryLayout::ROW, python::Type::propagateToTupleType(python::Type::makeOptionType(python::Type::STRING))));
     EXPECT_EQ(udf5.getOutputSchema().getRowType(), python::Type::propagateToTupleType(python::Type::I64));
@@ -117,94 +114,7 @@ TEST(UDF, NoneTyping) {
     udf.hintInputSchema(Schema(Schema::MemoryLayout::ROW, python::Type::propagateToTupleType(python::Type::makeOptionType(python::Type::STRING))));
 
     EXPECT_EQ(udf.getOutputSchema().getRowType(), python::Type::propagateToTupleType(python::Type::STRING));
-
-
-    // @TODO
-    // edge cases with None for slicing
-    // lambda x: x[None:None:None] for x? --> None is ignored for indexing...
 }
-
-
-// deprecated, the null-value opt mechanism is now incorporated after cleaning
-//TEST(UDF, DoNotTypeDeadIfBranches) {
-////    auto fillInTimes_C = "def fillInTimesUDF(row):\n"
-////                         "    ACTUAL_ELAPSED_TIME = row['ActualElapsedTime']\n"
-////                         "    if row['DivReachedDest']:\n"
-////                         "        if int(row['DivReachedDest']) > 0:\n"
-////                         "            return float(row['DivActualElapsedTime'])\n"
-////                         "        else:\n"
-////                         "            return ACTUAL_ELAPSED_TIME\n"
-////                         "    else:\n"
-////                         "        return ACTUAL_ELAPSED_TIME";
-//
-//    using namespace std;
-//    using namespace tuplex;
-//
-//    auto test_C = "def test(a, b, c):\n"
-//                  "\td = a\n"
-//                  "\tif b:\n"
-//                  "\t\tif int(b) > 10:\n"
-//                  "\t\t\treturn float(c)\n"
-//                  "\t\telse:\n"
-//                  "\t\t\treturn d\n"
-//                  "\telse:\n"
-//                  "\t\treturn d\n";
-//
-//    UDF udf(test_C);
-//
-//    // @TODO: do not remove nodes from AST but instead use annotations...
-//    // ==> more efficient for the copying going on
-//
-//    // This here sho
-//    // Typing is done in 3 attempts:
-//    // 1.) attempt static typing, might fail
-//    // 2.) attempt typing using sample, remove from AST nodes which do not comply
-//
-//    auto res = udf.hintInputSchema(Schema(Schema::MemoryLayout::ROW,
-//                                          python::Type::makeTupleType({
-//                                                                              python::Type::F64,
-//                                                                              python::Type::NULLVALUE,
-//                                                                              python::Type::makeOptionType(python::Type::F64)
-//                                                                      })), false);
-//    ASSERT_EQ(res, false);
-//
-//    // now hint with annotating branches statically
-//    // Note: this changes the internal AST!
-//    res = udf.hintInputSchema(Schema(Schema::MemoryLayout::ROW,
-//                                     python::Type::makeTupleType({
-//                                                                         python::Type::F64,
-//                                                                         python::Type::NULLVALUE,
-//                                                                         python::Type::makeOptionType(python::Type::F64)
-//                                                                 })), true);
-//    ASSERT_EQ(res, true);
-//    EXPECT_EQ(udf.getOutputSchema().getRowType().desc(), "(f64)");
-//
-//    GraphVizGraph graph;
-//    graph.createFromAST(udf.getAnnotatedAST().getFunctionAST(), true);
-//    graph.saveAsPDF("udftest_ast.pdf");
-//
-//    // now trace with original UDF
-//    // type using sample! => this enriches AST with information so it can be compiled...
-//    udf = UDF(test_C);
-//    python::initInterpreter();
-//    res = udf.hintSchemaWithSample({python::rowToPython(Row(3.4, "22", 8.9)),
-//                                    python::rowToPython(Row(3.4, Field::null(), 8.9)),
-//                                    python::rowToPython(Row(Field::null()))},
-//                                   python::Type::makeTupleType({python::Type::F64, python::Type::NULLVALUE, python::Type::F64}));
-//    python::closeInterpreter();
-//
-//    auto env = make_shared<codegen::LLVMEnvironment>();
-//    auto cf = udf.compile(*env.get(), true, true);
-//    EXPECT_TRUE(cf.good());
-//
-//    ASSERT_EQ(res, true);
-//    EXPECT_EQ(udf.getOutputSchema().getRowType().desc(), "(f64)");
-//
-//#ifndef NDEBUG
-//    std::cout<<env->getIR()<<std::endl;
-//#endif
-//}
-
 
 TEST(UDF, Rewrite) {
     // rewrite for projection pushdown, look into weird edge cases here
@@ -363,18 +273,3 @@ TEST(UDF, ModuleCall) {
     auto desc = udf.getOutputSchema().getRowType().desc();
     EXPECT_EQ(desc, "(Option[matchobject])");
 }
-
-// this test fails, postponed for now. There're more important things todo.
-//TEST(UDF, RewriteSlice) {
-//    UDF udf5("lambda x: x[1:3:0]");
-//    udf5.hintInputSchema(Schema(Schema::MemoryLayout::ROW, Row(Tuple(-10, 20, -30, 25, -50)).getRowType()));
-//
-//    EXPECT_EQ("((i64,i64,i64,i64,i64))", udf5.getInputSchema().getRowType().desc());
-//    // rewrite using rewriteMap 0:0
-//    udf5.rewriteParametersInAST({{0, 0}});
-//
-//    EXPECT_EQ("((i64,i64,i64,i64,i64))", udf5.getInputSchema().getRowType().desc());
-//
-//    cout<<udf5.getInputSchema().getRowType().desc()<<endl;
-//    cout<<udf5.getOutputSchema().getRowType().desc()<<endl;
-//}

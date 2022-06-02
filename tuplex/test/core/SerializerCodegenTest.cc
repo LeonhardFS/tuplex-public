@@ -147,8 +147,6 @@ TEST(CodegenSerialization, NullableTypes) {
 TEST(CodegenSerialization, SingleElementsNull_And_NonNull) {
     using namespace tuplex;
 
-    // TODO: write tests for options...
-
     // primitive types
     Row r1(true);                   // boolean
     Row r2(14);                     // int64_t
@@ -157,8 +155,6 @@ TEST(CodegenSerialization, SingleElementsNull_And_NonNull) {
     Row r5(Field::null());          // NULL/None
     Row r6(Field::empty_tuple());   // empty tuple
     Row r7(Field::empty_dict());    // empty dictionary
-    // TODO: empty list is missing...
-
 
     // (1) primitives
     EXPECT_EQ(execRow(r1).toPythonString(), "(True,)");
@@ -187,6 +183,4 @@ TEST(CodegenSerialization, SingleElementsNull_And_NonNull) {
     ASSERT_EQ(execRow(r8).toPythonString(), "(True,False,'hello world',None,(),{})");
     ASSERT_EQ(execRow(r9).toPythonString(), "(True,False,'hello world',None,(),{})");
     ASSERT_EQ(execRow(r10).toPythonString(), "(True,False,'hello world',None,(),{})");
-
-    // TODO: nested objects within row?
 }

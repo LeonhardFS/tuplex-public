@@ -29,9 +29,6 @@ TEST_F(TupleAccess, IntegerIndex) {
     // ==> i.e. produce meaningful message!
     auto v1 = c.parallelize({Row(10), Row(20), Row(30)}).map(UDF("lambda x: x[0]")).collectAsVector();
 
-    // @TODO: fix in docker container the exception code thingy. ==> I.e. develop on ubuntu on desktop at home!
-
-
     // should find this string in err messages
     auto needle = std::string("subscript operation [] is performed on unsupported type");
 

@@ -32,8 +32,6 @@ TEST(PythonCallFunctions, SymbolTableOverrideBuiltin) {
     testDefCode(code, typeMap, python::Type::STRING);
 }
 
-// @TODO: what happens in error case len(len)??
-
 TEST(PythonCallFunctions, SimpleMethodCall) {
     auto code = "lambda x: x.upper()";
     std::map<std::string, python::Type> typeMap{{"x", python::Type::STRING }};

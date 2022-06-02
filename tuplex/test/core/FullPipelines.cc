@@ -582,9 +582,6 @@ namespace tuplex {
                                "    else:\n"
                                "         return s";
 
-        // TODO: Need to force type hint here as string to make above code executable
-        // ==> other version should be super simple and just require fix of bad records via resolve...
-
         // force type of column to string, Incident Zip is column #8!
         return ctx.csv(service_path, vector<string>{},
                 option<bool>::none,option<char>::none, '"',
@@ -764,48 +761,11 @@ TEST_F(PipelinesTest, ServiceRequestsConfigHarnessNVOvsNormal) {
     std::sort(ref.begin(), ref.end());
     std::sort(res_nvo.begin(), res_nvo.end());
 
-    // // print out both?
-    // cout<<"ref | nvo"<<endl;
-    // for(size_t i = 0; i < std::min(ref.size(), res_nvo.size()); ++i)
-    //     cout<<ref[i]<<" | "<<res_nvo[i]<<endl;
-
-
     // compare arrays
     EXPECT_EQ(ref.size(), res_nvo.size());
     for(size_t i = 0; i < std::min(ref.size(), res_nvo.size()); ++i) {
         EXPECT_EQ(ref[i], res_nvo[i]);
     }
-
-   // @TODO: doesn't work yet because no type hint for the Incident column. Tuplex (rightfully) assumes an integer column and therefore, won't exec that code even.
-   // ==> solutions: 1) type hint for input OR 2) add resolver with csv parse/dict resolve logic to touch up problem :)
-
-   // to make this comparable to weld, need to add unique!
-   // also, they restrict the parsing -.- no real support thus...
-
-   // version 1: with resolve operator!
-   auto& ctx = c_ref;
-
-   //   auto fix_zip_codes_c = "def fix_zip_codes(zips):\n"
-    //                               "    # Truncate everything to length 5 \n"
-    //                               "    s = zips[:5]\n"
-    //                               "    \n"
-    //                               "    # Set 00000 zip codes to nan\n"
-    //                               "    if s == '00000':\n"
-    //                               "         return None\n"
-    //                               "    else:\n"
-    //                               "         return s";
-    //
-    //        // TODO: Need to force type hint here as string to make above code executable
-    //        // ==> other version should be super simple and just require fix of bad records via resolve...
-    //        return ctx.csv(service_path, vector<string>{}, option<bool>::none,option<char>::none, '"', vector<string>{"NO CLUE", "N/A", "0"})
-    //        .mapColumn("Incident Zip", UDF(fix_zip_codes_c));
-
-
-
-//    using namespace std;
-//    string service_path="../resources/pipelines/311/311-service-requests.sample.csv";
-//    ctx.csv(service_path, vector<string>{}, option<bool>::none,option<char>::none, '"', vector<string>{"NO CLUE", "N/A", "0", ""})
-//    .selectColumns(vector<string>{"Incident Zip"}).show(10);
 }
 
 TEST_F(PipelinesTest, FlightsWithPyResolver) {
@@ -850,15 +810,6 @@ TEST_F(PipelinesTest, FlightsWithPyResolver) {
     using namespace tuplex;
     using namespace std;
     auto ref = pipelineAsStrs(flightPipeline(c_ref, bts_path));
-
-
-    //@TODO: experiment regarding the exception handling paths/etc
-
-
-
-    // @TODO: write test with csv file / no generated reader
-    // where row functor throws exception on single row.
-    // i.e a/ b where b is sometimes 0. => important so exceptions get tracked...
 }
 
 
@@ -1110,7 +1061,6 @@ TEST_F(PipelinesTest, ApacheDev) {
 
     std::cout << ref.size() << " rows\n";
 
-    // @TODO: this test should be better written with a backup to actually compute these numbers and not used fixed ones
     ASSERT_EQ(ref.size(), 3437);
     for(unsigned long i=0; i<10; i++) {
         std::cout << i << ": " << ref[i] << "\n";

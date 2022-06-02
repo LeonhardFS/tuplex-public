@@ -15,8 +15,6 @@
 
 class SigTest : public PyTest {};
 
-
-// @TODO: in the shell, Ctrl+C should work well too...
 // i.e. just aborting the current line. Not destroying everything!
 // check https://android.googlesource.com/platform/bionic/+/master/tests/signal_test.cpp on how to test this...
 TEST_F(SigTest, FlightInterrupt) {

@@ -90,8 +90,6 @@ TEST(Row, NestedTuples) {
 
 TEST(Row, Nullables) {
 
-    // @TODO: test options for all sorts of types! I.e. at least all primitives should work...
-
     // step 1: fields
     // Tuple types (that is more difficult in pure C++)
     EXPECT_EQ(Field(option<Tuple>::none).getType(), python::Type::makeOptionType(python::Type::EMPTYTUPLE));

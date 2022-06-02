@@ -14,9 +14,6 @@
 #include <graphviz/GraphVizGraph.h>
 #include "../../codegen/include/parser/Parser.h"
 
-// @Todo: lambda x: x : 10 will lead to infinity loop in parser...
-// give up on that...
-
 using namespace tuplex;
 
 bool saveToPDF(ASTNode* root, const std::string& path) {
