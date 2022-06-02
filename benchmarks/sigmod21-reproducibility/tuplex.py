@@ -21,7 +21,7 @@ plot_targets = ['all', 'figure3', 'figure4', 'figure5',
                 'figure6', 'figure7', 'figure8', 'figure9', 'figure10', 'table3']
 
 # default paths
-DEFAULT_RESULT_PATH = 'r5d.8xlarge'
+DEFAULT_RESULT_PATH = 'results'
 DEFAULT_OUTPUT_PATH = 'plots'
 DOCKER_IMAGE_TAG = 'tuplex/benchmark'
 DOCKER_CONTAINER_NAME = 'sigmod21'
@@ -4123,7 +4123,7 @@ def run(target, num_runs, detach):
 
 
 # plot helpers
-def plot_table3(zillow_path='r5d.8xlarge/zillow', output_folder='plots'):
+def plot_table3(zillow_path='results/zillow', output_folder='plots'):
     logging.info('Plotting Figure3 (Zillow experiment)')
     logging.info('Benchmark result folder specified as {}'.format(zillow_path))
     from plot_scripts.zillow_plots import table3, load_data
@@ -4134,7 +4134,7 @@ def plot_table3(zillow_path='r5d.8xlarge/zillow', output_folder='plots'):
     logging.info('Table shown.')
 
 
-def plot_figure3(zillow_path='r5d.8xlarge/zillow', output_folder='plots'):
+def plot_figure3(zillow_path='results/zillow', output_folder='plots'):
     logging.info('Plotting Figure3 (Zillow experiment)')
     logging.info('Benchmark result folder specified as {}'.format(zillow_path))
     from plot_scripts.zillow_plots import figure3, load_data
@@ -4146,7 +4146,7 @@ def plot_figure3(zillow_path='r5d.8xlarge/zillow', output_folder='plots'):
     logging.info('Plots saved in {}'.format(output_folder))
 
 
-def plot_figure4(flights_path='r5d.8xlarge/flights', output_folder='plots'):
+def plot_figure4(flights_path='results/flights', output_folder='plots'):
     logging.info('Plotting Figure4 (Flights experiment)')
     logging.info('Benchmark result folder specified as {}'.format(flights_path))
     from plot_scripts.figure4 import figure4
@@ -4156,7 +4156,7 @@ def plot_figure4(flights_path='r5d.8xlarge/flights', output_folder='plots'):
     logging.info('Plots saved in {}'.format(output_folder))
 
 
-def plot_figure5(logs_path='r5d.8xlarge/logs', output_folder='plots'):
+def plot_figure5(logs_path='results/logs', output_folder='plots'):
     logging.info('Plotting Figure5 (logs experiment)')
     logging.warning('DO NOT SHARE DATA')
     logging.info('Benchmark result folder specified as {}'.format(logs_path))
@@ -4167,7 +4167,7 @@ def plot_figure5(logs_path='r5d.8xlarge/logs', output_folder='plots'):
     logging.info('Plots saved in {}'.format(output_folder))
 
 
-def plot_figure6(zillow_path='r5d.8xlarge/zillow', output_folder='plots'):
+def plot_figure6(zillow_path='results/zillow', output_folder='plots'):
     logging.info('Plotting Figure6 (Tuplex exceptions)')
     logging.info('Benchmark result folder specified as {}'.format(zillow_path))
     from plot_scripts.figure6 import figure6
@@ -4175,7 +4175,7 @@ def plot_figure6(zillow_path='r5d.8xlarge/zillow', output_folder='plots'):
     logging.info('Plots saved in {}'.format(output_folder))
 
 
-def plot_figure7(zillow_path='r5d.8xlarge/zillow', output_folder='plots'):
+def plot_figure7(zillow_path='results/zillow', output_folder='plots'):
     logging.info('Plotting Figure7 (Tuplex vs. other JITs experiment)')
     logging.info('Benchmark result folder specified as {}'.format(zillow_path))
     from plot_scripts.zillow_plots import figure7, load_data
@@ -4187,7 +4187,7 @@ def plot_figure7(zillow_path='r5d.8xlarge/zillow', output_folder='plots'):
     logging.info('Plots saved in {}'.format(output_folder))
 
 
-def plot_figure8(service_path='r5d.8xlarge/311', output_folder='plots'):
+def plot_figure8(service_path='results/311', output_folder='plots'):
     logging.info('Plotting Figure8 (311 experiment/agrgegates)')
     logging.info('Benchmark result folder specified as {}'.format(service_path))
     from plot_scripts.figure8 import figure8
@@ -4197,7 +4197,7 @@ def plot_figure8(service_path='r5d.8xlarge/311', output_folder='plots'):
     logging.info('Plots saved in {}'.format(output_folder))
 
 
-def plot_figure9(tpch_path='r5d.8xlarge/tpch', output_folder='plots'):
+def plot_figure9(tpch_path='results/tpch', output_folder='plots'):
     logging.info('Plotting Figure9 (TPCH Q6/Q19)')
     logging.info('Benchmark result folder specified as {}'.format(tpch_path))
     from plot_scripts.figure9 import figure9
@@ -4207,7 +4207,7 @@ def plot_figure9(tpch_path='r5d.8xlarge/tpch', output_folder='plots'):
     logging.info('Plots saved in {}'.format(output_folder))
 
 
-def plot_figure10(flights_path='r5d.8xlarge/flights', output_folder='plots'):
+def plot_figure10(flights_path='results/flights', output_folder='plots'):
     logging.info('Plotting Figure10 (Flights breakdown)')
     logging.info('Benchmark result folder specified as {}'.format(flights_path))
     from plot_scripts.figure10 import figure10
@@ -4300,7 +4300,7 @@ def stop():
               help='path from where to read experimental logs, default={}'.format(DEFAULT_RESULT_PATH))
 def plot(target, output_path, input_path):
     """Plot all or individual figures from the Tuplex paper. Use --help to retrieve more information on this command. """
-    # check if input path is r5d.8xlarge and it's not existing -> unpack tar!
+    # check if input path is results and it's not existing -> unpack tar!
     if input_path == DEFAULT_RESULT_PATH and not os.path.isdir(input_path):
         if os.path.isfile(input_path):
             raise Exception('fatal error, conflicting file {} found! Remove file...'.format(DEFAULT_RESULT_PATH))
