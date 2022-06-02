@@ -80,7 +80,7 @@ def hash_code_object(code):
     return ret + b')'
 
 
-# join lines and remove stupid \\n
+# join lines and remove \\n
 def remove_line_breaks(source_lines):
     """
     expressions may be defined over multiple line using \ in python. This function removes this and joins lines.

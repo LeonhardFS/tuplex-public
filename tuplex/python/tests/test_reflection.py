@@ -207,7 +207,7 @@ class TestPythonFileMode(TestCase):
 
         def nested_function(x, y):
             """
-            This function has some stupid docstring here
+            This function has some docstring here
             Args:
                 x:
                 y:
@@ -217,6 +217,6 @@ class TestPythonFileMode(TestCase):
             """
             return x + y
 
-        expected_src = 'def nested_function(x, y):\n\t"""\n\tThis function has some stupid docstring here' \
+        expected_src = 'def nested_function(x, y):\n\t"""\n\tThis function has some docstring here' \
                        '\n\tArgs:\n\t\tx:\n\t\ty:\n\n\tReturns:\n\n\t"""\n\treturn x + y'
         self.cmp_code(get_source(nested_function), expected_src)

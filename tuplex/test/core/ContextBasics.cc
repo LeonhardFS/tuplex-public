@@ -112,10 +112,9 @@ TEST_F(ContextBasicsTest, basic) {
     python::initInterpreter();
     python::unlockGIL();
 
-    // solve this via Adapter pattern -.-
+    // solve this via Adapter pattern
     // --> i.e. DataSet should have a virtual member
     // impl that can be ErrorDataSet or DataSet...
-    // this avoids these stupid assertion errors...
 
     Context c(microTestOptions());
 

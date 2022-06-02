@@ -308,7 +308,7 @@ namespace tuplex {
                 // programming wise, when the schema contains only a primitive type, i.e.
                 // the schema is (i64), (f64), (bool), (string), ([i64]), ...
                 // meaning there is a single element and it is not a tuple
-                // then indexing it is stupid. I.e. avoid x[0], just write x.
+                // then indexing it is not a good idea. I.e. avoid x[0], just write x.
                 if(!hintType.parameters().front().isTupleType()) {
                     if(!hintParams({hintType.parameters()[0]}, params, true, removeBranches)) {
                         logTypingErrors(printErrors);

@@ -141,8 +141,6 @@ namespace tuplex {
     }
 
     void TraceVisitor::visit(NString *node) {
-
-        // stupid string preprocessing...
         auto val = node->value();
 
         // super simple, just push string node to stack!

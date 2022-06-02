@@ -59,7 +59,7 @@ tokens { INDENT, DEDENT }
   size_t lastTokenLine = 0;
 
   void emit(std::unique_ptr<antlr4::Token> t) override {
-    // create hard copy (this is stupid...)
+    // create hard copy
     auto tok = getTokenFactory()->create({this, t->getInputStream()},
           t->getType(), t->getText(), t->getChannel(), t->getStartIndex(), t->getStopIndex(), t->getLine(), t->getCharPositionInLine());
 

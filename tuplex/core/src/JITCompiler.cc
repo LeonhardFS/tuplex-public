@@ -301,7 +301,6 @@ namespace tuplex {
         // // ==> later, make this more sophisticated...
         // // llvm::Function* function;
         // // function->setName("query1_" + function->getName())
-        // // ==> this is stupid though... but well, seems to be required.
         // // ==> smarter way is to do lookup!
         // // i.e. iterate over all functions in the module to change them...
         // auto err =_lljit->addIRModule(std::move(tsm.get()));
@@ -353,20 +352,6 @@ namespace tuplex {
         auto err = _lljit->addIRModule(jitlib, std::move(tsm.get()));
         if(err)
             throw std::runtime_error("compilation failed, " + errToString(err));
-
-        // other option: modify module with unique prefix!
-        // // one option to do this, is to iterate over functions and prefix them with a query number...
-        // // ==> later, make this more sophisticated...
-        // // llvm::Function* function;
-        // // function->setName("query1_" + function->getName())
-        // // ==> this is stupid though... but well, seems to be required.
-        // // ==> smarter way is to do lookup!
-        // // i.e. iterate over all functions in the module to change them...
-        // auto err =_lljit->addIRModule(std::move(tsm.get()));
-        // if(err)
-        //     throw std::runtime_error("compilation failed, " + errToString(err));
-
-        // // another reference: https://doxygen.postgresql.org/llvmjit_8c_source.html
 
         return true;
     }

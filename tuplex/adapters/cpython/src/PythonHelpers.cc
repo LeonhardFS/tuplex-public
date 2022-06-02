@@ -710,7 +710,7 @@ namespace python {
 
         assert(holdsGIL());
 
-        // need to unnest one level (a little stupid but oh well)
+        // need to unnest one level
         Field f = pythonToField(obj);
 
         if(f.getType().isTupleType() && f.getType() != python::Type::EMPTYTUPLE) {

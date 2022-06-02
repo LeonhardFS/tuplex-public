@@ -898,14 +898,15 @@ TEST_F(CSVRowParseTest, MultiStringMasked) {
     rg.addCell(python::Type::STRING, true)
             .addCell(python::Type::STRING, false)
             .addCell(python::Type::STRING, true).build(false);
-    std::string sText = "some text here,ignore this,\"speaking in \"\" is stupid\"";
+    std::string sText = "some text here,ignore this,\"speaking in \"\" is "
+                        "\"";
     auto res = parse(rg, sText);
 
     EXPECT_TRUE(res.ec == ExceptionCode::SUCCESS);
     EXPECT_EQ(res.numBytesParsed, sText.length());
 
     EXPECT_EQ(getString(0), "some text here");
-    EXPECT_EQ(getString(1), "speaking in \" is stupid");
+    EXPECT_EQ(getString(1), "speaking in \" is ");
 }
 
 TEST_F(CSVRowParseTest, DoubleQuoteError) {

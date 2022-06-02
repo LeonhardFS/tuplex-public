@@ -88,7 +88,7 @@ TEST(StringUtils, FastDequote) {
     EXPECT_EQ(dequote("\"\"\"\"\"\" "), "\"\"\" ");
     EXPECT_EQ(dequote("nothing"), "nothing");
     EXPECT_EQ(dequote("\"\" hello \"\""), "\" hello \"");
-    EXPECT_EQ(dequote("speaking in \"\" is stupid"), "speaking in \" is stupid");
+    EXPECT_EQ(dequote("speaking in \"\" is smart"), "speaking in \" is smart");
     EXPECT_EQ(dequote("test\"\" this"), "test\" this");
 }
 

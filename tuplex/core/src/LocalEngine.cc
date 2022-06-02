@@ -21,7 +21,7 @@ namespace tuplex {
     void LocalEngine::release() {
         // release all
         for(auto& exec : _executors) {
-            // this here is very stupid:
+            // this here is surprising:
             // basically, the issue is that when exiting the program
             // python doesn't allow anymore PySys_StdWriteout to be called...
             // ==> i.e. for this resort to std::cout...
