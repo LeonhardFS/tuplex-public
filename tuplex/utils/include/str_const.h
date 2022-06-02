@@ -11,8 +11,6 @@
 #ifndef TUPLEX_STR_CONST_H
 #define TUPLEX_STR_CONST_H
 
-
-// based on file:///Users/leos/Downloads/schurr_cpp11_tools_for_class_authors.pdf
 // this file allows for easier handling of compile time strings
 class str_constant {
 private:
