@@ -29,26 +29,7 @@ namespace tuplex {
 
         switch(node->type()) {
             case ASTNodeType::Subscription: {
-
                 NSubscription* sub = (NSubscription*)node;
-
-                // @TODO: there might be issues when variable is redefined!
-                // i.e.
-                // def f(x):
-                //      y = x['columnA']
-                //      x = 12
-                //      return y
-                // this could be problematic with if...else... blocks because of the scoping,
-                // so future version should take account of this...
-                // check if value is an identifier matching the parameter
-
-
-                // @TODO: what about dynamic lookups?
-                // i.e. check AFTER typing to do this
-                // e.g.
-                // def f(x):
-                //      y = 'columnA'
-                //      return x[y]
 
                 if(sub->_value->type() == ASTNodeType::Identifier &&
                    sub->_expression->type() == ASTNodeType::String) {

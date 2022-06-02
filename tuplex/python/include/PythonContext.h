@@ -103,7 +103,7 @@ namespace tuplex {
         inline size_t sampleSize(const py::list &L) const {
             // sample size to determine how many entries should be scanned to get python types
             static const size_t DEFAULT_SAMPLE_SIZE = 16;
-            // todo: get from options
+            // to do: get from options
             size_t numElements = py::len(L);
             auto numSample = numElements < DEFAULT_SAMPLE_SIZE ? numElements : DEFAULT_SAMPLE_SIZE;
             return numSample;

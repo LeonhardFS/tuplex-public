@@ -206,8 +206,4 @@ def get_source(f):
             # works always, because functions can be only defined on a single line!
             return get_function_code(f)
     else:
-
-        # TODO: for constants, create dummy source code, i.e. lambda x: 20
-        # when desired to retrieve a constant or so!
-
         return ''

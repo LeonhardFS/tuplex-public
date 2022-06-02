@@ -104,8 +104,7 @@ namespace tuplex {
                 }
                 return node;
             }
-            // TODO: This will not work with nested functions, because it will try to rewrite all of them
-#warning "This rewrite will not work for nested functions."
+
             case ASTNodeType::Suite: {
                 if(parent->type() == ASTNodeType::Function) {
                     auto suite = ((NSuite*)node);

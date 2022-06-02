@@ -265,8 +265,6 @@ namespace tuplex {
     }
 
     bool isBoolString(const std::string& str) {
-        // @TODO: can we optimize this?
-
         // true list
         for(const auto& t : booleanTrueStrings()) {
             if(boost::algorithm::to_lower_copy(str).compare(t) == 0)

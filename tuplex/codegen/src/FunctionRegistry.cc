@@ -65,9 +65,6 @@ namespace tuplex {
         // this allows for failures as well.
         // that general model is basically required for true exception handling...
         // maybe give details in implementation...
-
-        // @Todo: this sucks. Should be different. Should be, create call for functions & then directly code stuff...
-
         llvm::Function* createStringLenFunction(LLVMEnvironment& env) {
             using namespace llvm;
 
@@ -192,7 +189,7 @@ namespace tuplex {
                 return SerializableValue(new_val, i64Size);
 
             } else if(python::Type::I64 == type) {
-                // nothing todo, simply return
+                // nothing to do, simply return
                 return args.front();
 
             } else if(python::Type::F64 == type) {
@@ -286,7 +283,6 @@ namespace tuplex {
             builder.CreateStore(size, retsize);
         }
 
-        // TODO: probably need to use cJSON_DetachItemFromObjectCaseSensistive to make sure pop deletes the item - then we need to recalculate the serialized size
         SerializableValue FunctionRegistry::createCJSONPopCall(LambdaFunctionBuilder& lfb,
                                                           llvm::IRBuilder<> &builder,
                                                           const tuplex::codegen::SerializableValue &caller,
@@ -600,7 +596,6 @@ namespace tuplex {
 
 
             // Note: casting non-string var to string is similar to formatStr
-            // @Todo: refactor both functions into one nice one
 
             // for strings: need to escape!
             // i.e. escaped size
@@ -1276,8 +1271,6 @@ namespace tuplex {
             assert(arg.is_null == nullptr); // no NULL allowed here!
 
             if(arg.val->getType()->isDoubleTy()) {
-                // TODO: if we allow undefined behavior, optimize these checks away...
-
                 // these functions pretty much do the same.
                 // first check inf, -inf which results in overflow error
                 auto overflow_cond = builder.CreateOr(builder.CreateFCmp(llvm::CmpInst::Predicate::FCMP_OEQ, arg.val, _env.f64Const(INFINITY)),
@@ -1338,28 +1331,11 @@ namespace tuplex {
             return SerializableValue(new_val, caller.size);
         }
 
-        // TODO: fix with optional sep! https://docs.python.org/3/library/string.html#string.capwords
         SerializableValue FunctionRegistry::createCapwordsCall(LambdaFunctionBuilder& lfb, llvm::IRBuilder<> &builder, const SerializableValue &caller) {
             // simple, use helper function
             // call strLower from runtime
             using namespace llvm;
             assert(caller.val->getType() == _env.i8ptrType());
-
-            //@TODO: because capwords is actually
-            // # Capitalize the words in a string, e.g. " aBc  dEf " -> "Abc Def".
-            //def capwords(s, sep=None):
-            //    """capwords(s [,sep]) -> string
-            //    Split the argument into words using split, capitalize each
-            //    word using capitalize, and join the capitalized words using
-            //    join.  If the optional second argument sep is absent or None,
-            //    runs of whitespace characters are replaced by a single space
-            //    and leading and trailing whitespace are removed, otherwise
-            //    sep is used to split and join the words.
-            //    """
-            //    return (sep or ' ').join(x.capitalize() for x in s.split(sep))
-            // depending on sep/x attributerror or typeerror needs to be raised.
-            // we only support the 1 keyword version.
-            // Note: this function is the perfect test candidate for (pre)compiling external module functions!
 
             // no option type here supported!
             if(caller.is_null) {
@@ -1570,7 +1546,6 @@ namespace tuplex {
 
                 builder.SetInsertPoint(realloc_output_BB);
                 builder.CreateStore(builder.CreateMul(builder.CreateLoad(cur_result_size), _env.i64Const(2)), cur_result_size); // double cur_result_size
-                // TODO: should we error here if the potential output buffer gets too large?
                 builder.CreateBr(substitute_BB); // try substituting again
 
                 builder.SetInsertPoint(errorcheck_BB);
@@ -1583,7 +1558,6 @@ namespace tuplex {
                 lfb.setLastBlock(return_BB);
 
                 // return the match object
-                // TODO: should we reallocate the buffer to be exactly the correct size? pcre2_substitute * does * make sure to include space for a null terminator
                 return SerializableValue(builder.CreateLoad(result_buffer), builder.CreateAdd(builder.CreateLoad(result_size), _env.i64Const(1)));
             }
 
@@ -2208,12 +2182,10 @@ namespace tuplex {
                                                                          const std::vector<tuplex::codegen::SerializableValue> &args) {
             // check
             if(symbol == "upper") {
-                //@Todo: checks here...
                 return createUpperCall(builder, caller);
             }
 
             if(symbol == "lower") {
-                //@Todo: checks here...
                 return createLowerCall(builder, caller);
             }
 
@@ -2225,8 +2197,6 @@ namespace tuplex {
             }
             
             if(symbol == "format") {
-                //@Todo: checks here...
-
                 // extract args
                 assert(argsType.isTupleType());
                 return createFormatCall(builder, caller, args, argsType.parameters());

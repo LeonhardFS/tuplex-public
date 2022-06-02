@@ -19,17 +19,6 @@
 namespace tuplex {
 
     void JITCompiledCSVReader::read(const URI &inputFilePath) {
-
-        // @TODO: in mapped, need to adjust chunking
-        // //// use buffered for S3 and co
-        // if(inputFilePath.isLocal()) {
-        //     Logger::instance().defaultLogger().info("mmap on " + inputFilePath.toPath());
-        //     readMapped(inputFilePath);
-        // } else {
-        //     Logger::instance().defaultLogger().info("buffered read on " + inputFilePath.toPath());
-        //     readBuffered(inputFilePath);
-        // }
-
         readBuffered(inputFilePath); // the mmap is not worth it, disable.
     }
 
@@ -188,15 +177,13 @@ namespace tuplex {
                 int csvStartOffset = 0;
                 if(useRange) {
 
-                    // when rangestart is 0, nothing todo
+                    // when rangestart is 0, nothing to do
                     if(_rangeStart == 0) {
-                        // nothing todo
+                        // nothing to do
                     } else {
                         // _inputBuffer contains a couple bytes before the start of the range, need for look back
                         auto info = findLineStart((const char*)_inputBuffer, _inBufferLength, readBeforeSize, _numColumns, _delimiter, _quotechar);
 
-                        // @TODO: if this fails, a possible cause might be that a row doesn't fit into the buffer.
-                        // should resize and use a couple retries. postponed for now, just pick the right value.
                         if(!info.valid)
                             throw std::runtime_error("could not find csv start in JITCompiledCSVReader, aborting task");
                         csvStartOffset = info.offset;
@@ -269,7 +256,7 @@ namespace tuplex {
 
             assert(bytesConsumed <= _bufferSize);
 
-            if(0 == bytesConsumed && _inBufferLength == _bufferSize) { //@TODO: test for this!!!
+            if(0 == bytesConsumed && _inBufferLength == _bufferSize) {
                 // this case is assumed if the line is larger than the buffer!!!
                 // --> needs to be handled separately
                 cerr<<"line might not fit into buffer here, need to handle this case separately!!!"<<endl;

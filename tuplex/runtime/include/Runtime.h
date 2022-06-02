@@ -62,7 +62,6 @@ extern void    rtfree_all() noexcept; // !!! do not change without changing LLVM
 
 /***********
  * fast conversion functions
- * @Todo: Maybe later add llvm versions of them, i.e. by linking the module to further optimize the code
  */
 extern int32_t fast_atoi64(const char *start, const char *end, int64_t* out);
 extern int32_t fast_atod(const char *start, const char *end, double* out);
@@ -110,8 +109,6 @@ extern int64_t strSplit(const char *base_str, int64_t base_str_length, const cha
 
 // string.capwords
 extern char* stringCapwords(const char* str, int64_t size, int64_t *res_size);
-
-// @TODO: str.title
 
 /******
  * PCRE2 wrappers

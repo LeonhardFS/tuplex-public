@@ -141,10 +141,8 @@ namespace tuplex {
         // visit functions
         void enterScope() {
             // push current to stack
-            // @Todo: maybe some checks that this is legal
             assert(_visitIndex < _scopes.size());
             _scopeStack.push_back(_scopes[_visitIndex++]);
-            // todo update scope with all info from stack, i.e. replace unknown with type hints...
             assert(!_scopeStack.empty());
             _lastScope = _scopeStack.back();
         }

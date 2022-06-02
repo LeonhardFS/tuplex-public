@@ -220,7 +220,7 @@ namespace tuplex {
     extern bool isBoolString(const std::string& str);
 
     /*!
-     * parse string, throws exception if not boolean string. @TODO: can we optimize this? I.e. via prefix tree?
+     * parse string, throws exception if not boolean string.
      * @param str
      * @return the value of the boolean str
      */

@@ -475,7 +475,6 @@ namespace tuplex {
                 assert(row.count != 0);
 
                 // produce badcsvparse input...
-                // Todo: serialize whole row as exception...
                 auto resCode = ExceptionCode::BADPARSE_STRING_INPUT;
 
                 // serializeParse exception => this is expensive
@@ -576,11 +575,6 @@ namespace tuplex {
                     if(ExceptionCode::OUTPUT_LIMIT_REACHED == resCode)
                         break;
 
-                    // TODO here: for 311 need to put row onto separate exception stack!
-                    // ==> save parse information here!
-                    // or simpler: If parse error, then save all cells as string output!
-                    // serialize as CSV operator error(i.e. serialize with cells + sizes!
-
                     // now call exception serialize
                     size_t exception_buf_size = 0;
                     auto exception_buf = serializeParseException(row.count, cells, cell_sizes, &exception_buf_size, _columnsToKeep, runtime::rtmalloc);
@@ -589,14 +583,6 @@ namespace tuplex {
                     if(_makeParseErrorsInternal)
                         resCode = ExceptionCode::BADPARSE_STRING_INPUT;
 
-#ifndef NDEBUG
-                    // // memory will be freed from runtime, do not bother...
-                    // std::cout<<"Row "<<rowNumber<<" exception: "<<exceptionCodeToString(resCode)<<std::endl;
-                    // std::cout<<"    => serialized bad row to memory: "<<exception_buf_size<<" bytes"<<std::endl;
-#endif
-
-                    // @TODO: am not sure whether pipeline functor has handler or not...
-                    // should not have one.
                     // call exception handler with params
                     // params are:  void* userData,
                     //              int64_t exceptionCode,

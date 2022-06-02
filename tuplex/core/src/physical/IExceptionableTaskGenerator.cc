@@ -105,8 +105,6 @@ namespace tuplex {
 
                 auto eh_func_ptr_type = PointerType::get(eh_FT, 0);
 
-#warning "read comments here before trying to create a multi-node system"
-                // @Todo: thread safe function required here.
                 // the address of the function can be only determined during runtime. Hence, when shipping LLVM IR Code across a cluster,
                 // the current process needs to be inspected and the address of the function be inserted.
                 auto eh_func_addr = _env->i64Const(reinterpret_cast<int64_t>(_handler));
@@ -202,8 +200,7 @@ namespace tuplex {
             // check if something needs to be serialized or not. If not, do not bother with serialization code
             assert(outputSchema.isTupleType());
             if(outputSchema.parameters().size() == 0) {
-                // nothing todo...
-
+                // nothing to do...
             } else {
                 // should never violate this
                 assert(ft.numElements() > 0);
@@ -266,8 +263,6 @@ namespace tuplex {
 
                 auto func_ptr_type = PointerType::get(FT, 0);
 
-#warning "read comments here before trying to create a multi-node system"
-                // @Todo: thread safe function required here.
                 // the address of the function can be only determined during runtime. Hence, when shipping LLVM IR Code across a cluster,
                 // the current process needs to be inspected and the address of the function be inserted.
                 auto func_addr = _env->i64Const(reinterpret_cast<int64_t>(requestOutputMemory));

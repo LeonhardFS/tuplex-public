@@ -478,8 +478,8 @@ namespace python {
         using namespace std;
 
         assert(holdsGIL());
-
-        // @Todo: if obj == nullptr, return None!
+        if(!obj)
+            return tuplex::Field::null();
         assert(obj);
 
         // make sure python interpreter is initialized
@@ -575,7 +575,6 @@ namespace python {
                         dval = PyFloat_AsDouble(val);
                     }
 
-                    // TODO: cJSON does not support nan/inf
                     // taken from cJSON::print_number
                     unsigned char number_buffer[32];
                     int length = 0;
@@ -664,8 +663,6 @@ namespace python {
      */
     tuplex::Field pythonToField(PyObject *obj, const python::Type &type) {
         assert(obj);
-
-        // TODO: check assumptions about whether nonempty tuple can be an option
         if(type.isOptionType()) {
             if (obj == Py_None) {
                 return tuplex::Field::null(type);
@@ -932,9 +929,6 @@ namespace python {
 
         // make sure python interpreter is initialized
         assert(Py_IsInitialized());
-
-        // @Todo: Use here PyErr_ExceptionMatches --> more important!!!
-#warning "use here PyErr_ExceptionMatches"
         // confer https://docs.python.org/3/library/exceptions.html#bltin-exceptions
         // and https://docs.python.org/3/c-api/exceptions.html
         if(type == PyExc_AssertionError)
@@ -1437,7 +1431,6 @@ namespace python {
                 if(elementType != mapPythonClassToTuplexType(PyList_GetItem(o, j))) {
                     Logger::instance().defaultLogger().error("lists with variable type elements are not supported.");
                     return python::Type::UNKNOWN;
-                    // TODO: the general case should return python::Type::PyObject in the future
                 }
             }
             return python::Type::makeListType(elementType);

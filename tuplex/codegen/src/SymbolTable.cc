@@ -104,8 +104,6 @@ namespace tuplex {
 
         // tuple means an arbitrary number of elements
         // (tuple) means a single arbitrary tuple!
-
-        // @TODO: genericdict, generictuple
         // string is special, because it also works for options!
         addSymbol("str", python::Type::makeFunctionType(python::Type::makeOptionType(python::Type::NULLVALUE),
                                                         python::Type::STRING));
@@ -345,8 +343,6 @@ namespace tuplex {
         addSymbol(make_shared<Symbol>("zip", zipFunctionTyper));
         addSymbol(make_shared<Symbol>("enumerate", enumerateFunctionTyper));
         addSymbol(make_shared<Symbol>("next", nextFunctionTyper));
-
-        // TODO: other parameters? i.e. step size and Co?
         // also, boolean, float? etc.?
         addSymbol("range", python::Type::makeFunctionType(python::Type::I64, python::Type::RANGE));
 
@@ -477,22 +473,6 @@ namespace tuplex {
                                                                        python::Type::makeTupleType({dict_type.keyType(), dict_type.valueType()})));
 
             }
-
-        // for the weird case of the default object having different type than the dict value type, use tracing.
-
-        // another good design for builtin functions could be:
-        // class BuiltinFunction {
-        // --> free standing functions
-        //  type() ==>
-        // };
-        // class AttributeFunction {
-        // functions operating on objects.
-        // };
-        // ==> how to hook up functions from defined objects??
-        // which then bundles code generation, typing etc. => that might be easier to extent...
-        // @TODO: is this wise?
-
-
         addBuiltinExceptionHierarchy();
     }
 
@@ -752,7 +732,6 @@ namespace tuplex {
                                                 const std::string &attribute,
                                                 const python::Type& parameterType) {
         // just check first scope (i.e. the global one)
-        // @TODO: if users redefine scope this is wrong...
 
         assert(!_scopes.empty());
         assert(_scopes.front()->type == ScopeType::BUILTIN);
@@ -826,7 +805,6 @@ namespace tuplex {
         return python::Type::UNKNOWN;
     }
 
-// TODO: generic specialization! => i.e. replace with concrete result!
     python::Type SymbolTable::findFunctionType(const std::string &symbol, const python::Type &parameterType, bool withNullAsAny) {
 
         using namespace std;
@@ -858,7 +836,6 @@ namespace tuplex {
                 // replace all null values with any. thus matching is possible with the first one
                 python::Type anyType = python::Type::ANY;
                 if(parameterType.isTupleType()) {
-                    // @TODO: recursive?? => null value opt only works for first layer.
                     vector<python::Type> params;
                     for(auto p : parameterType.parameters()) {
                         if(p == python::Type::NULLVALUE)
@@ -918,7 +895,6 @@ namespace tuplex {
         }
 
         // exhausted the recursive search, could be an aliased symbol. Perform super slow search across all symbols...
-        // @TODO: hashmap to speed this up?
         for(auto it = _scopeStack.rbegin(); it != _scopeStack.rend(); ++it) {
             Scope *scope = *it;
             assert(scope);

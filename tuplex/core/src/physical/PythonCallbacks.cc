@@ -32,7 +32,6 @@ extern "C" int32_t callPythonCodeSingleParam(PyObject* func, uint8_t** out, int6
     // note: this here is wrong:
     // since, this is a dylib, the type factory is a separate object.
     // need to point to the TypeFactory object being used in the main program!
-    //@Todo: solve this!
     // ==> i.e. register type with the runtime!!!
     // or, make sure this is in the main library as symbol...
 
@@ -115,16 +114,8 @@ extern "C" int32_t callPythonCodeMultiParam(PyObject* func, uint8_t** out, int64
     // deserialize contents
     using namespace tuplex;
 
-    // note: this here is wrong:
-    // since, this is a dylib, the type factory is a separate object.
-    // need to point to the TypeFactory object being used in the main program!
-    //@Todo: solve this!
-    // ==> i.e. register type with the runtime!!!
-    // or, make sure this is in the main library as symbol...
-
     python::Type input_type = python::TypeFactory::instance().getByHash(in_typeHash);
     python::Type output_type = python::TypeFactory::instance().getByHash(out_typeHash);
-
 
     // propagate to tuple type, since row.getRowType() always returns a tuple type.
     output_type = python::Type::propagateToTupleType(output_type);

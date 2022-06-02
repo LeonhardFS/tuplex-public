@@ -166,8 +166,6 @@ namespace tuplex {
             llvm::Value* getPointerToVariable(llvm::IRBuilder<>& builder, const std::string name);
             void assignToVariable(llvm::IRBuilder<>& builder, const std::string name, llvm::Value *newValue);
 
-            // @ Todo: refactor by introducing overloadable variable class for easier code generation
-
             inline llvm::Value* i8nullptr() {
                 return llvm::ConstantPointerNull::get(llvm::Type::getInt8PtrTy(_env->getContext(), 0));
             }

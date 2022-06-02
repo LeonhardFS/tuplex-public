@@ -85,8 +85,7 @@ namespace tuplex {
         // delete scratch dir?
         if(_deleteScratchDirOnShutdown) {
             auto vfs = VirtualFileSystem::fromURI(_scratchDir);
-            vfs.remove(_scratchDir); // TODO: could optimize this by keeping track of temp files and issuing on shutdown
-            // a single multiobject delete request...
+            vfs.remove(_scratchDir);
         }
     }
 
@@ -180,10 +179,6 @@ namespace tuplex {
 
         logger().info("Using Lambda running on " + _functionArchitecture);
 
-        // limit concurrency + mem of function manually (TODO: uncomment for faster speed!), if it doesn't fit options
-        // i.e. aws lambda put-function-concurrency --function-name tplxlam --reserved-concurrent-executions $MAX_CONCURRENCY
-        //      aws lambda update-function-configuration --function-name tplxlam --memory-size $MEM_SIZE --timeout 60
-        // update required?
         bool needToUpdateConfig = false;
         Aws::Lambda::Model::UpdateFunctionConfigurationRequest update_req;
         update_req.SetFunctionName(_functionName.c_str());
@@ -252,13 +247,6 @@ namespace tuplex {
     }
 
     void AwsLambdaBackend::invokeAsync(const messages::InvocationRequest &req) {
-
-        // @TODO: refactor using old model of lambda requests
-        // => save req and response
-        // fallback when rate limit is reached
-        // i.e. checkout https://github.com/StanfordSNR/gg/blob/master/src/execution/engine_lambda.cc
-        // https://github.com/StanfordSNR/gg/blob/62579e141a96f30312cd9a1a2d6f91302e3899d5/src/execution/reductor.cc
-
         auto taskID = getUniqueID();
 
         // construct req object
@@ -316,7 +304,6 @@ namespace tuplex {
             switch(tstage->inputMode()) {
                 case EndPointMode::MEMORY: {
                     // simply save to S3!
-                    // @TODO: larger/smaller files?
                     Timer timer;
                     int partNo = 0;
                     auto num_partitions = tstage->inputPartitions().size();
@@ -328,9 +315,6 @@ namespace tuplex {
                         auto part_uri = s3tmp_uri.join_path("input_part_" + fixedLength(partNo, num_digits) + ".mem");
                         auto vfs = VirtualFileSystem::fromURI(part_uri);
                         auto vf = vfs.open_file(part_uri, VirtualFileMode::VFS_OVERWRITE);
-
-                        // @TODO: setMIMEtype?
-
                         if(!vf)
                             throw std::runtime_error("could not open file " + part_uri.toString());
                         auto buf = p->lockRaw();
@@ -361,7 +345,6 @@ namespace tuplex {
         }
 
         std::string optimizedBitcode = "";
-        // optimize at client @TODO: optimize for target triple?
         if(_options.USE_LLVM_OPTIMIZER()) {
             Timer timer;
             llvm::LLVMContext ctx;
@@ -382,7 +365,6 @@ namespace tuplex {
         }
 
         // Note: for now, super simple: 1 request per file (this is inefficient, but whatever)
-        // @TODO: more sophisticated splitting of workload!
         Timer timer;
         int num_digits = ilog10c(uri_infos.size());
         for (int i = 0; i < uri_infos.size(); ++i) {
@@ -431,16 +413,13 @@ namespace tuplex {
         }
         logger().info("LAMBDA requesting took "+ std::to_string(timer.time()) + "s");
 
-        // TODO: check signals, allow abort...
-
         // wait till everything finished computing
         waitForRequests();
         logger().info("LAMBDA compute took " + std::to_string(timer.time()) + "s");
 
-        // @TODO: results sets etc.
         switch(tstage->outputMode()) {
             case EndPointMode::FILE: {
-                std::unordered_map<std::tuple<int64_t, ExceptionCode>, size_t> ecounts; // Todo: fill in from lambda
+                std::unordered_map<std::tuple<int64_t, ExceptionCode>, size_t> ecounts;
                 tstage->setFileResult(ecounts);
                 break;
             }
@@ -454,12 +433,12 @@ namespace tuplex {
                     for(auto uri : task.outputuris())
                         output_uris.push_back(uri);
                 }
-                // sort after part no @TODO
+                // sort after part no
                 std::sort(output_uris.begin(), output_uris.end(), [](const URI& a, const URI& b) {
                     return a.toString() < b.toString();
                 });
 
-                // download and store each part in one partition (TODO: resize etc.)
+                // download and store each part in one partition
                 vector<Partition*> output_partitions;
                 int partNo = 0;
                 int num_digits = ilog10c(output_uris.size());
@@ -500,7 +479,7 @@ namespace tuplex {
                     logger().debug("read " + sizeToMemString(bytesRead) + " to a single partition");
                     output_partitions.push_back(partition);
 
-                    // remove local file @TODO: could be done later to be more efficient, faster...
+                    // remove local file
                     VirtualFileSystem::remove(path);
                 }
                 logger().info("Loading S3 results into driver took " + std::to_string(timer.time()) + "s");
@@ -589,7 +568,6 @@ namespace tuplex {
                     ss.precision(6);
                 ss<<std::fixed<<price;
             } else {
-                // TODO: maybe still track the response info (e.g. reused, cost, etc.)
                 ss<<"Lambda task failed, details: "<<response.errormessage();
             }
 
@@ -620,10 +598,6 @@ namespace tuplex {
 
         _deleteScratchDirOnShutdown = false;
         _scratchDir = URI::INVALID;
-
-        // // check that scratch dir is s3 path!
-        // if(options.SCRATCH_DIR().prefix() != "s3://") // @TODO: check further it's a dir...
-        //     throw std::runtime_error("need to provide as scratch dir an s3 path to Lambda backend");
 
         initAWS(credentials, _options.AWS_NETWORK_SETTINGS(), _options.AWS_REQUESTER_PAY());
 
@@ -673,7 +647,7 @@ namespace tuplex {
             python::lockGIL();
 
             if(PyErr_CheckSignals() != 0) {
-               // stop requests & cleanup @TODO: cleanup on S3 with requests...
+               // stop requests & cleanup
                if(_client)
                    _client->DisableRequestProcessing();
                _numPendingRequests.store(0, std::memory_order_acq_rel);
@@ -930,8 +904,7 @@ namespace tuplex {
         }
 
         if(stage->inputMode() == EndPointMode::FILE) {
-            // TODO
-            // get S3 uris, etc.
+            // missing...
         }
 
         return hints;
@@ -940,8 +913,6 @@ namespace tuplex {
     void AwsLambdaBackend::reset() {
         _tasks.clear();
         _infos.clear();
-
-        // other reset? @TODO.
     }
 }
 #endif

@@ -25,17 +25,6 @@
 
 #include <limits.h>
 
-// @TODO: code gen needs to be lazily done
-// i.e. codegen stages then execute
-// => if normal case passes, then codegen the big pipeline!
-// ==> makes it a bit more complicated, but hey JIT compilation for the rule!
-
-
-#ifndef NDEBUG
-// verbose output when building
-#define VERBOSE_BUILD
-#endif
-
 namespace tuplex {
     namespace codegen {
 
@@ -163,8 +152,6 @@ namespace tuplex {
 
                         // only inner & left join yet supported
                         auto jop = dynamic_cast<JoinOperator*>(op); assert(jop);
-
-                        // TODO test this out, seems rather quick yet
                         auto leftColumn = jop->buildRight() ? jop->leftColumn().value_or("") : jop->rightColumn().value_or("");
                         auto bucketColumns = jop->bucketColumns();
                         if(jop->joinType() == JoinType::INNER) {
@@ -1066,21 +1053,13 @@ namespace tuplex {
             isBuilder.CreateRet(env->callGlobalsInit(isBuilder));
             rsBuilder.CreateRet(env->callGlobalsRelease(rsBuilder));
 
-            // // print module for debug/dev purposes
-            // auto code = codegen::moduleToString(*env->getModule());
-            // std::cout<<core::withLineNumbers(code)<<std::endl;
-            // LLVMContext test_ctx;
-            // auto test_mod = codegen::stringToModule(test_ctx, code);
-
             // save into variables (allows to serialize stage etc.)
             // IR is generated. Save into stage.
             _funcStageName = func->getName();
-            _irBitCode = codegen::moduleToBitCodeString(*env->getModule()); // trafo stage takes ownership of module
+            // trafo stage takes ownership of module
+            _irBitCode = codegen::moduleToBitCodeString(*env->getModule());
 
-            // @TODO: lazy & fast codegen of the different paths + lowering of them
-            // generate interpreter fallback path (always) --> probably do that lazily or parallelize it...
             generatePythonCode();
-
             return true;
         }
 
@@ -1088,22 +1067,12 @@ namespace tuplex {
             using namespace std;
             using namespace llvm;
 
-
+            auto &logger = Logger::instance().logger("codegen");
             // when there are no operators present, there is no way to generate a resolve path
             // => skip
             if(_operators.empty() && !_nullValueOptimization) // when null value optimization is done, need to always generate resolve path.
                 return true;
 
-            // @TODO: one needs to add here somewhere an option where bad input rows/data get resolved when they do not fit the initial schema!
-            //  r/n it's all squashed together in a pipeline.
-
-            // @TODO: need to type here UDFs with commonCase/ExceptionCase type!
-            // ==> i.e. the larger, unspecialized type!
-
-            auto &logger = Logger::instance().logger("codegen");
-
-            // Note: this here is quite confusing, because for map operator when tuples are needed, this will return not the row schema but the UDF input schema =? fix that
-            // @TODO: fix getInputSchema for MapOperator!!!
             auto inSchema = _inputSchema.getRowType(); // old: _operators.front()->getInputSchema().getRowType();
             string funcSlowPathName = "processViaSlowPath_Stage_" + to_string(number());
             string funcResolveRowName = "resolveSingleRow_Stage_" + to_string(number());
@@ -1235,10 +1204,6 @@ namespace tuplex {
             // add exception callback (required when resolvers throw exceptions themselves!)
             slowPip->addExceptionHandler(slowPathExceptionCallback);
 
-            // @TODO: when supporting text output, need to include check that no newline occurs within string!
-            // => else, error!
-
-
             bool useRawOutput = _outputMode == EndPointMode::FILE && _outputFileFormat == FileFormat::OUTFMT_CSV;
             // build slow path with mem writer or to CSV
             llvm::Function* slowPathFunc = nullptr;
@@ -1248,7 +1213,6 @@ namespace tuplex {
                                                               _fileOutputParameters["null_value"], true,
                                                               csvOutputDelimiter(), csvOutputQuotechar());
             } else {
-                // @TODO: hashwriter if hash output desired
                 if(_outputMode == EndPointMode::HASHTABLE) {
                     slowPathFunc = slowPip->buildWithHashmapWriter(slowPathHashWriteCallback,
                                                                    _hashColKeys,
@@ -1288,7 +1252,7 @@ namespace tuplex {
 
             // make sure certain options exist
             if (_fileOutputParameters.find("null_value") == _fileOutputParameters.end())
-                _fileOutputParameters["null_value"] = ""; // empty string for now // @TODO: make this an option in the python API
+                _fileOutputParameters["null_value"] = ""; // empty string for now
 
             switch (fop->fileFormat()) {
                 case FileFormat::OUTFMT_CSV: {
@@ -1342,7 +1306,7 @@ namespace tuplex {
             // add reader
             _inputSchema = schema;
             _normalCaseInputSchema = schema;
-            _readSchema = schema; // no projection pushdown yet for tuplex spurce @TODO to improve speeds!
+            _readSchema = schema; // no projection pushdown yet for tuplex source
             _inputMode = EndPointMode::MEMORY;
             _inputFileFormat = FileFormat::OUTFMT_TUPLEX;
             _inputNode = node;
@@ -1375,16 +1339,7 @@ namespace tuplex {
             _outputNodeID = 0;
             _outputDataSetID = 0;
 
-            // leave others b.c. it's an intermediate stage...
-
             // assert key type
-            // TODO(rahuly): do something about this assertion - it's false for AggregateByKey because the output schema doesn't match the parent's
-//            python::Type kt;
-//            if(colKey.has_value()) {
-//                kt = schema.getRowType().parameters().at(colKey.value());
-//                std::cout << "kt: " << kt.desc() << std::endl;
-//                assert(canUpcastType(kt, keyType));
-//            }
             _hashKeyType = keyType;
             _hashBucketType = bucketType;
         }

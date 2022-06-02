@@ -28,7 +28,6 @@ namespace tuplex {
         std::list<Partition*> _partitions;
         std::vector<Partition*> _exceptions; // unresolved exceptions
         std::unordered_map<std::string, ExceptionInfo> _partitionToExceptionsMap;
-        // @TODO: use here rows instead? would make it potentially cleaner...
         std::deque<std::tuple<size_t, PyObject*>> _pyobjects; // python objects remaining whose type
         // did not confirm to the one of partitions. Maybe use Row here instead?
         size_t _curRowCounter; //! row counter for the current partition

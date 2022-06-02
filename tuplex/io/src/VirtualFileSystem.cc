@@ -358,13 +358,9 @@ namespace tuplex {
     }
 #endif
 
-    // @TODO: add overwrite parameter??
     VirtualFileSystemStatus VirtualFileSystem::copy(const std::string &src_pattern, const URI &target) {
         using namespace std;
         auto& logger = Logger::instance().logger("filesystem");
-
-        // TODO: making VFS async could speed up things a lot!
-
 #ifndef BUILD_WITH_AWS
         if(target.prefix() == "s3://") {
             logger.error("Tuplex version was build without AWS SDK support. Can't process S3 URI " + target.toPath());

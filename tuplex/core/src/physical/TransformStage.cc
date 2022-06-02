@@ -50,49 +50,6 @@ namespace tuplex {
                                                                   _inputLimit(std::numeric_limits<size_t>::max()),
                                                                   _outputLimit(std::numeric_limits<size_t>::max()),
                                                                   _aggMode(AggregateType::AGG_NONE) {
-
-        // TODO: is this code out of date? + is allowUndefinedBehavior needed here?
-        // plan stage using operators.
-        // there are 2x2 options:
-        // 1. file -> memory
-        // 2. file -> file
-        // 3. memory -> file
-        // 4. memory -> memory
-
-//        assert(_operators.size() >= 2); // for now, no other staging etc. implemented
-//
-//        generateCode(allowUndefinedBehavior);
-
-        // generate fallback, pure python pipeline
-        // when is it necessary to actually generate pure python code?
-        // ==> 1.) Parsing text data like CSV/JSON because of odd behavior and to resolve this via type sniffing
-        // ==> 2.) when objects of different type are parsed to the backend in the PythonWrapper.
-
-        // @TODO: generate this ONLY when either there is weird pyth
-//        generatePythonCode();
-
-//        auto& logger = Logger::instance().logger("physical planner");
-//        if(!_irCode.empty()) {
-//            std::stringstream ss;
-//            ss<<"generated stage "<<this->number()<<" ("<<sizeToMemString(_irCode.size())<<" LLVM code)";
-//            logger.info(ss.str());
-//        }
-
-        // // check if it is memory to memory
-        // auto ftype = _operators.front()->type();
-        // auto ltype = _operators.back()->type();
-        // if(ftype == LogicalOperatorType::PARALLELIZE
-        // && ltype == LogicalOperatorType::TAKE) {
-        //     // memory -> memory
-        // } else if(ftype == LogicalOperatorType::CSV && ltype == LogicalOperatorType::TAKE) {
-        //     // file -> memory
-        // } else if(ftype == LogicalOperatorType::PARALLELIZE && ltype == LogicalOperatorType::FILEOUTPUT) {
-        //     // memory -> file
-        // } else if(ftype == LogicalOperatorType::CSV && ltype == LogicalOperatorType::FILEOUTPUT) {
-        //     // file -> file
-        // } else {
-        //     throw std::runtime_error("found unknown trafo stage: " + _operators.front()->name() + " -> ... -> " + _operators.back()->name());
-        // }
     }
 
     void TransformStage::setInputFiles(const std::vector<URI> &uris, const std::vector<size_t> &sizes) {
@@ -179,25 +136,6 @@ namespace tuplex {
         // add operators...
         vector<json> ops;
 
-        // @TODO: need to change this...
-//        for(auto op : _operators) {
-//            json val;
-//            val["name"] = op->name();
-//            val["id"] = "op" + std::to_string(op->getID());
-//            val["columns"] = op->columns();
-//
-//            // UDF code for display...
-//            if(hasUDF(op)) {
-//                UDFOperator *udfop = (UDFOperator*)op;
-//                assert(udfop);
-//
-//                val["udf"] = udfop->getUDF().getCode();
-//            }
-//            ops.push_back(val);
-//        }
-//
-//        j["operators"] = ops;
-
         return j;
     }
 
@@ -206,9 +144,6 @@ namespace tuplex {
         return std::make_shared<ResultSet>(outputSchema(), std::vector<Partition *>());
     }
 
-    // @TODO: unify hashsink + hashresult
-    // Also this should take care of potential hybrid?
-    // TODO: this function is basically converting ONLY keys...!
     static std::vector<Partition*> convertHashTableKeysToPartitions(const TransformStage::HashResult& result, const Schema &outputSchema, bool hasFixedSizeKeys, size_t fixedSizeKeyLength, const Context &context) {
         std::vector<std::pair<const char*, size_t>> unique_rows;
         size_t total_serialized_size = 0;
@@ -216,7 +151,6 @@ namespace tuplex {
         MessageHandler& logger = Logger::instance().defaultLogger();
 
         // check which hashmap is used
-        // @TODO: Only two kinds right now supported, expand in the future...
         bool isi64hashmap = (hasFixedSizeKeys && fixedSizeKeyLength == 8);
 
         // on which executor to store?
@@ -228,7 +162,7 @@ namespace tuplex {
         // -> if not, error and return empty vector!
 
         // hashKeyType is the type in which the key is stored. (NOT INCLUDING OPT!)
-        python::Type hashKeyType = result.keyType.withoutOptions(); // remove option b.c. of null-bucket design. @TODO: this is not 100% correct, because inner options will also get sacrificed by this...
+        python::Type hashKeyType = result.keyType.withoutOptions(); // remove option b.c. of null-bucket design.
         python::Type keyRowType = python::Type::propagateToTupleType(hashKeyType);
 
         bool requiresUpcast = false;
@@ -308,19 +242,6 @@ namespace tuplex {
                 }
             } else {
                 // str/bytes based hashmap => slow copy requiring potentially upcasting...
-
-                // this is the old version when keys are assumed to be fully serialized rows!
-                // -> i.e. need to define key storage format!!!
-                // @TODO: rewrite aggregate code.
-                // // just copy over the keys (they're already the correct data format serialized!)
-                // hashmap_iterator_t iterator = 0;
-                // const char *key = nullptr;
-                // uint64_t keylen = 0;
-                // while((key = hashmap_get_next_key(hashtable, &iterator, &keylen)) != nullptr) {
-                //     // there might be faster way...
-                //     pw.writeData(reinterpret_cast<const uint8_t *>(key), keylen);
-                // }
-
                 // because string format to store in partitions is different from hashmap, need to convert!
 
                 // get the unique rows + size
@@ -352,8 +273,6 @@ namespace tuplex {
             }
         }
 
-        // TODO: need to make mechanism to pass non-conforming python objects along as well...
-        // --> some clever refactoring might ease all of this...
         if(result.hybrid) {
             python::lockGIL();
             // check how many non-conforming objects there are...
@@ -496,9 +415,6 @@ namespace tuplex {
 
         std::vector<Partition*> ret;
         ret.push_back(p);
-
-        // @TODO: arbitrary python objects!
-
         return ret;
     }
 
@@ -584,16 +500,6 @@ namespace tuplex {
 
     void TransformStage::execute(const Context &context) {
         using namespace std;
-
-        // // use this to log out stage dependence structure
-        // stringstream ss;
-        // ss<<"Stage"<<this->number()<<" depends on: ";
-        // for(auto stage: predecessors())
-        //     ss<<"Stage"<<stage->number()<<" ";
-        // Logger::instance().defaultLogger().info(ss.str());
-
-        // execute all predecessors (can be at most one!)
-        // @TODO: this should be parallelized for tiny stages!
         for (auto stage : predecessors())
             stage->execute(context);
 
@@ -637,7 +543,6 @@ namespace tuplex {
                             std::copy(std::begin(p), std::end(p), std::back_inserter(partitions));
                         } else if(tstage->dataAggregationMode() == AggregateType::AGG_BYKEY) {
                             std::vector<Partition *> p;
-                            // @TODO.
                             // buggy here as well if NVO is used...
                             if(context.getOptions().OPT_NULLVALUE_OPTIMIZATION())
                                 Logger::instance().defaultLogger().error("aggregation resolution not supported yet with NVO. Deactivate to make this working. Other bugs might be here as well...");
@@ -693,8 +598,6 @@ namespace tuplex {
                         hm = nullptr;
                     }
                 }
-
-                // others, nothing todo. Partitions should have been invalidated...
             }
         }
     }
@@ -813,7 +716,6 @@ namespace tuplex {
         logger.info("starting code compilation");
 
         // 3. compile code
-        // @TODO: use bitcode or llvm Module for more efficiency...
         if(!jit.compile(std::move(mod))) {
             logger.error("could not compile code for stage " + std::to_string(number()));
             throw std::runtime_error("could not compile code for stage " + std::to_string(number()));

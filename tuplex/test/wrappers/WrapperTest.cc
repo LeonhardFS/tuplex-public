@@ -545,7 +545,6 @@ TEST(Python, FastTupleConstruction) {
     timer.reset();
     PyListObject* lo = PyObject_GC_New(PyListObject, &PyList_Type);
     lo->ob_item = (PyObject**)PyMem_Calloc(N, sizeof(PyObject*));
-    // TODO: mem check...
     Py_SIZE(lo) = N;
     lo->allocated = N;
     PyObject_GC_Track(lo);
@@ -568,18 +567,6 @@ TEST(Python, FastTupleConstruction) {
 
     std::cout<<"-------------"<<std::endl;
     python::closeInterpreter();
-}
-
-
-// @TODO: add test for all the helpers with wrongly formatted input rows...
-// i.e. check transfer to string etc.
-// ==> important!!!
-
-TEST_F(WrapperTest, ExplicitSchemaForParallelize) {
-    using namespace std;
-
-    // TODO: write a test for this, left out to make more progress towards a paper...
-
 }
 
 TEST_F(WrapperTest, DictListParallelize) {
@@ -811,10 +798,6 @@ TEST_F(WrapperTest, IntegerTuple) {
     }
 }
 
-// Todo: for dict parallelize test edge case of typing.Dict[str, Any] given
-// + some other when columns are explicitly given
-// use simpler python logic...
-
 std::string normalizeCol(const std::string &col) {
     std::string s;
 
@@ -1003,20 +986,6 @@ TEST_F(WrapperTest, FlightData) {
 
         // this here works. it doesn't...???
         pds.show();
-
-
-        // @TODO: fix here path issue
-        // @TODO: fix here count of rows written!!!
-        // bug in here??? i.e. output folder???
-        //pds.tocsv("tuplex_output");
-
-
-
-//
-//                    .filter("lambda x: x[3] == 0", "") \
-//                    .selectColumns(list).collect();
-
-
     }
 }
 
@@ -1024,16 +993,6 @@ TEST_F(WrapperTest, FlightSimulateSpark) {
     using namespace tuplex;
     using namespace std;
 
-    // RAII, destruct python context!
-    // {"webui.enable": false, "executorMemory": "6G",
-    // "executorCount": 15, "driverMemory": "15G",
-    // "partitionSize": "32MB", "runTimeMemory": "64MB",
-    // "inputSplitSize": "64MB", "useLLVMOptimizer": true,
-    // "optimizer.nullValueOptimization": true,
-    // "csv.selectionPushdown": true,
-    // "optimizer.generateParser": false,
-    // "optimizer.mergeExceptionsInOrder": false,
-    // "optimizer.filterPushdown": true}
     PythonContext ctx("python", "",
                     "{\"tuplex.webui.enable\":\"False\", \"tuplex.useLLVMOptimizer\" : \"True\","
                     " \"tuplex.optimizer.nullValueOptimization\" : \"True\","
@@ -1042,7 +1001,6 @@ TEST_F(WrapperTest, FlightSimulateSpark) {
                     "\"tuplex.executorCount\":0,"
                     "\"tuplex.driverMemory\":\"6G\","
                     "\"tuplex.scratchDir\": \"file://" + scratchDir + "\"}");
-
 
     string bts_path = "../resources/flights_on_time_performance_2019_01.sample.csv";
     string airport_path = "../resources/pipelines/flights/GlobalAirportDatabase.txt";

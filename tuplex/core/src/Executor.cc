@@ -79,7 +79,6 @@ namespace tuplex {
 
         IExecutorTask *task = nullptr;
         if(nonBlocking) {
-            // @Todo: This should be put into a function "work" on the workQueue...
             // dequeue from general working queue
             if(_queue.try_dequeue(task)) {
                 if(!task)
@@ -221,8 +220,6 @@ namespace tuplex {
         _threadID = std::this_thread::get_id();
         _workQueue = nullptr;
         _done = true; // per default, if worker(...) is executed it should not run through.
-
-        // @TODO: what about non-existing S3 path? to make more user-friendly fix this!
         if(cache_path.isLocal() && !cache_path.exists()) {
             info("provided cache path " + cache_path.toString() + " does not exist. Attempting to create it.");
             auto vfs = VirtualFileSystem::fromURI(cache_path);
@@ -504,11 +501,6 @@ namespace tuplex {
                 // work in non-blocking way 0 or 1 task away
                 bool taskDone = queue->workTask(*this);
 
-#ifndef NDEBUG
-                // TODO: find out why so much runtime memory is used...used
-                // i.e. print it out here or better, add to stats
-#endif
-
                 // acquire atomic reference and check if not null,
                 // if not null then update!
                 // only update when task is done, to avoid expensive calls.
@@ -531,9 +523,6 @@ namespace tuplex {
     }
 
     void Executor::release() {
-
-        //@Todo: improve logging system for python3 interop
-
         using namespace std;
 
         // stops detached queue.
@@ -542,8 +531,6 @@ namespace tuplex {
         if(_thread.joinable())
             _thread.join();
 
-        //@Todo: release memory allocated for ManagedPartitions
-        //lockListMutex();
         {
             std::unique_lock<boost::shared_mutex> lock(_listMutex);
             if(!_partitions.empty()) {
@@ -616,10 +603,6 @@ namespace tuplex {
             try {
                 _thread = std::thread(&Executor::worker, this);
             } catch(...) {
-
-                // @Todo...
-                // get rid of memory...
-
                 throw;
             }
         }

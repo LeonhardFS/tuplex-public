@@ -109,7 +109,6 @@ namespace tuplex {
             auto rightType = right()->getOutputSchema().getRowType().parameters()[rightIndex];
 
             // make sure key types are the same, else abort
-            // @TODO: could replace logically with empty result set b.c. python objects
             if (!((leftType == rightType) ||
                   (leftType.isOptionType() && leftType.getReturnType() == rightType) ||
                   (rightType.isOptionType() && rightType.getReturnType() == leftType) ||
@@ -119,14 +118,6 @@ namespace tuplex {
                         "can't perform join, left column '" + _leftColumn.value() + "'type " + leftType.desc()
                         + " is not the same as right column '" + _rightColumn.value() + "'type " + rightType.desc());
             }
-
-            // same types, hence extract values
-            // what order of columns?
-            // ==> first all the left columns EXCEPT the join column, then the join column,
-            //     then the right columns EXCEPT the join column?
-            //     what about the column name?
-            // @TODO: different options here...
-
 
             // Check whether there are conflicting column names. If so, issue warning!
             // sanity check, see whether column names exist multiple times!
@@ -146,15 +137,6 @@ namespace tuplex {
                 }
             }
 
-
-            // @TODO: probably need at some point a rename function...
-            // ==> this can be a simple map...
-            // Note: need to update this in WebUI! => i.e. selectColumns, rename etc. can be all realized using a simple map.
-            // why reinvent the wheel?
-
-
-            // @TODO: use here combinedTypes
-
             auto leftTypes = left()->getOutputSchema().getRowType().parameters();
             auto rightTypes = right()->getOutputSchema().getRowType().parameters();
 
@@ -173,7 +155,6 @@ namespace tuplex {
 
             // the join column (reuse name from left!)
             // ==> it never gets nulled!
-            // @TODO: add alias...
             columns.push_back(_leftPrefix + leftColumns[joinColIdx] + _leftSuffix);
 
             for (int i = 0; i < rightColumns.size(); ++i) {
@@ -209,11 +190,7 @@ namespace tuplex {
     }
 
     std::vector<Row> JoinOperator::getSample(size_t num) const {
-        // @TODO: fix this later!!!
         Logger::instance().defaultLogger().warn("getSample for join not yet implemented, returning empty vector");
-
-        // @TODO: better handling of C++ exceptions with C-extension.
-        //throw std::runtime_error("getSample for join not yet implemented");
 
         // for now, empty sample...
         return std::vector<Row>();

@@ -111,7 +111,6 @@ ELSEIF(CMAKE_SYSTEM_NAME MATCHES "Darwin")
     ENDIF (AVX2_TRUE)
 
 ELSEIF(CMAKE_SYSTEM_NAME MATCHES "Windows")
-    # TODO
     set(SSE2_FOUND   true  CACHE BOOL "SSE2 available on host")
     set(SSE3_FOUND   false CACHE BOOL "SSE3 available on host")
     set(SSSE3_FOUND  false CACHE BOOL "SSSE3 available on host")

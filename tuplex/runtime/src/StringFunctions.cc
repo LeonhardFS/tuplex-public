@@ -267,7 +267,6 @@ const unsigned char ascii_whitespace[] = {
     0, 0, 0, 0, 0, 0, 0, 0
 };
 
-// TODO: fix the 1 argument case for non-ascii characters
 extern char* strRStrip(const char* str, const char* chars, int64_t* res_size) {
     int size = strlen(str);
     const char* end = str + size - 1;
@@ -353,7 +352,6 @@ inline bool ispywhitespace(char c) {
            c == '\n' || c == '\r' || c == '\x0b' || c == '\x0c';
 }
 
-// @TODO implement stringCapwords with optional separator!
 // string.capwords (ignore optional separator)
 // ==> i.e. this here is the None/absent case!
 extern char* stringCapwords(const char* str, int64_t size, int64_t *res_size) {
@@ -503,5 +501,3 @@ const char * strLowerSIMD(const char *s, int64_t size) {
 
     return res;
 }
-
-// @TODO: str.title

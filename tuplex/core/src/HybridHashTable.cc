@@ -13,7 +13,6 @@
 
 namespace tuplex {
     Py_ssize_t HybridLookupTable::length() {
-        // @TODO: implement this properly...
         // i.e. sum of all buckets...
         return 0;
     }
@@ -137,9 +136,8 @@ namespace tuplex {
     }
 
     PyObject* wrapValueAsRow(PyObject* o) {
-        // is tuple? nothing todo.
         if(PyTuple_Check(o) != 0 && PyTuple_Size(o) > 1)
-            return o; // nothing todo, empty tuple will get wrapped
+            return o; // nothing to do, empty tuple will get wrapped
         auto t = PyTuple_New(1);
         PyTuple_SET_ITEM(t, 0, o);
         return t;
@@ -258,8 +256,6 @@ namespace tuplex {
         // decoce types of both key and val
         auto key_type = python::mapPythonClassToTuplexType(key);
         auto val_type = python::mapPythonClassToTuplexType(value);
-
-        // @TODO: upcasting b.c. of NVO!
 
         // match of internal dict? -> else use backup dict
         if((key_type == hmElementType || key_type == python::Type::NULLVALUE) && val_type == hmBucketType) {

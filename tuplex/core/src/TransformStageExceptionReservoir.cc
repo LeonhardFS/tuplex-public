@@ -13,7 +13,6 @@
 #include <physical/TransformStage.h>
 #include <logical/ResolveOperator.h>
 
-// TODO: put into separate helper file
 nlohmann::json stringArrayToJSON(const std::vector<std::string>& strs) {
     std::vector<nlohmann::json> vals;
     vals.reserve(strs.size());
@@ -202,8 +201,6 @@ namespace tuplex {
                 auto row = Row::fromExceptionMemory(partition->schema(), i64ToEC(ecCode), ptr, endptr - ptr);
                 ptr += eSize;
 
-                // TODO: this causes a bug together with the webui...
-                // prob. because resolvers are not ignored??
                 // if opID/exception code matches trafo stage, process
                 auto exKey = make_tuple(operatorID, i64ToEC(ecCode));
                 if(ecounts[exKey] > 0 && _processor->getOperator(operatorID)) {
@@ -347,7 +344,6 @@ namespace tuplex {
 
         // construct column strings
         // THIS IS REQUIRED FOR CORRECT DISPLAY OF THE SAMPLE...
-        // @Todo: improve this
         std::vector<std::string> col_names;
         for(unsigned i = 0; i < num_cols; ++i)
             col_names.emplace_back("column" + std::to_string(i));

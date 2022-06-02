@@ -18,10 +18,6 @@
 
 using namespace llvm;
 
-//@Todo
-#warning "give the generated function for its first argument the attributes sret and noalias as described in https://media.readthedocs.org/pdf/mapping-high-level-constructs-to-llvm-ir/latest/mapping-high-level-constructs-to-llvm-ir.pdf p.18"
-
-
 bool blockContainsRet(llvm::BasicBlock *bb) {
     assert(bb);
     return llvm::isa<llvm::ReturnInst>(bb->back());
@@ -40,8 +36,6 @@ bool blockOpen(llvm::BasicBlock *bb) {
 
     return !blockContainsRet(bb) && !blockContainsBr(bb);
 }
-
-// @TODO: refactor this and make the expression check more elegant...
 
 namespace tuplex {
     namespace codegen {
@@ -624,8 +618,6 @@ namespace tuplex {
                         "'");
             }
 
-            // TODO: Consider NSW/NUW for overflow
-
             // upcast to 64 bits
             auto uL = upCast(builder, L, _env->i64Type());
             auto uR = upCast(builder, R, _env->i64Type());
@@ -654,8 +646,6 @@ namespace tuplex {
                         "TypeError: unsupported operand type(s) for <<: '" + ltype.desc() + "' and '" + rtype.desc() +
                         "'");
             }
-
-            // TODO: Consider NSW/NUW for overflow
 
             // upcast to 64 bits
             auto uL = upCast(builder, L, _env->i64Type());
@@ -691,7 +681,6 @@ namespace tuplex {
                 FlattenedTuple ft = FlattenedTuple::fromLLVMStructVal(_env, builder, arg.val,
                                                                       op->_right->getInferredType());
 
-                // TODO: None counts as %s
                 // calculate size
                 for (int i = 0; i < ft.numElements(); i++) {
                     auto ptype = ft.fieldType(std::vector<int>{i});
@@ -1079,9 +1068,6 @@ namespace tuplex {
                     assert(false);
                 } else {
                     // non-None types involved
-
-                    // NOTE: @TODO: I think actual if-statements are required here...
-
                     // special case: one is optional, the other not
                     if (leftType.isOptionType() && !rightType.isOptionType()) {
                         // ==
@@ -1256,9 +1242,6 @@ namespace tuplex {
 
                 case TokenType::TILDE: {
                     using namespace python;
-
-                    // @TODO: test this here...
-
                     assert(_lfb);
                     auto builder = _lfb->getLLVMBuilder();
                     python::Type type = op->_operand->getInferredType();
@@ -1316,7 +1299,6 @@ namespace tuplex {
                 likelyPositiveExponent = op->_right->annotation().positiveValueCount >= op->_right->annotation().negativeValueCount;
             }
 
-            // TODO:
             // boolean, integer and float case
             auto leftType = op->_left->getInferredType().withoutOptions();
             auto rightType = op->_right->getInferredType().withoutOptions();
@@ -1359,11 +1341,6 @@ namespace tuplex {
                 L = _env->upCast(builder, L, _env->i64Type());
             if(R->getType() == _env->getBooleanType())
                 R = _env->upCast(builder, R, _env->i64Type());
-
-            // TODO:
-            // REDO after https://github.com/python/cpython/blob/442ad74fc2928b095760eb89aba93c28eab17f9b/Objects/floatobject.c#L707
-            // AND https://github.com/python/cpython/blob/442ad74fc2928b095760eb89aba93c28eab17f9b/Objects/longobject.c#L4097
-
 
             // 0 raised to negative number -> zerodivisionerror
             // 0 ** 0 = 1
@@ -1730,7 +1707,6 @@ namespace tuplex {
 
         void BlockGeneratorVisitor::visit(NFunction *func) {
             // clear slots
-            // @TODO: nested functions?
             _variableSlots.clear();
 
             assert(_env);
@@ -1811,7 +1787,7 @@ namespace tuplex {
                     slot->var = Variable(*_env, builder, targetType, target->_name);
                 } else {
                     // compatible, so simply assign.
-                    // nothing todo here, done below.
+                    // nothing to do here, done below.
                 }
 
                 // note: assigning bool, float, i64 to the same name
@@ -1898,8 +1874,6 @@ namespace tuplex {
 
             // note: very important to make a copy?? i.e. swap problem?
             for (auto i = 0; i < lhs->_elements.size(); i++) {
-
-                // TODO: add ASTNodeType::Subscription?
                 // i.e. for lists and dicts this is valid!
                 if (lhs->_elements[i]->type() != ASTNodeType::Identifier) {
                     error("LHS is not a tuple of identifiers");
@@ -1950,7 +1924,7 @@ namespace tuplex {
                         slot->var = Variable(*_env, builder, targetType, target->_name);
                     } else {
                         // compatible, so simply assign.
-                        // nothing todo here, done below.
+                        // nothing to do here, done below.
                     }
 
                     // note: assigning bool, float, i64 to the same name
@@ -2189,9 +2163,6 @@ namespace tuplex {
             builder.CreateStore(_env->i1Const(false), result_isnull); // per default set it as valid!
             builder.CreateStore(_env->i64Const(0), result_size); // store dummy val of 0 in it.
 
-            // @TODO: nested if-else statements...
-#warning "nested if else expressions? they might break this..."
-
             // create if block
             llvm::BasicBlock *ifBB = BasicBlock::Create(_env->getContext(), "if", parentFunc);
             llvm::BasicBlock *elseBB = BasicBlock::Create(_env->getContext(), "else", parentFunc);
@@ -2383,9 +2354,6 @@ namespace tuplex {
                 auto lastIfBB = ifBB;
                 auto lastElseBB = elseBB;
 
-                // TODO: in order to optimize, simply check which slots can be reused, and which need to be
-                // overwritten when unifying types at the end.
-
                 // create BasicBlock for if
                 // via block generator visitor
                 _lfb->setLastBlock(ifBB);
@@ -2422,7 +2390,6 @@ namespace tuplex {
                 }
 
                 // in the created if/else blocks attempt variable unification!
-                // @TODO: single if branch with conflicts?
                 // ---------------------------------------------------------------------------------
                 // unification of variables... slow and bad...
 
@@ -2472,7 +2439,6 @@ namespace tuplex {
                         }
 
                         // store definedness in variable for unbound-local error!
-                        // @TODO: do this only for accessed variables within that if...
                         // else it's a waste of instructions!
                         bIf.CreateStore(_env->i1Const(true), slot->definedPtr);
 
@@ -2501,7 +2467,6 @@ namespace tuplex {
                         }
 
                         // store definedness in variable for unbound-local error!
-                        // @TODO: Do this only for variables accessed within that else branch!!!
                         bElse.CreateStore(_env->i1Const(true), slot->definedPtr);
 
                         lastElseBB = bElse.GetInsertBlock();
@@ -2533,7 +2498,6 @@ namespace tuplex {
                         }
 
                         // store definedness in variable for unbound-local error!
-                        // @TODO: This could be optimized away when using static bools instead of runtime booleans
                         // for the easier cases...
                         // else it's a waste of instructions!
                         assert(slot->definedPtr);
@@ -2592,11 +2556,8 @@ namespace tuplex {
                 }
 
                 // statement done.
-                // @TODO: optimize to only address variables where things get assigned to in order to generate
                 // less LLVM IR. => Ease burden on compiler.
                 builder.SetInsertPoint(_lfb->getLastBlock());
-
-                // @TODO: also the exitBlock analysis!
             }
         }
 
@@ -2614,7 +2575,7 @@ namespace tuplex {
         void BlockGeneratorVisitor::visit(NIfElse *ifelse) {
             if(earlyExit())return;
 
-            // @TODO: use annotations here to decide which block to use/follow
+            // use annotations here to decide which block to use/follow
             // => there is also the option that ifelse might be ignored!
             auto visit_t = whichBranchToVisit(ifelse);
             auto visit_ifelse = std::get<0>(visit_t);
@@ -2716,8 +2677,6 @@ namespace tuplex {
 
             declareVariables(lambda);
 
-            // @TODO: this part should be refactored. I.e. BlockGeneratorVisitor to generate one block.
-            // then other visitor to stitch functions together...
             // build inner function logic!
             lambda->_expression->accept(*this);
 
@@ -3057,7 +3016,7 @@ namespace tuplex {
                 }
                 std::reverse(vals.begin(), vals.end());
 
-                // Allocate space for the list (TODO: check if this is the correct way to do this)
+                // Allocate space for the list
                 // check if the block of builder is the entry block, if not add alloc to entry block
                 // entry block has no predecessor
                 llvm::Value *listAlloc = _env->CreateFirstBlockAlloca(builder, llvmType, "BGV_listAlloc");
@@ -3074,7 +3033,7 @@ namespace tuplex {
                     builder.CreateStore(_env->i64Const(list->_elements.size()), list_len_ptr);
 
                     // load the initial values ------
-                    // get the byte-size of the elements TODO: is there a better way to do this?
+                    // get the byte-size of the elements
                     size_t element_byte_size = 8; // f64, i64
                     if (elementType == python::Type::BOOLEAN)
                         element_byte_size = 1; // single character elements
@@ -3106,7 +3065,7 @@ namespace tuplex {
                     builder.CreateStore(list_arr_malloc, list_arr);
 
                     // set the serialized size (i64/f64/bool are fixed sized!)
-                    listSize = _env->i64Const(8 * list->_elements.size() + 8);  // TODO: are booleans serialized as 1 or 8 bytes?
+                    listSize = _env->i64Const(8 * list->_elements.size() + 8);
 
                     // if string values, store the lengths as well
                     if(elementType == python::Type::STRING || elementType.isDictionaryType()) {
@@ -3124,11 +3083,6 @@ namespace tuplex {
                         builder.CreateStore(list_sizearr_malloc, list_sizearr);
                     }
                 }
-
-                // TODO:
-                // --> change to passing around the pointer to the list, not the semi-loaded struct
-                // ---> THIS WILL HAVE IMPLICATIONS WHEREVER LISTS ARE USED.
-                // also listSize here is wrong. The listSize should be stored as part of the pointer. You can either pass 8 as listsize or null.
 
                 addInstruction(builder.CreateLoad(listAlloc), listSize);
             }
@@ -3204,8 +3158,6 @@ namespace tuplex {
             // add variables
             auto id = comprehension->target;
 
-            // Note: no support for multiple targets yet??
-            // => TODO listed here: https://github.com/LeonhardFS/Tuplex/issues/212
             // add id as variable + add instruction
             auto builder = _lfb->getLLVMBuilder();
             VariableSlot slot;
@@ -3422,7 +3374,7 @@ namespace tuplex {
                     // -------
                     // generate expression, vars & Co should be in nametable for this!
 
-                    listComprehension->expression->accept(*this); // TODO: assumes that the expression will only push a single element onto the stack
+                    listComprehension->expression->accept(*this);
                     if(earlyExit())return;
                     // end expression generation
                     // ------
@@ -3449,7 +3401,6 @@ namespace tuplex {
                         builder.CreateStore(builder.CreateAdd(builder.CreateLoad(target.val), step),
                                             target.val); // target += step
                     } else if(iterType == python::Type::STRING) {
-                        // TODO: can I just keep modifying the same string here, instead of allocating new ones?
                         // create a 1 character string for the target
                         auto newtargetstr = builder.CreatePointerCast(_env->malloc(builder, _env->i64Const(2)),
                                                                       _env->i8ptrType());
@@ -3519,7 +3470,7 @@ namespace tuplex {
             // only left
             if (cmp->_comps.size() == 0) {
                 // just return the value from the stack
-                // i.e. nothing todo.
+                // i.e. nothing to do.
                 //auto val = _blockStack.back();
                 //_blockStack.pop_back();
                 // addInstruction(val)
@@ -3826,7 +3777,6 @@ namespace tuplex {
                     auto array = builder.CreateAlloca(_env->pythonToLLVMType(elementType), _env->i64Const(numElements));
                     auto sizes = builder.CreateAlloca(_env->i64Type(), _env->i64Const(numElements));
 
-                    // @ Todo: index protection (out of bounds?)
                     // store the elements into the array
                     FlattenedTuple ft = FlattenedTuple::fromLLVMStructVal(_env,
                                                                           builder,
@@ -3855,8 +3805,6 @@ namespace tuplex {
                                                                                                     llvm::Type::getInt32Ty(
                                                                                                             context))}));
 
-                    // @TODO: null value for this case here!
-
                     addInstruction(retVal, retSize);
                     return;
                 } else {
@@ -3882,8 +3830,6 @@ namespace tuplex {
                                                                index.val),
                                           index.size);
 
-
-                // @TODO: this here throws an exception... --> correct! but then weird things happen?
 
                 // first perform index check, if fails --> exception!
                 auto indexcmp = _env->indexCheck(builder, index.val, strlength);
@@ -3935,7 +3881,7 @@ namespace tuplex {
                             auto load = builder.CreateLoad(alloc);
                             addInstruction(load, _env->i64Const(sizeof(int64_t)));
                         } else if(elementType == python::Type::EMPTYDICT || elementType == python::Type::EMPTYLIST) {
-                            addInstruction(nullptr, nullptr); // TODO: may want to actually construct an empty dictionary, look at LambdaFunction.cc::addReturn, in the !res case
+                            addInstruction(nullptr, nullptr);
                         }
                     } else {
                         auto num_elements = builder.CreateExtractValue(value.val, {1});
@@ -3950,7 +3896,7 @@ namespace tuplex {
 
                         // get the element
                         auto subval = builder.CreateLoad(builder.CreateGEP(builder.CreateExtractValue(value.val, 2), index.val));
-                        llvm::Value* subsize = _env->i64Const(sizeof(int64_t)); // TODO: is this 8 for boolean as well?
+                        llvm::Value* subsize = _env->i64Const(sizeof(int64_t));
                         if(elementType == python::Type::STRING) {
                             subsize = builder.CreateLoad(builder.CreateGEP(builder.CreateExtractValue(value.val, 3), index.val));
                         }
@@ -3964,7 +3910,6 @@ namespace tuplex {
                 auto subject = builder.CreateLoad(builder.CreateGEP(value.val, {_env->i32Const(0), _env->i32Const(1)}));
                 auto subject_len = builder.CreateLoad(builder.CreateGEP(value.val, {_env->i32Const(0), _env->i32Const(2)}));
 
-                // TODO: add some boundary checking here, probably with _env->indexCheck (remember that 0 is a valid choice)
                 auto ind = builder.CreateMul(_env->i64Const(2), index.val);
                 auto start = builder.CreateLoad(llvm::Type::getInt64Ty(_env->getContext()), builder.CreateGEP(ovector, ind));
                 auto end = builder.CreateLoad(llvm::Type::getInt64Ty(_env->getContext()), builder.CreateGEP(ovector, builder.CreateAdd(ind, _env->i64Const(1))));
@@ -4105,12 +4050,8 @@ namespace tuplex {
                 return SerializableValue(ret, size);
             }
 
-            // @TODO: Issue https://github.com/LeonhardFS/Tuplex/issues/214
-            // @TODO: List[a] to List[b] if a,b are compatible?
-            // @TODO: Dict[a, b] to Dict[c, d] if upcast a to c works, and upcast b to d works?
             if(type.isListType() && targetType.isListType()) {
-                // @TODO:
-                error("upcasting list type " + type.desc() + " to list type " + targetType.desc() + " not yet implemented");
+               error("upcasting list type " + type.desc() + " to list type " + targetType.desc() + " not yet implemented");
             }
 
             if(type.isDictionaryType() && targetType.isDictionaryType()) {
@@ -4178,11 +4119,6 @@ namespace tuplex {
 
             // note: also expression like (lambda x: x * x)(8) should work eventually.
             // Hence, it is a good idea to return function objects...
-
-            //TODO: Change this -> basically do the following:
-            // not call on the identifier, rather use the full information
-            // to create a call based on the FunctionRegistry
-            // this is more efficient often.
 
             // visit only arguments.
             // only need type
@@ -4264,15 +4200,7 @@ namespace tuplex {
                         _lfb->addException(builder, ExceptionCode::TYPEERROR, args[i].is_null);
                     }
                 } else if(!python::canUpcastType(type, argType)) { // if option select doesn't work and neither upcasting, error.
-                    // @TODO: what about downcasting? I.e. when function needs bool but i64 is given? try downcast option!
-                    _lfb->exitWithException(ExceptionCode::TYPEERROR);
-//                    _lfb->addException(builder, ExceptionCode::TYPEERROR, _env->i1Const(true));
-//
-//                    // => could quit generation now basically. For this, need mechanism to stop generation in expressions
-//                    //    when fatal error occured. @TODO
-//
-//                    ret = SerializableValue(); // default, to continue codegen.
-//                    addInstruction(ret.val, ret.size, ret.is_null);
+                   _lfb->exitWithException(ExceptionCode::TYPEERROR);
                     return;
                 }
             }
@@ -4827,7 +4755,6 @@ namespace tuplex {
             // if __debug__:
             //    if not expression1: raise AssertionError(expression2)
 
-            // @TODO: check __debug__ variable for correct assert handling.
             assert(as->_expression);
 
 
@@ -4862,8 +4789,6 @@ namespace tuplex {
             }
 
             auto builder = _lfb->getLLVMBuilder();
-
-            // @TODO: use symbol table here! And the env of the function!
             auto baseExceptionType = python::TypeFactory::instance().createOrGetPrimitiveType("BaseException");
 
             // raise is a tricky one: Python supports exception propagation
@@ -4902,7 +4827,7 @@ namespace tuplex {
                 auto exceptionName = exceptionType.desc();
 
                 // get exception code corresponding to exceptionName!
-                auto ecCode = pythonClassToExceptionCode(exceptionName); // TODO: Custom exceptions?
+                auto ecCode = pythonClassToExceptionCode(exceptionName);
 
                 if(ecCode == ExceptionCode::UNKNOWN) {
                     error("could not decode raise ExceptionClass to code");
@@ -4941,7 +4866,6 @@ namespace tuplex {
             // go through all detected names, check if there's a symbol, add it as constant if possible
             for(const auto& name : accessedNames) {
                 auto sym = table->findFullyQualifiedSymbol(name); // need to use fully qualified name here...
-                // @TODO: aliasing??
                 if(sym && sym->symbolType == SymbolType::VARIABLE) {
                     // skip module types
                     if(sym->types.front() == python::Type::MODULE)
@@ -5135,7 +5059,6 @@ namespace tuplex {
             builder.CreateStore(value.val, var.ptr);
             builder.CreateStore(value.size, var.sizePtr);
 
-            // TODO: shortcut for constants, when invoking var.load(...)? i.e. replace them?
             return var;
         }
 

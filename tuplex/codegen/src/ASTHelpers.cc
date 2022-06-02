@@ -43,7 +43,7 @@ namespace tuplex {
             // following are non-literals, if encountered expression is not reducable
             case ASTNodeType::UNKNOWN:
             case ASTNodeType::Lambda:
-            case ASTNodeType::Identifier: // no const identifiers yet allowed! @Todo: later check with symboltable
+            case ASTNodeType::Identifier: // no const identifiers yet allowed!
             case ASTNodeType::Function:
             case ASTNodeType::Module:
             case ASTNodeType::Parameter:

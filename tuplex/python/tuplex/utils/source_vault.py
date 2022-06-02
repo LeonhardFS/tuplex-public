@@ -136,7 +136,7 @@ class SourceVault:
             key = (filename, lineno)
             entries = self.lambdaFileDict[key]
 
-            # TODO: There's a bug here, i.e. if some function is called within a loop multiple entries get produced.
+            # Note: There's a bug here, i.e. if some function is called within a loop multiple entries get produced.
             # e.g. the question is how many "lambda" keywords are there per line
             # => if it's a single lambda keyword, return the most recent entry because globals can get overwritten
             # if i.e. a call is placed within a loop.

@@ -187,7 +187,7 @@ namespace tuplex {
                         if (i < j && (python::Type::STRING == paramType.withoutOptions() ||
                                       python::Type::GENERICDICT == paramType.withoutOptions() ||
                                       paramType.withoutOptions().isDictionaryType() ||
-                                      (paramType.withoutOptions().isListType() && paramType.withoutOptions() != python::Type::EMPTYLIST && !paramType.withoutOptions().elementType().isSingleValued()))) // TODO: this should probably be generalized to type.isVarLen() or something
+                                      (paramType.withoutOptions().isListType() && paramType.withoutOptions() != python::Type::EMPTYLIST && !paramType.withoutOptions().elementType().isSingleValued())))
                             sizeOffset++;
                     }
 
@@ -254,9 +254,6 @@ namespace tuplex {
             // define bitmap on the fly
             for (const auto &el: T.parameters()) {
                 auto t = el.isOptionType() ? el.getReturnType() : el; // get rid of most outer options
-
-                // @TODO: special case empty tuple! also doesn't need to be represented
-
                 if (python::Type::BOOLEAN == t) {
                     // i8
                     memberTypes.push_back(getBooleanType());
@@ -329,7 +326,6 @@ namespace tuplex {
                 memberTypes.push_back(i64Type()); // array capacity
                 memberTypes.push_back(i64Type()); // size
                 // array
-                // TODO: probably can replace with just llvm::PointerType::get(pythonToLLVMType(elementType), 0)
                 if(elementType == python::Type::I64) {
                     memberTypes.push_back(i64ptrType());
                 } else if(elementType == python::Type::F64) {
@@ -1077,7 +1073,7 @@ namespace tuplex {
 
         void LLVMEnvironment::debugPrint(llvm::IRBuilder<> &builder, const std::string &message, llvm::Value *val) {
             if (!val) {
-                // only print value (TODO: better printf!)
+                // only print value
                 auto printf_func = printf_prototype(_context, _module.get());
                 llvm::Value *sConst = builder.CreateGlobalStringPtr(message);
                 llvm::Value *sFormat = builder.CreateGlobalStringPtr("%s\n");
@@ -1521,8 +1517,6 @@ namespace tuplex {
 
         llvm::Value *LLVMEnvironment::CreateMaximum(llvm::IRBuilder<> &builder, llvm::Value *rhs, llvm::Value *lhs) {
 
-            // @TODO: Note, CreateMaximum fails...
-
             // check types
             if (rhs->getType()->isIntegerTy() && lhs->getType()->isIntegerTy()) {
 
@@ -1546,8 +1540,7 @@ namespace tuplex {
             if(_global_regex_cache.count(regexPattern)) return _global_regex_cache[regexPattern];
 
             // static check whether pattern is valid
-            // @TODO: check whether actual compile works! else, compile error!
-            //global_pattern_str, i64Const(regexPattern.length()), i32Const(0),
+            // global_pattern_str, i64Const(regexPattern.length()), i32Const(0),
             //                     errornumber,
             //                     erroroffset, i8nullptr()
              int err_number = 0;
@@ -1580,7 +1573,7 @@ namespace tuplex {
                      errornumber,
                      erroroffset, i8nullptr()});
 
-            auto jitErr = initGlobalBuilder.CreateCall(pcre2JITCompile_prototype(_context, _module.get()), {compiled_pattern, i32Const(1)}); // TODO: use PCRE2_JIT_COMPLETE instead of 1
+            auto jitErr = initGlobalBuilder.CreateCall(pcre2JITCompile_prototype(_context, _module.get()), {compiled_pattern, i32Const(1)});
             initGlobalBuilder.CreateStore(compiled_pattern, gvar);
 
             // set _initGlobalRetValue
@@ -1740,7 +1733,6 @@ namespace tuplex {
                 return SerializableValue(strConst(builder, cstr), i64Const(strlen(cstr) + 1), i1Const(false));
             }
 
-            // @TODO: tuples, lists, dicts, ...
 #ifndef NDEBUG
             std::cerr<<"unsupported field type: " + f.desc() + " encountered"<<std::endl;
 #endif
@@ -1760,7 +1752,6 @@ namespace tuplex {
             auto derivedExceptions = exceptionType.derivedClasses();
 
             Value* matchCond = builder.CreateICmpEQ(codeValue, i32Const(ecToI32(ec)));
-            // @TODO: develop algorithm to compact the integers into intervals for faster checking?
             for(const auto& exc : derivedExceptions) {
                 auto name = exc.desc();
                 auto excEC = pythonClassToExceptionCode(name);

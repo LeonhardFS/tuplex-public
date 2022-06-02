@@ -16,9 +16,6 @@
 
 namespace tuplex {
 
-    //@Todo: Failed and aborted when user presses Ctrl-C
-    // or kills job from WebUI
-
     enum class JobStatus {
         SCHEDULED,
         STARTED,

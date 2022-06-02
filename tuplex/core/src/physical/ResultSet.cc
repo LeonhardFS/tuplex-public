@@ -170,9 +170,6 @@ namespace tuplex {
             v.shrink_to_fit();
             return v;
         } else {
-            // fallback solution:
-            // @TODO: write faster version with proper merging!
-
              std::vector<Row> v;
              while (hasNextRow() && v.size() < limit) {
                  v.push_back(getNextRow());

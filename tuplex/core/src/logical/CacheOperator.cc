@@ -12,10 +12,6 @@
 
 namespace tuplex {
 
-
-    // @TODO: need to save exception counts as well, so later stages can generate appropriate code!
-    // => caching might also help, because if no exceptions are present no slow-code path needs to be executed/compiled!
-    // => for join(.....cache()) case an upgrade must be compiled I fear...
     void CacheOperator::copyMembers(const LogicalOperator *other) {
         assert(other->type() == LogicalOperatorType::CACHE);
 
@@ -76,11 +72,6 @@ namespace tuplex {
         _normalCasePartitions = rs->partitions();
         for(auto p : _normalCasePartitions)
             p->makeImmortal();
-
-        // @TODO: there are two sorts of exceptions here...
-        // i.e. separate normal-case violations out from the rest
-        // => these can be stored separately for faster processing!
-        // @TODO: right now, everything just gets cached...
 
         _generalCasePartitions = rs->exceptions();
         for(auto p : _generalCasePartitions)

@@ -457,8 +457,6 @@ unquoted_field:
             }
         }
 
-        // @Todo: make this faster, by only allowing detection of up to 1,000 rows (should be sufficient to decide)
-
         // for each separator count how many columns it has
         // be aware of special case 1 rows!
         map<char, RollingStats<int64_t>> separatorStats;
@@ -579,7 +577,6 @@ unquoted_field:
                 numErrors++;
             } else {
                 // only add non-error rows
-                // @Todo: ignore comment lines...
                 rows.push_back(row);
             }
 
@@ -772,7 +769,6 @@ unquoted_field:
         return true;
     }
 
-    // @Todo: this here is the bottleneck
     // Note: for things like bool <= int <= float
     // it is also an interesting question what the normalcase is
     // i.e. when there are only a few floats but majority is int,
@@ -838,8 +834,6 @@ unquoted_field:
             if(ec == ExceptionCode::SUCCESS) {
 
                 // special case: single str, could be a comment
-                // @TODO: better support for comments in csv files...
-
                 // this code is for handling comemnt case...
                 size_t oldFirstColStringStat = 0;
                 if(row.size() == 1) {
@@ -1082,7 +1076,6 @@ unquoted_field:
             rowCount--;
         }
 
-        // @Todo: deal with special case here...
         assert(rowCount > 0 && columnCount > 0);
 
         CountStat nullable_stats(1, columnCount);
@@ -1128,7 +1121,6 @@ unquoted_field:
                         nullable_stats.inc(0, i);
 
                     // type stats are yet missing
-                    // @Todo
                     switch(type) {
                         case CSVType::BOOLEAN: {
                             // not necessary...
@@ -1483,8 +1475,6 @@ parse_done:
             return (int)(lastStart - buffer);
 
         // maybe next line is it?
-        // @TODO: fix this..., it's off...
-
 parse_error:
         if(bytesRead)
             *bytesRead = 0;

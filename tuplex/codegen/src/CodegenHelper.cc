@@ -282,7 +282,6 @@ namespace tuplex {
             return builder.CreateCall(strFormat_func, valargs);
         }
 
-        // TODO: Do we need to use lfb to add checks?
         SerializableValue
         dictionaryKeyCast(llvm::LLVMContext &ctx, llvm::Module* mod,
                           llvm::IRBuilder<> &builder, llvm::Value *val, python::Type keyType) {

@@ -50,7 +50,7 @@ namespace tuplex {
             _rangeEnd = end;
         }
 
-        void setHeader(const std::vector<std::string> &header) { //@TODO: this is CSV specific! change it!
+        void setHeader(const std::vector<std::string> &header) {
             _header = header;
             if(!_header.empty()) {
                 if(_header.size() != _numColumns)

@@ -102,18 +102,10 @@ bool GraphVizBuilder::saveToDotFile(const std::string &path) {
 }
 
 bool GraphVizBuilder::saveToPDF(const std::string &path) {
-
-    // @TODO: Improve this later via direct streaming!
-    // @TODO: This is bad design... However, I don't wanna spend time on handling temp files in C++...
     std::string tempfile = "/tmp/graph.dot";
 
     saveToDotFile(tempfile);
 
-
-    // @TODO: make this code here signal-safe!
-    // https://www.oreilly.com/library/view/secure-programming-cookbook/0596003943/ch01s06.html
-    // i.e. check https://www.oreilly.com/library/view/secure-programming-cookbook/0596003943/ch01s07.html
-    // => left for now, b.c. saveToPDF will be anyways only handled in debug version...
     std::string cmd = "dot -Tpdf " + tempfile + " -o " + path;
     std::array<char, 128> buffer;
     std::string result;

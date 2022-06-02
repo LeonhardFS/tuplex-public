@@ -106,7 +106,6 @@ namespace tuplex {
     }
 
     std::vector<Row> WithColumnOperator::getSample(const size_t num) const {
-        // @TODO: refactor the whole sampling into SampleProcessor.
         using namespace std;
 
         auto vSamples = parent()->getSample(num);

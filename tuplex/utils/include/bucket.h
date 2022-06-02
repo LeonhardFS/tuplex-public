@@ -30,7 +30,6 @@ namespace tuplex {
         // empty bucket?
         // ==> alloc and init with defaults!
 
-        // @TODO: maybe alloc one page?
         if(!bucket) {
             auto bucket_size = sizeof(int64_t) + sizeof(int32_t) + buf_size;
             bucket = (uint8_t*)realloc(nullptr, bucket_size);

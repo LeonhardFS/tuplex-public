@@ -148,8 +148,6 @@ if(NOT TBB_FOUND)
     elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         # OS X
         set(TBB_DEFAULT_SEARCH_DIR "/opt/intel/tbb")
-
-        # TODO: Check to see which C++ library is being used by the compiler.
         if(NOT ${CMAKE_SYSTEM_VERSION} VERSION_LESS 13.0)
             # The default C++ library on OS X 10.9 and later is libc++
             set(TBB_LIB_PATH_SUFFIX "lib/libc++" "lib")
@@ -159,10 +157,6 @@ if(NOT TBB_FOUND)
     elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         # Linux
         set(TBB_DEFAULT_SEARCH_DIR "/opt/intel/tbb")
-
-        # TODO: Check compiler version to see the suffix should be <arch>/gcc4.1 or
-        #       <arch>/gcc4.1. For now, assume that the compiler is more recent than
-        #       gcc 4.4.x or later.
         if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
             set(TBB_LIB_PATH_SUFFIX "lib/intel64/gcc4.4")
         elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^i.86$")

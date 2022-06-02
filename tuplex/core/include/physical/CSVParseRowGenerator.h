@@ -18,8 +18,6 @@
 #include <ExceptionCodes.h>
 #include <Base.h>
 #include <Utils.h>
-
-// Todo: make this a little bit better
 #define SSE42_MODE
 
 namespace tuplex {
@@ -242,9 +240,6 @@ namespace tuplex {
 
             // NEW: code-gen null value check (incl. quoting!)
             llvm::Value *isCellNullValue(llvm::IRBuilder<> &builder, llvm::Value *cellBegin, llvm::Value *cellEndIncl) {
-
-                // @TODO: generate more complicated check logic!
-
                 auto cell_size =  builder.CreateSub(builder.CreatePtrToInt(cellEndIncl, _env->i64Type()),
                                                     builder.CreatePtrToInt(cellBegin, _env->i64Type()));
 

@@ -114,7 +114,6 @@ namespace tuplex {
             _flattenedTupleType = python::Type::makeTupleType(getFieldTypes());
         }
 
-        // TODO: this seems like a duplication of LLVMEnvironment::pythonToLLVMType??
         llvm::Type* pythonToLLVMType(LLVMEnvironment& env, python::Type type) {
             // primitives first
             if(python::Type::BOOLEAN == type)
@@ -202,7 +201,6 @@ namespace tuplex {
                     continue;
                 }
                 if(python::Type::EMPTYDICT == type) {
-                    // TODO: @LeonhardFS this is the code that was in there before (I just moved it up), but is this the correct value to use for an emptydict?
                     // no load required, just set to nullptr
                     _tree.set(i, codegen::SerializableValue(_env->i8nullptr(), _env->i64Const(sizeof(int64_t)), _env->i1Const(false)));
                     continue;
@@ -545,8 +543,7 @@ namespace tuplex {
                 if(fieldType.isSingleValued())
                     continue; // skip all these fields, they do not need to get serialized...
 
-                // @TODO: improve this for NULL VALUES...
-                if(!field) {
+               if(!field) {
                     // dummy value
                     if(fieldType.withoutOptions() == python::Type::BOOLEAN)
                         field = _env->boolConst(false);
@@ -574,7 +571,7 @@ namespace tuplex {
                 }
 
                 // special is empty dict, empty list and NULL. I.e. though they in principle are var fields, they are fixed size.
-                // ==> serialize them as 0 (later optimize this away). TODO: this comment is out of date, right? we have optimized the serialization away.
+                // ==> serialize them as 0 (later optimize this away).
                 if(fieldType.isListType() && !fieldType.elementType().isSingleValued()) {
                     assert(!fieldType.isFixedSizeType());
                     // the offset is computed using how many varlen fields have been already serialized
@@ -831,8 +828,6 @@ namespace tuplex {
         }
 
         llvm::Value* FlattenedTuple::getSize(llvm::IRBuilder<>& builder) const {
-            // @TODO: make this more performant by NOT serializing anymore NULL, EMPTYDICT, EMPTYTUPLE, ...
-
             llvm::Value* s = _env->i64Const(0);
 
             // special case empty tuple --> just return 0
@@ -1052,7 +1047,6 @@ namespace tuplex {
             auto llvmType = static_cast<llvm::StructType*>(getLLVMType());
             assert(llvmType->getStructElementType(0)->isArrayTy()); // bitmap
 
-            // TODO: conversion can be done MORE efficiently, by more clever loading...
             int numOptionalElements = llvmType->getStructElementType(0)->getArrayNumElements();
             auto numBitmapElements = core::ceilToMultiple(numOptionalElements, 64) / 64; // make 64bit bitmaps
             // ndebug check

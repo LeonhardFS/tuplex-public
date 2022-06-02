@@ -20,8 +20,6 @@ extern "C" {
 }
 namespace tuplex {
 
-    // TODO...
-
     codegen::write_row_f HashProbeTask::writeRowCallback() {
         return reinterpret_cast<codegen::write_row_f>(writeJoinedRow);
     }
@@ -60,8 +58,6 @@ namespace tuplex {
           <<std::to_string(timer.time())<<"s ("
           <<pluralize(getNumOutputRows(), "normal row")<<")";
         owner()->info(ss.str());
-
-        // TODO: history server notification!
     }
 
 }

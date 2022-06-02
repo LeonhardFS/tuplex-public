@@ -13,8 +13,6 @@
 
 #include <Utils.h>
 #include <StringUtils.h>
-
-//@TODO: print here compile time etc. statistics out...
 namespace tuplex {
 
     enum class ContextMetric {

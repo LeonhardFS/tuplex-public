@@ -117,8 +117,6 @@ namespace tuplex {
             auto atype = _aggregator.getOutputSchema().getRowType();
             auto itype = _initialValue.getRowType();
 
-            // @TODO: upcasting checks from tplx197...
-
             auto final_type = python::Type::superType(ctype, python::Type::superType(atype, itype));
             if(final_type == python::Type::UNKNOWN)
                 throw std::runtime_error("incompatible types in aggregate operator");
@@ -128,7 +126,6 @@ namespace tuplex {
                 auto parent_row_types = parent()->getOutputSchema().getRowType().parameters();
                 std::vector<python::Type> final_row_type;
                 for(const auto &idx : keyColsInParent()) final_row_type.push_back(parent_row_types[idx]);
-                // TODO(rahuly): should this be a recursive flatten?
                 for(const auto &t : final_type.parameters()) final_row_type.push_back(t); // flatten the aggregate type
                 final_type = python::Type::makeTupleType(final_row_type);
             }

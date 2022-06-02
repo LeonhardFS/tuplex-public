@@ -237,9 +237,6 @@ namespace tuplex {
 
         void printRow(std::ostream& os, const std::vector<int>& columnWidths,
                       const std::vector<std::string>& columnStrs) {
-
-            // @ Todo: what about line breaks?
-
             for (int i = 0; i< columnWidths.size(); ++i) {
                 auto el = replaceLineBreaks(columnStrs[i]);
                 os << "| " << el;

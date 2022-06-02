@@ -25,7 +25,7 @@ namespace tuplex {
             // call code with longjmp
             node->accept(*this);
         } catch(TraceException& exc) {
-            // nothing todo...
+            // nothing to do...
         }
 
         // inc. counter
@@ -129,9 +129,6 @@ namespace tuplex {
                     addTraceResult(node, TraceItem(sym, node->_name));
                 else {
                     PyErr_SetString(PyExc_NameError, ("could not find identifier " + node->_name).c_str());
-
-                    // i.e., could early exit function...
-                    // error("todo: abort here with NameError exception because name " + node->_name + " was not found...");
                 }
             }
         }
@@ -175,9 +172,6 @@ namespace tuplex {
 
     void TraceVisitor::visit(NBinaryOp *node) {
         ApatheticVisitor::visit(node);
-
-        // @TODO: logical and and or operators.
-        // => special treatment there.
 
         // there should be at least 2 nodes on the stack!
         assert(_evalStack.size() >= 2);
@@ -367,9 +361,6 @@ namespace tuplex {
         auto ti = _evalStack.back();
         _evalStack.pop_back();
         _retValue = ti;
-
-        // print return value ==> annotate function with it! i.e. add slot for it!
-        // @TODO: add annotation object (ptr) to astnodes!
 
         // record type
         auto retType = python::mapPythonClassToTuplexType(_retValue.value);
@@ -602,8 +593,6 @@ namespace tuplex {
         using namespace std;
 
         ApatheticVisitor::visit(node);
-
-        // TODO: better sys table visitor required here...
         auto numArgs = node->_positionalArguments.size();
 
         // eval stack should have all params
@@ -699,7 +688,6 @@ namespace tuplex {
         // getitem with slice
         auto res = PyObject_GetItem(ti_value.value, ti_slice.value);
 
-        // @TODO: erorr??
         assert(res);
 
         addTraceResult(node, TraceItem(res));
@@ -839,7 +827,6 @@ namespace tuplex {
             auto exception_type = python::TypeFactory::instance().getByName(most_frequent_exception_name);
             if(exception_type == python::Type::UNKNOWN) {
                 Logger::instance().defaultLogger().debug("Unknown exception type found, adding to TypeSystem");
-                // @TODO: correct hierarchy here, for now simply use BaseException..
                 auto base_type = python::TypeFactory::instance().getByName("BaseException");
                 assert(base_type.isExceptionType());
                 exception_type = python::TypeFactory::instance().createOrGetPrimitiveType(most_frequent_exception_name, {base_type});
@@ -875,7 +862,7 @@ namespace tuplex {
                 // too big?
                 if(PyErr_Occurred()) {
                     PyErr_Clear();
-                    // TODO: could simply clamp to range,
+                    // Note: could simply clamp to range,
                     // yet skip for now.
                     return;
                 }
@@ -916,7 +903,6 @@ namespace tuplex {
 
 
     void TraceVisitor::setClosure(const ClosureEnvironment &ce, bool acquireGIL) {
-        // TODO: what about correct order??
         if(acquireGIL)
             python::lockGIL();
 

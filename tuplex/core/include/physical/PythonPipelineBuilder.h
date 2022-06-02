@@ -67,9 +67,6 @@ namespace tuplex {
                            option<std::string> rightSuffix=option<std::string>::none);
 
         // output operator, i.e. checks whether necessary output information can be extracted dynamically
-
-        // @TODO: add here type checks for output type! If they fail, exception for this operator is produced!
-        // ==> this helps i.e. when statically typed output formats are required!
         void tuplexOutput(int64_t operatorID, const python::Type& finalOutputType);
 
         // output just python objects (no type check)
@@ -83,10 +80,6 @@ namespace tuplex {
         void ignore(int64_t operatorID, ExceptionCode ec); // ignore specific exception code (i.e. filter out based on exception code)
 
         std::string getCode() const { return _imports + "\n" + _header + "\n" + functionSignature() + _ss.str() + tailCode(); }
-
-        // aggregate functions:
-        // --> @TODO.
-
     private:
         std::string _funcName;
         std::stringstream _ss;

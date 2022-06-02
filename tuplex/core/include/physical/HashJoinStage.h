@@ -44,7 +44,7 @@ namespace tuplex {
         python::Type leftType() const {return _leftRowType;}
         python::Type rightType() const {return _rightRowType;}
 
-        int64_t outputDataSetID() const { return _outputDataSetID; } // TODO change to the real thing
+        int64_t outputDataSetID() const { return _outputDataSetID; }
 
         void setResultSet(const std::shared_ptr<ResultSet>& rs) { _rs = rs;}
 
@@ -55,9 +55,6 @@ namespace tuplex {
         std::string writeRowFunctionName() const { return "stage" + std::to_string(number()) + "_hash_write_row"; }
 
         python::Type combinedType() const {
-
-            // @TODO: should come from operator, no?
-
             // combined schema from row type
             std::vector<python::Type> combinedTypes;
             for(int i = 0; i < leftType().parameters().size(); ++i) {

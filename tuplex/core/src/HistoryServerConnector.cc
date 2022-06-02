@@ -570,9 +570,6 @@ namespace tuplex {
         // step 1: simple task done message
         // first send simple, task done message
         RESTInterface ri;
-
-        // @todo: produces exception when dumping non-utf8 string. May occur when usng pickled functions in llvm ir...
-
         try {
             json stageObj;
             stageObj["name"] = stageName;

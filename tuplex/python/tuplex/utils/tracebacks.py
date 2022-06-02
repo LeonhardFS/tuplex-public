@@ -39,7 +39,6 @@ def format_traceback(tb, function_name):
         f_locals = frame.f_locals
         line = linecache.getline(filename, lineno).strip()
 
-        # @Todo: maybe this is faster possible when strip is ignored, by counting tabs or so
         # find base number, substract to get relative line number correct
         start_lineno = lineno
         lineno_correction = 0

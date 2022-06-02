@@ -94,7 +94,6 @@ namespace tuplex {
                 return weakly_normal;
             }
             case URIType::S3: {
-                // @TODO: normalize if it is http:// or https://
                 return _uri;
             }
             default:
@@ -200,14 +199,9 @@ namespace tuplex {
         // there should be https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/wordexp.3.html and
         // https://man7.org/linux/man-pages/man3/wordexp.3.html
         // https://cpp.hotexamples.com/examples/-/-/wordexp/cpp-wordexp-function-examples.html
-
         // simply replace ~ with home dir
         // replace ~ with current user's home directory or ~user with user's home directory
-
         // use regex
-
-        // @TODO: implement this...
-#warning "implement this here..."
         return uri;
     }
 

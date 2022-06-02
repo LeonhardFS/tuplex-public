@@ -62,9 +62,6 @@ namespace tuplex {
 
     bool check_and_forward_signals(bool within_GIL) {
         if(check_interrupted()) {
-            // @TODO: could improve this but artifically tripping signals
-            // to python! cf. https://github.com/python/cpython/blob/fb5db7ec58624cab0797b4050735be865d380823/Modules/signalmodule.c#L1787
-
             if(!within_GIL)
                 python::lockGIL();
 
@@ -79,9 +76,6 @@ namespace tuplex {
             // call python handlers & Co.
             int rc = PyErr_CheckSignals();
 
-#ifndef NDEBUG
-            std::cout<<"Python signal forwarding: Result of PyErr_CheckSignals: "<<rc<<std::endl;
-#endif
             if(!within_GIL)
                 python::unlockGIL();
 

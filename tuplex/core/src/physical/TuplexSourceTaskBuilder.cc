@@ -177,7 +177,7 @@ namespace tuplex {
             ft.init(_inputRowType);
             Value* oldInputPtr = builder.CreateLoad(currentInputPtrVar, "ptr");
             ft.deserializationCode(builder, oldInputPtr);
-            Value* newInputPtr = builder.CreateGEP(oldInputPtr, ft.getSize(builder)); // @TODO: maybe use inbounds
+            Value* newInputPtr = builder.CreateGEP(oldInputPtr, ft.getSize(builder));
             builder.CreateStore(newInputPtr, currentInputPtrVar);
 
             // call function --> incl. exception handling

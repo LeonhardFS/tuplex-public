@@ -489,8 +489,6 @@ namespace tuplex {
     }
 
     void GraphVizGraph::GraphVizVisitor::visit(NReturn* ret) {
-
-        // @Todo: verify this here is correct...
         int id = _builder->addNode("return " + typeStr(ret));
         int iParent = getParent();
         if(iParent >= 0)

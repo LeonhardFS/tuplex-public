@@ -149,8 +149,6 @@ namespace tuplex {
                 if(Name == mangle("hashmap_get"))
                     return llvm::JITSymbol(reinterpret_cast<llvm::JITTargetAddress>(hashmap_get), llvm::JITSymbolFlags::Exported);
 
-            // @TODO: possibly for docker this here needs to add the other two python callback functions??
-
             // If we can't find the symbol in the JIT, try looking in the host process.
             if (auto SymAddr = llvm::RTDyldMemoryManager::getSymbolAddressInProcess(Name))
                 return llvm::JITSymbol(SymAddr, llvm::JITSymbolFlags::Exported);
@@ -307,11 +305,7 @@ namespace tuplex {
         }
 
     private:
-
-        // @TODO: reimplement JIT using own threadpool for better access on stuff.
         std::unique_ptr<llvm::orc::LLJIT> _lljit;
-
-        // @TODO: add function to remove llvm lib here! Else indefinite grow with queries!
         std::vector<llvm::orc::JITDylib*> _dylibs; // for name lookup search
 
         // custom symbols

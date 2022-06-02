@@ -30,7 +30,6 @@ namespace tuplex {
 
     }
 
-    // @TODO: reuse environment provided to TransformStage as well!
     std::string HashJoinStage::generateCode() {
         using namespace std;
         auto env = make_shared<codegen::LLVMEnvironment>("tuplex_fastCodePath_hash");
@@ -226,7 +225,6 @@ namespace tuplex {
             // a little more complicated because need to account for nullptr...
             assert(key.val && key.is_null);
 
-            // TODO: special case for null should be prefixed row!
             // i.e. separate null bucket!
 
             // for now: "" is NULL "_" + val is for keys
@@ -282,13 +280,11 @@ namespace tuplex {
 
         bucketPtr = builder.CreateGEP(bucketPtr, env->i64Const(sizeof(int64_t)));
 
-        // TODO: put bucketPtr Var in constructor
         auto bucketPtrVar = env->CreateFirstBlockAlloca(builder,
                                                         env->i8ptrType()); //builder.CreateAlloca(env->i8ptrType(), 0, nullptr, "bucketPtrVar");
         builder.CreateStore(bucketPtr, bucketPtrVar);
 
         // loop over numRows
-        // TODO: put counter var in constructor block!
         auto loopVar = env->CreateFirstBlockAlloca(builder,
                                                    env->i64Type()); //builder.CreateAlloca(env->i64Type(), 0, nullptr, "iBucketRowVar");
         builder.CreateStore(env->i64Const(0), loopVar);

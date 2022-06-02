@@ -252,8 +252,6 @@ namespace tuplex {
 
     void TypeAnnotatorVisitor::visit(NIdentifier* id) {
         ApatheticVisitor::visit(id);
-        // @TODO: Change how annotations work. Basically, annotations are any expression.
-        // for typing they only should be considered when adhering to typing.py module
 
         // check if in local name table, i.e. from variable declaration!
         // => this shadows everything, so should come first.
@@ -353,7 +351,6 @@ namespace tuplex {
             if(   parent()->type() != ASTNodeType::Function
                   && parent()->type() != ASTNodeType::Lambda
                   && parent()->type() != ASTNodeType::Assign
-                  // TODO this check is necessary for tuple assignment
                   && parent()->type() != ASTNodeType::Tuple)
                 _missingIdentifiers.add(id->_name);
         }
@@ -527,10 +524,6 @@ namespace tuplex {
             }
         }
 
-        // special check because widespread error: withColumn vs. mapColumn
-        // tuple + simple primitive and not compatible?
-        // ==> @TODO!
-
         // a lot of manual checking is needed here now...
         // so far no custom object with operator overloading are yet defined
         // which makes it a bit easier
@@ -629,7 +622,7 @@ namespace tuplex {
             // 1.) int ** non-negative int => int
             // 2.) int ** negative int => float
             // 3.) . ** . => float
-            // make it here non-standard compliant by using float version throughout... ==> todo: tracing/sampling!!!
+            // make it here non-standard compliant by using float version throughout...
 
             if(isPythonIntegerType(a) && isPythonIntegerType(b)) {
                 // is auto-upcasting allowed?
@@ -651,7 +644,6 @@ namespace tuplex {
                 // need tracing to speculate, i.e. if there's no type annotation on the b node, error
                 assert(right);
 
-                // @TODO: maybe a helper function to determine tracing status? this looks too hacky IMHO.
                 if(right->annotation().numTimesVisited == 0) // this means no tracing occurred yet!
                     error("power operator ** needs type annotation, because speculation"
                           " is needed when the right operand is of type " + b.desc());
@@ -734,19 +726,6 @@ namespace tuplex {
         _lastCallParameterType.push(call->getParametersInferredType());
 
         call->_func->accept(*this);
-
-// @Todo: solve this later...
-//    // call can also provide type info to underlying function, i.e.
-//    // when declared or so...
-//    // for this basically, look up symbol & add info
-//    // call accept too
-//    if(call->getParametersInferredType() != python::Type::UNKNOWN) {
-//        // check if func is typed (note children were visited before!)
-//        // if not, then provide for params type info
-//        if(call->_func->getInferredType() == python::Type::UNKNOWN) {
-//            if(call->_func->)
-//        }
-//    }
 
         // value & func have been visited
         // in standard languages, call->_func would now yield
@@ -1003,7 +982,6 @@ namespace tuplex {
         if(type.isTupleType()) {
             // static check: if it is a constant expression
             // index type must be bool or int
-            // @Todo: later support weird slice object... ==> replace in AST tree via [::] syntax to make simpler...
             // TypeError: tuple indices must be integers or slices, not float
 
             if(!(python::Type::BOOLEAN == index_type || python::Type::I64 == index_type)) {
@@ -1069,7 +1047,6 @@ namespace tuplex {
                 sub->setInferredType(python::Type::STRING);
             }
         } else if(python::Type::GENERICDICT == type) {
-            // TODO: GENERICDICT TO ALLOW DICT OUTPUT
             sub->setInferredType(python::Type::PYOBJECT);
         } else if(python::Type::EMPTYDICT == type) {
             // subscripting an empty dict will always yield a KeyError. I.e. warn and set generic object
@@ -1223,15 +1200,12 @@ namespace tuplex {
         // now interesting part comes
         // check what left side is
 
-        // TODO cases
-        /**
-         * id = id
-         * id, id, ... = id/val
-         * id, id, ... = id, val, ... (SPECIAL CASE even here for a, b = b, a)
-         */
+        // id = id
+        // id, id, ... = id/val
+        // id, id, ... = id, val, ... (SPECIAL CASE even here for a, b = b, a)
+
         if(assign->_target->type() == ASTNodeType::Identifier) {
             // Single identifier case
-            //@Todo: check that symbol table contains target!
 
             // then check if identifier is already within symbol table. If not, add!
             NIdentifier* id = (NIdentifier*)assign->_target;
@@ -1246,7 +1220,6 @@ namespace tuplex {
             // have lists as well
             NTuple *ids = (NTuple *) assign->_target;
             auto rhsInferredType = assign->_value->getInferredType();
-            // TODO add support for dictionaries, etc.
             if (rhsInferredType.isTupleType()) {
                 // get the types contained in our tuple
                 std::vector<python::Type> tupleTypes = rhsInferredType.parameters();
@@ -1278,7 +1251,6 @@ namespace tuplex {
             error("only assignment to tuples/identifiers supported yet!!!");
         }
         // in all cases, set the type of the entire assign
-        // TODO we def want this in the single identifier case, but in general?
         assign->setInferredType(assign->_target->getInferredType());
     }
 
@@ -1402,10 +1374,7 @@ namespace tuplex {
             _nameTable = nameTable_before; // reset again.
 
             // speculative? I.e., when annotations exist.
-            // @TODO: refactor with speculative processing indicator?
             if(speculate) {
-
-                // TODO: refactor this into a function (i.e. the rule)
                 // the speculation rule.
                 // decide which branch to visit based on majority
                 auto numTimesIfVisited = ifelse->_then->annotation().numTimesVisited;
@@ -1458,7 +1427,6 @@ namespace tuplex {
         }
 
         assert(ifelse->_then && ifelse->_expression);
-        // @Todo: make this work using the normal/exception case model.
 
         // both branches visited?
         if(visit_if && visit_else) {
@@ -1537,7 +1505,6 @@ namespace tuplex {
                 auto id = (NIdentifier*)target_list; assert(id);
 
                 // iter type?
-                // @TODO: https://github.com/LeonhardFS/Tuplex/issues/211
                 // when addressing this, there should be an option to define the generator type based on implicit
                 // iter object, e.g. on sequence objects like strings, dicts, tuples, lists, sets, ...
                 // special case comprehension
@@ -1551,7 +1518,6 @@ namespace tuplex {
                 else if(generator_type == python::Type::RANGE) {
                     // this is wrong.
                     // could be i64 or f64. Wrong typing???
-                    // @TODO: https://github.com/LeonhardFS/Tuplex/issues/211
                     Logger::instance().defaultLogger().debug("HACK: typing range per default as integer range. However, could be float too....");
                     _nameTable[name] = python::Type::I64;
                 } else if(generator_type == python::Type::EMPTYLIST) {
@@ -1563,7 +1529,6 @@ namespace tuplex {
                 } else if(generator_type.isTupleType() && tupleElementsHaveSameType(generator_type)) {
                     _nameTable[name] = generator_type.parameters().front();
                 } else {
-                    // @TODO: https://github.com/LeonhardFS/Tuplex/issues/211
                     error("unsupported generator type " + generator_type.desc() + " encountered");
                     return;
                 }
@@ -1573,7 +1538,6 @@ namespace tuplex {
             }
                 // ----------------------------------------------------------------------------------------------------------
             case ASTNodeType::Tuple: {
-                // @TODO:
                 error("generators having multiple names as targets not yet supported. Please fix.");
                 break;
             }
@@ -1596,7 +1560,6 @@ namespace tuplex {
 
     void TypeAnnotatorVisitor::visit(NListComprehension* listComprehension) {
         // save and restore name table when comprehension is done.
-        // @TODO: nested comprehensions?? => should be possible with this, because we do not save before comprehension objects
         // but rather for ListComprehension, ...
         auto name_backup = _nameTable;
 

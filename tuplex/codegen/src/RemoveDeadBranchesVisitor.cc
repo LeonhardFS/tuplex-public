@@ -29,7 +29,7 @@ namespace tuplex {
             case ASTNodeType::String: {
                 NString* str = (NString*)node;
 
-                // stupid process string needs to be called @TODO: better interface...
+                // stupid process string needs to be called
                 auto val = str->value();
                 return option<bool>(val.substr(1, val.length() - 2).size() != 0);
             }

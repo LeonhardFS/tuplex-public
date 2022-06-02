@@ -51,8 +51,6 @@ namespace tuplex {
         virtual void rewriteParametersInAST(const std::unordered_map<size_t, size_t>& rewriteMap);
 
         virtual Schema getInputSchema() const override {
-            // @TODO: fix this
-            // => should return row schema! not what the udf needs... (because of nesting...)
             assert(_udf.getInputSchema().getRowType() != python::Type::UNKNOWN); return _udf.getInputSchema();
         }
 

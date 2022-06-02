@@ -132,8 +132,6 @@ namespace tuplex {
 
         virtual antlrcpp::Any visitRaise_stmt(antlr4::Python3Parser::Raise_stmtContext *ctx) override;
 
-        // @TODO: Loop support, override antlr visitor to generate AST Nodes for
-        //        For, while, break, continue...
         virtual antlrcpp::Any visitFor_stmt(antlr4::Python3Parser::For_stmtContext *ctx) override;
 
         virtual antlrcpp::Any visitWhile_stmt(antlr4::Python3Parser::While_stmtContext *ctx) override;

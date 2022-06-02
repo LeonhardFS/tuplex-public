@@ -19,15 +19,7 @@
 #include "IExceptionableTask.h"
 #include "TransformTask.h"
 
-// @TODO: invalidate partitions...
 namespace tuplex {
-
-    // @TODO: NOTE: the exception writing is WAY TO complex.
-    // keep it simpler, just write in exception partition
-    // row, eccode, load
-    // ==> makes resolution easier...
-    // if necessary, just count the rows once (or count on insert)...
-    // --> makes also merging later easier... (because they arrive in order!)
     class ResolveTask : public IExceptionableTask {
     public:
         ResolveTask() = delete;
@@ -105,9 +97,6 @@ namespace tuplex {
             std::sort(_operatorIDsAffectedByResolvers.begin(), _operatorIDsAffectedByResolvers.end());
             _normalPtrBytesRemaining = 0;
         }
-
-        // @TODO: destructor, destroy list!
-
         static codegen::write_row_f mergeRowCallback();
         static codegen::exception_handler_f exceptionCallback();
         static codegen::str_hash_row_f writeStringHashTableCallback();
@@ -176,21 +165,6 @@ namespace tuplex {
         /// i.e. _generalCasePartitions store what exceptions to resolve, IExceptionableTask::_generalCasePartitions exceptions that occurred
         /// during resolution.
         std::vector<Partition*> getExceptions() const override {
-
-            // TODO: override here which exceptions to return
-            // i.e. IExceptionableTask stores exceptions where rows produced errors on slow path as well
-
-            // second set should be for exceptions which could be resolved using slower path or python, but do not adhere to the output schema!
-            // => i.e. when caching data, throw away the IExceptionable exceptions, because they do not really matter...
-
-            // @TODO: how does the cached exception work? i.e. need special op cacheExceptions() perhaps which tells to preserve exceptions for
-            // future similar pipeline executions to iteratively resolve data...
-
-            // when allowing things like map(...).resolve(...).cache().ignore(...).resolve(...) then
-            // ONLY exceptions which are happening incl. map and after need to be serialized and returned.
-            // all the others simply remain unresolved at this point and can only be resolved by introducing additional
-            // pipeline logic.
-
             return IExceptionableTask::getExceptions();
         }
 

@@ -156,9 +156,6 @@ namespace tuplex {
     }
 
     LocalEngine::LocalEngine() {
-        // init signal handlers
-        // => this is a global init. Should we do that?
-        // @TODO: what about lambda backend? we should not use local engine there...!
         install_signal_handlers();
     }
 }

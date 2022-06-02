@@ -144,7 +144,6 @@ std::string str_value_from_python_raw_value(const std::string& raw_string) {
             }
             if(*s & 0x80) {
                 // UTF-8 decode
-                // todo
                 throw std::runtime_error("UTF-8 not yet supported!");
             } else {
                 *p++ = *s++;

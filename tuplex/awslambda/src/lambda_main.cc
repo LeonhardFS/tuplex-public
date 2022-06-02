@@ -170,7 +170,7 @@ int64_t writeRowCallback(LambdaExecutor* exec, const uint8_t* buf, int64_t bufSi
         exec->bytesWritten += bufSize;
         exec->numOutputRows++;
     } else {
-        std::cerr<<"ran out of capacity!"<<std::endl; //@TODO: error handling!
+        std::cerr<<"ran out of capacity!"<<std::endl;
     }
     return 0;
 }
@@ -184,12 +184,6 @@ void exceptRowCallback(LambdaExecutor* exec, int64_t exceptionCode, int64_t exce
 }
 
 aws::lambda_runtime::invocation_request const* g_lambda_req = nullptr;
-
-
-// @TODO: output buffer size is an issue -> need to write partial results if required!!!
-
-// how much memory to use for the Lambda??
-// TODO: make this dependent on the Lambda configuration!
 // --> check env variables from here https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html#configuration-envvars-runtime
 static const size_t MAX_RESULT_BUFFER_SIZE = 200 * 1024 * 1024; // 200MB result buffer?
 LambdaExecutor *g_executor = nullptr; // global buffer to hold results!
@@ -446,7 +440,6 @@ tuplex::messages::InvocationResponse lambda_main(aws::lambda_runtime::invocation
 
             // there should be a couple input uris in this request!
             // => decode using optional fileinput params from the
-            // @TODO: ranges
 
             // only csv + text so far supported!
             if(tstage->inputFormat() == FileFormat::OUTFMT_CSV) {
@@ -484,7 +477,7 @@ tuplex::messages::InvocationResponse lambda_main(aws::lambda_runtime::invocation
                 // reading files...
                 reader->read(uri);
                 runtime::rtfree_all();
-                timer.mark_file_time(uri); // TODO: this might not be unique...
+                timer.mark_file_time(uri);
             }
 
             break;
@@ -493,8 +486,6 @@ tuplex::messages::InvocationResponse lambda_main(aws::lambda_runtime::invocation
             // not supported yet
             // => simply read in partition from file (tuplex in memory format)
             // load file into partition, then call functor on the partition.
-
-            // TODO: Could optimize this by streaming in data & calling compute over blocks of data!
             for(const auto &uri : inputURIs) {
                 auto vf = VirtualFileSystem::open_file(uri, VirtualFileMode::VFS_READ);
                 if(vf) {
@@ -520,7 +511,7 @@ tuplex::messages::InvocationResponse lambda_main(aws::lambda_runtime::invocation
                 } else {
                     logger.error("Error reading " + uri.toString());
                 }
-                timer.mark_mem_time(uri); // TODO: this might not be unique...
+                timer.mark_mem_time(uri);
             }
 
             break;

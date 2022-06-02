@@ -31,8 +31,6 @@ def cmd_exists(cmd):
     Returns: True if it exists else False
 
     """
-
-    #TODO: better use type pacman > /dev/null 2>&1?
     return shutil.which(cmd) is not None
 
 def get_list_result_from_cmd(cmd, timeout=2):
@@ -253,8 +251,6 @@ exec $LAMBDA_TASK_ROOT/bin/$PKG_BIN_FILENAME ${_HANDLER}
 
 
         # now copy in Python lib from specified python executable!
-        # TODO: compile them to pyc files, this should lead to smaller size...
-
         logging.info('Writing Python stdlib from {}'.format(py_stdlib_path))
         root_dir = py_stdlib_path
 
@@ -262,8 +258,6 @@ exec $LAMBDA_TASK_ROOT/bin/$PKG_BIN_FILENAME ${_HANDLER}
 
         # exclude numpy files...
         paths = list(filter(lambda path: 'numpy' not in path, paths))
-
-        # TODO: exclude more files here to make this smaller and still keep it executable!!!
 
         logging.info('Found {} files in python stdlib to ship'.format(len(paths)))
         # for path in glob.iglob(root_dir + '**/**', recursive=True):

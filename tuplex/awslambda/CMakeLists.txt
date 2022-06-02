@@ -46,9 +46,6 @@ target_link_libraries(${LAMBDA_NAME} PRIVATE AWS::aws-lambda-runtime ${AWSSDK_LI
         libio libutils libcore libcodegen libcpythonadapter ${Boost_LIBRARIES} ${LibMagic_LIBRARIES} ${Python3_LIBRARIES})
 target_compile_features(${LAMBDA_NAME} PRIVATE "cxx_std_11")
 
-
-# @TODO: in order to reduce size of Lambda, strip JITCompiler away from codegen.
-# it bloats the size.
 # depend on nlohmann json
 add_dependencies(${LAMBDA_NAME} json libio libutils libcore)
 

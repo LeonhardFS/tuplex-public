@@ -65,8 +65,6 @@ static invocation_response lambda_handler(invocation_request const& req) {
 
 // main function which setups error handling & invocation of custom lambda function
 int main() {
-
-    // TODO: determine whether this is needed for the new AWS C++ Runtime
     using namespace aws::lambda_runtime;
     // install sigsev handler to throw C++ exception which is caught in handler...
     struct sigaction sigact;

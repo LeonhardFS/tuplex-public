@@ -112,10 +112,6 @@ namespace tuplex {
          */
         void setOutputLimit(size_t outputLimit) {
             _outputLimit = outputLimit;
-
-            // @TODO: move this logic to physical plan!
-            // pushdown limit
-            //pushDownOutputLimit();
         }
 
         size_t outputLimit() const { return _outputLimit; }
@@ -466,8 +462,6 @@ namespace tuplex {
         std::shared_ptr<JITSymbols> _syms;
         InitData _initData; // pointer to pass to init...
         HashResult _hashResult; // where to store hash result (i.e. write to hash table)
-        // Todo: move this to physicalplan!!!
-        //void pushDownOutputLimit(); //! enable optimizations for limited pipeline by restricting input read!
 
         // unresolved exceptions. Important i.e. when no IO interleave is used...
         std::vector<Partition*> _inputExceptions;

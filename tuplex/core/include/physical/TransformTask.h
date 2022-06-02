@@ -48,9 +48,7 @@ namespace tuplex {
                                    const Schema& outputSchema,
                                    int64_t outputDataSetID, int64_t contextID,
                                    const uint8_t *buf, int64_t size) {
-        // @TODO: make sure outputDataSetID works... for now ignored
         assert(outputDataSetID >= 0 && outputSchema != Schema::UNKNOWN);
-
         assert(owner);
 
         auto minRequiredSize =  (size_t)size + sizeof(int64_t); // Make sure allocate at least 8 bytes for the row counter
@@ -130,12 +128,10 @@ namespace tuplex {
 
         void setFunctor(codegen::read_block_f functor) {
             _functor = (void*)functor;
-           // @TODO: update other vars too...
         }
 
         void setFunctor(codegen::cells_row_f functor) {
             _functor = (void*)functor;
-            // @TODO: update other vars too...
         }
 
         void setStageID(int stageID) { _stageID = stageID; };

@@ -22,7 +22,6 @@ namespace tuplex {
 
         // is it an empty UDF? I.e. a rename operation?
         if(udf.empty()) {
-            // nothing todo, simply set schema as same. this is the same as supplying an identity function
             // lambda x: x!
             setSchema(parent->getOutputSchema());
 
@@ -77,7 +76,6 @@ namespace tuplex {
 
 
     std::vector<Row> MapOperator::getSample(const size_t num) const {
-        // @TODO: refactor this using sample processor. It's not done in a smart way yet...
         // empty udf? take sample from parent!
         if(_udf.empty())
             return parent()->getSample(num);
@@ -137,7 +135,6 @@ namespace tuplex {
 
     LogicalOperator *MapOperator::clone() {
         // important to use here input column names, i.e. stored in base class UDFOperator!
-        // @TODO: avoid here the costly retyping but making a faster, better clone.
         auto copy = new MapOperator(parent()->clone(),
                                     _udf,
                                     UDFOperator::columns());

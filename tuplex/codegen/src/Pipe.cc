@@ -38,9 +38,7 @@ int Pipe::pipe(const std::string& file_input, const std::string& tmpdir) {
 
         // check if file input is active, if so create a temp file
         if(file_input.length() > 0) {
-            // @TODO: global temp dir should be used...
             // needs to be a configurable option...
-
             char* tmpname = new char[tmpdir.size() + 13];
             snprintf(tmpname, tmpdir.size() + 13, "%s/pipe-XXXXXX", tmpdir.c_str());
             int fd = mkstemp(tmpname);

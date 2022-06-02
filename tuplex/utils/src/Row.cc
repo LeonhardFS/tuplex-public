@@ -50,9 +50,7 @@ namespace tuplex {
                 assert(size >= 1);
                 return Row(fromCharPointers(str, str + size - 1));
             }
-            // @TODO: add here special code for null-value opt violation, i.e. efficient in-memory format is saved!
-
-            default:
+           default:
                 return fromMemory(ds, ptr, size);
         }
     }

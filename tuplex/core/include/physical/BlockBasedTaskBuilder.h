@@ -36,8 +36,7 @@ namespace tuplex {
              * @return llvm function
              */
             llvm::Function *createFunctionWithExceptions();
-
-            python::Type _inputRowType; //@TODO: make this private??
+            python::Type _inputRowType;
 
             std::string _intermediateCallbackName;
             Row _intermediateInitialValue;
@@ -147,11 +146,6 @@ namespace tuplex {
              */
             virtual llvm::Function *build(bool terminateEarlyOnFailureCode=false) = 0;
         };
-
-        // @TODO:
-        // later JSONSourceTaskBuilder { ... }
-        // also GeneralSourceTaskBuilder { ... }
-        // TuplexSourceTaskBuilder { ... } // <== takes Tuplex's internal memory format as source
 
         static python::Type restrictRowType(const std::vector<bool> &columnsToSerialize, const python::Type &rowType) {
             if (columnsToSerialize.empty())

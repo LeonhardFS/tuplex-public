@@ -22,10 +22,6 @@ namespace tuplex {
 
     void IReplaceVisitor::visit(NSuite *suite) {
 
-        // one more optimization can be done:
-        // I.e. all suite members can be flattened into this suite. Right now not done...
-        // @TODO: do this
-
         // just call all children
         if(!suite->_statements.empty()) {
             for (auto it = suite->_statements.begin(); it != suite->_statements.end(); ++it) {
@@ -49,7 +45,6 @@ namespace tuplex {
     }
 
     void IReplaceVisitor::visit(NFunction *function) {
-        // @TODO: change such that types in AST can be only ASTNode! => optimizing the AST needs this flexibility!
         function->_name = (NIdentifier*)replaceh(function, function->_name);
         function->_parameters = (NParameterList*)replaceh(function, function->_parameters);
         if(function->_annotation)
@@ -59,7 +54,6 @@ namespace tuplex {
 
     }
 
-//@TODO: fix optimization (removal of cmp) for parameterList!!!!
     void IReplaceVisitor::visit(NParameterList *paramList) {
         if(!paramList->_args.empty())
             for(auto it = paramList->_args.begin(); it != paramList->_args.end(); ++it) {

@@ -78,7 +78,7 @@ namespace tuplex {
 
                     pushNode(tuple);
                 } else {
-                    // nothing todo...
+                    // nothing to do...
                     // result is just an expression in (...)
                 }
             } else {
@@ -194,7 +194,6 @@ namespace tuplex {
             // more than one child, must be odd and > 3
             // add operations
             assert(children.size() & 0x1);
-            // @TODO: could also construct MapReduce tree here...
             // for now stick with simple solution, basically simple recursive thing
 
             // maybe a weird order at first hand, works though!
@@ -220,7 +219,7 @@ namespace tuplex {
                 pushNode(new NBinaryOp(left, stringToToken(children[2 * i - 1]->getText()), right));
             }
 
-        } // else, nothing todo, it is a simple factor
+        } // else, nothing to do, it is a simple factor
     }
 
     // binary operations *, @,
@@ -393,7 +392,7 @@ namespace tuplex {
             error("only positional arguments supported yet");
             return nullptr;
         } else {
-            // nothing todo
+            // nothing to do
         }
 
         visitChildren(ctx);
@@ -499,7 +498,7 @@ namespace tuplex {
             }
         } else {
             assert(ctx->test().size() == 1);
-            // nothing todo, just a single test
+            // nothing to do, just a single test
         }
 
         return nullptr;
@@ -569,7 +568,7 @@ namespace tuplex {
         if (ctx->NOT()) {
             auto n = popNode();
             pushNode(new NUnaryOp(TokenType::NOT, n));
-        }// else, nothing todo
+        }// else, nothing to do
 
         return nullptr;
     }
@@ -578,7 +577,7 @@ namespace tuplex {
 
         visitChildren(ctx);
         //test: or_test ('if' or_test 'else' test)? | lambdef;
-        // check if 'if' is present, then new node, else nothing todo
+        // check if 'if' is present, then new node, else nothing to do
         if (ctx->IF()) {
             assert(nodes.size() >= 3);
             // pop 3 nodes
@@ -917,16 +916,11 @@ namespace tuplex {
         // generate new return stmt
         // can be empty or not
         if (ctx->testlist()) {
-
-            // TODO: change here to support multiple nodes.
             // => or do this in testlist.
             assert(nodes.size() >= 1);
 
             size_t tupleSize = ctx->testlist()->test().size();
             assert(nodes.size() > tupleSize);
-
-            // TODO: doesn't work when returning tuples w/ function (e.g., return f(x), y)
-
             if (tupleSize == 1 && ctx->testlist()->COMMA().empty()) {
                 pushNode(new NReturn(popNode()));
             } else {
@@ -1026,7 +1020,7 @@ namespace tuplex {
                 }
 
                 pushNode(assign);
-            } // else it is a single expr, i.e/ nothing todo
+            } // else it is a single expr, i.e/ nothing to do
 
         }
 

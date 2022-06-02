@@ -18,10 +18,7 @@
 #include <cstdint>
 
 namespace tuplex {
-
-    // @TODO: buffer size is 32kb max. for a row. this should be made dynamic based on sample/changed or buffer should be resized.
-
-   // a completely compiled JIT reader
+    // a completely compiled JIT reader
     class JITCompiledCSVReader : public FileInputReader {
     public:
         JITCompiledCSVReader() = delete;
@@ -45,7 +42,7 @@ namespace tuplex {
             _rangeEnd = end;
         }
 
-        void setHeader(const std::vector<std::string>& header) { //@TODO: this is CSV specific! change it!
+        void setHeader(const std::vector<std::string>& header) {
             _header = header;
             if(!_header.empty()) {
                 if(_header.size() != _numColumns)

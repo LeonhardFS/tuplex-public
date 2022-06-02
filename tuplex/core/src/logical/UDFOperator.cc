@@ -81,8 +81,6 @@ namespace tuplex {
                                 Logger::instance().defaultLogger().error("Tracing via sample produced mostly"
                                                                          " exceptions, please increase sample size"
                                                                          " or alter UDF to not yield exceptions only.");
-                                // @TODO: print nice traceback with sample...
-                                // => should use beefed up sample processor class for this...
                                 return Schema::UNKNOWN;
                             } else {
                                 // all good, keep sampled type but mark as non compilable
@@ -105,9 +103,6 @@ namespace tuplex {
             }
             Logger::instance().defaultLogger().warn("will use fallback mode");
         }
-
-        // @Todo: support here dict syntax...
-        // @TODO: this feels redundant, i.e. tracerecord visitor should have already dealt with this...
 
         auto pickledCode = _udf.getPickledCode();
         auto processed_sample = getSample(typeDetectionSampleSize);

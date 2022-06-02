@@ -348,7 +348,7 @@ namespace tuplex {
             //     if it is ", then there is a double quote. ->skip one char and then loop again
             //     if it is , or \n or \r or \0, then the cell ended.
             //     if it something else, then we have a single " in a double quoted field.
-            //     best thing todo is then to continue parsing.
+            //     best thing to do is then to continue parsing.
             //     i.e. condition used here is to check whether next char is in {',', '\n', '\r', '\0'}
             //     ------------------------------------------------------------------------
             builder.SetInsertPoint(bQuotedCellEndCheck);
@@ -747,7 +747,6 @@ namespace tuplex {
             return normalizeFunc;
         }
 
-        // @Todo: maybe rename this
         void CSVParseRowGenerator::fillResultCode(llvm::IRBuilder<> &builder, bool errorOccured) {
             using namespace llvm;
             auto &context = _env->getContext();
@@ -900,10 +899,6 @@ namespace tuplex {
                         pos++;
                     }
                 }
-
-
-                // add serialization of parse info for NULL and ValueError case
-                // @TODO
 
                 // for error blocks, check whether they have predecessors. If not, remove them from the function!
 #if LLVM_VERSION_MAJOR < 9

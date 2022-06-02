@@ -41,8 +41,6 @@ std::string unixWildcardToGrep(const std::string& r, bool match_full=true) {
     std::string s;
     if(match_full)
         s +="^";
-    // TODO: [] should be converted properly to!
-    // from https://www.rgagnon.com/javadetails/java-0515.html
     for(auto c : r) {
         switch(c) {
             case '*': {
@@ -142,9 +140,6 @@ static size_t s3walk(const Aws::S3::S3Client& client, const std::string& bucket,
     using namespace std;
 
     size_t numRequests = 0;
-
-    // @TODO: use longest prefix function to speed up querying!
-
     // prefix is not allowed to contain any wildcard symbols!
     // --> needs to be unescaped!
 
@@ -554,8 +549,6 @@ namespace tuplex {
                          const Aws::S3::Model::RequestPayer &requestPayer) {
         using namespace std;
 
-        // @TODO: use longest prefix function to speed up querying!
-
         // prefix is not allowed to contain any wildcard symbols!
         // --> needs to be unescaped!
 
@@ -716,9 +709,6 @@ namespace tuplex {
         if(!_transfer_manager) {
             Aws::Transfer::TransferManagerConfiguration config(_thread_pool.get());
             config.s3Client = _client;
-
-            // @TODO: add callbacks for better upload etc.?
-            // std::function<void(const TransferManager*, const std::shared_ptr<const TransferHandle>&, const Aws::Client::AWSError<Aws::S3::S3Errors>&)>
             Aws::Transfer::ErrorCallback error_callback = [](const Aws::Transfer::TransferManager* manager, const std::shared_ptr<const Aws::Transfer::TransferHandle>& handle,
                                                              const Aws::Client::AWSError<Aws::S3::S3Errors>& err) {
                 auto& logger = Logger::instance().logger("filesystem");
@@ -757,9 +747,6 @@ namespace tuplex {
         _bytesReceived += handle->GetBytesTransferred();
         _getRequests += !handle->IsMultipart(); // if is not multipart add one
         // how to treat multipart? --> need that for cost info!!!
-        // @TODO
-
-
         double transfer_rate = handle->GetBytesTransferred() / (1024.0 * 1024.0 * time);
 
         switch(handle->GetStatus()) {

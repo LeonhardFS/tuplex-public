@@ -273,8 +273,6 @@ namespace tuplex {
             // AttributeError: module 'math' has no attribute 'jdhkgjk'
             // => clean this upfront!
             // also clean raise 20 into TypeError!
-            // @TODO:
-
             // also include check whether UDF always throws...
 
 
@@ -446,7 +444,7 @@ namespace tuplex {
             hintFunctionParameters(findFunction(_root));
 
             // 2.2 run type annotator using the symbol table
-            TypeAnnotatorVisitor tav(*table, policy); // TODO: global variable or function parameter?
+            TypeAnnotatorVisitor tav(*table, policy);
             tav.setFailingMode(silentMode);
             table->resetScope();
             table->enterScope(); // enter builtin scope

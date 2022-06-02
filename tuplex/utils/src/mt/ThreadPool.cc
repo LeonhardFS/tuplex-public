@@ -32,8 +32,6 @@ namespace tuplex {
     void ThreadPool::release() {
         _done = true;
 
-        // @Todo: should probably call on remaining tasks abort
-
         // join all threads
         for(auto& thread : _threads) {
             if(thread.joinable())
@@ -90,7 +88,6 @@ namespace tuplex {
         }
     }
 
-    // @ Todo: deferred start of threads...
     ThreadPool::ThreadPool(const uint32_t numThreads, worker_init_f init_f, worker_release_f release_f, bool autoStart) : _done(false),
                                                         _workQueue{},
                                                         _numThreads(numThreads),
@@ -105,7 +102,7 @@ namespace tuplex {
 
     }
 
-    // @Todo: allow for interrupt handler (may be external or via Python)
+    // Note: allow for interrupt handler (may be external or via Python)
     // should note when python is run in standalone mode
     // i.e. a lambda that if returns true, will kill the threadpool
     void ThreadPool::waitForAll(bool helpOut) {

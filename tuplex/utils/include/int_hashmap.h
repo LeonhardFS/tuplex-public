@@ -29,7 +29,7 @@ extern "C" {
  * int64_any_t is a pointer.  This allows you to put arbitrary structures in
  * the hashmap.
  */
-typedef void *int64_any_t; // TODO: probably pull this out to a common header for both hashtables
+typedef void *int64_any_t;
 
 /* We need to keep keys and values */
 typedef struct _int_hashmap_element {

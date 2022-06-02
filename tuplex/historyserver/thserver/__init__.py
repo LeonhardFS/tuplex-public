@@ -19,9 +19,6 @@ import pymongo
 # try to connect to MongoDB backend. If it fails, print out warning.
 mongo_default_uri = "mongodb://localhost:27017/tuplex-history"
 
-# @ Todo... I.e. start with mongod --dbpath history
-
-
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
 app.config['PROPAGATE_EXCEPTIONS'] = True

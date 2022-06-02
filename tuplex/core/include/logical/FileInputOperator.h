@@ -56,8 +56,6 @@ namespace tuplex {
 
         void detectFiles(const std::string& pattern);
 
-        // TODO: Refactor constructors
-
         // CSV Constructor
         FileInputOperator(const std::string& pattern,
                           const ContextOptions& co,
@@ -159,7 +157,6 @@ namespace tuplex {
 
         double samplingTime() const { return _sampling_time_s; }
         // CSV Only Operations
-        // @Todo: add here check that estimate has been called.
         bool hasHeader() const { return _header; }
         std::vector<std::string> header() const { return columns(); }
         char delimiter() const { return _delimiter;}

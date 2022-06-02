@@ -22,9 +22,6 @@
 
 #include <Timer.h>
 
-// @TODO: use global allocator!
-// ==> make customizable
-
 // from https://github.com/TileDB-Inc/TileDB/blob/dev/tiledb/sm/filesystem/s3.cc
 /**
  * Return the exception name and error message from the given outcome object.
@@ -187,7 +184,6 @@ namespace tuplex {
             return;
 
         Aws::S3::Model::UploadPartRequest req;
-        //@Todo: what about content MD5???
         req.SetBucket(_uri.s3Bucket().c_str());
         req.SetKey(_uri.s3Key().c_str());
         req.SetUploadId(_uploadID);
@@ -361,8 +357,6 @@ namespace tuplex {
         assert(_buffer);
 
         uint8_t* dest = (uint8_t*)buffer;
-
-        // Todo: better condition is I think filePos < fileSize
         int64_t capacity = nbytes; // how many bytes can be written to buffer safely
 
         // bring capacity to 0

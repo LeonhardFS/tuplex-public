@@ -389,7 +389,6 @@ namespace tuplex {
 #ifndef NDEBUG
         throw std::runtime_error("bad field in upcast");
 #endif
-        // @TODO: construct dummy based on target type
         return Field::null();
     }
 

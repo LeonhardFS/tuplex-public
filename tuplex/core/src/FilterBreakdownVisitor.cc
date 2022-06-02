@@ -209,7 +209,6 @@ namespace tuplex {
                     elements.push_back(node);
             }
 
-            // TODO: what about dict?
             if (elements.empty()) {
                 // this is an always false statement. should be caught by ReduceExpressionsVisitor
                 fatal_error("should get caught by reducing expressions!");
@@ -217,7 +216,6 @@ namespace tuplex {
 
             auto element_type = elements.front()->getInferredType();
             // upcast??
-            // @TODO: ignore for now, else use this!!!
             for (const auto el : elements) {
                 // all number + same type?
                 if(!(el->type() == ASTNodeType::Number || el->type() == ASTNodeType::String)) {
@@ -486,7 +484,6 @@ namespace tuplex {
             case ASTNodeType::Number:
             case ASTNodeType::String: {
                 // don't care, handled somewhere else.
-                // TODO: should ranges be not pushed for every single node??
                 break;
             }
 
@@ -536,7 +533,5 @@ namespace tuplex {
                 break;
             }
         }
-        // @TODO: missing is any assignment statements, variables etc.
-        // => these have to be properly added!
     }
 }

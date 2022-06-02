@@ -94,7 +94,6 @@ namespace tuplex {
     void LocalBackend::initExecutors(const ContextOptions& options) {
 
         // fetch executors from local engine.
-        // @TODO: use condition variable to put executors on sleep
         _executors = LocalEngine::instance().getExecutors(options.EXECUTOR_COUNT(),
                                                           options.EXECUTOR_MEMORY(),
                                                           options.PARTITION_SIZE(),
@@ -265,7 +264,6 @@ namespace tuplex {
 
         Timer timer;
         // BUILD phase
-        // TODO: codegen build phase. I.e. a function should be code generated which hashes a partition to a hashmap.
         while(rsRight->hasNextPartition()) {
             Partition* p = rsRight->getNextPartition();
 
@@ -274,7 +272,6 @@ namespace tuplex {
             int64_t numRows = *((int64_t*)ptr);
             ptr += sizeof(int64_t);
 
-            // @TODO: building not anymore correct because of bitmap issue...
             for(auto i = 0; i < numRows; ++i) {
                 // grab key (or later key UDF) and hash it
                 // check what type of key it is and form appropriate hash
@@ -286,8 +283,6 @@ namespace tuplex {
                 int64_t bitmap = 0;
                 if(numBitmapElements > 0)
                     bitmap = *(((int64_t*)ptr) + rightKeyBitmapElementPos);
-
-                /// @TODO: bitmap & Co are here completely off...
 
                 char *skey = nullptr;
                 size_t skey_size = 0;
@@ -314,7 +309,6 @@ namespace tuplex {
                     skey_size = size;
                 } else if(rightKeyType == python::Type::I64) {
 
-                    // TODO: specialized hashmap for integer keys, which is faster...
                     int64_t key = *( ((int64_t*)ptr) + rightKeyIndex + numBitmapElements);
 
                     // hash ==> use int64_t keymap!
@@ -322,11 +316,6 @@ namespace tuplex {
                     memset(skey, 0, 9);
                     *((int64_t*)skey) = key;
                     skey_size = 9;
-
-//                    std::cout<<"key: "<<key<<" skey: ";
-//                    core::hexdump(std::cout, skey, 9);
-//                    std::cout<<std::endl;
-
                 } else if(rightKeyType == python::Type::makeOptionType(python::Type::STRING)) {
 
                     // check bit
@@ -420,7 +409,6 @@ namespace tuplex {
         logger().info("[Hash Join] Build phase took " + std::to_string(timer.time()) + "s");
 
         // Step 2: Hash phase, hash for each tuple in left stage key and check whether right stage key exists.
-        // @TODO: codegen, i.e. a function which probes one partition against a hashmap (read-only).
         // each function invocation will yield one or more partitions as output. ==> probe tasks?
         assert((leftKeyType == rightKeyType) ||
          (leftKeyType.isOptionType() && leftKeyType.getReturnType() == rightKeyType) ||
@@ -430,7 +418,6 @@ namespace tuplex {
         if(!rsLeft)
             throw std::runtime_error("left stage has no resultset!");
 
-        // @TODO: multithreaded execution of probe tasks!
         // issue HashTasks
         auto combinedType = hstage->combinedType();
         Schema combinedSchema(Schema::MemoryLayout::ROW, combinedType);
@@ -904,7 +891,7 @@ namespace tuplex {
         // 1.) COMPILATION
         // compile code & link functions to tasks
         LLVMOptimizer optimizer;
-        auto syms = tstage->compile(*_compiler, _options.USE_LLVM_OPTIMIZER() ? &optimizer : nullptr, false); // @TODO: do not compile slow path yet, do it later in parallel when other threads are already working!
+        auto syms = tstage->compile(*_compiler, _options.USE_LLVM_OPTIMIZER() ? &optimizer : nullptr, false);
         bool combineOutputHashmaps = syms->aggInitFunctor && syms->aggCombineFunctor && syms->aggAggregateFunctor;
         JobMetrics& metrics = tstage->PhysicalStage::plan()->getContext().metrics();
         double total_compilation_time = metrics.getTotalCompilationTime() + timer.time();
@@ -939,13 +926,6 @@ namespace tuplex {
 
         auto tasks = createLoadAndTransformToMemoryTasks(tstage, _options, syms);
         auto completedTasks = performTasks(tasks);
-
-        // Note: this doesn't work yet because of the globals.
-        // to make this work, need better global mapping...
-//        auto completedTasks = performTasks(tasks, [&syms, &optimizer, &tstage, this]() {
-//            // TODO/Note: could prepare code of parent stage already while current one is running! I.e. do this for the first dependent only to avoid conflicts...
-//            syms = tstage->compile(*_compiler, _options.USE_LLVM_OPTIMIZER() ? &optimizer : nullptr, false);
-//        });
 
         // calc number of input rows and total wall clock time
         size_t numInputRows = 0;
@@ -983,8 +963,6 @@ namespace tuplex {
         // => there are fallback mechanisms...
 
         bool executeSlowPath = true;
-        //TODO: implement pure python resolution here...
-        // exceptions found or slowpath data given?
         if(totalECountsBeforeResolution > 0 || !tstage->inputExceptions().empty()) {
             stringstream ss;
             // log out what exists in a table
@@ -1055,14 +1033,8 @@ namespace tuplex {
                     // if resolution via compiled slow path is deactivated, use always the interpreter
                     // => this can be achieved by setting functor to nullptr!
                     auto resolveFunctor = _options.RESOLVE_WITH_INTERPRETER_ONLY() ? nullptr : syms->resolveFunctor;
-
-                    // cout<<"*** num tasks before resolution: "<<completedTasks.size()<<" ***"<<endl;
                     completedTasks = resolveViaSlowPath(completedTasks, merge_except_rows, resolveFunctor, tstage, combineOutputHashmaps);
-                    // cout<<"*** num tasks after resolution: "<<completedTasks.size()<<" ***";
                 }
-
-                // @TODO: if IO thing is deactivated, then need to process exceptions from previous stage as well via slow path...
-                // => a cache operator would be really, really much smarter...
 
                 auto ecountsAfterResolution = calcExceptionCounts(completedTasks);
                 auto totalECountsAfterResolution = totalExceptionCounts(ecountsAfterResolution);
@@ -1072,7 +1044,6 @@ namespace tuplex {
                 ss<<"slow path resolved "<<(totalECountsBeforeResolution - totalECountsAfterResolution)<<"/"<<totalECountsBeforeResolution<< " exceptions ";
                 ss<<"in "<<slow_path_total_time<<"s";
                 logger().info(ss.str());
-
 
                 totalWallTime = 0.0;
                 size_t slowPathNumInputRows = 0;
@@ -1200,7 +1171,7 @@ namespace tuplex {
                 throw std::runtime_error("invalid aggregate!");
 
             // convert to partitions.
-            // right now, it's a general aggregate. So fairly easy todo.
+            // right now, it's a general aggregate. So fairly easy to do.
             // later however, it's going to be hashaggregate which needs to be divided into partitions.
 
             Partition* p = _driver->allocWritablePartition(aggResultSize + sizeof(int64_t),
@@ -1214,7 +1185,7 @@ namespace tuplex {
             free(aggResult);
             // set resultset!
 
-            tstage->setMemoryResult(vector<Partition*>{p}); // @TODO: what about exceptions??
+            tstage->setMemoryResult(vector<Partition*>{p});
         }
 
 
@@ -1223,7 +1194,6 @@ namespace tuplex {
             throw std::runtime_error("releaseStage() failed for stage " + std::to_string(tstage->number()));
 
         // add exception counts from previous stages to current one
-        // @TODO: need to add test for this. I.e. the whole exceptions + joins needs to revised...
 
         // send final result count (exceptions + co)
         if(_historyServer) {
@@ -1300,7 +1270,6 @@ namespace tuplex {
         timer.reset();
 
         // fetch intermediates of previous stages (i.e. hash tables)
-        // @TODO rewrite for general intermediates??
         auto input_intermediates = tstage->initData();
 
         // lazy init hybrids
@@ -1479,7 +1448,6 @@ namespace tuplex {
 #endif
                 resolveTasks.push_back(rtask);
 
-                // TODO: delete original task...
                 delete tt;
                 tt = nullptr;
             } else {
@@ -1829,8 +1797,6 @@ namespace tuplex {
         hashmap_get(hm, key, keylen, reinterpret_cast<any_t*>(&bucket));
         bucket = merge_buckets(bucket, data);
         hashmap_put(hm, key, keylen, bucket);
-        // @TODO: there might be a memory leak for the keys...
-        // => anyways need to rewrite this slow hashmap...
         return MAP_OK;
     }
 
@@ -1844,8 +1810,6 @@ namespace tuplex {
         hashmap_get(hm, key, keylen, reinterpret_cast<any_t*>(&bucket));
         bucket = combineBuckets(bucket, data);
         hashmap_put(hm, key, keylen, bucket);
-        // @TODO: there might be a memory leak for the keys...
-        // => anyways need to rewrite this slow hashmap...
         return MAP_OK;
     }
 
@@ -1905,10 +1869,6 @@ namespace tuplex {
             assert(tasks.front()->type() == TaskType::UDFTRAFOTASK || tasks.front()->type() == TaskType::RESOLVE);
             return getHashSink(tasks.front());
         } else {
-
-            // @TODO: getHashSink should be updated to also work with hybrids. Yet, the merging of normal hashtables
-            //        with resolve hashtables is done by simply setting the merged normal result as input to the first resolve task.
-
             // need to merge.
             // => fetch hash table form first
             auto sink = getHashSink(tasks.front());

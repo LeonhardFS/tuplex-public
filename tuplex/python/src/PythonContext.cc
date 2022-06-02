@@ -18,8 +18,6 @@
 
 // possible classes are
 // int, float, str, list, tuple, dict
-// @TODO: there is also a possibility to add numpy array support!!!
-
 
 // General notes:
 // Interacting with boost python/PyObjects
@@ -847,10 +845,8 @@ namespace tuplex {
         } else if(majType.isDictionaryType() || majType == python::Type::GENERICDICT) {
             ds = &parallelizeAnyType(L, majType, columns);
         } else if(majType.isOptionType()) {
-            // TODO: special case to fast conversion for the option types with fast underlying types
             ds = &parallelizeAnyType(L, majType, columns);
         } else if(majType == python::Type::NULLVALUE) {
-            // TODO: special case to fast conversion for the option types with fast underlying types
             ds = &parallelizeAnyType(L, majType, columns);
         } else if(majType.isListType()) {
             ds = &parallelizeAnyType(L, majType, columns);
@@ -1312,10 +1308,7 @@ namespace tuplex {
         // checkPythonVersion();
 
         ContextOptions co = ContextOptions::defaults();
-
-#warning "this code is commented, because it will cause a deadlock sometimes... Uncomment to activate output in Jupyter notebook."
         // init logging system here
-        // @TODO: add as context option
         // note: this should come BEFORE any Logger::instance()... calls
         //Logger::init({std::make_shared<python3_sink_mt>()});
 
@@ -1324,16 +1317,7 @@ namespace tuplex {
 
         co = updateOptionsWithDict(co, options);
 
-        // #ifndef NDEBUG
-        //        // print settings
-        //        Logger::instance().defaultLogger().info("Tuplex configuration:");
-        //        auto store = co.store();
-        //        for(auto keyval : store) {
-        //            Logger::instance().defaultLogger().info(keyval.first + "=" + keyval.second);
-        //        }
-        // #endif
-
-        // testwise retrieve runtime path. This may be a critical error, hence throw PyException!
+        // test-wise retrieve runtime path. This may be a critical error, hence throw PyException!
         python::unlockGIL();
         auto uri = co.RUNTIME_LIBRARY(true);
         python::lockGIL();
@@ -1447,11 +1431,9 @@ namespace tuplex {
                        python::PyString_FromString("tuplex.redirectToPythonLogging"),
                        python::boolToPython(co.REDIRECT_TO_PYTHON_LOGGING()));
 
-        // @TODO: move to optimizer
         PyDict_SetItem(dictObject,
                        python::PyString_FromString("tuplex.csv.selectionPushdown"),
                        python::boolToPython(co.CSV_PARSER_SELECTION_PUSHDOWN()));
-
 
         PyDict_SetItem(dictObject,
                        python::PyString_FromString("tuplex.webui.enable"),

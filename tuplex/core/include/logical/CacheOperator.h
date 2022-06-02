@@ -121,14 +121,6 @@ namespace tuplex {
         // number of rows need to be stored for cost estimates
         size_t _normalCaseRowCount;
         size_t _generalCaseRowCount;
-
-        // @TODO: there should be 3 things stored
-        // 1.) common case => i.e.
-        // 2.) general case => i.e. what in general can be done (null-values & Co, wide integers, ...)
-        // 3.) python case => i.e. things that don't fit into either case (interpreter objects serialized via pickle)
-
-        // Note: the pickling could be parallelized by simply matching python types & Co...
-        //       ==> store python data as tuple of elements!
     };
 }
 

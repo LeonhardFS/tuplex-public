@@ -143,7 +143,7 @@ namespace tuplex {
             std::vector<size_t>      _hashColKeys; // the column to use as hash key
             python::Type _hashKeyType;
             python::Type _hashBucketType;
-            bool        _hashSaveOthers; // whether to save other columns than the key or not. => TODO: UDAs, meanByKey etc. all will require similar things...
+            bool        _hashSaveOthers; // whether to save other columns than the key or not.
             bool        _hashAggregate; // whether the hashtable is an aggregate
 
             Schema _readSchema; //! schema for reading input

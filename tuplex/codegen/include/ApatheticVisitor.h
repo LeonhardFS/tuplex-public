@@ -15,7 +15,6 @@
 #include "IVisitor.h"
 
 /*!
- * @Todo: find a better name for this class & refactor
  * this class is a helper to help you write visitors faster. It basically is a visitor that does nothing.
  * If you only need partially some functions
  * implemented, use this as it saves a lot of code to write. However, be aware that inheriting from it might lead to undesired behaviour!

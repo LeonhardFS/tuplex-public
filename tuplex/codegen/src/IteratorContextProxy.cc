@@ -33,7 +33,6 @@ namespace tuplex {
             auto iteratorContextStruct = _env->CreateFirstBlockAlloca(builder, iteratorContextType, "iter_iterator_alloc");
             llvm::Value *iterableStruct = nullptr;
             if(iterableType.isListType() || iterableType.isTupleType()) {
-                // TODO: need to change this when codegen for lists gets updated
                 iterableStruct = _env->CreateFirstBlockAlloca(builder, iterable.val->getType(), "iter_arg_alloc");
             } else {
                 iterableStruct = iterable.val;
@@ -97,7 +96,6 @@ namespace tuplex {
             auto iteratorContextStruct = _env->CreateFirstBlockAlloca(builder, iteratorContextType, "reversed_iterator_alloc");
             llvm::Value *seqStruct = nullptr;
             if(argType.isListType() || argType.isTupleType()) {
-                // TODO: need to change this when codegen for lists gets updated
                 seqStruct = _env->CreateFirstBlockAlloca(builder, arg.val->getType(), "reversed_arg_alloc");
             } else if(argType == python::Type::RANGE) {
                 seqStruct = _env->CreateFirstBlockAlloca(builder, _env->getRangeObjectType(), "reversed_arg_alloc");

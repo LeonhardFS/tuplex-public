@@ -170,46 +170,6 @@ unsigned long hashmap_crc32(const unsigned char *s, unsigned int len) {
     return crc32val;
 }
 
-//// @TODO: performance tune code here...
-//// tune hashmap by using Google's city hash
-//// from https://github.com/google/cityhash/blob/master/src/city.h
-//// Hash function for a byte array.
-//uint64_t CityHash64(const char *buf, size_t len);
-//// Hash function for a byte array.  Most useful in 32-bit binaries.
-//uint32_t CityHash32(const char *buf, size_t len);
-//// => i.e. call hashmap_put function with hash value!
-//// => same goes for hashmap_get in this case here!
-//// first, run mini benchmark to make sure these chances actually do help...
-//// probably there are more important things to fix in the code base than this...
-
-// Note: further optimize hashing via https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
-
-///*
-// * Hashing function for a string
-// */
-//unsigned int hashmap_hash_int(hashmap_map *m, char *keystring) {
-//
-//    assert(m); // sanity check!
-//    assert(keystring); // null bucket for that case!
-//
-//    unsigned long key = hashmap_crc32((unsigned char *) (keystring), strlen(keystring));
-//
-//    /* Robert Jenkins' 32 bit Mix Function */
-//    key += (key << 12);
-//    key ^= (key >> 22);
-//    key += (key << 4);
-//    key ^= (key >> 9);
-//    key += (key << 10);
-//    key ^= (key >> 2);
-//    key += (key << 7);
-//    key ^= (key >> 12);
-//
-//    /* Knuth's Multiplicative Method */
-//    key = (key >> 3) * 2654435761;
-//
-//    return key % m->table_size;
-//}
-
 // new: use city hash or murmurhash + no mixins to make it faster...
 #include <third_party/hash/city.h>
 /*
@@ -256,7 +216,6 @@ int hashmap_hash(map_t in, const char *key, uint64_t keylen) {
             return curr;
 
         // could use fastrange reduction here as well
-        // @TODO
         curr = (curr + 1) % m->table_size;
     }
 
@@ -303,7 +262,6 @@ int hashmap_rehash(map_t in) {
     return MAP_OK;
 }
 
-// TODO: hashmap should have memory managament of key. I.e. this should be read-only.
 /*
  * Add a pointer to the hashmap with some key
  */

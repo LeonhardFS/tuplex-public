@@ -47,7 +47,7 @@ namespace tuplex {
     }
 
     void ClosureEnvironment::importModuleAs(const std::string &identifier, const std::string &original_identifier) {
-        assert(identifier != "*"); // TODO: more comprehensive checks here...
+        assert(identifier != "*");
 
         Module m;
         m.identifier = identifier;

@@ -58,9 +58,6 @@ namespace tuplex {
          */
          std::vector<std::string> _exceptions; // for now simple strings => aggregate
 
-         // store tracebacks for clean display
-         // TODO: could avoid storing duplicates so index by type & line number & column number, yet this not supported yet.
-
         // was a break statement executed in the ongoing loop?
         std::vector<bool> _loopBreakStack;
 

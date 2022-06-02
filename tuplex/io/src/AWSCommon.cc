@@ -55,23 +55,7 @@ namespace tuplex {
     bool initAWSSDK() {
         if(!isAWSInitialized) {
             Aws::SDKOptions options;
-
-//        // hookup to Tuplex logger...
-//        // --> https://docs.aws.amazon.com/sdk-for-cpp/v1/developer-guide/logging.html
-//        options.loggingOptions.logLevel = Aws::Utils::Logging::LogLevel::Trace;
-
-            // @TODO: add tuplex loggers
-            // => https://sdk.amazonaws.com/cpp/api/LATEST/class_aws_1_1_utils_1_1_logging_1_1_log_system_interface.html
-
-            // note: AWSSDk uses curl by default, can disable curl init here via https://sdk.amazonaws.com/cpp/api/LATEST/struct_aws_1_1_http_options.html
             Aws::InitAPI(options);
-
-            // init logging
-//        Aws::Utils::Logging::InitializeAWSLogging(
-//                Aws::MakeShared<Aws::Utils::Logging::DefaultLogSystem>(
-//                    "tuplex",
-//                    Aws::Utils::Logging::LogLevel::Trace,
-//                    "aws sdk"));
 #ifndef NDEBUG
             auto log_system = Aws::MakeShared<Aws::Utils::Logging::ConsoleLogSystem>("tuplex", Aws::Utils::Logging::LogLevel::Trace);
             Aws::Utils::Logging::InitializeAWSLogging(log_system);
@@ -170,7 +154,6 @@ namespace tuplex {
         return credentials;
     }
 
-    // @TODO: add ca configuration options etc. => maybe network settings?
     bool initAWS(const AWSCredentials& credentials, const NetworkSettings& ns, bool requesterPay) {
         initAWSSDK();
 
@@ -213,8 +196,6 @@ namespace tuplex {
     }
 
     void applyNetworkSettings(const NetworkSettings& ns, Aws::Client::ClientConfiguration& config) {
-        // @TODO: could also do request timeout etc.
-
         config.caFile = ns.caFile.c_str();
         config.caPath = ns.caPath.c_str();
         config.verifySSL = ns.verifySSL;

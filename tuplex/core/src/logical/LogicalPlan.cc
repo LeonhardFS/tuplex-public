@@ -84,7 +84,7 @@ namespace tuplex {
             } else if(cur_op->type() == LogicalOperatorType::IGNORE) {
                 auto iop = dynamic_cast<IgnoreOperator*>(cur_op); assert(iop);
                 iop->updateSchema();
-                // nothing todo...
+                // nothing to do...
             } else {
                 // quit loop & function
                 return;
@@ -304,7 +304,7 @@ namespace tuplex {
 
 
             // rewrite of join now necessary...
-            vector<size_t> ret = leftRet; // @TODO: correct indices??
+            vector<size_t> ret = leftRet;
 
             for(auto idx : rightRet) {
                 ret.push_back(idx + numLeftColumnsBeforePushdown); // maybe correct for key column?
@@ -403,7 +403,6 @@ namespace tuplex {
                 cout <<"names: " << csvop->columns() << endl;
                 cout <<"type: " << csvop->getOutputSchema().getRowType().desc() << endl;
 #endif
-                // ok todo further rewrite, so return req Cols for building!
                 return requiredCols;
             }
 
@@ -478,7 +477,6 @@ namespace tuplex {
 #endif
                     // non-empty UDF?
                     // simply return all indices, i.e. all columns are now to be kept!
-                    // @TODO: can avoid rewrite if it's identity map!
                     auto numElements = mop->getOutputSchema().getRowType().parameters().size();
                     vector<size_t> colsToKeep;
                     for(int i = 0; i < numElements; ++i)
@@ -601,11 +599,6 @@ namespace tuplex {
         // simple case: name is select, then ok.
         if(op->name() == "select")
             return true;
-
-        // reorder case is also ok
-        // I.e. under func root there is only a Tuple expression accessing columns...
-        // @TODO: add here...
-
         return false;
     }
 
@@ -659,16 +652,6 @@ namespace tuplex {
                 auto parentColsAccessed = wop->getUDF().getAccessedColumns();
                 auto idx = wop->getColumnIndex();
 
-                // Note: this requires adjustment of getting rid of unused params in UDFs when
-                //       multi-param syntax is used...
-                // @TODO: fix this.
-                // // new code:
-                // // withcolumn adds values based on all other columns. Thus, it's safe to pushdown a filter
-                // // if the newly added column is not part of the columns the filter requires
-                // auto it = std::find(accessedColumns.begin(), accessedColumns.end(), idx);
-                // return it != accessedColumns.end();
-
-                // old code:
                  // check whether sets are disjoint and also index not used
                  parentColsAccessed.push_back(idx); // just add to set for check
 
@@ -705,7 +688,6 @@ namespace tuplex {
                         return true; // Note: could do an optimization by typing the UDF in two cases... => for NUll and non-null...
                 }
                 if(!allIndicesGreaterEqualKeyIndex && allIndicesLessEqualKeyIndex) {
-                    // todo: right join, for left join all good.
                     return false;
                 }
                 if(allIndicesGreaterEqualKeyIndex && allIndicesLessEqualKeyIndex) {
@@ -764,7 +746,6 @@ namespace tuplex {
 
 
             // need to alias/rename column for left/right
-            // @TODO: introduce better aliasing system...
 
             // easiest way here is to reparse the UDFs and then do all sorts of transformations...
             // ==> could be expensive though...
@@ -875,7 +856,6 @@ namespace tuplex {
 
             // link of jop_parents to jop
             assert(jop_parents.size() == 2);
-            // TODO: do these do anything?
             jop_parents[0]->replaceChild(fop, jop);
             jop_parents[1]->replaceChild(fop, jop);
 
@@ -909,7 +889,6 @@ namespace tuplex {
         if(op->type() == LogicalOperatorType::FILTER) {
             auto fop = dynamic_cast<FilterOperator*>(op);
             auto root = fop->getUDF().getAnnotatedAST().getFunctionAST();
-            // @TODO: what about floats? etc?
 
             if(!fop->getInputSchema().getRowType().isTupleType()) return; // filter on scalar can't be broken
             auto params = fop->getInputSchema().getRowType().parameters();
@@ -989,9 +968,6 @@ namespace tuplex {
                     std::cout<<"grandparent output schema: "<<grandparent->getOutputSchema().getRowType().desc()<<std::endl;
 #endif
 
-                    // @TODO: this here is rather slow because the whole compilation pipeline gets kicked off
-                    // could optimize by remapping indices... => s
-                    // create copy of filter ==> need to reparse UDF & Co because of column access!
                     auto code = dynamic_cast<FilterOperator*>(op)->getUDF().getCode();
                     auto pickled_code = dynamic_cast<FilterOperator*>(op)->getUDF().getPickledCode();
                     auto fop = new FilterOperator(grandparent, UDF(code, pickled_code), grandparent->columns());
@@ -1064,7 +1040,6 @@ namespace tuplex {
 
         // first step: find all filter operators. Easy with ApplyVisitor!
         std::vector<LogicalOperator*> v_filters;
-        // @TODO: maybe define a logical tree visitor class because they're so convenient
         std::queue<LogicalOperator*> q; // BFS
         q.push(_action);
         while(!q.empty()) {
@@ -1096,13 +1071,11 @@ namespace tuplex {
     void LogicalPlan::optimizeFilters() {
         // optimize:
         // ==> i.e. reorder filter predicates to bottom if possible!
-        // @TODO: push all filters down
         // Algorithm: while(filter depends not on previous operators result) move filter down.
         // Next step: Fuse filters together, i.e. combine conditions!
 
         // first step: find all filter operators. Easy with ApplyVisitor!
         std::vector<LogicalOperator*> v_filters;
-        // @TODO: maybe define a logical tree visitor class because they're so convenient
         std::queue<LogicalOperator*> q; // BFS
         q.push(_action);
         while(!q.empty()) {
@@ -1136,7 +1109,6 @@ namespace tuplex {
         if(!jop) return false; // jop needs to exist
         if((left && !jop->left()) || (!left && !jop->right())) return false; // jop parent needs to exist
 
-        // TODO: account for prefix/suffix in join operator -> need to rewrite UDF column strings
         if(!jop->leftSuffix().empty() || !jop->leftPrefix().empty() || !jop->rightSuffix().empty() || !jop->rightPrefix().empty()) return false;
 
         auto parent = left ? jop->left() : jop->right();
@@ -1203,16 +1175,6 @@ namespace tuplex {
                 return false;
             }
             case LogicalOperatorType::WITHCOLUMN: {
-                // TODO: this seems much harder because join can increase #cols, so a UDF that has unpacked parameters has the wrong schema
-
-                // // this is similar to MapColumn but a bit more complicated, i.e. need to check which columns withcolumn accesses!
-                // auto wop = dynamic_cast<WithColumnOperator *>(parent);
-                // assert(wop);
-                // auto parentColsAccessed = wop->getUDF().getAccessedColumns();
-                // auto idx = wop->getColumnIndex();
-                // // check whether sets are disjoint and also index not used
-                // parentColsAccessed.push_back(idx); // just add to set for check
-
                 return false;
             }
             default:
@@ -1225,7 +1187,6 @@ namespace tuplex {
             return;
 
         if(op->type() == LogicalOperatorType::JOIN) {
-            // TODO: perform cardinality estimation and only proceed if it reduces
             {
 #ifdef TRACE_LOGICAL_OPTIMIZATION
                 std::cout<<"join found!"<<std::endl;
@@ -1247,7 +1208,6 @@ namespace tuplex {
         // if join reduces cardinality:
         //     while(join doesn't depend on left parent's result) move left parent down.
         //     while(join doesn't depend on right parent's result) move right parent down.
-        // @TODO: we can actually make a stronger statement I think: even if a given left parent doesn't move down, if it is in turn independent from its parent, then that parent can move down (e.g. skip over two operators)
 
         // first step: find all join operators
         std::vector<LogicalOperator*> v_joins;
@@ -1333,12 +1293,6 @@ namespace tuplex {
 
             // note: could remove identity functions...
             // i.e. lambda x: x or lambda x: (x[0], x[1], ..., x[len(x) - 1]) same for def...
-
-            // TODO: optimize unused withColumn and mapColumn operations away!!! ==> people just write bad code...
-#ifndef NDEBUG
-            toPDF("logical_plan_after_projection_pushdown.pdf");
-#endif
-
 #ifndef NDEBUG
             assert(verifyLogicalPlan(_action));
 #endif

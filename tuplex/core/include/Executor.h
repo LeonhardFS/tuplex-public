@@ -267,10 +267,6 @@ namespace tuplex {
          */
         void makeRecentlyUsed(Partition *partition);
 
-
-        // @ Todo: Later, attach each Executor to a scheduler. Tasks are then submitted to the Scheduler.
-        // the Scheduler basically manages which executor gets which task...
-
         /*!
          * start processing queue (infinite loop)
          * @param detached if true, then a separate thread is created that runs infinitely until waitForAllTasksFinished is called.
@@ -278,8 +274,6 @@ namespace tuplex {
          */
         void processQueue(bool detached=true);
 
-
-        // attach a new working queue to this executor
         /*!
          * attach Executor to a working queue
          * @param queue where to attach Executor to, will automatically start pulling & executing tasks

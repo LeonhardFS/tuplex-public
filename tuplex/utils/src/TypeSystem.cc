@@ -18,10 +18,8 @@
 
 // types should be like form mypy https://mypy.readthedocs.io/en/latest/cheat_sheet_py3.html
 
-
 // Note: Option type is actually nullable type. There is a difference because of the nesting.
-// ==> i.e. cf. wiki page on this. @TODO clarify later.
-
+// ==> i.e. cf. wiki page on this.
 namespace python {
     const Type Type::UNKNOWN = TypeFactory::instance().createOrGetPrimitiveType("unknown");
     const Type Type::BOOLEAN = TypeFactory::instance().createOrGetPrimitiveType("boolean");
@@ -461,7 +459,7 @@ namespace python {
             return false;
 
         // for composite types, search their params / return values
-        return desc().find("Option") != std::string::npos; // @TODO: this is a quick and dirty hack, improve.
+        return desc().find("Option") != std::string::npos;
     }
 
     bool Type::isSingleValued() const {

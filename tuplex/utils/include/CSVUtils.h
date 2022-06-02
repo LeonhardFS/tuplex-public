@@ -32,8 +32,6 @@ namespace tuplex {
         FLOAT=10,          // i.e. -0.9887, 8375.
         POSITIVEINTEGER=250,// same as integer but without -
         POSITIVEFLOAT=15   // same as float but without -
-        //@TODO include DATETIME formats...
-        //@TODO floats without scientific notation?
     };
 
     extern std::string csvtypeToString(const CSVType &csvt);
@@ -66,8 +64,6 @@ namespace tuplex {
      */
     extern tuplex::Row cellsToRow(const std::vector<std::string>& cells, const std::vector<std::string>& null_values);
 
-    // @Todo: add support for comments, i.e. list of symbols [#, ~]
-    // for ignoring lines starting with that
     // infer separator from sample
     extern char inferSeparator(const char *start,
                                const char *end,

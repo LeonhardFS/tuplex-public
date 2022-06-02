@@ -104,7 +104,7 @@ namespace tuplex {
         nlohmann::json getStagedRepresentationAsJSON() const;
 
         /*!
-         * return the id of the final stage (i.e. the one with the final sink!) ==> @TODO: can there be more than one?
+         * return the id of the final stage (i.e. the one with the final sink!)
          * currently not, because action triggers job so all good...
          */
         int64_t lastStageID() const { return _stage->getID(); }

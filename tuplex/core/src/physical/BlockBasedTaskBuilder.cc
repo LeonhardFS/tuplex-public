@@ -170,9 +170,7 @@ namespace tuplex {
             // initialize lazily
             if(!_intermediate) {
                 auto b = getFirstBlockBuilder(builder);
-
                 // now store into var!
-                // @TODO: upcast?
                 auto ft = FlattenedTuple::fromRow(_env.get(), b, _intermediateInitialValue);
                 auto var = ft.loadToPtr(b, "intermediate");
                 _intermediate = var;

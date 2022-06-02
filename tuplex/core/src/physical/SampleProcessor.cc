@@ -105,12 +105,6 @@ namespace tuplex {
 
         // apply operation
         switch(op->type()) {
-
-            // @Todo: solve for dict mode OR tuple mode...
-            // --> makes this a little more complicated...
-            // --> check for each function (using AST visitor), whether it is in dict mode or not
-
-
             case LogicalOperatorType::MAP: {
                 Py_XINCREF(pyRow); // +1, for function to consume
 
@@ -118,8 +112,6 @@ namespace tuplex {
                 // Note: if result is not taken, decrease ref!
                 pcr = dictMode ? python::callFunctionWithDictEx(TUPLEX, pyRow, op->parent()->columns()) :
                                   python::callFunctionEx(TUPLEX, pyRow);
-
-
                 break;
             }
 
@@ -167,7 +159,6 @@ namespace tuplex {
                 break;
             }
 
-            // @Todo: should compute graph for all samples too and flag which ones would get thrown out by filter...
             case LogicalOperatorType::MAPCOLUMN: {
                 PyObject* pyRes = nullptr;
 
@@ -433,7 +424,6 @@ namespace tuplex {
                             python::unlockGIL();
                             return tr;
                         }
-                        // else nothing todo, continue going through the pipeline :)
                     }
                     else {
                         tr.exceptionTraceback = formatTraceback(pcr.functionName,
@@ -465,8 +455,6 @@ namespace tuplex {
         return tr;
     }
 
-    // @TODO: rewrite this function to use apply operator AND work for functions with dictionaries...
-    // ==> i.e. the extractSqft example
     ExceptionSample SampleProcessor::generateExceptionSample(const Row& row, bool excludeAvailableResolvers) noexcept {
 
         using namespace std;
@@ -535,198 +523,6 @@ namespace tuplex {
 
         es.rows.push_back(tr.outputRow);
         es.first_row_traceback = tr.exceptionTraceback;
-
-//        // compute over rows
-//        assert(!inRows.empty());
-//
-//        vector<python::PythonCallResult> results;
-//        for(int j = 0; j < inRows.size(); ++j) {
-//            python::PythonCallResult pcr;
-//            auto work_row = inRows[j];
-//            for(int i = 0; i < max_idx + 1; ++i) {
-//                // only apply map/resolve, i.e. the trafos
-//                LogicalOperator* op = _operators[i];
-//
-//                // skip parallelize and csv
-//                if(op->type() == LogicalOperatorType::CSV || op->type() == LogicalOperatorType::PARALLELIZE) {
-//                    assert(operatorID != op->getID()); // make sure THEY ARE NOT THE CAUSE OF THE ERROR
-//                    continue;
-//                }
-//
-//                pcr = applyOperator(op, python::rowToPython(work_row));
-//                if(pcr.exceptionCode == ExceptionCode::SUCCESS)
-//                    work_row = python::pythonToRow(pcr.res);
-//                else {
-//                    // make sure op is the exception throwing operator!
-//                    assert(op->getID() == operatorID);
-//                    break;
-//                }
-//            }
-//
-//            if(0 == j)
-//                es.first_row_traceback = formatTraceback(pcr.functionName,
-//                                                         pcr.exceptionClass,
-//                                                         pcr.exceptionMessage,
-//                                                         pcr.exceptionLineNo);
-//
-//            // push back to sample
-//            es.rows.emplace_back(work_row);
-//        }
-
-
-
-
-//        bool first_row = true;
-//        for(auto row : inRows) {
-//            Row work_row = row;
-//            ExceptionCode ec;
-//            PyObject *pyRes = nullptr;
-//            // go with row through pipeline
-//            for(int i = 0; i < max_idx + 1; ++i) {
-//                // only apply map/resolve, i.e. the trafos
-//                LogicalOperator* op = _operators[i];
-//
-//
-//
-//                if(op->type() == LogicalOperatorType::MAP ||
-//                   op->type() == LogicalOperatorType::RESOLVE) {
-//                    pyRes = python::callFunction(_TUPLEXs.at(op->getID()), python::rowToPython(work_row), ec);
-//
-//
-//#warning "there might also an issue here when it comes to resolvers because the first error-free resolver is applied!!!"
-//
-//                    // only overwrite if successful, i.e. resolvers may also throw exceptions...
-//                    // note though, that resolvers apply only to the operator before, not the resolver before!
-//                    if(ec == ExceptionCode::SUCCESS)
-//                        work_row = python::pythonToRow(pyRes);
-//                }
-//
-//                // apply MAPCOLUMN
-//                if(op->type() == LogicalOperatorType::MAPCOLUMN) {
-//                    auto idx = dynamic_cast<MapColumnOperator*>(op)->getColumnIndex();
-//                    PyObject* pyRow = python::rowToPython(work_row);
-//                    PyObject *pyElement = PyTuple_GetItem(pyRow, idx);
-//                    PyObject *pyArg = PyTuple_New(1);
-//                    PyTuple_SET_ITEM(pyArg, 0, pyElement);
-//
-//                    pyRes = python::callFunction(_TUPLEXs.at(op->getID()), pyArg, ec);
-//                    if(ec == ExceptionCode::SUCCESS) {
-//                        auto pyRowRes = PyTuple_New(PyTuple_Size(pyRow));
-//                        for(unsigned i = 0; i < PyTuple_Size(pyRow); ++i) {
-//                            if(i != idx)
-//                                PyTuple_SET_ITEM(pyRowRes, i, PyTuple_GET_ITEM(pyRow, i));
-//                            else
-//                                PyTuple_SET_ITEM(pyRowRes, i, pyRes);
-//                        }
-//                        work_row = python::pythonToRow(pyRowRes); // transformed row
-//                    }
-//
-//                    Py_XDECREF(pyRow);
-//                }
-//
-//                // apply WITHCOLUMN
-//                if(op->type() == LogicalOperatorType::WITHCOLUMN) {
-//
-//                    auto wop = dynamic_cast<WithColumnOperator*>(op);
-//                    auto idx = wop->getColumnIndex();
-//                    auto num_columns = wop->getColumns().size();
-//                    PyObject* pyRow = python::rowToPython(work_row);
-//                    Py_XINCREF(pyRow); // count +1, because call Function consumes 1
-//                    pyRes = python::callFunction(_TUPLEXs.at(op->getID()), pyRow, ec);
-//
-//                    if(ec == ExceptionCode::SUCCESS) {
-//                        auto pyRowRes = PyTuple_New(num_columns);
-//                        for(unsigned i = 0; i < num_columns; i++) {
-//                            if(i != idx) {
-//                                assert(i < PyTuple_Size(pyRow));
-//                                PyTuple_SET_ITEM(pyRowRes, i, PyTuple_GET_ITEM(pyRow, i));
-//                            }
-//                            else
-//                                PyTuple_SET_ITEM(pyRowRes, i, pyRes);
-//                        }
-//
-//                        work_row = python::pythonToRow(pyRowRes); // transformed row
-//                    }
-//
-//                    // decref row & res (though they should be at 0)
-//                    Py_XDECREF(pyRow);
-//                    Py_XDECREF(pyRes);
-//                }
-//
-//
-//                // in debug mode check that filter is valid...
-//                // i.e. we know that the tuple went through the pipeline till operator with operatorID
-//#ifndef NDEBUG
-//                if(op->type() == LogicalOperatorType::FILTER) {
-//                    pyRes = python::callFunction(_TUPLEXs.at(op->getID()), python::rowToPython(work_row), ec);
-//                    assert(ec == ExceptionCode::SUCCESS);
-//                    assert(pyRes == Py_True || pyRes == Py_False);
-//                }
-//#endif
-//            }
-//
-//            es.rows.emplace_back(work_row);
-//
-//            // now generate traceback + exceptions...
-//            if(first_row) {
-//                // apply max_idx operator & capture exception for first row
-//                // for other rows, simply save result before
-//                auto op = _operators[max_idx];
-//                python::PythonCallResult pcr;
-//
-//                // what signature do operators take?
-//                // special case resolve, check on parent type
-//                LogicalOperatorType optype = op->type();
-//
-//                // check what type of function signature it is
-//                bool singleColumnArg = false;
-//                int singleColumnIndex = -1;
-//                if(op->type() == LogicalOperatorType::MAPCOLUMN) {
-//                    singleColumnArg = true;
-//                    singleColumnIndex = dynamic_cast<MapColumnOperator*>(op)->getColumnIndex();
-//                }
-//
-//                // check if resolve operator, then check if non-resolve parent is mapColumn
-//                if(op->type() == LogicalOperatorType::RESOLVE) {
-//                    auto rop = dynamic_cast<ResolveOperator*>(op);
-//                    auto parent = rop->getNormalParent();
-//                    if(parent->type() == LogicalOperatorType::MAPCOLUMN) {
-//                        singleColumnArg = true;
-//                        singleColumnIndex = dynamic_cast<MapColumnOperator*>(parent)->getColumnIndex();
-//                    }
-//                }
-//
-//                if(singleColumnArg) {
-//                    assert(singleColumnIndex >= 0);
-//                    // extract element
-//                    PyObject *pyRow = python::rowToPython(work_row);
-//                    assert(PyTuple_Check(pyRow));
-//
-//                    // get element
-//                    assert(singleColumnIndex < PyTuple_Size(pyRow));
-//                    PyObject *pyElement = PyTuple_GetItem(pyRow, singleColumnIndex); // steals reference from Row
-//                    PyObject *pySingleArg = PyTuple_New(1);
-//                    PyTuple_SET_ITEM(pySingleArg, 0, pyElement); // steals reference from pyElement
-//                    pcr = python::callFunctionEx(_TUPLEXs.at(op->getID()), pySingleArg);
-//
-//                    // element & arg steal reference from row. Therefore sufficient to release row only
-//                    Py_XDECREF(pyRow);
-//
-//                } else {
-//                    // the whole row is the argument, i.e. call on it!
-//                    pcr = python::callFunctionEx(_TUPLEXs.at(op->getID()), python::rowToPython(work_row));
-//                }
-//
-//                es.first_row_traceback = formatTraceback(pcr.functionName,
-//                                                         pcr.exceptionClass,
-//                                                         pcr.exceptionMessage,
-//                                                         pcr.exceptionLineNo);
-//
-//                // in debug mode, validate result @Todo
-//                first_row = false;
-//            }
-//        }
-
         return es;
     }
 

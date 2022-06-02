@@ -88,8 +88,6 @@ extern "C" {
         assert(dynamic_cast<tuplex::TransformTask*>(task));
         assert(dynamic_cast<tuplex::TransformTask*>(task)->hashTableFormat() == tuplex::HashTableFormat::UINT64);
         auto key = static_cast<uint64_t>(intkey);
-        // TODO: do we need to do something more sophisticated here? e.g. with a union
-        // key = ((union { int64_t i; uint64_t u; }){ .i = intkey }).u;
         task->writeRowToHashTable(key, intkeynull, bucketize, buf, buf_size);
     }
 
@@ -105,8 +103,6 @@ extern "C" {
         assert(dynamic_cast<tuplex::TransformTask*>(task));
         assert(dynamic_cast<tuplex::TransformTask*>(task)->hashTableFormat() == tuplex::HashTableFormat::UINT64);
         auto key = static_cast<uint64_t>(intkey);
-        // TODO: do we need to do something more sophisticated here? e.g. with a union
-        // key = ((union { int64_t i; uint64_t u; }){ .i = intkey }).u;
         task->writeRowToHashTableAggregate(key, intkeynull, bucketize, buf, buf_size);
     }
 }
@@ -204,9 +200,7 @@ namespace tuplex {
         return reinterpret_cast<codegen::i64_hash_row_f>(i64w2hAggCallback);
     }
 
-
     // aggregate: We do this here smarter using thread_locals!
-    // @TODO: avoid thread_local, use array and give each task, the executor ID/thread number!
     static uint8_t** tl_aggregate = nullptr; // <-- lazy init within task!
     static int64_t* tl_aggregate_size = nullptr; // <-- lazy init as well!
     static size_t tl_num_slots = 0;
@@ -313,7 +307,6 @@ namespace tuplex {
 
         auto sizeA = *(int64_t*)bucketA;
         auto valA = static_cast<uint8_t*>(malloc(sizeA));
-        // TODO: when we convert everything to thread locals, we should change agg_combine_functor to match the size | value format of agg_aggregate_functor so that we can roll aggregate into aggregateByKey and just using the nullbucket
         memcpy(valA, bucketA + 8, sizeA);
 
         auto sizeB = *(uint64_t*)bucketB;
@@ -321,7 +314,6 @@ namespace tuplex {
 
         agg_combine_functor(&valA, &sizeA, valB, sizeB);
 
-        // allocate the output buffer (should be avoided by the above TODO eventually)
         auto ret = static_cast<uint8_t*>(malloc(sizeA + 8));
         *(int64_t*)ret = sizeA;
         memcpy(ret + 8, valA, sizeA);
@@ -413,31 +405,12 @@ namespace tuplex {
             throw std::runtime_error("no source (file/memory) specified, error!");
         }
 
-        // @TODO: use setjmp buffer etc. here to stop execution... ==> each thread needs one context -.- -> might be difficult...
-        // alternative is to generate early leave in code-generated function...
-
-
         // free runtime memory
         runtime::rtfree_all();
 
         // close file
         if(hasFileSink())
             _outFile->close();
-
-
-        // // task was successful if bytes were written
-        // // negative numbers for failure (i.e. -1 = TASK_FAILURE)
-        // // However there is a special case: The whole task may lead to exceptions. This is not a task failure,
-        // // but UDF will also return 0. Address here.
-        // _success = _totalBytesWritten >= 0 || numExceptionRows() == numInputRows;
-        // if(_success) {
-        //     owner()->info("[Task Finished] Map on " + uuidToString(_input->uuid()) + " ["
-        //                            + pluralize(numInputRows, "row") + ", "
-        //                            + pluralize(numExceptionRows(), "exception") + "] in "
-        //                            + std::to_string(timer.time()) + "s");
-        // } else {
-        //     owner()->warn("[TASK FAILED] Map on " + uuidToString(_input->uuid()));
-        // }
 
         std::string mode;
         if(hasMemorySink())
@@ -449,7 +422,6 @@ namespace tuplex {
 
         // save time
         _wallTime = timer.time();
-
 
         std::stringstream ss;
         ss<<"[Task Finished] Transform "<<mode<<"in "
@@ -475,9 +447,6 @@ namespace tuplex {
         } else
         ss<<pluralize(getNumOutputRows(), "normal row")<<", "<<pluralize(getNumExceptions(), "exception")<<")";
         owner()->info(ss.str());
-
-#warning "check these numbers, test? is that correct??"
-
 
         // before sending status, UNLOCK ALL PARTITIONS! especially the exceptional ones...
         // send updates to history server
@@ -524,8 +493,6 @@ namespace tuplex {
 
         // reset exception memory sink
         _exceptions.reset();
-
-        // reset htable (TODO: free if necessary?)
         _htable = HashTableSink();
 
         // reset output row counter...
@@ -666,25 +633,16 @@ namespace tuplex {
     }
 
     int64_t TransformTask::writeRowToFile(uint8_t *buf, int64_t bufSize) {
-
-
-        // @TODO: How to improve this
-        // => for faster IO, probably better to write everything to a temp buffer and then to file
-        // => could be done using partitions or simply alloc manager...
-        // i.e. less sys calls...
-
-        // @TODO: count here lines written + limit them if necessary!!!
         assert(_outFile);
 
         // skip rows? limit rows??
-
         if(_numOutputRowsWritten >= _outSkipRows && _numOutputRowsWritten < (_outLimit - _outSkipRows)) {
             if(_outFile->write(buf, bufSize) != VirtualFileSystemStatus::VFS_OK)
                 return ecToI32(ExceptionCode::IOERROR);
         }
 
         _numOutputRowsWritten++;
-        _outputRowCounter++; // TODO: unify with numOutputRowsWritten??
+        _outputRowCounter++;
 
         return ecToI32(ExceptionCode::SUCCESS);
     }
@@ -700,12 +658,11 @@ namespace tuplex {
         assert(_htable.hm);
         assert(_htableFormat != HashTableFormat::UNKNOWN);
 
-        // @TODO: is there a memory bug here when it comes to storing the key???
         // put into hashmap or null bucket
         if(key != nullptr && key_len > 0) {
             // put into hashmap!
             uint8_t *bucket = nullptr;
-            if(bucketize) { //@TODO: maybe get rid off this if by specializing pipeline better for unique case...
+            if(bucketize) {
                 hashmap_get(_htable.hm, key, key_len, (void **) (&bucket));
                 // update or new entry
                 bucket = extend_bucket(bucket, reinterpret_cast<uint8_t *>(buf), buf_size);
@@ -722,7 +679,6 @@ namespace tuplex {
         assert(_htable.hm);
         assert(_htableFormat != HashTableFormat::UNKNOWN);
 
-        // @TODO: is there a memory bug here when it comes to storing the key???
         // get the bucket
         uint8_t *bucket = nullptr;
         if(key != nullptr && key_len > 0) {
@@ -753,7 +709,7 @@ namespace tuplex {
         if(!key_null) {
             // put into hashmap!
             uint8_t *bucket = nullptr;
-            if(bucketize) { //@TODO: maybe get rid off this if by specializing pipeline better for unique case...
+            if(bucketize) {
                 int64_hashmap_get(_htable.hm, key, (void **) (&bucket));
                 // update or new entry
                 bucket = extend_bucket(bucket, reinterpret_cast<uint8_t *>(buf), buf_size);

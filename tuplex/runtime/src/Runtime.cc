@@ -207,8 +207,6 @@ extern "C" void *rtmalloc(const size_t requested_size) noexcept {
         if (0 == heap->defaultBlockSize) {
             printf("fatal error: forgot to call setRunTimeMemory()\n");
         }
-        // @Todo: maybe increase block size?
-        // @Todo: Request super large block?
         printf("fatal error: Requested object size %lu, is larger than default block size %lu! Can't handle memory request!\n", size, heap->defaultBlockSize);
         exit(-1);
         return NULL;
@@ -422,7 +420,7 @@ extern "C" char* strReplace(const char* str, const char* from, const char* to, i
 
         // alloc mem
         auto tolen = strlen(to);
-        auto retlen = (tolen + 1) * (1 + len); //@TODO: check this, seems wrong.
+        auto retlen = (tolen + 1) * (1 + len);
 
         *res_size = retlen + 1;
 
@@ -439,7 +437,7 @@ extern "C" char* strReplace(const char* str, const char* from, const char* to, i
         res[pos] = '\0';
 
         // bug here when it comes to length.
-        *res_size = strlen(res) + 1; // todo, optimize this in the future. this here is a quick fix.
+        *res_size = strlen(res) + 1;
 
         return res;
     }
@@ -647,7 +645,6 @@ int64_t strSplit(const char *base_str, int64_t base_str_length, const char *deli
 
     int64_t serialized_size = sizeof(int64_t); // number of elements
 
-    // @TODO: spend ~1h to optimize this.
     // build result
     // use std::tuple<>
     std::vector<std::pair<int, int>> result; // start, length
@@ -739,8 +736,6 @@ extern "C" char* quoteForCSV(const char *str, int64_t size, int64_t* new_size, c
 }
 
 extern "C" char* floatToStr(const double d, int64_t* res_size) {
-    // Todo: For faster implementation adapt https://github.com/ulfjack/ryu!
-
     // use g
     // use 40 bytes goodwill buf
     const size_t BUFFER_SIZE = 40;
@@ -926,7 +921,6 @@ void *pcre2GetGlobalCompileContext() {
     return ccontext;
 }
 
-// @TODO: could get rid off these, no merit in keeping...
 void pcre2ReleaseGlobalGeneralContext(void* gcontext) {
     if(gcontext)
         free(gcontext);

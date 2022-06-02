@@ -42,8 +42,6 @@ namespace tuplex {
          * helper class representing a flattened tuple structure. Used to generate both python functions as well
          * as passing nested parameters around. Is faster than C calling convention because optimization is left to
          * LLVM
-         *
-         * @Todo: There is still optimization potential because as for now, also scalars get a size field. However, the
          * LLVM optimizer usually optimizes them away, so nothing to worry about.
          */
         class FlattenedTuple {

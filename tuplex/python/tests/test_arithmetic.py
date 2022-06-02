@@ -97,12 +97,6 @@ class TestArithmetic(unittest.TestCase):
         res = c.parallelize([-10, -9, -8, -7, -6, -5]).map(lambda x: x // -6.0).collect()
         assert res == [1.0, 1.0, 1.0, 1.0, 1.0, 0.0]
 
-    def test_power(self):
-        c = Context(self.conf)
-        res = c.parallelize([()])
-
-        # todo... add here test cases ...
-
     def test_modulo(self):
 
         c = Context(self.conf)

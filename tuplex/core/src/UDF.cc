@@ -224,21 +224,6 @@ namespace tuplex {
 
     bool UDF::hasPythonObjectTyping() const {
         // only follow active branches
-        // @TOOD: partial compilation w. exceptions!!!
-        // i.e. could speculate on parts that would compile
-        // for now simply use apply visitor
-
-#warning "work on this"
-        // TODO: an optimization can be done, when objects are merely being passed around.
-        // i.e., when let's say pyobjects are simply accessed but never produced by external functions
-        // or symbols.
-        // => a visitor should check that properly...
-        // How can external, pyobjects be only produced? -> via calls...
-        // the other way would be using operations, etc. yet, the compiler would error on that.
-        // Thus forcing the fallback anyways?
-
-        // @TODO: need to investigate this...
-        // --> also in conjunction with unknown...
         bool foundPyObject = false;
         ApplyVisitor av([](const ASTNode* node) {
             return true;
@@ -342,7 +327,6 @@ namespace tuplex {
                         logTypingErrors(printErrors);
                         return false;
                     }
-                    // @todo: this is bad naming. should be rephrased to treat first arg as tuple or not
                     _ast.setUnpacking(false);
                     _inputSchema = Schema(Schema::MemoryLayout::ROW, python::Type::makeTupleType(_ast.getParameterTypes().argTypes));
                     _outputSchema = Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType()));
@@ -707,7 +691,6 @@ namespace tuplex {
 
     }
 
-    // @TODO: put in separate file
     class LambdaAccessedColumnVisitor : public IPrePostVisitor {
     protected:
         virtual void postOrder(ASTNode *node) override {}
@@ -1133,8 +1116,6 @@ namespace tuplex {
                                 // opt2: it is something else
                                 // trick is to add a NBinaryOp to remap the index
                                 throw std::runtime_error("dynamic indexing does not work with pushdown yet! Need to implement ops for that...");
-                                #warning "For CSV Selection Pushdown, need to do this. Add this some time when there is time..."
-                                // @TODO
                             }
                         }
                     }
@@ -1361,7 +1342,7 @@ namespace tuplex {
         _outputSchema = Schema(Schema::MemoryLayout::ROW, row_type);
 
         // run type annotator on top of tree which has been equipped with annotations now
-        hintInputSchema(Schema(Schema::MemoryLayout::ROW, inputSchema.getRowType()), false, false); // TODO: could do this directly in tracevisitor as well, but let's separate concerns here...
+        hintInputSchema(Schema(Schema::MemoryLayout::ROW, inputSchema.getRowType()), false, false);
 
         _inputSchema = inputSchema; // somehow hintInputSchema overwrites current one? => Restore.
 

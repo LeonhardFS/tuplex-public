@@ -100,7 +100,6 @@ int hashmap_hash(map_t in, uint64_t key) {
             return curr;
 
         // could use fastrange reduction here as well
-        // @TODO
         curr = (curr + 1) % m->table_size;
     }
 

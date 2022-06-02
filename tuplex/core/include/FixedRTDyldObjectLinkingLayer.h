@@ -93,7 +93,6 @@ namespace llvm {
             /// support symbol visibility in COFF, which does not use the libObject's
             /// SF_Exported flag. Use only when generating / adding COFF object files.
             ///
-            /// FIXME: We should be able to remove this if/when COFF properly tracks
             /// exported symbols.
             FixedRTDyldObjectLinkingLayer &
             setOverrideObjectFlagsWithResponsibilityFlags(bool OverrideObjectFlags) {

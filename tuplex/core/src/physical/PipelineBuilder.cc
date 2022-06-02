@@ -59,13 +59,12 @@ namespace tuplex {
                 if(paramsNew[i] != paramsOld[i]) {
                     if(python::Type::NULLVALUE == paramsOld[i]) {
                         assert(paramsNew[i].isOptionType());
-                        // nothing todo, values are good
                         val = nullptr;
                         size = nullptr;
                     } else if(!paramsOld[i].isOptionType() && paramsNew[i].isOptionType()) {
                         is_null = env->i1Const(false); // not null
                     } else {
-                        // nothing todo...
+                        // nothing to do...
                     }
                 }
 
@@ -914,7 +913,6 @@ namespace tuplex {
 
             _lastBlock = builder.GetInsertBlock();
             assert(_lastBlock);
-            // @Todo: exception code value for callback function!!!
 
             // connect blocks together
             return build();
@@ -1000,7 +998,6 @@ namespace tuplex {
             }
         }
 
-        // TODO: make an empty vector mean a null key (so that aggregate can be the same backend as aggregateByKey) -> change unique() pipeline to pass all the columns rather than empty
         llvm::Function * PipelineBuilder::buildWithHashmapWriter(const std::string &callbackName,
                                                                  const std::vector<size_t> &keyCols,
                                                                  const int hashtableWidth,
@@ -1054,7 +1051,6 @@ namespace tuplex {
                 if(keyType.isOptionType()) throw std::runtime_error("This shouldn't happen.");
                 keyType = python::Type::STRING;
             }
-            // TODO: eventually, make boolean/f64 into int (potentially with options)
 
             // what is the key Type?
             auto needsNullBucket = keyType.isOptionType();
@@ -1140,7 +1136,7 @@ namespace tuplex {
                     }
 
                     bucketSize = ft.getSize(builder);
-                    bucket = _env->cmalloc(builder, bucketSize); // TODO: I think this memory is being leaked! (check TransformTask::writeRowToHashtable and similar functions - I don't think anyone frees the bucket)
+                    bucket = _env->cmalloc(builder, bucketSize);
                     ft.serialize(builder, bucket);
                 }
             }
@@ -1641,7 +1637,6 @@ namespace tuplex {
 
             _lastBlock = builder.GetInsertBlock();
             assert(_lastBlock);
-            // @Todo: exception code value for callback function!!!
 
             // connect blocks together
             return build();
@@ -1656,13 +1651,9 @@ namespace tuplex {
             assert(func && userData && rowNumber);
             auto tuplePtr = ft.loadToPtr(builder);
 
-            // TODO: get rid off unnecessary load/store instructions here...
-
             // type checks
             auto env = ft.getEnv();
             assert(userData->getType() == env->i8ptrType());
-
-            // @TODO: get rid off first block alloca and use llvm::lifetime::begin and end...
 
             // alloc variable in first block
             auto result_ptr = LLVMEnvironment::CreateFirstBlockAlloca(builder,
@@ -1735,8 +1726,6 @@ namespace tuplex {
         bool normalTypeCompatible(const python::Type& normalType, const python::Type& superType) {
 
             assert(normalType.isTupleType() && superType.isTupleType());
-
-            // todo: implement
             if(normalType.parameters().size() != superType.parameters().size())
                 return false;
 
@@ -1857,13 +1846,6 @@ namespace tuplex {
                 return nullptr;
 
             auto exceptionalType = pip.inputRowType();
-
-            // the type are a bit screwed because of tuple mode or not
-            // @TODO: make this cleaner in further releases...
-            // // check that pip's inputtype + normal type are compatible
-            // if(!normalTypeCompatible(normalCaseType, exceptionalType))
-            //     throw std::runtime_error("can't generate slow code path for incompatible/not upgradeable compilable type");
-
             auto num_columns = exceptionalType.parameters().size();
 
             // create function

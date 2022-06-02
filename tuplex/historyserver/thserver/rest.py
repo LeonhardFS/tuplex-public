@@ -50,12 +50,8 @@ def get_jobs():
                                                         'status': 1,
                                                         'state_info': 1,
                                                         'progress': 1}).sort([('created', -1)]).limit(num_jobs))
-
-    # Todo: create functions for handling/persisting dates/times better...
     # sort jobs after submitted time
     jobs = sorted(jobs, key=lambda x: string_to_utc(x['state_info']['submitted']), reverse=True)
-
-
     return jsonify(jobs)
 
 @app.route('/api/job', methods=['GET'])
@@ -174,8 +170,6 @@ def update_task():
     """
     if not request.json:
         abort(400)
-
-    # @TODO: put this into Job interface??
 
     js = request.get_json()
     jobid = js['jobid']

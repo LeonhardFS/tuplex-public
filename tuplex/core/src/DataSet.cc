@@ -90,10 +90,6 @@ namespace tuplex {
                 " seconds");
 
         // be sure that result set does not contain more data than desired!
-
-        // TODO: limit pushdown should solve this!
-        // assert(v.size() <= numElements);
-
         if (v.size() > numElements) {
             Logger::instance().defaultLogger().warn("limit pushdown should make this code piece here unnecessary");
             v.resize(numElements);
@@ -214,7 +210,7 @@ namespace tuplex {
         assert(this->_context);
         auto rs = op->compute(*this->_context); // note: this should also hold the exceptions...
 
-        // result set is computed, now make both partitions&exceptions ephemeral (@TODO: uncache mechanism)
+        // result set is computed, now make both partitions&exceptions ephemeral
         auto cop = (CacheOperator*)op;
         cop->setResult(rs);
 
@@ -703,7 +699,6 @@ namespace tuplex {
         return *op->getDataSet();
     }
 
-    // TODO: this is almost the exact same code as above, maybe refactor?
     DataSet & DataSet::aggregateByKey(const UDF &aggCombine, const UDF &aggUDF, const Row &aggInitial, const std::vector<std::string> &keyColumns) {
         if(isError())
             return *this;
@@ -777,8 +772,6 @@ namespace tuplex {
             return *this;
         if (other.isError())
             return _context->makeError(dynamic_cast<const ErrorDataSet&>(other).getError());
-
-        // TODO: handle empty dataset properly here!
 
         assert(_context);
         assert(this->_operator);

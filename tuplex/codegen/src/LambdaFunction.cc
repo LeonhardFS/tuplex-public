@@ -95,7 +95,7 @@ namespace tuplex {
              func->addFnAttr(Attribute::NoRecurse);
              func->addFnAttr(Attribute::InlineHint);
 
-            // is this safe??? --> probably not, leave for now... Optimization only makes sense if no external func call was used... @TODO: opt potential here.
+            // is this safe??? --> probably not, leave for now... Optimization only makes sense if no external func call was used...
             //func->addFnAttr(Attribute::NoUnwind); // explicitly disable unwind! (no external lib calls!)
 
             // store in internal data structure
@@ -199,7 +199,6 @@ namespace tuplex {
             auto builder = getLLVMBuilder();
             auto output_type = _fto.getTupleType();
 
-            // @TODO: optimize & test/resolve for tuples! it's not a struct type but rather a pointer to a struct type!
             assert(python::Type::UNKNOWN != output_type);
 
             // there are a couple special cases to handle here

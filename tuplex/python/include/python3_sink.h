@@ -30,36 +30,10 @@ namespace tuplex {
             fmt::memory_buffer formatted;
             this->formatter_->format(msg, formatted);
             std::string formatted_msg = fmt::to_string(formatted);
-
-            // use PySys_WriteStdout
-            // first step, fetch GIL
-//            PyGILState_STATE gstate;
-//            gstate = PyGILState_Ensure();
-
-
-            // TODO: For jupyter noteboks, the logger should redirect somehow.
-            // However, this causes a deadlock...
-            // ==> check https://github.com/python/cpython/blob/master/Python/sysmodule.c
-            // lines 3215-... for how it is implemented...
-
-            // ==> maybe it is enough to use single threaded & make sure no double lock occurs!!!
-
-            // this function truncates messages after 1000 bytes...
-            // PySys_WriteStdout("%s", formatted_msg.c_str());
-
-            // UTF8 formatting but NO truncation
-//            PySys_FormatStdout("%s", formatted_msg.c_str());
-
-//            PyGILState_Release(gstate);
-
-            // bad locking here...
-#warning "solve this here with jupyter notebook and co"
-
-
         }
 
         virtual void flush_() override {
-            // nothing todo...
+            // nothing to do...
             // PySys auto flushes...
         }
     };

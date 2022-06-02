@@ -27,7 +27,7 @@ namespace tuplex {
             generateParser();
 
             // build wrapper function
-            auto func = createFunction(); // TODO: add name here
+            auto func = createFunction();
 
             // build all necessary ingredients
             createMainLoop(func, terminateEarlyOnFailureCode);
@@ -220,24 +220,6 @@ namespace tuplex {
             env().debugPrint(builder, "current output row var is: ", builder.CreateLoad(outputRowNumberVar));
 #endif
 
-
-            // create bad Row (string input) with length field to parse quickly...
-            // @TODO: create exceptionLength function which stores exception length for different types...
-
-
-
-            // old, simply copy full line
-            //   auto lineLength = builder.CreatePtrDiff(lineEnd, lineStart);
-            //            auto badDataLength = builder.CreateAdd(env().i64Const(sizeof(int64_t)), lineLength);
-            //            auto badDataPtr = env().malloc(builder, badDataLength);
-            //            builder.CreateStore(lineLength, builder.CreateBitCast(badDataPtr, env().i64ptrType()), true);
-            //
-            //#if LLVM_VERSION_MAJOR < 9
-            //            builder.CreateMemCpy(builder.CreateGEP(badDataPtr, env().i64Const(sizeof(int64_t))), lineStart, lineLength, false);
-            //#else
-            //            builder.CreateMemCpy(builder.CreateGEP(badDataPtr, env().i64Const(sizeof(int64_t))), 0,  lineStart, 0, lineLength, false);
-            //#endif
-
             // new: use cell info result
             auto cellInfo = _parseRowGen->getCellInfo(builder, parseResult);
             auto badDataPtr = cellInfo.val;
@@ -270,8 +252,6 @@ namespace tuplex {
 
             builder.SetInsertPoint(bbProcessEnd);
 
-
-            // @TODO: row is processed, so free runtime memory allocated for processing this row...
             env().freeAll(builder);
         }
 

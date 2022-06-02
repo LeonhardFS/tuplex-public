@@ -14,7 +14,7 @@
 #define TUPLEX_AWSLAMBDABACKEND_H
 
 // this bucket is used for testing (change to personal testing bucket in case)
-// @TODO: make this an AWS option
+// change here to your bucket
 #define S3_TEST_BUCKET "tuplex-test"
 
 #include "../IBackend.h"

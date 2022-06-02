@@ -29,7 +29,6 @@ namespace {
 
             // Build an OnResolve callback to unwrap the interned strings and pass them
             // to the OnResolved callback.
-            // FIXME: Switch to move capture of OnResolved once we have c++14.
             auto OnResolvedWithUnwrap =
                     [OnResolved](Expected<SymbolMap> InternedResult) {
                         if (!InternedResult) {
@@ -143,7 +142,6 @@ namespace llvm {
 
             JITDylibSearchOrderResolver Resolver(*SharedR);
 
-            // FIXME: Switch to move-capture for the 'O' buffer once we have c++14.
             MemoryBuffer *UnownedObjBuffer = O.release();
             jitLinkForORC(
                     **Obj, std::move(O), *MemMgr, Resolver, ProcessAllSections,

@@ -252,8 +252,6 @@ namespace tuplex {
                 return compact();
             }
 
-            // @TODO: don't like the type design here...
-            // ==> needs to get fixed!!!
             IntervalCollection &compact() {
                 if (intervals.empty())
                     return *this;

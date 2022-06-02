@@ -275,7 +275,7 @@ class Context:
         assert isinstance(header, bool) or header is None, 'header must be given as bool or None for auto detection'
         assert isinstance(quotechar, str), 'quote char must be given as str'
         assert isinstance(null_values, list), 'null_values must be a list of strings representing null values'
-        assert isinstance(type_hints, dict), 'type_hints must be a dictionary mapping index to type hint' # TODO: update with other options
+        assert isinstance(type_hints, dict), 'type_hints must be a dictionary mapping index to type hint'
 
         if delimiter:
             assert len(delimiter) == 1, 'delimiter can only exist out of a single character'
@@ -396,7 +396,6 @@ class Context:
         Returns: None
 
         """
-        # TODO: change to list of files actually having been removed.
         assert self._context
         return self._context.rm(pattern)
 

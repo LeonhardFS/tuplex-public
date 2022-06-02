@@ -159,7 +159,6 @@ namespace tuplex {
             /*!
              * checks _compileErrors in IFailable and throws an exception if return type is not supported and not resolved through fallback mode.
              * currently returning list of lists/tuples/dicts/multi-types will raise exception.
-             * TODO: Add support for returning list of tuples/dicts and use fallback mode for other cases
              */
             void checkReturnError();
 

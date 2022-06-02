@@ -31,14 +31,6 @@ extern "C" {
 
     static int64_t rExceptCallback(tuplex::ResolveTask *task, const int64_t ecCode, const int64_t opID, const int64_t row, const uint8_t *buf, const size_t bufSize) {
         assert(task);
-
-        // Logger::instance().logger("resolve task").debug("writing exception for row #" + std::to_string(row));
-
-        // @TODO: avoid double recording with BOTH fallback path and interpreter path...
-        // i.e. better call the callback somewhere else...
-        // --> get rid of callback?
-        // --> just record which ecCode, opID, row, buf?
-        // what about loops?
         task->exceptionCallback(ecCode, opID, row, buf, bufSize);
         return (int64_t)tuplex::ExceptionCode::SUCCESS;
     }
@@ -96,7 +88,6 @@ namespace tuplex {
 
     void ResolveTask::writeRowToHashTable(char *key, size_t key_size, bool bucketize, char *buf, size_t buf_size) {
         // from TransformTask
-        // @TODO: refactor more nicely using traits?
         // saves key + rest in buckets (incl. null bucket)
         assert(_htable.hm);
         assert(_htableFormat != HashTableFormat::UNKNOWN);
@@ -119,7 +110,6 @@ namespace tuplex {
 
     void ResolveTask::writeRowToHashTableAggregate(char *key, size_t key_len, bool bucketize, char *buf, size_t buf_size) {
         // from TransformTask
-        // @TODO: refactor more nicely using traits?
         // saves key + rest in buckets (incl. null bucket)
         assert(_htable.hm);
         assert(_htableFormat != HashTableFormat::UNKNOWN);
@@ -147,7 +137,6 @@ namespace tuplex {
 
     void ResolveTask::writeRowToHashTable(uint64_t key, bool key_null, bool bucketize, char *buf, size_t buf_size) {
         // from TransformTask
-        // @TODO: refactor more nicely using traits?
         // saves key + rest in buckets (incl. null bucket)
         assert(_htable.hm);
         assert(_htableFormat != HashTableFormat::UNKNOWN);
@@ -170,7 +159,6 @@ namespace tuplex {
 
     void ResolveTask::writeRowToHashTableAggregate(uint64_t key, bool key_null, bool bucketize, char *buf, size_t buf_size) {
         // from TransformTask
-        // @TODO: refactor more nicely using traits?
         // saves key + rest in buckets (incl. null bucket)
         assert(_htable.hm);
         assert(_htableFormat != HashTableFormat::UNKNOWN);
@@ -209,7 +197,6 @@ namespace tuplex {
             auto offset = info & 0xFFFFFFFF;
             const char* cell = reinterpret_cast<const char *>(ebuf + offset);
 
-            // @TODO: quicker conversion from str cell?
             PyTuple_SET_ITEM(tuple, j, python::PyString_FromString(cell));
 
             auto cell_size = info >> 32u;
@@ -407,11 +394,6 @@ default:
                                                 std::binary_search(_operatorIDsAffectedByResolvers.begin(),
                                                                    _operatorIDsAffectedByResolvers.end(), operatorID);
         if(!requiresInterpreterReprocessing(i64ToEC(ecCode)) && !potentiallyHasResolverOnSlowPath) {
-            // TODO: check with resolvers!
-            // i.e., we can directly save this as exception IF code is not an interpreter code
-            // and true exception, i.e. no resolvers available.
-            // => need a list of for which opIds/codes resolvers are available...
-            ///....
             _numUnresolved++;
             exceptionCallback(ecCode, operatorID, _rowNumber, ebuf, eSize);
             return;
@@ -490,11 +472,6 @@ default:
                 parse_cells = false;
             }
 
-            // compute
-            // @TODO: we need to encode the hashmaps as these hybrid objects!
-            // ==> for more efficiency we prob should store one per executor!
-            //     the same goes for any hashmap...
-
             assert(tuple);
 #ifndef NDEBUG
             if(!tuple) {
@@ -505,7 +482,7 @@ default:
 
             // note: current python pipeline always expects a tuple arg. hence pack current element.
             if(PyTuple_Check(tuple) && PyTuple_Size(tuple) > 1) {
-                // nothing todo...
+                // nothing to do...
             } else {
                 auto tmp_tuple = PyTuple_New(1);
                 PyTuple_SET_ITEM(tmp_tuple, 0, tuple);
@@ -844,7 +821,6 @@ default:
         std::stringstream ss;
         ss<<"[Task Finished] Resolve "<<"in "
           <<std::to_string(wallTime())<<"s";
-        // @TODO: include exception info & Co
         owner()->info(ss.str());
 
         // send status update, i.e. if exceptions were resolved then it's time to reflect this!
@@ -1130,9 +1106,6 @@ default:
 
                 // lazy create table
                 if(!_htable.hybrid_hm) {
-
-                    // adjust element type for single objects
-                    // @TODO: this properly has to be thought through again...
                     auto adjusted_key_type = _hash_element_type.isTupleType() && _hash_element_type.parameters().size() == 1 ?
                             _hash_element_type.parameters().front() : _hash_element_type;
 
@@ -1158,11 +1131,5 @@ default:
                 break;
             }
         }
-
-        // two options: 1.) simple hash table
-        // 2.) keyed hashtable -> i.e. extract key col, then put into hash table
-        // 3.) potentially look up function to manipulate hash table (aggByKey?)
-        // -> 3 functions in python: a.) init aggregate, b.) update aggregate c.) later: combine aggregates (this will be done last)
-        // @TODO.
     }
 }

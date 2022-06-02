@@ -74,7 +74,6 @@ namespace tuplex {
                         throw std::runtime_error("Requesting Tuplex Lambda backend, but initialization failed.");
                 }
 
-                // @TODO: function name should come from options!
                 _ee = std::make_unique<AwsLambdaBackend>(*this, AWSCredentials::get(), "tuplex-lambda-runner");
 #endif
                 break;
@@ -257,7 +256,7 @@ namespace tuplex {
             addParallelizeNode(dsptr);
             return *dsptr;
         } else {
-            // get row type from first element @TODO: should be inferred from sample, no?
+            // get row type from first element
             auto rtype = rows.front().getRowType();
             schema = Schema(Schema::MemoryLayout::ROW, rtype);
             dsptr->_schema = schema;
@@ -438,8 +437,6 @@ namespace tuplex {
 
     void Context::addParallelizeNode(DataSet *ds, const std::vector<std::tuple<size_t, PyObject*>> &badParallelizeObjects, const std::vector<size_t> &numExceptionsInPartition) {
         assert(ds);
-
-        // @TODO: make empty list as special case work. Also true for empty files.
         if(ds->getPartitions().empty())
             throw std::runtime_error("you submitted an empty list to be parallelized. Any pipeline transforming this list will yield an empty list! Aborting here.");
 

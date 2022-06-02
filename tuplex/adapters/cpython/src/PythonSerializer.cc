@@ -264,7 +264,7 @@ namespace tuplex {
                 return PyList_New(0);
             } else if(row_type.isListType()) {
                 return createPyListFromMemory(ptr, row_type);
-            } else if(row_type.isOptionType()) { // TODO: should this be [isOptional()]?
+            } else if(row_type.isOptionType()) {
                 if(!bitmap) {
                     // If bitmap was null, this means that it was a single value, not part of a tuple
                     bitmap = ptr;
@@ -375,21 +375,9 @@ namespace tuplex {
             return size <= capacity;
         }
 
-
-        // TODO: check for errors when creating PyObjects
         bool fromSerializedMemory(const uint8_t *ptr, int64_t capacity, const tuplex::Schema &schema, PyObject **obj,
                                   const uint8_t **nextptr) {
             python::Type row_type = schema.getRowType();
-
-
-            // @TODO: fix this function in debug mode
-            // this function is not working. leave for now...
-            // check is anyways a waste of time...
-            // // check for bitmap size & push pointer...
-            // if (!isCapacityValid(ptr, capacity, row_type)) {
-            //     return false;
-            // }
-
             *obj = createPyObjectFromMemory(ptr, row_type);
 
             if (nextptr) {

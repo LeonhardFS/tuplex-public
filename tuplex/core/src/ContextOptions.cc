@@ -478,20 +478,15 @@ namespace tuplex {
         return memStringToSize(_store.at("tuplex.runTimeMemoryBlockSize"));
     }
 
-    // @ Todo: add this to CSV parser at later stage (FAS-109)
     bool ContextOptions::AUTO_UPCAST_NUMBERS() const {
         return stringToBool(_store.at("tuplex.autoUpcast"));
     }
 
-
-    // @ Todo: Requires major redesign as daemon process for multi user, ...
-    // right now, whole framework is a library and not yet a distributed system/framework
     URI ContextOptions::LOG_DIR() const {
         Logger::instance().defaultLogger().error("unused setting, requires major overhaul of how things are logged.");
         return URI(_store.at("tuplex.logDir"));
     }
 
-    // @ Todo: required for FAS-27
     URI ContextOptions::SCRATCH_DIR() const {
         return URI(_store.at("tuplex.scratchDir"));
     }

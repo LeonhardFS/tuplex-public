@@ -210,8 +210,6 @@ namespace tuplex {
                 // verify function & return
                 std::string err;
                 if (!verifyFunction(_func, &err)) {
-
-                    // @TODO: use the better inspection capabilities...
                     const size_t max_length = 50000; // max 50k chars
                     auto irSample = _env->getIR();
                     if(irSample.length() > max_length)
@@ -268,7 +266,6 @@ namespace tuplex {
              * @param sharedObjectPropagation
              * @return
              */
-             //@TODO: implement this...
             llvm::Function *buildWithAggregateWriter(const std::string& callbackName,
                                                      int64_t operatorID,
                                                      const UDF &udfAggregator,
@@ -277,14 +274,6 @@ namespace tuplex {
                                                      bool sharedObjectPropagation);
 
             llvm::Function *build(); // returns the function to be called
-
-            // @TODO: what about thread safety here? => i.e. force processing to be single threaded?
-            //  combine multiple hashmaps?
-
-            // TODO: have transformtasks have output data ptr
-            // ==> helpful to store allocated hashmap & Co
-            // ==> multiple threads may construct individual hashmaps, then these need to be combined together into one large hashmap!
-            // ==> i.e. have merge hash maps step!
 
             /*!
              * output data to a hashmap. I.e. Transformtask will hold a single hashmap as output
@@ -356,7 +345,6 @@ namespace tuplex {
                                      bool allowUndefinedBehavior,
                                      bool sharedObjectPropagation);
 
-            // @TODO: also add ignore to this
             /*!
              * adds a resolver to the last added operation
              * @param ec
@@ -449,15 +437,6 @@ namespace tuplex {
          * @return llvm Function
          */
         extern llvm::Function *createSingleProcessRowWrapper(PipelineBuilder &pip, const std::string &name);
-
-        // TODO: there should be an option to exclude the weird String -> type parsing thing here
-        // better: have these exceptions be serialized as "normal-case violation exceptions" and have the CSV bad input
-        // exception be something like where a single string is presented and then a resolver has to apply something to get the correct
-        // type out of it!
-        // => the resolve will then get way faster...
-
-        // i.e. change parse row generator to always parse the stuff and throw exception with data in more general case
-        // TODO
 
         /*!
          * creates llvm function to process an exception row

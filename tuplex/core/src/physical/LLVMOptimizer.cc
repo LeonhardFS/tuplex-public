@@ -179,10 +179,6 @@ namespace tuplex {
         // => module pass: deadarg
         // => module pass: global dce
 
-        // TODO: to tune, need to add loop passes + memcpy opt somewhere in this pipeline...
-        // also, constant propagation might be a good idea...
-        // because attributes are used not always, a good idea might be to run functionattrs as well
-
         fpm.add(createCFGSimplificationPass());
         fpm.add(createInstructionCombiningPass(true));
         fpm.add(createAggressiveInstCombinerPass()); // run this as last one b.c. it's way more complex than the others...
@@ -242,7 +238,6 @@ namespace tuplex {
         }
 
         // Some interesting links for LLVM passes
-        // @TODO: experiment a bit with this
         // other pass order:
         // simpplifycfg pass
         // sroa
@@ -262,11 +257,8 @@ namespace tuplex {
 
         // use level 2 because it's faster than 3 and produces pretty much the same result anyways...
         Optimize(*mod, 2, 0);
-
         // check out https://github.com/apache/impala/blob/master/be/src/codegen/llvm-codegen.cc
 
-
-        // @TODO: this is slow, better exchange with llvm bitcode
         std::string ir = "";
         llvm::raw_string_ostream os(ir);
         os.flush();

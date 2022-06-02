@@ -184,7 +184,7 @@ namespace codegen {
                 auto val = builder.CreateLoad(definedPtr);
                 auto c_val = llvm::dyn_cast<llvm::ConstantInt>(val);
                 if(c_val && c_val->getValue().getBoolValue()) {
-                    // nothing todo, just remove the load instruction
+                    // nothing to do, just remove the load instruction
                     val->eraseFromParent();
                 } else {
                     // need to do dynamic check
@@ -254,7 +254,6 @@ namespace codegen {
         inline void restoreVariableSlots(llvm::IRBuilder<>& builder, const std::unordered_map<std::string, VariableRealization>& var_realizations, bool delete_others=false) {
             using namespace std;
             // when delete is specified, delete all slots which are not used anymore!
-            // TODO: potentially add lifetime end!
             if(delete_others) {
                 vector<string> remove_list;
                 for(auto kv : _variableSlots)

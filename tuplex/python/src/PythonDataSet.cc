@@ -359,9 +359,6 @@ namespace tuplex {
                                            const std::string& initial_value_pickled,
                                            const py::object& comb_closure, const py::object& agg_closure) {
         using namespace std;
-
-        // @TODO: warning if udfs are wrongly submitted
-#warning "add warnings if UDFs are flipped!"
         assert(this->_dataset);
         if (_dataset->isError()) {
             PythonDataSet pds;
@@ -421,9 +418,6 @@ namespace tuplex {
                                            const std::string& agg, const std::string& agg_pickled,
                                            const std::string& initial_value_pickled, py::list columns) {
         using namespace std;
-
-        // @TODO: warning if udfs are wrongly submitted
-#warning "add warnings if UDFs are flipped!"
         assert(this->_dataset);
         if (_dataset->isError()) {
             PythonDataSet pds;
@@ -442,8 +436,6 @@ namespace tuplex {
                                                                  initial_value_pickled.size());
         // convert to row
         auto initial_value = python::pythonToRow(py_initial_value);
-
-        // TODO(rahuly): probably switch this to use integers later
         auto dataset_cols = _dataset->columns();
         PyObject * listObj = columns.ptr();
         std::vector<std::string> key_columns;
@@ -746,7 +738,7 @@ namespace tuplex {
             // check what to do about the header
             assert(header.ptr());
             if(header.ptr() == Py_None) {
-                // nothing todo, keep defaults...
+                // nothing to do, keep defaults...
             } else if(header.ptr() == Py_False || header.ptr() == Py_True) {
                 // if false, no header
                 outputOptions["header"] = header.ptr() == Py_False ? "false" : "true";
@@ -779,13 +771,6 @@ namespace tuplex {
             }
 
             python::lockGIL();
-
-//            // nullptr? then error dataset!
-//            if(!err_message.empty()) {
-//                // Logger::instance().flushAll();
-//                Logger::instance().flushToPython();
-//                // TODO: roll back file system changes?
-//            }
             Logger::instance().flushToPython();
         }
     }
@@ -929,8 +914,6 @@ namespace tuplex {
 
             for (unsigned i = 0; i < partitionRowCount && pos < maxRowCount; ++i) {
                 PyObject * rowObj = nullptr;
-
-                // doesn't work. TODO: what does this mean?
                 tuplex::cpython::fromSerializedMemory(ptr, end_ptr - ptr, schema, &rowObj,nullptr);
                 assert(rowObj);
 
@@ -1345,9 +1328,8 @@ namespace tuplex {
     }
 
     PyObject *PythonDataSet::resultSetToCPython(tuplex::ResultSet *rs, size_t maxRowCount) {
-        // b.c. merging of arbitrary python objects is not implemented yet, whenever they're present, use general
-        // version
-        // @TODO: this could be optimized!
+        // b.c. merging of arbitrary python objects is not implemented yet,
+        // whenever they're present, use general version
         if(rs->pyobject_count() != 0)
             return anyToCPythonWithPyObjects(rs, maxRowCount);
 
@@ -1546,7 +1528,6 @@ namespace tuplex {
         return pds;
     }
 
-    //@TODO: refactor, this is copy & paste code from join
     PythonDataSet
     PythonDataSet::leftJoin(const PythonDataSet &right, const std::string &leftKeyColumn, const std::string &rightKeyColumn,
                         const std::string &leftPrefix, const std::string &leftSuffix, const std::string &rightPrefix,

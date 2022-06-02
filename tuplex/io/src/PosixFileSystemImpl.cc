@@ -197,10 +197,6 @@ namespace tuplex {
             mode = "rb";
         else if(_mode & VFS_WRITE || _mode & VFS_OVERWRITE) {
             mode = "wb";
-//            if(_mode & VFS_OVERWRITE)
-//                mode = "wb";
-//            else
-//                mode = "rb+"; // @Todo: doesn;t work for /tmp?
         }
         else if(_mode & VFS_APPEND && _mode & VFS_WRITE)
             mode = "ab";
@@ -435,8 +431,6 @@ namespace tuplex {
         // logger info:
         logger.info("mapping file (" + std::to_string(st.st_size) + " bytes) to memory (" + std::to_string(rounded) + " bytes)");
         assert(rounded >= st.st_size);
-
-        // @Todo: should memset to 0 the guard page...
 #endif
 
         // memory map file and get start pointer

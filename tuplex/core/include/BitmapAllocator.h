@@ -29,29 +29,10 @@ namespace tuplex {
             BOUNDARY_BLOCK = 1,
             USED_BLOCK = 2
         };
-
-        // @TODO
-        // make this more efficient with smaller blocks...?
-        // i.e. use 2 bits for one block (decreases size by factor of 4)
         unsigned char* _bitmap;
 
         size_t _numBlocks;
         size_t _blockSize;
-
-// debug
-//        void print_bitmap() {
-//            for(int i = 0; i <_numBlocks; i++) {
-//                using namespace std;
-//                cout<<"Block "<<i<<": ";
-//                if(_bitmap[i] == FREE_BLOCK)
-//                    cout<<"free";
-//                if(_bitmap[i] == BOUNDARY_BLOCK)
-//                    cout<<"boundary";
-//                if(_bitmap[i] == USED_BLOCK)
-//                    cout<<"used block";
-//                cout<<endl;
-//            }
-//        }
     public:
 
         BitmapAllocator(size_t size, const size_t blockSize) {
@@ -71,7 +52,6 @@ namespace tuplex {
             assert(_numBlocks > 0);
 
             // for simplicity bitmap is large (decrease later)
-            // @TODO
             _bitmap = (unsigned char*)::malloc(_numBlocks);
             _arena = (uint8_t*)::malloc(_arenaSize);
 

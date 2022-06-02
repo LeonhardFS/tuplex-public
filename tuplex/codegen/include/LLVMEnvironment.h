@@ -697,8 +697,6 @@ namespace tuplex {
                 if(null_values.empty())
                     return i1Const(false);
 
-                // Todo: optimize further, i.e. sometimes better to do check incl. null or depending on string size.
-
                 // for "" include 0 in comparison!
                 llvm::Value* isnull = fixedSizeStringCompare(builder,
                                                              ptr,

@@ -23,7 +23,6 @@
 #include "ASTAnnotation.h"
 
 namespace tuplex {
-    // @Todo: To avoid writing all these clone functions,
 // use Polymorphic copy construction as described here
 // https://en.wikipedia.org/wiki/Curiously_recurring_template_pattern
 
@@ -72,8 +71,6 @@ namespace tuplex {
         Continue
     };
 
-//@TODO: Make sure that cloning also copies over protected attributes!
-
 // base class used to store any node in the AST tree
     class ASTNode {
     protected:
@@ -85,7 +82,7 @@ namespace tuplex {
 #endif
 
         // annotations for an AST Node:
-        python::Type _inferredType; // --> annotated by lexer or type inference pass... @TODO
+        python::Type _inferredType; // --> annotated by lexer or type inference pass...
         int          _scopeID; // to which scope does this node belong to? --> annotated by SymbolTableVisitor
         ASTAnnotation *_annotation; // optional annotation stored for this node
 
@@ -1336,7 +1333,6 @@ namespace tuplex {
             return *this;
         }
 
-        // TODO: do Dictionary, List need similar methods?
         python::Type getInferredType() {
             // lazy update
             if(python::Type::UNKNOWN == _inferredType) {
@@ -1924,8 +1920,6 @@ namespace tuplex {
 
     };
 
-// @TODO: refactor this into generator object.
-// cf. here https://github.com/LeonhardFS/Tuplex/issues/211
     class NRange : public ASTNode {
     public:
         std::vector<ASTNode*> _positionalArguments;

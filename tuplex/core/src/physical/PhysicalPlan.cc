@@ -38,11 +38,7 @@ namespace tuplex {
         _lpOriginal = originalPlan;
 
         // split logical plan into physical stages
-        // (@TODO: add here database like plan selection/optimization, for now naive generation)
         _stage = splitIntoAndPlanStages();
-
-        // @TODO: push down limits
-        // ==> add logic here!
     }
 
     // Notes: pushdown limits if possible
@@ -128,7 +124,6 @@ namespace tuplex {
                 // done
             } else if(node->parents().size() == 2) {
                 // more difficult, go down more costly path and spill off separate stage depending on operator!
-                // todo
                 assert(node->type() == LogicalOperatorType::JOIN); // only join yet supported here...
 
                 // cost model necessary here (simple, just use #rows!)
@@ -356,11 +351,9 @@ namespace tuplex {
                 else if(outputNode->type() == LogicalOperatorType::AGGREGATE) {
                     // hash unique?
                     // note: need to hash multiple key cols -> use tuple to string functionality for now, need to improve
-                    // TODO: base64 encode maybe if its multiple columns so string can be reused...
                     auto aop = dynamic_cast<AggregateOperator*>(outputNode); assert(aop);
                     auto schema = aop->parent()->getOutputSchema();
                     if(aop->aggType() == AggregateType::AGG_UNIQUE) {
-                        // @TODO: maybe do this via intermediates? And then combine everything?
                         builder.addHashTableOutput(schema, false, false, {}, schema.getRowType(),
                                                    python::Type::UNKNOWN);
                         hashGroupedDataType = AggregateType::AGG_UNIQUE; // need to process the output hashtable to rows
@@ -383,8 +376,6 @@ namespace tuplex {
             auto top = static_cast<TakeOperator*>(outputNode);
             builder.setOutputLimit(top->limit());
         }
-
-        // @TODO: add slowPip builder to this process...
 
         // generate code for stage and init vars
         auto stage = builder.build(this, backend());
@@ -634,8 +625,6 @@ namespace tuplex {
         // metrics
         // aggregate sampling time from all input operators (run sequentially)
         _context.metrics().setSamplingTime(aggregateSamplingTime());
-
-        // @TODO: update history server? make sure things work?
     }
 
     double PhysicalPlan::aggregateSamplingTime() const {

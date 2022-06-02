@@ -51,10 +51,6 @@ namespace tuplex {
             return "";
 
         // load from first file (?)
-
-        // @TODO: estimate across multiple files/different file positions
-        // ==> how to do this better??
-
         auto uri = _fileURIs.front();
         size_t size = _sizes.front();
         auto vfs = VirtualFileSystem::fromURI(uri);
@@ -185,12 +181,6 @@ namespace tuplex {
         _delimiter = delimiter.value_or(',');
         _header = hasHeader.value_or(false);
 
-//        // null value check. If empty array, add empty string
-//        // @TODO: is this correct??
-//#warning " check whether this behavior is correct! Users might wanna have empty strings"
-//        if (_null_values.empty())
-//            _null_values.emplace_back("");
-
         Timer timer;
         detectFiles(pattern);
 
@@ -203,8 +193,6 @@ namespace tuplex {
                                  co.CSV_QUOTECHAR(), co.CSV_MAX_DETECTION_MEMORY(),
                                  co.CSV_MAX_DETECTION_ROWS(), co.NORMALCASE_THRESHOLD(), _null_values);
 
-            // @TODO: header is missing??
-            // "what about if user specifies header? should be accounted for in estimate for small files!!!"
             csvstat.estimate(sample.c_str(), sample.size(), tuplex::option<bool>::none, delimiter, !co.OPT_NULLVALUE_OPTIMIZATION());
 
             // estimator for #rows across all CSV files

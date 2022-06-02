@@ -15,11 +15,9 @@
 #include "IReplaceVisitor.h"
 
 namespace tuplex {
-    // @Todo: add here logs on what this visitor does...
-
-// clean visitor optimizes currently the following:
-// (1) collapses suites (except for upward merging!)
-// (2) collapsed cmp nodes if they only consist of lhs
+    // clean visitor optimizes currently the following:
+    // (1) collapses suites (except for upward merging!)
+    // (2) collapsed cmp nodes if they only consist of lhs
     class CleanAstVisitor : public IReplaceVisitor {
     private:
 
