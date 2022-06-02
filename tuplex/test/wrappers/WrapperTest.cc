@@ -526,8 +526,6 @@ TEST(Python, FastTupleConstruction) {
     listObj = PyList_New(N);
     unsigned tupleSize = 4;
     for(int i = 0; i < N; ++i) {
-
-        // directly call python functions without all the crap
         auto tp = (PyTupleObject*)PyObject_GC_NewVar(PyTupleObject, &PyTuple_Type, tupleSize);
         PyObject_GC_Track(tp);
         if(!tp) // out of mem..
@@ -549,8 +547,6 @@ TEST(Python, FastTupleConstruction) {
     lo->allocated = N;
     PyObject_GC_Track(lo);
     for(int i = 0; i < N; ++i) {
-
-        // directly call python functions without all the crap
         auto tp = (PyTupleObject*)PyObject_GC_NewVar(PyTupleObject, &PyTuple_Type, tupleSize);
         PyObject_GC_Track(tp);
         if(!tp) // out of mem..

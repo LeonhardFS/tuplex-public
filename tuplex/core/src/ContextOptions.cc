@@ -31,10 +31,6 @@
 
 namespace tuplex {
 
-#warning "safe guard such that users can't submit weird values. I.e. default to meaningful defaults," \
-    " if crap is submitted as input"
-
-
     std::vector<std::string> decodePythonList(const std::string& s) {
         auto list_contents = s.substr(1, s.length() - 2);
 
