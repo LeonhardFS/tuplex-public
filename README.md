@@ -1,8 +1,5 @@
-# Readme for artifact submission of paper ID [259]
-* Paper name: [Tuplex: Data Science in Python at Native Code Speed](https://dl.acm.org/doi/10.1145/3448016.3457244)
-* Conference: SIGMOD'21
-
-The following document contains instructions to build and reproduce the experiments presented in the SIGMOD'21 paper.
+# Artifact of [Tuplex: Data Science in Python at Native Code Speed](https://dl.acm.org/doi/10.1145/3448016.3457244)
+as published in SIGMOD'21. The following document contains instructions to build and reproduce the experiments presented in the SIGMOD'21 paper.
 
 **If you merely want to run the necessary commands, please skip A)-C) and head directly to section D).**
 
