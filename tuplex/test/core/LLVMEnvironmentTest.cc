@@ -625,6 +625,19 @@ TEST(LLVMENV, HexValuePrint) {
 
     auto bb = BasicBlock::Create(ctx, "entry", func);
     IRBuilder<> builder(bb);
+
+    // create versions for various integers...
+    auto args = codegen::mapLLVMFunctionArgs(func, {"i8", "i16", "i32", "i64", "double"});
+    for(unsigned i = 1; i <= 8; ++i) {
+        auto value = builder.CreateZExtOrTrunc(args["i8"], llvm::Type::getIntNTy(ctx, i));
+        env->printHexValue(builder, value, "[i" + std::to_string(i) + "]");
+    }
+
+    env->printHexValue(builder, args["i16"], "[i16]");
+    env->printHexValue(builder, args["i32"], "[i32]");
+    env->printHexValue(builder, args["i64"], "[i64]");
+    env->printHexValue(builder, args["double"], "[double]");
+
     builder.CreateRetVoid();
     auto jit = make_shared<JITCompiler>();
 
@@ -633,9 +646,14 @@ TEST(LLVMENV, HexValuePrint) {
 
     jit->compile(env->getIR());
 
-//    auto fun = reinterpret_cast<int64_t(*)(void**,int64_t*,void*,int64_t)>(jit->getAddrOfSymbol(func->getName().str()));
-//
-//    // now, combine everything!
-//    fun(reinterpret_cast<void **>(&aggA), &aggA_size, aggB, aggB_size);
+    auto fun = reinterpret_cast<void(*)(uint8_t,uint16_t,uint32_t,uint64_t, double)>(jit->getAddrOfSymbol(func->getName().str()));
 
+    // now, combine everything!
+    uint8_t i8 = 45;
+    uint16_t i16 = 268;
+    uint32_t i32 = 0xabcdef90;
+    uint64_t i64 = 0x1234567890abcdef;
+    double d = 3.14159;
+    fun(i8, i16, i32, i64, d);
+    EXPECT_TRUE(fun); // should not be nullptr
 }

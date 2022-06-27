@@ -23,6 +23,7 @@
 #include <llvm/Target/TargetMachine.h>
 #endif
 
+#include <typeinfo>
 
 // builder and codegen funcs
 #include <llvm/IR/IRBuilder.h>
@@ -300,6 +301,12 @@ namespace tuplex {
 
         template<> inline llvm::Type* ctypeToLLVM<void>(llvm::LLVMContext& ctx) {
             return llvm::Type::getVoidTy(ctx);
+        }
+        template<> inline llvm::Type* ctypeToLLVM<int8_t>(llvm::LLVMContext& ctx) {
+            return llvm::Type::getInt8Ty(ctx);
+        }
+        template<> inline llvm::Type* ctypeToLLVM<int16_t>(llvm::LLVMContext& ctx) {
+            return llvm::Type::getInt16Ty(ctx);
         }
 
         template<> inline llvm::Type* ctypeToLLVM<int>(llvm::LLVMContext& ctx) {

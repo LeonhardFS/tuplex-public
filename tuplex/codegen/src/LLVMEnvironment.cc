@@ -1110,19 +1110,19 @@ namespace tuplex {
                     // cf. https://en.cppreference.com/w/cpp/header/cinttypes
                     case 1: {
                         // call printf with str select
-                        auto str_val = builder.CreateSelect(value, strConst(builder, "0x1"), strConst(builder, "0x0"));
+                        auto str_val = builder.CreateSelect(value, strConst(builder, msg + "0x1\n"), strConst(builder, msg + "0x0\n"));
                         builder.CreateCall(printf_func, {strConst(builder, "%s"), str_val});
                         break;
                     }
                     case 8: {
                         // PRIX8 should be "0x%02hhx"
-                        std::string fmt_string = std::string("0x%") + PRIX8;
+                        std::string fmt_string = msg + std::string("0x%02") + PRIX8 + "\n";
                         auto fmt = strConst(builder, fmt_string);
                         builder.CreateCall(printf_func, {fmt, value});
                         break;
                     }
                     case 16: {
-                        std::string fmt_string = std::string("0x%") + PRIX16;
+                        std::string fmt_string = msg + std::string("0x%04") + PRIX16 + "\n";
                         auto fmt = strConst(builder, fmt_string);
                         builder.CreateCall(printf_func, {fmt, value});
                         break;
@@ -1130,7 +1130,8 @@ namespace tuplex {
                     case 24: {
                         // more tricky, print 3 bytes out
                         std::stringstream ss;
-                        ss<<"0x%"<<PRIX8<<"%"<<PRIX8<<"%"<<PRIX8;
+                        ss<<msg;
+                        ss<<"0x%02"<<PRIX8<<"%02"<<PRIX8<<"%02"<<PRIX8<<"\n";
                         std::string fmt_string = ss.str();
                         auto fmt = strConst(builder, fmt_string);
 
@@ -1142,13 +1143,13 @@ namespace tuplex {
                         break;
                     }
                     case 32: {
-                        std::string fmt_string = std::string("0x%") + PRIX32;
+                        std::string fmt_string = msg + std::string("0x%08") + PRIX32 + "\n";
                         auto fmt = strConst(builder, fmt_string);
                         builder.CreateCall(printf_func, {fmt, value});
                         break;
                     }
                     case 64: {
-                        std::string fmt_string = std::string("0x%") + PRIX64;
+                        std::string fmt_string = msg + std::string("0x%016") + PRIX64 + "\n";
                         auto fmt = strConst(builder, fmt_string);
                         builder.CreateCall(printf_func, {fmt, value});
                         break;
@@ -1157,7 +1158,7 @@ namespace tuplex {
                         throw std::runtime_error("print not yet supported");
                 }
             } else if(value->getType() == doubleType()) {
-                std::string fmt_string = std::string("0x%") + PRIX64;
+                std::string fmt_string = msg + std::string("0x%016") + PRIX64 + "\n";
                 auto fmt = strConst(builder, fmt_string);
                 builder.CreateCall(printf_func, {fmt, value});
             } else {
