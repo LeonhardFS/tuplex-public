@@ -601,3 +601,41 @@ TEST(LLVMENV, combineAggregateVariable) {
     Row resC = Row::fromMemory(rowA.getSchema(), aggA, aggA_size);
     EXPECT_EQ(resC.getString(0), "Hello world!");
 }
+
+TEST(LLVMENV, HexValuePrint) {
+    using namespace llvm;
+    using namespace std;
+    using namespace tuplex;
+    using namespace tuplex::codegen;
+
+    auto env = make_shared<LLVMEnvironment>();
+
+    // create func and print out a couple values
+    // no way to check, this is a simple functionality test...
+    auto& ctx = env->getContext();
+    auto FT = llvm::FunctionType::get(ctypeToLLVM<void>(ctx), {ctypeToLLVM<int8_t>(ctx), ctypeToLLVM<int16_t>(ctx),
+            ctypeToLLVM<int32_t>(ctx), ctypeToLLVM<int64_t>(ctx), ctypeToLLVM<double>(ctx)}, false);
+    auto func_tmp = env->getModule()->getOrInsertFunction("test", FT);
+
+#if LLVM_VERSION_MAJOR < 9
+    Function* func = cast<Function>(func_tmp);
+#else
+    Function* func = cast<Function>(func_tmp.getCallee());
+#endif
+
+    auto bb = BasicBlock::Create(ctx, "entry", func);
+    IRBuilder<> builder(bb);
+    builder.CreateRetVoid();
+    auto jit = make_shared<JITCompiler>();
+
+    // init runtime memory
+    runtime::init(ContextOptions::defaults().RUNTIME_LIBRARY().toPath());
+
+    jit->compile(env->getIR());
+
+//    auto fun = reinterpret_cast<int64_t(*)(void**,int64_t*,void*,int64_t)>(jit->getAddrOfSymbol(func->getName().str()));
+//
+//    // now, combine everything!
+//    fun(reinterpret_cast<void **>(&aggA), &aggA_size, aggB, aggB_size);
+
+}

@@ -298,6 +298,10 @@ namespace tuplex {
             return nullptr;
         }
 
+        template<> inline llvm::Type* ctypeToLLVM<void>(llvm::LLVMContext& ctx) {
+            return llvm::Type::getVoidTy(ctx);
+        }
+
         template<> inline llvm::Type* ctypeToLLVM<int>(llvm::LLVMContext& ctx) {
             switch(sizeof(int)) {
                 case 4:

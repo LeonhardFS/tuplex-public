@@ -18,6 +18,7 @@
 #include <Utils.h>
 #include <pcre2.h>
 #include <TupleTree.h>
+#include <cinttypes>
 
 using namespace llvm;
 
@@ -1085,6 +1086,82 @@ namespace tuplex {
 
             } else {
                 printValue(builder, val, message);
+            }
+        }
+
+        void LLVMEnvironment::printHexValue(llvm::IRBuilder<> &builder, llvm::Value *value, std::string msg) {
+            if(!value) {
+                throw std::runtime_error("internal, invalid value " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
+            }
+
+            auto printf_func = printf_prototype(_context, _module.get());
+            auto mem = CreateFirstBlockAlloca(builder, i64Type(), "hexhmem");
+            if(value->getType()->isIntegerTy()) {
+
+                unsigned desired_bit_width = value->getType()->getIntegerBitWidth();
+                if(desired_bit_width > 1) {
+                    desired_bit_width = core::ceilToMultiple(desired_bit_width, 8u);
+                    assert(desired_bit_width >= value->getType()->getIntegerBitWidth());
+                    value = builder.CreateZExt(value, llvm::Type::getIntNTy(builder.getContext(), desired_bit_width));
+                }
+
+                // how many bits? round up to 8s! or 1
+                switch (value->getType()->getIntegerBitWidth()) {
+                    // cf. https://en.cppreference.com/w/cpp/header/cinttypes
+                    case 1: {
+                        // call printf with str select
+                        auto str_val = builder.CreateSelect(value, strConst(builder, "0x1"), strConst(builder, "0x0"));
+                        builder.CreateCall(printf_func, {strConst(builder, "%s"), str_val});
+                        break;
+                    }
+                    case 8: {
+                        // PRIX8 should be "0x%02hhx"
+                        std::string fmt_string = std::string("0x%") + PRIX8;
+                        auto fmt = strConst(builder, fmt_string);
+                        builder.CreateCall(printf_func, {fmt, value});
+                        break;
+                    }
+                    case 16: {
+                        std::string fmt_string = std::string("0x%") + PRIX16;
+                        auto fmt = strConst(builder, fmt_string);
+                        builder.CreateCall(printf_func, {fmt, value});
+                        break;
+                    }
+                    case 24: {
+                        // more tricky, print 3 bytes out
+                        std::stringstream ss;
+                        ss<<"0x%"<<PRIX8<<"%"<<PRIX8<<"%"<<PRIX8;
+                        std::string fmt_string = ss.str();
+                        auto fmt = strConst(builder, fmt_string);
+
+                        auto byte0 = builder.CreateTrunc(builder.CreateAShr(value, 16), i8Type());
+                        auto byte1 = builder.CreateTrunc(builder.CreateAShr(value, 8), i8Type());
+                        auto byte2 = builder.CreateTrunc(value, i8Type());
+
+                        builder.CreateCall(printf_func, {fmt, byte0, byte1, byte2});
+                        break;
+                    }
+                    case 32: {
+                        std::string fmt_string = std::string("0x%") + PRIX32;
+                        auto fmt = strConst(builder, fmt_string);
+                        builder.CreateCall(printf_func, {fmt, value});
+                        break;
+                    }
+                    case 64: {
+                        std::string fmt_string = std::string("0x%") + PRIX64;
+                        auto fmt = strConst(builder, fmt_string);
+                        builder.CreateCall(printf_func, {fmt, value});
+                        break;
+                    }
+                    default:
+                        throw std::runtime_error("print not yet supported");
+                }
+            } else if(value->getType() == doubleType()) {
+                std::string fmt_string = std::string("0x%") + PRIX64;
+                auto fmt = strConst(builder, fmt_string);
+                builder.CreateCall(printf_func, {fmt, value});
+            } else {
+                throw std::runtime_error("unsupported type to print in hex!");
             }
         }
 
