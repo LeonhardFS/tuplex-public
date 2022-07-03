@@ -19,12 +19,14 @@ namespace tuplex {
         // this is a simple hashmap proxy structure
         class HashProxy {
         public:
+            HashProxy() = delete;
+
             /*!
              * create a new hashmap (codegen)
              * @param builder
              * @param global whether to create the hashmap as global variable or not.
              */
-            HashProxy(llvm::IRBuilder<>& builder, bool global=false);
+            HashProxy(llvm::IRBuilder<>& builder, bool global=false, const std::string& name="");
 
             /*!
              * put a value into the hashmap
@@ -36,6 +38,10 @@ namespace tuplex {
                                     const SerializableValue& key,
                                     const SerializableValue& value=SerializableValue());
 
+            void init(llvm::IRBuilder<>& builder);
+        private:
+            llvm::Value* _hashmap_ptr;
+            llvm::Value* _nullbucket_ptr;
         };
 
         // these are helper functions to deal with generating code to hash different keys etc.
