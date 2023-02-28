@@ -445,6 +445,15 @@ namespace tuplex {
                 // bad parse exception! => gets matched/resolved first on fallback path.
                 // DO NOT USE dummies here
                 auto serialized_row = serializeBadParseException(builder, cellsPtr, sizesPtr, false);
+
+                // debug:
+                // print row number
+                // i.e. first exception is for row number 520826
+                // -> verified: for
+                // a badparse except is thrown here:
+                // badparse exception, row number= [i64] : 520826
+                // _env->printValue(builder, rowNumber, "badparse exception, row number=");
+
                 callExceptHandler(builder, userData, _env->i64Const(ecToI64(ExceptionCode::BADPARSE_STRING_INPUT)),
                                   _env->i64Const(_operatorID), rowNumber,
                                   ExceptionSerializationFormat::STRING_CELLS,

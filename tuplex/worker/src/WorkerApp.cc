@@ -1924,6 +1924,11 @@ namespace tuplex {
             auto delta = deserializeExceptionFromMemory(ptr, &ecCode, &ecOperatorID, &ecRowNumber, &ecBuf,
                                                         &ecBufSize);
 
+            // check special row:
+            if(520817 == ecRowNumber || 528826 == ecRowNumber) {
+                std::cout<<"DEBUG: found first interpreted row number"<<std::endl;
+            }
+
             // remove exception format from ecCode (??)
 
 //            // only exec on faukty rpw
