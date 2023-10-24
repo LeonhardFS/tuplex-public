@@ -984,7 +984,6 @@ else()
         set(ZSTD_DEPENDS "zstd_ep")
     endif()
 endif()
-add_subdirectory(worker)
 
 # following code is from https://github.com/OPM/opm-common/blob/master/cmake/Modules/UseSystemInfo.cmake
 # read property from the newer /etc/os-release
