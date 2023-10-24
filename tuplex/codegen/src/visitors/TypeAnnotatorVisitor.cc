@@ -112,10 +112,23 @@ namespace tuplex {
             // try to combine return types (i.e. for none, this works!)
             // ==> if it fails, display err message.
 
+            // get return types, but ignore exceptions - if all are exceptions, warn. User should fix
+            std::vector<python::Type> return_types;
+            std::copy_if(_funcReturnTypes.begin(), _funcReturnTypes.end(), std::back_inserter(return_types), [](const python::Type& t) {
+                return !t.isExceptionType();
+            });
+
+            if(return_types.empty()) {
+                fatal_error("All return code paths produce exceptions");
+                return;
+            }
+
+
+
             // go through all func types, and check whether they can be unified.
-            auto combined_ret_type = _funcReturnTypes.front();
-            for(int i = 1; i < _funcReturnTypes.size(); ++i)
-                combined_ret_type = unifyTypes(combined_ret_type, _funcReturnTypes[i],
+            auto combined_ret_type = return_types.front();
+            for(int i = 1; i < return_types.size(); ++i)
+                combined_ret_type = unifyTypes(combined_ret_type, return_types[i],
                                                _typeUnificationPolicy);
 
             if(combined_ret_type == python::Type::UNKNOWN) {
@@ -144,8 +157,22 @@ namespace tuplex {
                         return std::get<1>(a) > std::get<1>(b);
                     });
 
+                    return_types.clear();
+                    // copy out non-exception types
+                    for(auto count_tuple : v) {
+                        auto type = std::get<0>(count_tuple);
+                        if(!type.isExceptionType())
+                            return_types.push_back(type);
+                    }
+
+                    if(return_types.empty()) {
+                        fatal_error("All return code paths despite speculation produce exceptions");
+                        return;
+                    }
+                    assert(!return_types.empty());
+
                     // top element?
-                    auto best_so_far = std::get<0>(v.front());
+                    auto best_so_far = return_types.front();
 
                     for(int i = 1; i < v.size(); ++i) {
                         auto cur_type = std::get<0>(v[i]);
@@ -165,7 +192,7 @@ namespace tuplex {
                     combined_ret_type = best_so_far;
                 } else {
                     // check that all return values are the same, if not: error!!!
-                    std::set<python::Type> unique_types(_funcReturnTypes.begin(), _funcReturnTypes.end());
+                    std::set<python::Type> unique_types(return_types.begin(), return_types.end());
                     std::vector<std::string> type_names;
                     for(const auto& t : unique_types)
                         type_names.emplace_back(t.desc());
@@ -175,6 +202,12 @@ namespace tuplex {
                     error(ss.str());
                     return;
                 }
+            }
+
+            // check that a valid type can be created, else abort.
+            if(combined_ret_type == python::Type::UNKNOWN) {
+                fatal_error("can not create combined return type for function " + func->_name->_name);
+                return;
             }
 
             assert(combined_ret_type != python::Type::UNKNOWN); // make sure control flow does not else hit this!
@@ -191,6 +224,10 @@ namespace tuplex {
 
                                         // can upcast? => only then set. This allows in Blockgenerator to detect deviating return statements!
                                         if(n.getInferredType() == python::Type::UNKNOWN) // i.e. code that is never visited
+                                            return;
+
+                                        // keep exception types as they are
+                                        if(n.getInferredType().isExceptionType())
                                             return;
 
                                         auto uni_type = unifyTypes(n.getInferredType(), combined_ret_type,

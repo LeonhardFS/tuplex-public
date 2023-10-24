@@ -572,9 +572,14 @@ namespace tuplex {
         // construct return partition
         auto p = context.getDriver()->allocWritablePartition(total_serialized_size + sizeof(uint64_t), schema, -1, context.id());
         auto data_region = reinterpret_cast<char *>(p->lockWrite());
-        for(const auto& pr: unique_rows) {
+        for(auto& pr: unique_rows) {
             memcpy(data_region, pr.first, pr.second);
             data_region += pr.second;
+
+            // free memory (allocated in appendRow)
+            delete [] pr.first;
+            pr.first = nullptr;
+            pr.second = 0;
         }
 
         // free allocated memory of rows.
@@ -873,6 +878,13 @@ namespace tuplex {
                 // others, nothing todo. Partitions should have been invalidated...
             }
         }
+
+        // free memory
+        delete [] hash_maps;
+        delete [] null_buckets;
+        hash_maps = nullptr;
+        null_buckets = nullptr;
+
     }
 
     std::vector<std::string> TransformStage::csvHeader() const {

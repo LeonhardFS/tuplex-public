@@ -75,7 +75,10 @@ namespace tuplex {
 
 
         // join operator => note that this simply adds a dict lookup
-        void innerJoinDict(int64_t operatorID, const std::string& hashmap_name, tuplex::option<std::string> leftColumn,
+        void innerJoinDict(int64_t operatorID,
+                           const std::string& hashmap_name,
+                           tuplex::option<std::string> leftColumn,
+                           tuplex::option<std::string> rightColumn,
                            const std::vector<std::string>& bucketColumns=std::vector<std::string>{},
                            option<std::string> leftPrefix=option<std::string>::none,
                            option<std::string> leftSuffix=option<std::string>::none,
@@ -83,6 +86,7 @@ namespace tuplex {
                            option<std::string> rightSuffix=option<std::string>::none);
         void leftJoinDict(int64_t operatorID, const std::string& hashmap_name,
                            tuplex::option<std::string> leftColumn,
+                           tuplex::option<std::string> rightColumn,
                            const std::vector<std::string>& bucketColumns=std::vector<std::string>{},
                            option<std::string> leftPrefix=option<std::string>::none,
                            option<std::string> leftSuffix=option<std::string>::none,
@@ -123,6 +127,8 @@ namespace tuplex {
 
         // this here uses a caching mechanism (to avoid costly cloudpickle calls)
         std::string decodeFunction(const UDF& udf);
+
+        inline std::vector<std::string> columns() const { return _lastColumns; }
     private:
         std::string _funcName;
         std::stringstream _ss;
@@ -144,6 +150,13 @@ namespace tuplex {
 
         // function cache
         PythonUDFCache _udfCache;
+        // track projection map and last column names internally
+        std::unordered_map<int, int> _lastProjectionMap; //
+        std::vector<std::string> _lastColumns;
+        size_t _numUnprojectedColumns;
+
+        std::vector<std::string> reproject_columns(const std::vector<std::string>& columns);
+
 
         std::string emitClosure(const UDF& udf);
 
@@ -259,6 +272,11 @@ namespace tuplex {
             ss.flush();
             return ss.str();
         }
+
+        void updateMappingForJoin(const option <std::string> &leftColumn, const tuplex::option<std::string>& rightColumn,
+                                  const std::vector<std::string> &bucketColumns,
+                                  const option <std::string> &leftPrefix, const option <std::string> &leftSuffix,
+                                  const option <std::string> &rightPrefix, const option <std::string> &rightSuffix);
     };
 
     /*!

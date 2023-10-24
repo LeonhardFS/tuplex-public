@@ -15,7 +15,7 @@
 #include <StringUtils.h>
 #include <jit/RuntimeInterface.h>
 
-//#define TRACE_PARSER
+// #define TRACE_PARSER
 
 namespace tuplex {
 
@@ -95,16 +95,15 @@ namespace tuplex {
             return _resultType;
         }
 
-        void CSVParseRowGenerator::updateLookAhead(llvm::IRBuilder<> &builder) {
-            auto ptr = builder.CreateLoad(_currentPtrVar);
+        void CSVParseRowGenerator::updateLookAhead(IRBuilder& builder) {
+            auto ptr = currentPtr(builder);
             auto lessThanEnd = builder.CreateICmpULT(ptr, _endPtr);
-            auto la = builder.CreateSelect(lessThanEnd, builder.CreateLoad(builder.CreateGEP(ptr, _env->i32Const(1))),
+            auto la = builder.CreateSelect(lessThanEnd, builder.CreateLoad(_env->i8Type(), builder.MovePtrByBytes(ptr, 1)),
                                            _env->i8Const(_escapechar));
             builder.CreateStore(la, _currentLookAheadVar);
-
         }
 
-        llvm::Value *CSVParseRowGenerator::newlineCondition(llvm::IRBuilder<> &builder, llvm::Value *curChar) {
+        llvm::Value *CSVParseRowGenerator::newlineCondition(IRBuilder& builder, llvm::Value *curChar) {
             assert(curChar->getType() == llvm::Type::getInt8Ty(_env->getContext()));
             auto left = builder.CreateICmpEQ(curChar, _env->i8Const('\n'));
             auto right = builder.CreateICmpEQ(curChar, _env->i8Const('\r'));
@@ -112,10 +111,11 @@ namespace tuplex {
         }
 
         llvm::Value *
-        CSVParseRowGenerator::generateCellSpannerCode(llvm::IRBuilder<> &builder, char c1, char c2, char c3, char c4) {
+        CSVParseRowGenerator::generateCellSpannerCode(IRBuilder& builder, const std::string& name, char c1, char c2, char c3, char c4) {
             auto &context = _env->getContext();
             using namespace llvm;
 
+#ifdef SSE42_MODE
             // look into godbolt
             // for following code...
             //  char c1 = ',';
@@ -126,102 +126,312 @@ namespace tuplex {
             //  __m128i _v = (__m128i)vq;
             // const char *buf = "Hello world";
             // size_t pos = _mm_cmpistri(_v, _mm_loadu_si128((__m128i*)buf), 0);
-
-            auto v16qi_type = llvm::VectorType::get(llvm::Type::getInt8Ty(context), 16);
-
-            auto v16qi_val = builder.CreateAlloca(v16qi_type);
+            auto llvm_v16_type = v16qi_type(context);
+            auto v16qi_val = builder.CreateAlloca(llvm_v16_type, name);
             uint64_t idx = 0ul;
-            llvm::Value *whereToStore = builder.CreateLoad(v16qi_val);
+            llvm::Value *whereToStore = builder.CreateLoad(llvm_v16_type, v16qi_val);
             whereToStore = builder.CreateInsertElement(whereToStore, _env->i8Const(c1), idx++);
             whereToStore = builder.CreateInsertElement(whereToStore, _env->i8Const(c2), idx++);
             whereToStore = builder.CreateInsertElement(whereToStore, _env->i8Const(c3), idx++);
             whereToStore = builder.CreateInsertElement(whereToStore, _env->i8Const(c4), idx++);
-            for (int i = 4; i < 16; ++i)
+            for (unsigned i = 4; i < 16; ++i)
                 whereToStore = builder.CreateInsertElement(whereToStore, _env->i8Const(0), idx++);
 
             builder.CreateStore(whereToStore, v16qi_val);
             return v16qi_val;
+#else
+            // generate fallback function
+            return generateFallbackSpannerFunction(*_env, name, c1, c2, c3, c4);
+#endif
         }
 
+        llvm::Function *generateFallbackSpannerFunction(tuplex::codegen::LLVMEnvironment &env,
+                                                                              const std::string &name, char c1, char c2,
+                                                                              char c3, char c4) {
+            auto &context = env.getContext();
+            using namespace llvm;
+
+            // generate lookup array as global var
+            // ::memset(charset_, 0, sizeof charset_);
+            //            charset_[(unsigned) c1] = 1;
+            //            charset_[(unsigned) c2] = 1;
+            //            charset_[(unsigned) c3] = 1;
+            //            charset_[(unsigned) c4] = 1;
+            //            charset_[0] = 1;
+
+            char charset[256];
+            memset(charset, 0, sizeof(charset));
+            charset[(unsigned) c1] = 1;
+            charset[(unsigned) c2] = 1;
+            charset[(unsigned) c3] = 1;
+            charset[(unsigned) c4] = 1;
+            charset[0] = 1;
+
+            auto charset_type = llvm::ArrayType::get(env.i8Type(), 256);
+            auto g_charset = env.getModule()->getOrInsertGlobal(name + "_charset", charset_type);
+            std::string g_name = g_charset->getName().str();
+            auto g_var = env.getModule()->getNamedGlobal(g_name);
+            g_var->setLinkage(llvm::GlobalValue::PrivateLinkage); // <-- no need to expose global
+            g_var->setInitializer(ConstantDataArray::getRaw(llvm::StringRef(charset, 256), 256, env.i8Type()));
+
+            // in func, perform
+            // auto p = (const unsigned char *)s;
+            //            auto e = p + 16;
+            //
+            //            do {
+            //                if(charset_[p[0]]) {
+            //                    break;
+            //                }
+            //                if(charset_[p[1]]) {
+            //                    p++;
+            //                    break;
+            //                }
+            //                if(charset_[p[2]]) {
+            //                    p += 2;
+            //                    break;
+            //                }
+            //                if(charset_[p[3]]) {
+            //                    p += 3;
+            //                    break;
+            //                }
+            //                p += 4;
+            //            } while(p < e);
+            //
+            //            if(! *p) {
+            //                return 16; // PCMPISTRI reports NUL encountered as no match.
+            //            }
+            //
+            //            return p - (const unsigned char *)s;
+
+            auto FT = FunctionType::get(ctypeToLLVM<int>(context), {env.i8ptrType()}, false);
+            auto func = getOrInsertFunction(*env.getModule(), name, FT);
+
+            auto bbEntry = BasicBlock::Create(context, "entry", func);
+            IRBuilder builder(bbEntry);
+
+            auto m = mapLLVMFunctionArgs(func, {"ptr"});
+
+            // check if nullptr, if so return 16. Else, run loop
+            auto cond_is_nullptr = builder.CreateICmpEQ(m["ptr"], env.nullConstant(env.i8ptrType()));
+
+            auto bbIsNullPtr = BasicBlock::Create(context, "is_nullptr", func);
+            auto bbIsPtr = BasicBlock::Create(context, "is_not_null", func);
+            builder.CreateCondBr(cond_is_nullptr, bbIsNullPtr, bbIsPtr);
+
+            builder.SetInsertPoint(bbIsNullPtr);
+            builder.CreateRet(builder.CreateZExtOrTrunc(env.i32Const(16), ctypeToLLVM<int>(context)));
+
+            builder.SetInsertPoint(bbIsPtr);
+
+            auto start_ptr = m["ptr"];
+
+            // // this here calls fallback C-function
+            // {
+            //     // call C-function
+            //     auto fallback_func = getOrInsertFunction(env.getModule().get(),
+            //                                          "fallback_spanner",
+            //                                          ctypeToLLVM<int>(context), env.i8ptrType(), env.i8Type(), env.i8Type(), env.i8Type(), env.i8Type());
+            //     auto ret = builder.CreateCall(fallback_func, {start_ptr, env.i8Const(c1), env.i8Const(c2), env.i8Const(c3), env.i8Const(c4)});
+            //     builder.CreateRet(builder.CreateZExtOrTrunc(ret, ctypeToLLVM<int>(context)));
+            // }
+
+
+            // direct implementation (for end-to-end optimization)
+
+            auto ptr = env.CreateFirstBlockVariable(builder, env.i8nullptr());
+            builder.CreateStore(start_ptr, ptr);
+            auto end_ptr = builder.MovePtrByBytes(start_ptr, 16);
+
+
+            auto bbLoopBody = BasicBlock::Create(context, "loop_body", func);
+            auto bbLoopExit = BasicBlock::Create(context, "loop_done", func);
+            builder.CreateBr(bbLoopBody);
+
+            builder.SetInsertPoint(bbLoopBody);
+            auto p = builder.CreateLoad(env.i8ptrType(), ptr); // value of ptr var
+
+            // if(charset[p[0]]) {
+            // break;
+            // }
+
+            // p[0] is same as loading ptr twice
+            llvm::Value* p_idx = builder.CreateZExt(builder.CreateLoad(env.i8Type(), p), env.i32Type());
+            auto charset_p0 = builder.CreateLoad(env.i8Type(), builder.CreateInBoundsGEP(g_var, env.i8Type(), p_idx));
+            auto cond_p0 = builder.CreateICmpNE(charset_p0, env.i8Const(0));
+            auto bbNextIf = BasicBlock::Create(context, "next_if", func);
+            builder.CreateCondBr(cond_p0, bbLoopExit, bbNextIf);
+
+            builder.SetInsertPoint(bbNextIf);
+            // if(charset_[p[1]]) {
+            //     p++;
+            //     break;
+            // }
+            p_idx = builder.CreateZExt(builder.CreateLoad(env.i8Type(), builder.MovePtrByBytes(p, 1)), env.i32Type());
+            auto charset_p1 = builder.CreateLoad(env.i8Type(), builder.CreateInBoundsGEP(g_var, env.i8Type(), p_idx));
+            auto cond_p1 = builder.CreateICmpNE(charset_p1, env.i8Const(0));
+            bbNextIf = BasicBlock::Create(context, "next_if", func);
+            auto bbIf = BasicBlock::Create(context, "if", func);
+            builder.CreateCondBr(cond_p1, bbIf, bbNextIf);
+
+            builder.SetInsertPoint(bbIf);
+            builder.CreateStore(builder.MovePtrByBytes(p, 1), ptr);
+            builder.CreateBr(bbLoopExit);
+
+            builder.SetInsertPoint(bbNextIf);
+            // if(charset_[p[2]]) {
+            //                    p += 2;
+            //                    break;
+            //                }
+            p_idx = builder.CreateZExt(builder.CreateLoad(env.i8Type(), builder.MovePtrByBytes(p, 2)), env.i32Type());
+            auto charset_p2 = builder.CreateLoad(env.i8Type(), builder.CreateInBoundsGEP(g_var, env.i8Type(), p_idx));
+            auto cond_p2 = builder.CreateICmpNE(charset_p2, env.i8Const(0));
+            bbNextIf = BasicBlock::Create(context, "next_if", func);
+            bbIf = BasicBlock::Create(context, "if", func);
+            builder.CreateCondBr(cond_p2, bbIf, bbNextIf);
+
+            builder.SetInsertPoint(bbIf);
+            builder.CreateStore(builder.MovePtrByBytes(p, 2), ptr);
+
+            builder.CreateBr(bbLoopExit);
+
+            builder.SetInsertPoint(bbNextIf);
+            //  if(charset_[p[3]]) {
+            //                    p += 3;
+            //                    break;
+            //                }
+            p_idx = builder.CreateZExt(builder.CreateLoad(env.i8Type(), builder.MovePtrByBytes(p, 3)), env.i32Type());
+            auto charset_p3 = builder.CreateLoad(env.i8Type(), builder.CreateInBoundsGEP(g_var, env.i8Type(), p_idx));
+            auto cond_p3 = builder.CreateICmpNE(charset_p3, env.i8Const(0));
+            bbNextIf = BasicBlock::Create(context, "next_if", func);
+            bbIf = BasicBlock::Create(context, "if", func);
+            builder.CreateCondBr(cond_p3, bbIf, bbNextIf);
+
+            builder.SetInsertPoint(bbIf);
+            builder.CreateStore(builder.MovePtrByBytes(p, 3), ptr);
+            builder.CreateBr(bbLoopExit);
+
+            builder.SetInsertPoint(bbNextIf);
+            // p += 4;
+            builder.CreateStore(builder.MovePtrByBytes(p, 4), ptr);
+
+            // loop cond, go back or exit
+            p = builder.CreateLoad(env.i8ptrType(), ptr);
+            auto loop_cond = builder.CreateICmpULT(p, end_ptr);
+            builder.CreateCondBr(loop_cond, bbLoopBody, bbLoopExit);
+
+
+
+            builder.SetInsertPoint(bbLoopExit);
+            p = builder.CreateLoad(env.i8ptrType(), ptr);
+
+            // special case: if(!*p) return 16
+            // else return p - (const unsigned char *)s;
+            auto is_zero_char = builder.CreateICmpEQ(builder.CreateLoad(env.i8Type(), p), env.i8Const(0));
+            auto diff = builder.CreateZExtOrTrunc(builder.CreatePtrDiff(env.i8Type(), p, start_ptr), builder.getInt32Ty());
+
+            auto ret = builder.CreateSelect(is_zero_char, env.i32Const(16), diff);
+            ret = builder.CreateZExtOrTrunc(ret, ctypeToLLVM<int>(context));
+
+            // compare with C-function result
+#ifdef TRACE_PARSER
+             // this here calls fallback C-function
+             {
+                 // call C-function
+                 auto fallback_func = getOrInsertFunction(env.getModule().get(),
+                                                      "fallback_spanner",
+                                                      ctypeToLLVM<int>(context), env.i8ptrType(), env.i8Type(), env.i8Type(), env.i8Type(), env.i8Type());
+                 auto ref_ret = builder.CreateCall(fallback_func, {start_ptr, env.i8Const(c1), env.i8Const(c2), env.i8Const(c3), env.i8Const(c4)});
+                 env.printValue(builder, ret, "codegen spanner=");
+                 env.printValue(builder, ref_ret, "C-function spanner=");
+             }
+#endif
+
+            builder.CreateRet(ret);
+
+            return func;
+        }
 
         llvm::Value *
-        CSVParseRowGenerator::executeSpanner(llvm::IRBuilder<> &builder, llvm::Value *spanner, llvm::Value *ptr) {
+        CSVParseRowGenerator::executeSpanner(IRBuilder& builder, llvm::Value *spanner, llvm::Value *ptr) {
             auto &context = _env->getContext();
             using namespace llvm;
 
-            assert(ptr->getType() == Type::getInt8PtrTy(context, 0));
+#if (defined SSE42_MODE)
+            auto llvm_v16_type = v16qi_type(context);
 
+            // unsafe version: this requires that there are 15 zeroed bytes after endptr at least
+            auto val = builder.CreateLoad(llvm_v16_type, spanner);
+            auto casted_ptr = builder.CreateBitCast(ptr, v16qi_type(context)->getPointerTo(0));
 
-            // Note: this requires codegenopt::less under mac os
-             {
-                 // unsafe version: this requires that there are 15 zeroed bytes after endptr at least
-                 auto v16qi_type = llvm::VectorType::get(llvm::Type::getInt8Ty(context), 16);
-                 auto val = builder.CreateAlignedLoad(spanner, 0);
-                 auto casted_ptr = builder.CreateBitCast(ptr, v16qi_type->getPointerTo(0));
+            Function *pcmpistri128func = Intrinsic::getDeclaration(_env->getModule().get(),
+                                                                   LLVMIntrinsic::x86_sse42_pcmpistri128);
+            auto res = builder.CreateCall(pcmpistri128func, {val, builder.CreateLoad(llvm_v16_type, casted_ptr), _env->i8Const(0)});
+#else
+            auto func = llvm::cast<Function>(spanner);
+            assert(func);
+            auto res = builder.CreateCall(func, {ptr});
+#endif
+#ifdef TRACE_PARSER
+            _env->printValue(builder, res, "spanner result=");
+#endif
 
-                 Function *pcmpistri128func = Intrinsic::getDeclaration(_env->getModule().get(),
-                                                                        Intrinsic::x86_sse42_pcmpistri128);
-                 auto res = builder.CreateCall(pcmpistri128func, {val, builder.CreateAlignedLoad(casted_ptr, 0), _env->i8Const(0)});
-                 return res;
-             }
+            return res;
 
-//            {
-//                // safe version, i.e. when 16 byte border is not guaranteed.
-//                Function* pcmpistri128func = Intrinsic::getDeclaration(_env->getModule().get(), Intrinsic::x86_sse42_pcmpistri128);
-//                BasicBlock* bEnoughBytesLeft = BasicBlock::Create(context, "execute_spanner", _func);
-//                BasicBlock* bAtEndOfFile = BasicBlock::Create(context, "spanner_at_end_of_file", _func);
-//                BasicBlock* bSpannerDone = BasicBlock::Create(context, "spanner_done", _func);
-//
-//                auto val = builder.CreateLoad(spanner);
-//                auto bytesLeft = builder.CreateSub(builder.CreatePtrToInt(_endPtr, _env->i64Type()),
-//                                                   builder.CreatePtrToInt(ptr, _env->i64Type()));
-//                _env->printValue(builder, bytesLeft, "bytes left: ");
-//                auto enoughBytesLeftCond = builder.CreateICmpUGE(bytesLeft, _env->i64Const(16));
-//                llvm::Value* resVar = builder.CreateAlloca(_env->i32Type());
-//                builder.CreateCondBr(enoughBytesLeftCond, bEnoughBytesLeft, bAtEndOfFile);
-//
-//
-//                builder.SetInsertPoint(bEnoughBytesLeft);
-//                auto v16qi_type = llvm::VectorType::get(llvm::Type::getInt8Ty(context), 16);
-//                auto casted_ptr = builder.CreateBitCast(ptr, v16qi_type->getPointerTo(0));
-//
-//
-//                builder.CreateStore(builder.CreateCall(pcmpistri128func, {val, builder.CreateLoad(casted_ptr), _env->i8Const(0)}), resVar);
-//                builder.CreateBr(bSpannerDone);
-//
-//                // more complicated, fill values based on how many bytes are left.
-//                builder.SetInsertPoint(bAtEndOfFile);
-//
-//                _env->printValue(builder, bytesLeft, "in at end of file for spanner, there are bytes left: ");
-//
-//                auto v16qi_val = builder.CreateAlloca(v16qi_type);
-//                uint64_t idx = 0ul;
-//                llvm::Value* whereToStore = builder.CreateLoad(v16qi_val);
-//
-//                llvm::Value* curPtr = ptr;
-//                for(int i = 0; i < 16; ++i) {
-//                    auto value = builder.CreateSelect(builder.CreateICmpULT(curPtr, _endPtr),
-//                                                      builder.CreateLoad(curPtr), _env->i8Const(_escapechar));
-//                    curPtr = builder.CreateGEP(curPtr, _env->i32Const(1));
-//                    whereToStore = builder.CreateInsertElement(whereToStore, value, idx++);
-//                }
-//                builder.CreateStore(whereToStore, v16qi_val);
-//
-//                // spanner with v16qi_val
-//                auto spanner_result = builder.CreateCall(pcmpistri128func, {val, builder.CreateLoad(v16qi_val), _env->i8Const(0)});
-//
-//                // minimum with bytes left (spanner may be 16 or so)
-//                auto i32BytesLeft = builder.CreateSExtOrTrunc(bytesLeft, _env->i32Type());
-//                auto eofRes = builder.CreateSelect(builder.CreateICmpULT(i32BytesLeft,
-//                                                                         spanner_result), i32BytesLeft, spanner_result);
-//                builder.CreateStore(eofRes, resVar);
-//                builder.CreateBr(bSpannerDone);
-//
-//                // continue code gen
-//                builder.SetInsertPoint(bSpannerDone);
-//                auto res = builder.CreateLoad(resVar);
-//                return res;
-//            }
+            //  // safe version, i.e. when 16 byte border is not guaranteed.
+            //  Function* pcmpistri128func = Intrinsic::getDeclaration(_env->getModule().get(), Intrinsic::x86_sse42_pcmpistri128);
+            //  BasicBlock* bEnoughBytesLeft = BasicBlock::Create(context, "execute_spanner", _func);
+            //  BasicBlock* bAtEndOfFile = BasicBlock::Create(context, "spanner_at_end_of_file", _func);
+            //  BasicBlock* bSpannerDone = BasicBlock::Create(context, "spanner_done", _func);
+            //
+            //  auto val = builder.CreateLoad(spanner);
+            //  auto bytesLeft = builder.CreateSub(builder.CreatePtrToInt(_endPtr, _env->i64Type()),
+            //                                     builder.CreatePtrToInt(ptr, _env->i64Type()));
+            //  _env->printValue(builder, bytesLeft, "bytes left: ");
+            //  auto enoughBytesLeftCond = builder.CreateICmpUGE(bytesLeft, _env->i64Const(16));
+            //  llvm::Value* resVar = builder.CreateAlloca(_env->i32Type());
+            //  builder.CreateCondBr(enoughBytesLeftCond, bEnoughBytesLeft, bAtEndOfFile);
+            //
+            //
+            //  builder.SetInsertPoint(bEnoughBytesLeft);
+            //  auto v16qi_type = llvm::VectorType::get(llvm::Type::getInt8Ty(context), 16);
+            //  auto casted_ptr = builder.CreateBitCast(ptr, v16qi_type->getPointerTo(0));
+            //
+            //
+            //  builder.CreateStore(builder.CreateCall(pcmpistri128func, {val, builder.CreateLoad(casted_ptr), _env->i8Const(0)}), resVar);
+            //  builder.CreateBr(bSpannerDone);
+            //
+            //  // more complicated, fill values based on how many bytes are left.
+            //  builder.SetInsertPoint(bAtEndOfFile);
+            //
+            //  _env->printValue(builder, bytesLeft, "in at end of file for spanner, there are bytes left: ");
+            //
+            //  auto v16qi_val = builder.CreateAlloca(v16qi_type);
+            //  uint64_t idx = 0ul;
+            //  llvm::Value* whereToStore = builder.CreateLoad(v16qi_val);
+            //
+            //  llvm::Value* curPtr = ptr;
+            //  for(int i = 0; i < 16; ++i) {
+            //      auto value = builder.CreateSelect(builder.CreateICmpULT(curPtr, _endPtr),
+            //              builder.CreateLoad(curPtr), _env->i8Const(_escapechar));
+            //      curPtr = builder.CreateGEP(curPtr, _env->i32Const(1));
+            //      whereToStore = builder.CreateInsertElement(whereToStore, value, idx++);
+            //  }
+            //  builder.CreateStore(whereToStore, v16qi_val);
+            //
+            //  // spanner with v16qi_val
+            //  auto spanner_result = builder.CreateCall(pcmpistri128func, {val, builder.CreateLoad(v16qi_val), _env->i8Const(0)});
+            //
+            //  // minimum with bytes left (spanner may be 16 or so)
+            //  auto i32BytesLeft = builder.CreateSExtOrTrunc(bytesLeft, _env->i32Type());
+            //  auto eofRes = builder.CreateSelect(builder.CreateICmpULT(i32BytesLeft,
+            //          spanner_result), i32BytesLeft, spanner_result);
+            //  builder.CreateStore(eofRes, resVar);
+            //  builder.CreateBr(bSpannerDone);
+            //
+            //  // continue code gen
+            //  builder.SetInsertPoint(bSpannerDone);
+            //  auto res = builder.CreateLoad(resVar);
+            //  return res;
         }
 
         void CSVParseRowGenerator::buildUnquotedCellBlocks(llvm::BasicBlock *bUnquotedCellBegin,
@@ -233,7 +443,7 @@ namespace tuplex {
             BasicBlock *bUnquotedCellBeginSkipEntry = BasicBlock::Create(context, "unquoted_cell_begin_skip", _func);
 
 
-            IRBuilder<> builder(bUnquotedCellBegin);
+            IRBuilder builder(bUnquotedCellBegin);
             //_env->debugPrint(builder, "entering unquoted cell begin", _env->i64Const(0));
             // save cell begin ptr
             saveCellBegin(builder);
@@ -242,13 +452,8 @@ namespace tuplex {
 
             builder.SetInsertPoint(bUnquotedCellBeginSkipEntry);
 
-            // use fallback or SSE4.2.? change this here...
-#ifdef SSE42_MODE
-            // call spanner
+            // call spanner to search for delimiters
             auto spannerResult = executeSpanner(builder, _unquotedSpanner, currentPtr(builder));
-#else
-#error "backup solution needs to be added."
-#endif
 
             consume(builder, spannerResult);
             auto curChar = currentChar(builder);// safe version
@@ -271,6 +476,7 @@ namespace tuplex {
 
 
             builder.SetInsertPoint(bUnquotedCellEnd);
+            // _env->debugPrint(builder, "unquoted cell done, saving end ptr=", currentPtr(builder));
             saveCellEnd(builder, 0);
             builder.CreateBr(bCellDone);
         }
@@ -286,7 +492,7 @@ namespace tuplex {
             BasicBlock *bQuotedCellDQError = BasicBlock::Create(context, "quoted_cell_double_quote_error", _func);
             BasicBlock *bQuotedCellDQCheck = BasicBlock::Create(context, "quoted_cell_double_quote_check", _func);
             BasicBlock *bQuotedCellEndCheck = BasicBlock::Create(context, "quoted_cell_end_reached_check", _func);
-            IRBuilder<> builder(bQuotedCellBegin);
+            IRBuilder builder(bQuotedCellBegin);
 
             // (1) ------------------------------------------------------------------------
             //     Quoted Cell begin block [consume ", save cell start]
@@ -304,13 +510,9 @@ namespace tuplex {
             //     Quoted Cell skip entry block [execute spanner till " or \0 is found]
             //     ------------------------------------------------------------------------
             builder.SetInsertPoint(bQuotedCellBeginSkipEntry);
-            // use fallback or SSE4.2.? change this here...
-#ifdef SSE42_MODE
-            // call spanner
+
+            // call spanner to search for delimiters
             auto spannerResult = executeSpanner(builder, _quotedSpanner, currentPtr(builder));
-#else
-#error "fallback needs to be implemented"
-#endif
 
             // consume result
             consume(builder, spannerResult);
@@ -324,7 +526,7 @@ namespace tuplex {
             //        thus return doublequote error here
             // (3) else:
             //     => continue skipping
-            auto curChar = builder.CreateLoad(currentPtr(builder));
+            auto curChar = builder.CreateLoad(builder.getInt8Ty(), currentPtr(builder));
 
             auto isEndOfFile = builder.CreateICmpEQ(curChar, _env->i8Const(_escapechar));
             builder.CreateCondBr(isEndOfFile, bQuotedCellDQError, bQuotedCellDQCheck);
@@ -356,7 +558,7 @@ namespace tuplex {
             //     i.e. condition used here is to check whether next char is in {',', '\n', '\r', '\0'}
             //     ------------------------------------------------------------------------
             builder.SetInsertPoint(bQuotedCellEndCheck);
-            auto lastChar = builder.CreateLoad(currentPtr(builder));
+            auto lastChar = builder.CreateLoad(builder.getInt8Ty(), currentPtr(builder));
             auto nextChar = lookahead(builder);
 
             auto isNewLine = newlineCondition(builder, nextChar);
@@ -374,6 +576,7 @@ namespace tuplex {
             //     to cell end
             //     ------------------------------------------------------------------------
             builder.SetInsertPoint(bQuotedCellEnd);
+            // _env->debugPrint(builder, "quoted cell done, saving end ptr=", currentPtr(builder));
             saveCellEnd(builder, -1);
             builder.CreateBr(bCellDone);
         }
@@ -403,7 +606,7 @@ namespace tuplex {
 
             BasicBlock *bCellDone = BasicBlock::Create(context, "cell_done", _func);
             BasicBlock *bParseDone = BasicBlock::Create(context, "parse_done", _func);
-            IRBuilder<> builder(bEntry);
+            IRBuilder builder(bEntry);
             _lineBeginVar = builder.CreateAlloca(i8ptr_type);
             _lineEndVar = builder.CreateAlloca(i8ptr_type);
 
@@ -416,9 +619,9 @@ namespace tuplex {
             builder.SetInsertPoint(bEmptyInput);
             // fill result code
             assert(_resultPtr);
-            auto idx0 = builder.CreateGEP(_resultPtr, {_env->i32Const(0), _env->i32Const(0)});
-            auto idx1 = builder.CreateGEP(_resultPtr, {_env->i32Const(0), _env->i32Const(1)});
-            auto idx2 = builder.CreateGEP(_resultPtr, {_env->i32Const(0), _env->i32Const(2)});
+            auto idx0 = builder.CreateGEP(resultType(), _resultPtr, {_env->i32Const(0), _env->i32Const(0)});
+            auto idx1 = builder.CreateGEP(resultType(), _resultPtr, {_env->i32Const(0), _env->i32Const(1)});
+            auto idx2 = builder.CreateGEP(resultType(), _resultPtr, {_env->i32Const(0), _env->i32Const(2)});
             builder.CreateStore(_env->i64Const(0), idx0);
             builder.CreateStore(llvm::ConstantPointerNull::get(Type::getInt8PtrTy(context, 0)), idx1);
             builder.CreateStore(llvm::ConstantPointerNull::get(Type::getInt8PtrTy(context, 0)), idx2);
@@ -439,12 +642,9 @@ namespace tuplex {
             _storedCellBeginsVar = builder.CreateAlloca(i8ptr_type, 0, _env->i32Const(numCellsToSerialize()));
             _storedCellEndsVar = builder.CreateAlloca(i8ptr_type, 0, _env->i32Const(numCellsToSerialize()));
 
-#ifdef SSE42_MODE
-            _quotedSpanner = generateCellSpannerCode(builder, _quotechar, _escapechar);
-            _unquotedSpanner = generateCellSpannerCode(builder, _delimiter, '\r', '\n', _escapechar);
-#else
-#error "fallback missing here"
-#endif
+            // create masks or functions
+            _quotedSpanner = generateCellSpannerCode(builder, "quoted_spanner", _quotechar, _escapechar);
+            _unquotedSpanner = generateCellSpannerCode(builder, "unquoted_spanner", _delimiter, '\r', '\n', _escapechar);
 
             // setup current ptr and look ahead
             builder.CreateStore(_inputPtr, _currentPtrVar);
@@ -460,7 +660,7 @@ namespace tuplex {
 
             // newline setup
             builder.SetInsertPoint(bNewlineSkipCond);
-            auto isNewline = newlineCondition(builder, builder.CreateLoad(currentPtr(builder)));
+            auto isNewline = newlineCondition(builder, builder.CreateLoad(builder.getInt8Ty(), currentPtr(builder)));
             builder.CreateCondBr(isNewline, bNewlineSkipBody, bNewLine);
 
             // newline skip
@@ -482,10 +682,9 @@ namespace tuplex {
             builder.SetInsertPoint(bNewCell);
 
             // check lookahead and decide whether to parse unquoted or quoted cell!
-            auto isQuote = builder.CreateICmpEQ(builder.CreateLoad(currentPtr(builder)), _env->i8Const(_quotechar));
+            auto isQuote = builder.CreateICmpEQ(builder.CreateLoad(builder.getInt8Ty(), currentPtr(builder)),
+                                                _env->i8Const(_quotechar));
             builder.CreateCondBr(isQuote, bQuotedCellBegin, bUnquotedCellBegin);
-
-
 
             //  vars to use
             llvm::Value *spannerResult = nullptr;
@@ -515,7 +714,7 @@ namespace tuplex {
             // logic is: if cellNo <= numCells, then store it in prepared vector
             saveCurrentCell(builder);
             // update cell counter
-            builder.CreateStore(builder.CreateAdd(builder.CreateLoad(_cellNoVar), _env->i32Const(1)), _cellNoVar);
+            builder.CreateStore(builder.CreateAdd(builder.CreateLoad(builder.getInt32Ty(), _cellNoVar), _env->i32Const(1)), _cellNoVar);
             // serialize end...
 
 
@@ -551,7 +750,7 @@ namespace tuplex {
             using namespace llvm;
             auto &context = _env->getContext();
 
-            IRBuilder<> builder(bParseDone);
+            IRBuilder builder(bParseDone);
             saveLineEnd(builder); // depending
 
 
@@ -560,7 +759,7 @@ namespace tuplex {
             BasicBlock *bCorrectNoOfCells = BasicBlock::Create(context, "correct_no_of_cells", _func);
             BasicBlock *bWrongNoOfCells = BasicBlock::Create(context, "wrong_no_of_cells", _func);
 
-            auto correctNoOfCellCond = builder.CreateICmpEQ(_env->i32Const(numCells()), builder.CreateLoad(_cellNoVar));
+            auto correctNoOfCellCond = builder.CreateICmpEQ(_env->i32Const(numCells()), builder.CreateLoad(builder.getInt32Ty(), _cellNoVar));
             builder.CreateCondBr(correctNoOfCellCond, bCorrectNoOfCells, bWrongNoOfCells);
 
 
@@ -571,7 +770,8 @@ namespace tuplex {
 
             // select return code
             auto retCode = builder.CreateSelect(
-                    builder.CreateICmpULT(builder.CreateLoad(_cellNoVar), _env->i32Const(numCells())),
+                    builder.CreateICmpULT(builder.CreateLoad(builder.getInt32Ty(), _cellNoVar),
+                                          _env->i32Const(numCells())),
                     _env->i32Const(ecToI32(ExceptionCode::CSV_UNDERRUN)),
                     _env->i32Const(ecToI32(ExceptionCode::CSV_OVERRUN)));
             builder.CreateRet(retCode);
@@ -582,12 +782,14 @@ namespace tuplex {
             fillResultCode(builder, false);
         }
 
-        void CSVParseRowGenerator::saveCurrentCell(llvm::IRBuilder<> &builder) {
+        void CSVParseRowGenerator::saveCurrentCell(IRBuilder& builder) {
             using namespace llvm;
             auto &context = _env->getContext();
 
             // get current cellNo
-            auto curCellNo = builder.CreateLoad(_cellNoVar);
+            auto curCellNo = builder.CreateLoad(builder.getInt32Ty(), _cellNoVar);
+
+            // _env->printValue(builder, curCellNo, "\n---\nsaving current cell no=");
 
             // check if less than equal number of saved cells
             auto canStore = builder.CreateICmpUGE(_env->i32Const(numCells()), curCellNo);
@@ -596,6 +798,8 @@ namespace tuplex {
             // this is to subselect what cells to store
             canStore = builder.CreateAnd(canStore, storageCondition(builder, curCellNo));
 
+            // _env->printValue(builder, canStore, "can store cell:");
+
             BasicBlock *bCanStore = BasicBlock::Create(context, "saveCell", _func);
             BasicBlock *bDone = BasicBlock::Create(context, "savedCell", _func);
             builder.CreateCondBr(canStore, bCanStore, bDone);
@@ -603,23 +807,33 @@ namespace tuplex {
             builder.SetInsertPoint(bCanStore);
 
             // make sure indexvar is not larger than the rest!!!
-            auto curIdx = builder.CreateLoad(_storeIndexVar);
+            auto curIdx = builder.CreateLoad(builder.getInt32Ty(), _storeIndexVar);
             // set to vector
-            auto idxBegin = builder.CreateGEP(_storedCellBeginsVar, curIdx);
-            auto idxEnd = builder.CreateGEP(_storedCellEndsVar, curIdx);
+            auto idxBegin = builder.CreateGEP(_env->i8ptrType(), _storedCellBeginsVar, curIdx);
+            auto idxEnd = builder.CreateGEP(_env->i8ptrType(), _storedCellEndsVar, curIdx);
 
-            builder.CreateStore(builder.CreateLoad(_cellBeginVar), idxBegin);
-            builder.CreateStore(builder.CreateLoad(_cellEndVar), idxEnd);
+            auto cell_begin = builder.CreateLoad(_env->i8ptrType(), _cellBeginVar);
+            auto cell_end = builder.CreateLoad(_env->i8ptrType(), _cellEndVar);
+
+            // // debug print:
+            // _env->printValue(builder, curIdx, "saving cell no=");
+            // _env->printValue(builder, cell_begin, "cell begin=");
+            // _env->printValue(builder, cell_end, "cell end=");
+
+            builder.CreateStore(cell_begin, idxBegin);
+            builder.CreateStore(cell_end, idxEnd);
             builder.CreateStore(builder.CreateAdd(curIdx, _env->i32Const(1)), _storeIndexVar);
             builder.CreateBr(bDone);
 
             // update for new commands
             builder.SetInsertPoint(bDone);
+
+            // _env->debugPrint(builder, "---\n");
         }
 
 
         void
-        CSVParseRowGenerator::storeParseInfo(llvm::IRBuilder<> &builder, llvm::Value *lineStart, llvm::Value *lineEnd,
+        CSVParseRowGenerator::storeParseInfo(IRBuilder& builder, llvm::Value *lineStart, llvm::Value *lineEnd,
                                              llvm::Value *numParsedBytes) {
             assert(_resultPtr);
             assert(_resultPtr->getType() == resultType()->getPointerTo(0));
@@ -631,9 +845,9 @@ namespace tuplex {
             assert(numParsedBytes->getType() == _env->i64Type());
 
             // in any case, fill how many bytes have been parsed + line start/line end
-            auto idx0 = builder.CreateGEP(_resultPtr, {_env->i32Const(0), _env->i32Const(0)});
-            auto idx1 = builder.CreateGEP(_resultPtr, {_env->i32Const(0), _env->i32Const(1)});
-            auto idx2 = builder.CreateGEP(_resultPtr, {_env->i32Const(0), _env->i32Const(2)});
+            auto idx0 = builder.CreateGEP(resultType(), _resultPtr, {_env->i32Const(0), _env->i32Const(0)});
+            auto idx1 = builder.CreateGEP(resultType(), _resultPtr, {_env->i32Const(0), _env->i32Const(1)});
+            auto idx2 = builder.CreateGEP(resultType(), _resultPtr, {_env->i32Const(0), _env->i32Const(2)});
 
             builder.CreateStore(numParsedBytes, idx0);
             builder.CreateStore(lineStart, idx1);
@@ -643,33 +857,34 @@ namespace tuplex {
             auto numBitmapElements = bitmapBitCount() / 64;
 
             for (int i = 0; i < numBitmapElements; ++i) {
-                auto idx = builder.CreateGEP(_resultPtr, {_env->i32Const(0), _env->i32Const(3), _env->i32Const(i)});
+                auto idx = builder.CreateGEP(resultType(), _resultPtr,
+                                             {_env->i32Const(0), _env->i32Const(3), _env->i32Const(i)});
                 builder.CreateStore(_env->i64Const(0), idx);
             }
 
             // store nullptr, 0 in error buf
             auto num_struct_elements = resultType()->getStructNumElements();
-            auto idx_buf_length = CreateStructGEP(builder, _resultPtr, num_struct_elements -2);
-            auto idx_buf = CreateStructGEP(builder, _resultPtr, num_struct_elements - 1);
+            auto idx_buf_length = builder.CreateStructGEP(_resultPtr, resultType(), num_struct_elements - 2);
+            auto idx_buf = builder.CreateStructGEP(_resultPtr, resultType(), num_struct_elements - 1);
             assert(idx_buf_length->getType() == _env->i64ptrType());
             assert(idx_buf->getType() == _env->i8ptrType()->getPointerTo());
-            _env->storeNULL(builder, idx_buf_length);
-            _env->storeNULL(builder, idx_buf);
+            _env->storeNULL(builder, resultType()->getStructElementType(num_struct_elements - 2), idx_buf_length);
+            _env->storeNULL(builder, resultType()->getStructElementType(num_struct_elements - 1), idx_buf);
         }
 
 
         void
-        CSVParseRowGenerator::storeValue(llvm::IRBuilder<> &builder, int column, llvm::Value *val, llvm::Value *size,
+        CSVParseRowGenerator::storeValue(IRBuilder& builder, int column, llvm::Value *val, llvm::Value *size,
                                          llvm::Value *isnull) {
             assert(0 <= column && column < _cellDescs.size());
 
             if (val) {
-                auto idxVal = builder.CreateGEP(_resultPtr, {_env->i32Const(0), _env->i32Const(3 + 1 + 2 * column)});
+                auto idxVal = builder.CreateGEP(resultType(), _resultPtr, {_env->i32Const(0), _env->i32Const(3 + 1 + 2 * column)});
                 builder.CreateStore(val, idxVal);
             }
 
             if (size) {
-                auto idxSize = builder.CreateGEP(_resultPtr,
+                auto idxSize = builder.CreateGEP(resultType(), _resultPtr,
                                                  {_env->i32Const(0), _env->i32Const(3 + 1 + 2 * column + 1)});
                 builder.CreateStore(size, idxSize);
             }
@@ -677,11 +892,11 @@ namespace tuplex {
             // store bit in bitmap
             if (isnull) {
                 // fetch byte, load val
-                auto idxQword = builder.CreateGEP(_resultPtr,
+                auto idxQword = builder.CreateGEP(resultType(), _resultPtr,
                                                   {_env->i32Const(0), _env->i32Const(3), _env->i32Const(column / 64)});
-                auto qword = builder.CreateLoad(idxQword);
+                auto qword = builder.CreateLoad(builder.getInt64Ty(), idxQword);
                 auto new_qword = builder.CreateOr(qword, builder.CreateShl(builder.CreateZExt(isnull, _env->i64Type()),
-                                                                           column % 64));
+                                                                           _env->i64Const(column % 64)));
 
                 builder.CreateStore(new_qword, idxQword);
             }
@@ -689,7 +904,7 @@ namespace tuplex {
 
 
         codegen::SerializableValue
-        CSVParseRowGenerator::getColumnResult(llvm::IRBuilder<> &builder, int column, llvm::Value *result) const {
+        CSVParseRowGenerator::getColumnResult(IRBuilder& builder, int column, llvm::Value *result) const {
             using namespace llvm;
 
             // make sure column is within range!
@@ -718,9 +933,9 @@ namespace tuplex {
 
                 // extract bitmap bit!
                 // fetch byte, load val
-                auto idxQword = builder.CreateGEP(result,
+                auto idxQword = builder.CreateGEP(resultType(), result,
                                                   {_env->i32Const(0), _env->i32Const(3), _env->i32Const(column / 64)});
-                auto qword = builder.CreateLoad(idxQword);
+                auto qword = builder.CreateLoad(builder.getInt64Ty(), idxQword);
 
                 isnull = builder.CreateICmpNE(builder.CreateAnd(qword, _env->i64Const(1UL << (static_cast<uint64_t>(column) % 64))),
                                               _env->i64Const(0));
@@ -738,8 +953,8 @@ namespace tuplex {
             }
 
             // _env->debugPrint(builder, "get val");
-            val = builder.CreateLoad(
-                    builder.CreateGEP(result, {_env->i32Const(0), _env->i32Const(val_idx)}));
+            val = builder.CreateLoad(resultType()->getStructElementType(val_idx),
+                    builder.CreateGEP(resultType(), result, {_env->i32Const(0), _env->i32Const(val_idx)}));
             // _env->debugPrint(builder, "get size");
 
 #ifdef TRACE_PARSER
@@ -747,8 +962,8 @@ namespace tuplex {
             Logger::instance().logger("codegen").debug(_env->printStructType(result->getType()));
 #endif
 
-            size = builder.CreateLoad(
-                    builder.CreateGEP(result, {_env->i32Const(0), _env->i32Const(size_idx)}));
+            size = builder.CreateLoad(builder.getInt64Ty(),
+                    builder.CreateGEP(resultType(), result, {_env->i32Const(0), _env->i32Const(size_idx)}));
 
             // _env->printValue(builder, val, "got value: ");
             // _env->printValue(builder, size, "got size: ");
@@ -803,13 +1018,13 @@ namespace tuplex {
         }
 
         // @Todo: maybe rename this
-        void CSVParseRowGenerator::fillResultCode(llvm::IRBuilder<> &builder, bool errorOccured) {
+        void CSVParseRowGenerator::fillResultCode(IRBuilder& builder, bool errorOccurred) {
             using namespace llvm;
             auto &context = _env->getContext();
             auto i8ptr_type = Type::getInt8PtrTy(context, 0);
 
-            auto lineStart = builder.CreateLoad(_lineBeginVar);
-            auto lineEnd = builder.CreateLoad(_lineEndVar);
+            auto lineStart = builder.CreateLoad(i8ptr_type, _lineBeginVar);
+            auto lineEnd = builder.CreateLoad(i8ptr_type, _lineEndVar);
 
             auto ret_size_ptr = _env->CreateFirstBlockAlloca(builder, _env->i64Type());
 
@@ -819,7 +1034,7 @@ namespace tuplex {
             // create block for special error codes
             BasicBlock* bbValueError = BasicBlock::Create(context, "null_schema_mismatch", builder.GetInsertBlock()->getParent());
             BasicBlock* bbNullError = BasicBlock::Create(context, "null_schema_mismatch", builder.GetInsertBlock()->getParent());
-            IRBuilder<> errBuilder(bbValueError);
+            IRBuilder errBuilder(bbValueError);
             storeBadParseInfo(errBuilder);
             errBuilder.CreateRet(_env->i32Const(ecToI32(ExceptionCode::VALUEERROR))); // i.e. raised for bad number parse
             errBuilder.SetInsertPoint(bbNullError);
@@ -833,7 +1048,7 @@ namespace tuplex {
 
             // in the case of no error, generate serialization code with short circuit error handling
             size_t pos = 0;
-            if (!errorOccured) {
+            if (!errorOccurred) {
                 for (unsigned i = 0; i < _cellDescs.size(); ++i) {
                     auto desc = _cellDescs[i];
 
@@ -843,29 +1058,38 @@ namespace tuplex {
                         //BasicBlock *bIsNullValue = BasicBlock::Create(context, "cell" + std::to_string(i) + "_is_null", _func);
                         //BasicBlock *bNotNull = BasicBlock::Create(context, "cell" + std::to_string(i) + "_not_null", _func);
 
-                        llvm::Value *cellBegin = builder.CreateLoad(
-                                builder.CreateGEP(_storedCellBeginsVar, _env->i32Const(pos)));
-                        llvm::Value *cellEnd = builder.CreateLoad(
-                                builder.CreateGEP(_storedCellEndsVar, _env->i32Const(pos)));
+                        llvm::Value *cellBegin = builder.CreateLoad(i8ptr_type,
+                                builder.CreateGEP(i8ptr_type, _storedCellBeginsVar, _env->i32Const(pos)));
+                        llvm::Value *cellEnd = builder.CreateLoad(i8ptr_type,
+                                builder.CreateGEP(i8ptr_type, _storedCellEndsVar, _env->i32Const(pos)));
                         auto cellEndIncl = cellEnd;
                         // cellEnd is the char included. Many functions need though the one without the end.
-                        auto cellEndExcl = builder.CreateGEP(cellEnd, _env->i32Const(1));
+                        auto cellEndExcl = builder.MovePtrByBytes(cellEnd, 1);
 
                         // special case: single digit/single char values.
                         // i.e. we know it is not a null value. Hence, add +1 to cellEnd to allow for conversion
                         cellEnd = builder.CreateSelect(builder.CreateICmpEQ(cellBegin, cellEnd),
                                                        clampWithEndPtr(builder,
-                                                                       builder.CreateGEP(cellEnd, _env->i32Const(1))),
+                                                                       cellEndExcl),
                                                        cellEnd);
 
                         // // uncomment following lines to display which cell is saved
                         // // debug:
-                        //  _env->debugPrint(builder, "cell ", _env->i64Const(i));
-                        //  _env->debugCellPrint(builder, cellBegin, cellEnd);
-                        auto normalizedStr = builder.CreateCall(normalizeFunc, {_env->i8Const(_quotechar), cellBegin, cellEndIncl, ret_size_ptr});
+                        //  _env->debugPrint(builder, "serializing cell no=" + std::to_string(i) + " to pos=" + std::to_string(pos));
+                        //  _env->debugCellPrint(builder, cellBegin, cellEndIncl);
+                        auto normalizedStr = builder.CreateCall(normalizeFunc, {_env->i8Const(_quotechar),
+                                                                                cellBegin, cellEnd,
+                                                                                ret_size_ptr});
 
-                        //_env->debugPrint(builder, "column " + std::to_string(i) + " normalized str: ", normalizedStr);
-                        //_env->debugPrint(builder, "column " + std::to_string(i) + " normalized str isnull: ", _env->compareToNullValues(builder, normalizedStr, _null_values));
+                        // _env->debugPrint(builder, "column " + std::to_string(i) + " normalized str: ", normalizedStr);
+                        // _env->debugPrint(builder, "column " + std::to_string(i) + " normalized str isnull: ", _env->compareToNullValues(builder, normalizedStr, _null_values));
+
+                        // update cellEnd/cellBegin with normalizedStr and size
+                        auto normalizedStr_size = builder.CreateLoad(builder.getInt64Ty(), ret_size_ptr);
+                        // _env->debugPrint(builder, "column " + std::to_string(i) + " normalized str size: ", normalizedStr_size);
+
+                        cellBegin = normalizedStr;
+                        cellEnd = builder.MovePtrByBytes(cellBegin, builder.CreateSub(normalizedStr_size, _env->i64Const(1)));
 
                         auto type = desc.type;
 
@@ -877,18 +1101,17 @@ namespace tuplex {
                         auto valueIsNull = _env->compareToNullValues(builder, normalizedStr, _null_values, true);
 
                         // allocate vars where to store parse result or dummy
-                        Value* valPtr = _env->CreateFirstBlockAlloca(builder, _env->pythonToLLVMType(
-                                type.withoutOption()), "col" + std::to_string(pos));
+                        auto llvm_val_type = _env->pythonToLLVMType(type.withoutOption());
+                        Value* valPtr = _env->CreateFirstBlockAlloca(builder, llvm_val_type, "col" + std::to_string(pos));
                         Value* sizePtr = _env->CreateFirstBlockAlloca(builder, _env->i64Type(), "col" + std::to_string(pos) + "_size");
                         // null them
-                        _env->storeNULL(builder, valPtr);
-                        _env->storeNULL(builder, sizePtr);
+                        _env->storeNULL(builder, llvm_val_type, valPtr);
+                        _env->storeNULL(builder, _env->i64Type(), sizePtr);
 
                         // hack: nullable string, store empty string!
                         if(type.withoutOption() == python::Type::STRING) {
                             builder.CreateStore(_env->strConst(builder, ""), valPtr);
                         }
-
 
                         // if option type, null is ok. I.e. only parse if not null
                         BasicBlock* bbParseDone = BasicBlock::Create(context, "parse_done_col" + std::to_string(pos), _func);
@@ -908,7 +1131,14 @@ namespace tuplex {
                                                          Type::getInt8PtrTy(context, 0)}; // bool is implemented as i8*
                             FunctionType *FT = FunctionType::get(Type::getInt32Ty(context), argtypes, false);
                             auto func = _env->getModule()->getOrInsertFunction("fast_atob", FT);
-                            auto resCode = builder.CreateCall(func, {cellBegin, cellEnd, valPtr});
+                            auto i8_tmp_ptr = _env->CreateFirstBlockAlloca(builder, builder.getInt8Ty()); // could be single, lazy var
+                            auto resCode = builder.CreateCall(func, {cellBegin, cellEnd, i8_tmp_ptr});
+
+                            // cast to proper internal boolean type.
+                            auto i8_tmp_val = builder.CreateLoad(builder.getInt8Ty(), i8_tmp_ptr);
+                            auto casted_val = _env->upcastToBoolean(builder, i8_tmp_val);
+                            builder.CreateStore(casted_val, valPtr);
+
                             builder.CreateStore(_env->i64Const(sizeof(int64_t)), sizePtr);
                             auto parseOK = builder.CreateICmpEQ(resCode, _env->i32Const(ecToI32(ExceptionCode::SUCCESS)));
                             builder.CreateCondBr(parseOK, bbParseDone, bbValueError);
@@ -936,7 +1166,7 @@ namespace tuplex {
                         } else if(python::Type::STRING == type.withoutOption()) {
                             // super simple, just store result!
                             builder.CreateStore(normalizedStr, valPtr);
-                            builder.CreateStore(builder.CreateLoad(ret_size_ptr), sizePtr);
+                            builder.CreateStore(builder.CreateLoad(builder.getInt64Ty(), ret_size_ptr), sizePtr);
                             builder.CreateBr(bbParseDone);
                         } else if(python::Type::NULLVALUE == type) {
 
@@ -950,12 +1180,18 @@ namespace tuplex {
 #ifdef TRACE_PARSER
                         // debug
                         _env->debugPrint(builder, "column " + std::to_string(i) + " normalized str: ", normalizedStr);
-                        _env->debugPrint(builder, "column " + std::to_string(i) + " value: ", builder.CreateLoad(valPtr));
-                        _env->debugPrint(builder, "column " + std::to_string(i) + " size: ", builder.CreateLoad(sizePtr));
+                        _env->debugPrint(builder, "column " + std::to_string(i) + " value: ", builder.CreateLoad(llvm_val_type, valPtr));
+                        _env->debugPrint(builder, "column " + std::to_string(i) + " size: ", builder.CreateLoad(builder.getInt64Ty(), sizePtr));
                         _env->debugPrint(builder, "column " + std::to_string(i) + " isnull: ", valueIsNull);
 #endif
-                        storeValue(builder, pos, builder.CreateLoad(valPtr), builder.CreateLoad(sizePtr), valueIsNull);
-
+                        storeValue(builder,
+                                   pos,
+                                   builder.CreateLoad(llvm_val_type, valPtr),
+                                   builder.CreateLoad(builder.getInt64Ty(), sizePtr),
+                                   valueIsNull);
+#ifdef TRACE_PARSER
+                        _env->debugPrint(builder, "onto pos=" + std::to_string(pos + 1));
+#endif
                         pos++;
                     }
                 }
@@ -1002,12 +1238,13 @@ namespace tuplex {
                                            "parse_row",
                                            _env->getModule().get());
 
-            AttrBuilder ab;
 
-            // deactivate to lower compilation time?
-            // ab.addAttribute(Attribute::AlwaysInline);
-            _func->addAttributes(llvm::AttributeList::FunctionIndex, ab);
-
+//
+//            AttrBuilder ab;
+//
+//            // deactivate to lower compilation time?
+//            // ab.addAttribute(Attribute::AlwaysInline);
+//            _func->addAttributes(llvm::AttributeList::FunctionIndex, ab);
 
             vector<llvm::Value *> args;
             int counter = 0;
@@ -1023,7 +1260,7 @@ namespace tuplex {
             _endPtr = args[2];
         }
 
-        void CSVParseRowGenerator::storeBadParseInfo(llvm::IRBuilder<> &builder) {
+        void CSVParseRowGenerator::storeBadParseInfo(const IRBuilder& builder) {
             using namespace llvm;
             using namespace std;
 
@@ -1035,7 +1272,6 @@ namespace tuplex {
             // this is for null value optimization
             // super simple, just store result!
 
-
             vector<Value*> cells; // dequoted i8*
             vector<Value*> cell_sizes; // i64
 
@@ -1045,17 +1281,17 @@ namespace tuplex {
 
                 // should cell be serialized?
                 if (desc.willBeSerialized) {
-                    llvm::Value *cellBegin = builder.CreateLoad(
-                            builder.CreateGEP(_storedCellBeginsVar, _env->i32Const(pos)));
-                    llvm::Value *cellEnd = builder.CreateLoad(
-                            builder.CreateGEP(_storedCellEndsVar, _env->i32Const(pos)));
+                    llvm::Value *cellBegin = builder.CreateLoad(_env->i8ptrType(),
+                            builder.CreateGEP(_env->i8ptrType(), _storedCellBeginsVar, _env->i32Const(pos)));
+                    llvm::Value *cellEnd = builder.CreateLoad(_env->i8ptrType(),
+                            builder.CreateGEP(_env->i8ptrType(), _storedCellEndsVar, _env->i32Const(pos)));
                     auto cellEndIncl = cellEnd;
 
                     auto normalizedStr = builder.CreateCall(normalizeFunc,
                                                             {_env->i8Const(_quotechar), cellBegin, cellEndIncl,
                                                              ret_size_ptr});
                     cells.push_back(normalizedStr);
-                    cell_sizes.push_back(builder.CreateLoad(ret_size_ptr, true));
+                    cell_sizes.push_back(builder.CreateLoad(builder.getInt64Ty(), ret_size_ptr));
                     pos++;
                 }
             }
@@ -1090,7 +1326,7 @@ namespace tuplex {
             auto lastPtr = buf;
             // store num_cells!
             builder.CreateStore(_env->i64Const(cells.size()), builder.CreateBitCast(lastPtr, _env->i64ptrType()));
-            lastPtr = builder.CreateGEP(lastPtr, _env->i32Const(sizeof(int64_t)));
+            lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t));
             Value* acc_size = _env->i64Const(0);
             for(int i = 0; i < cells.size(); ++i) {
 
@@ -1103,34 +1339,34 @@ namespace tuplex {
                 Value* offset = builder.CreateAdd(acc_size, _env->i64Const((cells.size() - i) * sizeof(int64_t)));
 
                 //     info = (size << 32u) | offset;
-                Value* info = builder.CreateOr(offset, builder.CreateShl(cell_sizes[i], 32));
+                Value* info = builder.CreateOr(offset, builder.CreateShl(cell_sizes[i], _env->i64Const(32)));
 
                 //     *(uint64_t*)buf = info
                 builder.CreateStore(info, builder.CreateBitCast(lastPtr, _env->i64ptrType()));
 
                 // copy cell content
                 //     memcpy(buf_ptr + sizeof(int64_t) * (numCells + 1) + acc_size, cells[i], sizes[i]);
-                auto cell_idx = builder.CreateGEP(buf, builder.CreateAdd(acc_size, _env->i64Const(sizeof(int64_t) * (cells.size() + 1))));
+                auto cell_idx = builder.MovePtrByBytes(buf, builder.CreateAdd(acc_size, _env->i64Const(sizeof(int64_t) * (cells.size() + 1))));
                 builder.CreateMemCpy(cell_idx, 0, cells[i], 0, cell_sizes[i]);
 
                 //     buf += sizeof(int64_t);
                 //     acc_size += sizes[i];
-                lastPtr = builder.CreateGEP(lastPtr, _env->i32Const(sizeof(int64_t)));
+                lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t));
                 acc_size = builder.CreateAdd(acc_size, cell_sizes[i]);
             }
 
 
             // store buf + buf_size into ret struct
             auto num_struct_elements = resultType()->getStructNumElements();
-            auto idx_buf_length = CreateStructGEP(builder, _resultPtr, num_struct_elements -2);
-            auto idx_buf = CreateStructGEP(builder, _resultPtr, num_struct_elements - 1);
+            auto idx_buf_length = builder.CreateStructGEP(_resultPtr, resultType(), num_struct_elements - 2);
+            auto idx_buf = builder.CreateStructGEP(_resultPtr, resultType(), num_struct_elements - 1);
             assert(idx_buf_length->getType() == _env->i64ptrType());
             assert(idx_buf->getType() == _env->i8ptrType()->getPointerTo());
             builder.CreateStore(buf, idx_buf);
             builder.CreateStore(buf_size, idx_buf_length);
         }
 
-        SerializableValue CSVParseRowGenerator::getCellInfo(llvm::IRBuilder<> &builder, llvm::Value *result) const {
+        SerializableValue CSVParseRowGenerator::getCellInfo(IRBuilder& builder, llvm::Value *result) const {
             using namespace llvm;
 
             // cast result type if necessary
@@ -1138,11 +1374,11 @@ namespace tuplex {
                 throw std::runtime_error("result is not pointer of resulttype in " __FILE__);
 
             auto num_struct_elements = resultType()->getStructNumElements();
-            auto idx_buf_length = CreateStructGEP(builder, result, num_struct_elements -2);
-            auto idx_buf = CreateStructGEP(builder, result, num_struct_elements - 1);
+            auto idx_buf_length = builder.CreateStructGEP(result, resultType(), num_struct_elements - 2);
+            auto idx_buf = builder.CreateStructGEP(result, resultType(), num_struct_elements - 1);
             assert(idx_buf_length->getType() == _env->i64ptrType());
             assert(idx_buf->getType() == _env->i8ptrType()->getPointerTo());
-            return SerializableValue(builder.CreateLoad(idx_buf), builder.CreateLoad(idx_buf_length));
+            return SerializableValue(builder.CreateLoad(_env->i8ptrType(), idx_buf), builder.CreateLoad(builder.getInt64Ty(), idx_buf_length));
         }
     }
 }

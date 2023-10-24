@@ -62,9 +62,9 @@ namespace tuplex {
 
             // UDF input schema & parent output schema should match??
             if(parent())
-                return parent()->getOutputSchema(); // overwrite here, because UDFOperator always returns the UDF's input schema. However, for mapColumn it's not a row but an element!
-            else
-                return Schema::UNKNOWN;
+                return parent()->getOutputSchema(); // overwrite here, because UDFOperator always returns the UDF's input schema. However, for withColumn it's not a row but an element!
+
+            return Schema::UNKNOWN;
         }
 
         Schema getOutputSchema() const override;

@@ -14,56 +14,43 @@
 
 namespace tuplex {
     namespace codegen {
-
-
-        // cache structtype here
-        static std::unordered_map<llvm::LLVMContext*, llvm::StructType*> g_cached_types;
         llvm::StructType* PipelineBuilder::resultStructType(llvm::LLVMContext& ctx) {
             using namespace llvm;
 
             auto i32_type = Type::getInt32Ty(ctx);
             return llvm::StructType::get(ctx, {i32_type, i32_type, i32_type});
-
-            //// old
-            //// check if entry is already there
-            //auto it = g_cached_types.find(&ctx);
-            //if(it == g_cached_types.end()) {
-            //    auto i32_type = Type::getInt32Ty(ctx);
-            //    g_cached_types[&ctx] = llvm::StructType::create(ctx, {i32_type, i32_type, i32_type}, "struct.result", false);
-            //}
-            //return g_cached_types[&ctx];
         }
 
         // reusable function b.c. needs to be done in resolver too.
         // @TODO: fix this function, it's not doing proper upcasting...
-        FlattenedTuple castRow(llvm::IRBuilder<>& builder, const FlattenedTuple& row, const python::Type& target_type) {
+        FlattenedTuple castRow(IRBuilder& builder, const FlattenedTuple& row, const python::Type& target_type) {
             Logger::instance().defaultLogger().warn("using deprecated function, please change in code.");
             return row.upcastTo(builder, target_type);
         }
 
-        void PipelineBuilder::addVariable(llvm::IRBuilder<> &builder, const std::string name, llvm::Type *type,
+        void PipelineBuilder::addVariable(IRBuilder &builder, const std::string name, llvm::Type *type,
                                                    llvm::Value *initialValue) {
             _variables[name] = _env->CreateFirstBlockAlloca(builder, type);
-            //_variables[name] = builder.CreateAlloca(type, 0, nullptr, name);
+            //_variables[name] = std::make_tuple(type, builder.CreateAlloca(type, 0, nullptr, name));
 
             if(initialValue)
-                builder.CreateStore(initialValue, _variables[name]);
+                builder.CreateStore(initialValue, std::get<1>(_variables[name]));
         }
 
-        llvm::Value* PipelineBuilder::getVariable(llvm::IRBuilder<> &builder, const std::string name) {
+        llvm::Value* PipelineBuilder::getVariable(IRBuilder &builder, const std::string name) {
             assert(_variables.find(name) != _variables.end());
-            return builder.CreateLoad(_variables[name]);
+            return builder.CreateLoad(std::get<0>(_variables[name]), std::get<1>(_variables[name]));
         }
 
-        llvm::Value* PipelineBuilder::getPointerToVariable(llvm::IRBuilder<> &builder, const std::string name) {
+        llvm::Value* PipelineBuilder::getPointerToVariable(IRBuilder &builder, const std::string name) {
             assert(_variables.find(name) != _variables.end());
-            return _variables[name];
+            return std::get<1>(_variables[name]);
         }
 
-        void PipelineBuilder::assignToVariable(llvm::IRBuilder<> &builder, const std::string name,
+        void PipelineBuilder::assignToVariable(IRBuilder &builder, const std::string name,
                                                         llvm::Value *newValue) {
             assert(_variables.find(name) != _variables.end());
-            builder.CreateStore(newValue, _variables[name]);
+            builder.CreateStore(newValue, std::get<1>(_variables[name]));
         }
 
         void PipelineBuilder::createFunction(const std::string& Name, const python::Type& intermediateOutputType) {
@@ -102,9 +89,13 @@ namespace tuplex {
             _args = mapLLVMFunctionArgs(_func, argNames);
             auto argRow = llvm::dyn_cast<llvm::Argument>(_args["row"]);
 
-            // make result noalias + sret
-            llvm::dyn_cast<llvm::Argument>(_args["result"])->addAttr(Attribute::StructRet);
-            llvm::dyn_cast<llvm::Argument>(_args["result"])->addAttr(Attribute::NoAlias);
+            // @TODO: https://github.com/llvm/llvm-project/commit/a7f183afe7cc792c50d64b3b9ea22269c87ec35f#diff-799e8fd590fee711e1bbdf3524f8182b271caa0d03755cf5dae84f74a49f624d
+            // --> use this to add attributes. Below causes errors...
+
+            // this results in problems for LLVM 10+
+            // // make result noalias + sret
+            // llvm::dyn_cast<llvm::Argument>(_args["result"])->addAttr(Attribute::StructRet);
+            // llvm::dyn_cast<llvm::Argument>(_args["result"])->addAttr(Attribute::NoAlias);
 
             if(intermediateOutputType != python::Type::UNKNOWN) {
                 // set nocapture
@@ -121,7 +112,8 @@ namespace tuplex {
             _entryBlock = _lastBlock = BasicBlock::Create(context, "entry", _func);
 
             // initialize variables
-            IRBuilder<> builder(_constructorBlock);
+            IRBuilder builder(_constructorBlock);
+
             addVariable(builder, "exceptionCode", env().i64Type(),env().i64Const(0));
             addVariable(builder, "exceptionOperatorID", env().i64Type());
             addVariable(builder, "numOutputRows", env().i64Type());
@@ -152,7 +144,7 @@ namespace tuplex {
             assert(!_exceptionBlocks.empty());
 
             // current exception block
-            IRBuilder<> builder(_exceptionBlocks.back());
+            IRBuilder builder(_exceptionBlocks.back());
 
 
             // logger.debug("name of last exception block: " + _exceptionBlocks.back()->getName().str());
@@ -195,10 +187,10 @@ namespace tuplex {
             BasicBlock* lastNormalBlock = _lastBlock; // last block might be modified by filter & Co.
 
             // create new tupleVal
-            IRBuilder<> variableBuilder(_constructorBlock);
+            IRBuilder variableBuilder(_constructorBlock);
 
             // current exception block
-            IRBuilder<> builder(_exceptionBlocks.back());
+            IRBuilder builder(_exceptionBlocks.back());
 
             // remove block from the ones to be connected with the end!
             _exceptionBlocks.erase(_exceptionBlocks.end() - 1);
@@ -305,10 +297,10 @@ namespace tuplex {
             BasicBlock* lastNormalBlock = _lastBlock; // last block might be modified by filter & Co.
 
             // create new tupleVal
-            IRBuilder<> variableBuilder(_constructorBlock);
+            IRBuilder variableBuilder(_constructorBlock);
 
             // current exception block
-            IRBuilder<> builder(_exceptionBlocks.back());
+            IRBuilder builder(_exceptionBlocks.back());
 
             // remove block from the ones to be connected with the end!
             _exceptionBlocks.erase(_exceptionBlocks.end() - 1);
@@ -555,12 +547,12 @@ namespace tuplex {
             if(!cf.good())
                 return false;
 
-            IRBuilder<> builder(_lastBlock);
+            IRBuilder builder(_lastBlock);
 
             // store in what operator called here (needed for exception handler)
             assignToVariable(builder, "exceptionOperatorID", env().i64Const(operatorID));
             // as stated in the map operation, the result type needs to be allocated within the entry block
-            IRBuilder<> variableBuilder(_constructorBlock);
+            IRBuilder variableBuilder(_constructorBlock);
             _lastTupleResultVar = variableBuilder.CreateAlloca(cf.getLLVMResultType(env()), 0, nullptr);
             _lastRowInput = _lastRowResult;
 
@@ -626,7 +618,7 @@ namespace tuplex {
                 cf.output_python_type == python::Type::EMPTYDICT) {
                     logger.warn("filter operation will filter out all rows and yield therefore an empty dataset.");
 
-                    IRBuilder<> builder(_lastBlock);
+                    IRBuilder builder(_lastBlock);
                     BasicBlock *keepBlock = BasicBlock::Create(env().getContext(), "filter_keep", builder.GetInsertBlock()->getParent());
 
                     // if tuple is filtered away, simply go to destructor block
@@ -640,12 +632,12 @@ namespace tuplex {
                 }
             }
 
-            IRBuilder<> builder(_lastBlock);
+            IRBuilder builder(_lastBlock);
 
             // store in what operator called here (needed for exception handler)
             assignToVariable(builder, "exceptionOperatorID", env().i64Const(operatorID));
             // as stated in the map operation, the result type needs to be allocated within the entry block
-            IRBuilder<> variableBuilder(_constructorBlock);
+            IRBuilder variableBuilder(_constructorBlock);
             // for filter, do not update row
             auto resVal = variableBuilder.CreateAlloca(cf.getLLVMResultType(env()), 0, nullptr);
             _lastRowInput = _lastRowResult;
@@ -705,12 +697,12 @@ namespace tuplex {
             if(!cf.good())
                 return false;
 
-            IRBuilder<> builder(_lastBlock);
+            IRBuilder builder(_lastBlock);
 
             // store in what operator called here (needed for exception handler)
             assignToVariable(builder, "exceptionOperatorID", env().i64Const(operatorID));
             // as stated in the map operation, the result type needs to be allocated within the entry block
-            IRBuilder<> variableBuilder(_constructorBlock);
+            IRBuilder variableBuilder(_constructorBlock);
             auto resVal = variableBuilder.CreateAlloca(cf.getLLVMResultType(env()), 0, nullptr);
 
             // get input for this UDF
@@ -822,12 +814,12 @@ namespace tuplex {
             if(!cf.good())
                 return false;
 
-            IRBuilder<> builder(_lastBlock);
+            IRBuilder builder(_lastBlock);
 
             // store in what operator called here (needed for exception handler)
             assignToVariable(builder, "exceptionOperatorID", env().i64Const(operatorID));
             // as stated in the map operation, the result type needs to be allocated within the entry block
-            IRBuilder<> variableBuilder(_constructorBlock);
+            IRBuilder variableBuilder(_constructorBlock);
             auto resVal = variableBuilder.CreateAlloca(cf.getLLVMResultType(env()), 0, nullptr);
 
             // // print out input vals/params
@@ -930,7 +922,7 @@ namespace tuplex {
             auto& logger = Logger::instance().logger("codegen");
 
             // create ret of void function
-            llvm::IRBuilder<> builder(_lastBlock);
+            IRBuilder builder(_lastBlock);
 
             // link blocks
             builder.CreateBr(leaveBlock());
@@ -1005,7 +997,7 @@ namespace tuplex {
             // use last Row as row to serialize, change here if desired
             // @NOTE: ==> when using flatmap, call multipe times
             auto row = _lastRowResult;
-            IRBuilder<> builder(_lastBlock);
+            IRBuilder builder(_lastBlock);
             const auto& writeCallbackFnName = callbackName;
             auto userData = _argUserData;
 
@@ -1042,7 +1034,7 @@ namespace tuplex {
             return build();
         }
 
-        void PipelineBuilder::assignWriteCallbackReturnValue(llvm::IRBuilder<> &builder, int64_t operatorID,
+        void PipelineBuilder::assignWriteCallbackReturnValue(IRBuilder &builder, int64_t operatorID,
                                                         llvm::CallInst *callbackECVal) {
             // check result of callback, if not 0 then return exception
             assert(builder.GetInsertBlock());
@@ -1061,7 +1053,7 @@ namespace tuplex {
             builder.SetInsertPoint(bbCallbackDone);
         }
 
-        SerializableValue PipelineBuilder::makeKey(llvm::IRBuilder<> &builder,
+        SerializableValue PipelineBuilder::makeKey(IRBuilder &builder,
                                                    const tuplex::codegen::SerializableValue &key,
                                                    bool persist) {
             using namespace llvm;
@@ -1237,7 +1229,7 @@ namespace tuplex {
                 throw std::runtime_error("no support for " + keyType.desc() + " yet");
 
             // start codegen here...
-            IRBuilder<> builder(_lastBlock);
+            IRBuilder builder(_lastBlock);
             auto &ctx = env().getContext();
 
             // logic is quite easy
@@ -1382,12 +1374,16 @@ namespace tuplex {
             }
 
             // call hash callback! see i64_hash_row_f/str_hash_row_f in CodeDefs.h for signature
+            auto llvm_cbool_type = ctypeToLLVM<bool>(ctx);
             if(hashtableWidth == 8) {
                 FunctionType *hashCallback_type = FunctionType::get(Type::getVoidTy(ctx),
                                                                     {ctypeToLLVM<void *>(ctx),
-                                                                     ctypeToLLVM<int64_t>(ctx), ctypeToLLVM<bool>(ctx),
-                                                                     ctypeToLLVM<bool>(ctx), ctypeToLLVM<uint8_t *>(ctx),
-                                                                     ctypeToLLVM<int64_t>(ctx)}, false);
+                                                                     ctypeToLLVM<int64_t>(ctx),
+                                                                     llvm_cbool_type,
+                                                                     llvm_cbool_type,
+                                                                     ctypeToLLVM<uint8_t *>(ctx),
+                                                                     ctypeToLLVM<int64_t>(ctx)},
+                                                                     false);
                 auto callback_func = env().getModule()->getOrInsertFunction(callbackName, hashCallback_type);
                 builder.CreateCall(callback_func,
                                    {_argUserData, key, keyNull, cbool_const(ctx, bucketize), bucket, bucketSize});
@@ -1395,8 +1391,10 @@ namespace tuplex {
                 assert(hashtableWidth == 0xFFFFFFFF);
                 FunctionType *hashCallback_type = FunctionType::get(Type::getVoidTy(ctx),
                                                                     {ctypeToLLVM<void *>(ctx),
-                                                                     ctypeToLLVM<uint8_t *>(ctx), ctypeToLLVM<int64_t>(ctx),
-                                                                     ctypeToLLVM<bool>(ctx), ctypeToLLVM<uint8_t *>(ctx),
+                                                                     ctypeToLLVM<uint8_t *>(ctx),
+                                                                     ctypeToLLVM<int64_t>(ctx),
+                                                                     llvm_cbool_type,
+                                                                     ctypeToLLVM<uint8_t *>(ctx),
                                                                      ctypeToLLVM<int64_t>(ctx)}, false);
                 auto callback_func = env().getModule()->getOrInsertFunction(callbackName, hashCallback_type);
                 builder.CreateCall(callback_func,
@@ -1494,7 +1492,7 @@ namespace tuplex {
             return build();
         }
 
-        SerializableValue sprintf_csvwriter(llvm::IRBuilder<>& builder, LLVMEnvironment& env, const FlattenedTuple& row, std::string null_value, bool newLineDelimited, char delimiter, char quotechar) {
+        SerializableValue sprintf_csvwriter(IRBuilder& builder, LLVMEnvironment& env, const FlattenedTuple& row, std::string null_value, bool newLineDelimited, char delimiter, char quotechar) {
             using namespace std;
             using namespace llvm;
 
@@ -1524,11 +1522,12 @@ namespace tuplex {
                     fmtString += "%s";
                     auto boolCond = builder.CreateICmpNE(env.boolConst(false), val);
                     // select
-                    val = builder.CreateSelect(boolCond, env.strConst(builder, "True"), env.strConst(builder, "False"));
+                    val = builder.CreateSelect(boolCond, env.strConst(builder, "True"),
+                                               env.strConst(builder, "False"));
                     fmtSize = builder.CreateAdd(fmtSize, env.i64Const(5));
 
                 } else if(python::Type::I64 == type) {
-                    fmtString += "%lld";
+                    fmtString += "%" PRId64;
                     fmtSize = builder.CreateAdd(fmtSize, env.i64Const(20)); // roughly estimate formatted size with 20 bytes
                 } else if(python::Type::F64 == type) {
                     fmtString += "%f";
@@ -1668,7 +1667,7 @@ namespace tuplex {
         }
 
 
-        SerializableValue fast_csvwriter(llvm::IRBuilder<>& builder, LLVMEnvironment& env, const FlattenedTuple& row, std::string null_value, bool newLineDelimited, char delimiter, char quotechar) {
+        SerializableValue fast_csvwriter(IRBuilder& builder, LLVMEnvironment& env, const FlattenedTuple& row, std::string null_value, bool newLineDelimited, char delimiter, char quotechar) {
             using namespace std;
             using namespace llvm;
 
@@ -1858,8 +1857,8 @@ namespace tuplex {
                     builder.CreateCondBr(builder.CreateICmpEQ(is_null, env.i1Const(true)), bbNone, bbValue);
                     builder.SetInsertPoint(bbNone);
                     if(!null_value.empty()) {
-                        builder.CreateMemCpy(buf_ptr, 0, nullConst, 0, null_value.length());
-                        nullBufVal = builder.CreateGEP(buf_ptr, env.i32Const(null_value.length()));
+                        builder.CreateMemCpy(buf_ptr, 0, nullConst, 0, env.i64Const(null_value.length()));
+                        nullBufVal = builder.MovePtrByBytes(buf_ptr, null_value.length());
                     } else nullBufVal = buf_ptr;
 
                     builder.CreateBr(bbNext);
@@ -1875,12 +1874,12 @@ namespace tuplex {
                     BasicBlock* bbDone = BasicBlock::Create(ctx,"cell(" + to_string(i)+")_truefalse_done", func);
                     builder.CreateCondBr(boolCond, bbTrue, bbFalse);
                     builder.SetInsertPoint(bbTrue);
-                    builder.CreateMemCpy(buf_ptr, 0, trueConst, 0, trueValue.length());
-                    auto true_buf_ptr = builder.CreateGEP(buf_ptr, env.i32Const(trueValue.length()));
+                    builder.CreateMemCpy(buf_ptr, 0, trueConst, 0, env.i64Const(trueValue.length()));
+                    auto true_buf_ptr = builder.MovePtrByBytes(buf_ptr, trueValue.length());
                     builder.CreateBr(bbDone);
                     builder.SetInsertPoint(bbFalse);
-                    builder.CreateMemCpy(buf_ptr, 0, falseConst, 0, falseValue.length());
-                    auto false_buf_ptr = builder.CreateGEP(buf_ptr, env.i32Const(falseValue.length()));
+                    builder.CreateMemCpy(buf_ptr, 0, falseConst, 0, env.i64Const(falseValue.length()));
+                    auto false_buf_ptr = builder.MovePtrByBytes(buf_ptr, falseValue.length());
                     builder.CreateBr(bbDone);
 
                     builder.SetInsertPoint(bbDone);
@@ -1893,27 +1892,27 @@ namespace tuplex {
                     auto ft = i64toa_prototype(ctx, env.getModule().get());
                     // NOTE: must be <= 20
                     auto bytes_written = builder.CreateCall(ft, {val, buf_ptr});
-                    buf_ptr = builder.CreateGEP(buf_ptr, bytes_written);
+                    buf_ptr = builder.MovePtrByBytes(buf_ptr, bytes_written);
                 } else if(t.withoutOption() == python::Type::F64) {
                     // call ryu fast double to str function with fixed precision
                     auto ft = d2fixed_prototype(ctx, env.getModule().get());
                     // NOTE: must be <= 310 + max_float_precision
                     auto bytes_written = builder.CreateCall(ft, {val, env.i32Const(max_float_precision), buf_ptr});
-                    buf_ptr = builder.CreateGEP(buf_ptr, bytes_written);
+                    buf_ptr = builder.MovePtrByBytes(buf_ptr, bytes_written);
                 } else if(t.withoutOption() == python::Type::STRING) {
                     // Note by directly copying over without the additional rtmalloc, higher speed could be achieved as well...
                     // use SSE42 instructions to quickly check if quoting is necessary
                     // copy over everything but need to quote first
                     auto func = quoteForCSV_prototype(env.getContext(), env.getModule().get());
                     val = builder.CreateCall(func, {val, size, quotedSize, env.i8Const(delimiter), env.i8Const(quotechar)});
-                    size = builder.CreateLoad(quotedSize);
+                    size = builder.CreateLoad(builder.getInt64Ty(), quotedSize);
                     auto length = builder.CreateSub(size, env.i64Const(1));
                     builder.CreateMemCpy(buf_ptr, 0, val, 0, length);
-                    buf_ptr = builder.CreateGEP(buf_ptr, length);
+                    buf_ptr = builder.MovePtrByBytes(buf_ptr, length);
                 } else if(t.withoutOption() == python::Type::NULLVALUE) {
                     if(!null_value.empty()) {
-                        builder.CreateMemCpy(buf_ptr, 0, nullConst, 0, null_value.length());
-                        buf_ptr = builder.CreateGEP(buf_ptr, env.i32Const(null_value.length()));
+                        builder.CreateMemCpy(buf_ptr, 0, nullConst, 0, env.i64Const(null_value.length()));
+                        buf_ptr = builder.MovePtrByBytes(buf_ptr, null_value.length());
                     }
                 } else if(t.withoutOption() == python::Type::EMPTYTUPLE) {
                     auto emptyTupleConst = env.strConst(builder, "()");
@@ -1936,18 +1935,19 @@ namespace tuplex {
                 // store delimiter if not last column
                 if(i != num_columns - 1) {
                     builder.CreateStore(env.i8Const(delimiter), buf_ptr);
-                    buf_ptr = builder.CreateGEP(buf_ptr, env.i32Const(1)); // move by 1 byte
+                    buf_ptr = builder.MovePtrByBytes(buf_ptr, 1); // move by 1 byte
                 }
             }
 
             // newline delimited?
             if(newLineDelimited) {
                 builder.CreateStore(env.i8Const('\n'), buf_ptr);
-                buf_ptr = builder.CreateGEP(buf_ptr, env.i32Const(1)); // move by 1 byte
+                buf_ptr = builder.MovePtrByBytes(buf_ptr, 1); // move by 1 byte
             }
 
             // compute buf_length via ptr diff
-            auto buf_length = builder.CreateSub(builder.CreatePtrToInt(buf_ptr, env.i64Type()), builder.CreatePtrToInt(buf, env.i64Type()));
+            auto buf_length = builder.CreateSub(builder.CreatePtrToInt(buf_ptr, env.i64Type()),
+                                                builder.CreatePtrToInt(buf, env.i64Type()));
 
             // // debug:
             // env.printValue(builder, buf_length, "actual written size: ");
@@ -1978,7 +1978,7 @@ namespace tuplex {
 
             // use last Row as row to serialize, change here if desired
             auto row = _lastRowResult;
-            IRBuilder<> builder(_lastBlock);
+            IRBuilder builder(_lastBlock);
             auto writeCallbackFnName = callbackName;
             auto userData = _argUserData;
 
@@ -2010,7 +2010,7 @@ namespace tuplex {
             return build();
         }
 
-        PipelineBuilder::PipelineResult PipelineBuilder::call(llvm::IRBuilder<> &builder,
+        PipelineBuilder::PipelineResult PipelineBuilder::call(IRBuilder &builder,
                                                               llvm::Function *func,
                                                               const FlattenedTuple &ft,
                                                               llvm::Value *userData,
@@ -2043,9 +2043,13 @@ namespace tuplex {
             // load via StructGEP
             PipelineResult pr;
 
-            pr.resultCode = builder.CreateLoad(CreateStructGEP(builder, result_ptr, 0));
-            pr.exceptionOperatorID = builder.CreateLoad(CreateStructGEP(builder, result_ptr, 1));
-            pr.numProducedRows = builder.CreateLoad(CreateStructGEP(builder, result_ptr, 2));
+            auto llvm_struct_type = resultStructType(builder.getContext());
+
+            // note that result is 3x i32
+            pr.resultCode = builder.CreateLoad(builder.getInt32Ty(), builder.CreateStructGEP(result_ptr, llvm_struct_type, 0));
+            pr.exceptionOperatorID = builder.CreateLoad(builder.getInt32Ty(), builder.CreateStructGEP(result_ptr, llvm_struct_type, 1));
+            pr.numProducedRows = builder.CreateLoad(builder.getInt32Ty(), builder.CreateStructGEP(result_ptr, llvm_struct_type, 2));
+
             return pr;
         }
 
@@ -2081,7 +2085,7 @@ namespace tuplex {
             auto args = mapLLVMFunctionArgs(func, {"userData", "rowBuf", "bufSize", "rowNumber"});
 
             auto body = BasicBlock::Create(context, "body", func);
-            IRBuilder<> builder(body);
+            IRBuilder builder(body);
 
             FlattenedTuple tuple(&pip.env());
             tuple.init(pip.inputRowType());
@@ -2652,7 +2656,7 @@ namespace tuplex {
             }
 
 
-            IRBuilder<> builder(_lastBlock);
+            IRBuilder builder(_lastBlock);
             try {
                 logger.debug("upcasting from " + _lastRowResult.getTupleType().desc() + " to " + rowType.desc());
                 _lastRowResult = _lastRowResult.upcastTo(builder, rowType, true);
@@ -2664,18 +2668,19 @@ namespace tuplex {
             return true;
         }
 
-        void PipelineBuilder::beginForLoop(llvm::IRBuilder<> &builder, llvm::Value *numIterations) {
+        void PipelineBuilder::beginForLoop(IRBuilder &builder, llvm::Value *numIterations) {
 
             using namespace llvm;
             auto& context = builder.getContext();
 
-            // numIterations should be i32!
+            // numIterations should be i64!
+            numIterations = builder.CreateZExtOrTrunc(numIterations, _env->i64Type());
             assert(numIterations);
-            assert(numIterations->getType() == _env->i32Type());
+            assert(numIterations->getType() == _env->i64Type());
 
             // start loop here
-            auto loopVar = _env->CreateFirstBlockAlloca(builder, _env->i32Type(), "loop_i");
-            builder.CreateStore(_env->i32Const(0), loopVar);
+            auto loopVar = _env->CreateFirstBlockAlloca(builder, _env->i64Type(), "loop_i");
+            builder.CreateStore(_env->i64Const(0), loopVar);
             BasicBlock* bbLoopCondition = BasicBlock::Create(context, "loop_cond", builder.GetInsertBlock()->getParent());
             BasicBlock* bbLoopBody = BasicBlock::Create(context, "loop_body", builder.GetInsertBlock()->getParent());
 
@@ -2683,9 +2688,9 @@ namespace tuplex {
             builder.SetInsertPoint(bbLoopCondition);
 
             // loopVar < num_rows_to_join
-            auto cond = builder.CreateICmpNE(builder.CreateLoad(loopVar), numIterations);
+            auto cond = builder.CreateICmpNE(builder.CreateLoad(builder.getInt64Ty(), loopVar), numIterations);
             //_env->debugPrint(builder, "loop var is: ", builder.CreateLoad(loopVar));
-            builder.CreateStore(builder.CreateAdd(builder.CreateLoad(loopVar), _env->i32Const(1)), loopVar); // update loop var...
+            builder.CreateStore(builder.CreateAdd(builder.CreateLoad(builder.getInt64Ty(), loopVar), _env->i64Const(1)), loopVar); // update loop var...
             builder.CreateCondBr(cond, bbLoopBody, leaveBlock()); // loop done, i.e. pipeline ended
 
             builder.SetInsertPoint(bbLoopBody);
@@ -2696,7 +2701,7 @@ namespace tuplex {
         }
 
 
-        void PipelineBuilder::createInnerJoinBucketLoop(llvm::IRBuilder<>& builder,
+        void PipelineBuilder::createInnerJoinBucketLoop(IRBuilder& builder,
                                                         llvm::Value* num_rows_to_join,
                                                         llvm::Value* bucketPtrVar,
                                                         bool buildRight,
@@ -2711,11 +2716,11 @@ namespace tuplex {
             beginForLoop(builder, num_rows_to_join);
 
             // there should be at least one row (omit weird loop for now b.c. more difficult...)
-            auto bucketPtr = builder.CreateLoad(bucketPtrVar);
-            auto row_length = builder.CreateLoad(builder.CreatePointerCast(bucketPtr, _env->i32ptrType()));
-            auto row_ptr = builder.CreateGEP(bucketPtr, _env->i32Const(sizeof(int32_t)));
+            auto bucketPtr = builder.CreateLoad(_env->i8ptrType(), bucketPtrVar);
+            auto row_length = builder.CreateLoad(_env->i32Type(), builder.CreatePointerCast(bucketPtr, _env->i32ptrType()));
+            auto row_ptr = builder.MovePtrByBytes(bucketPtr, sizeof(int32_t));
             // update bucketPtr Var with sizeof(int32_t) + data length
-            builder.CreateStore(builder.CreateGEP(bucketPtr, builder.CreateAdd(row_length, _env->i32Const(sizeof(int32_t)))), bucketPtrVar);
+            builder.CreateStore(builder.MovePtrByBytes(bucketPtr, builder.CreateAdd(row_length, _env->i32Const(sizeof(int32_t)))), bucketPtrVar);
 
             //_env->debugPrint(builder, "decoding in-bucket row with length : ", row_length);
 
@@ -2802,7 +2807,7 @@ namespace tuplex {
             // _env->debugPrint(builder, "got result");
         }
 
-        void PipelineBuilder::createLeftJoinBucketLoop(llvm::IRBuilder<> &builder, llvm::Value *num_rows_to_join,
+        void PipelineBuilder::createLeftJoinBucketLoop(IRBuilder &builder, llvm::Value *num_rows_to_join,
                                                        llvm::Value *bucketPtrVar, bool buildRight,
                                                        python::Type buildBucketType, python::Type resultType,
                                                        int probeKeyIndex, llvm::Value *match_found) {
@@ -2833,11 +2838,11 @@ namespace tuplex {
 
             builder.SetInsertPoint(bbBucketResult);
             // there should be at least one row (omit weird loop for now b.c. more difficult...)
-            auto bucketPtr = builder.CreateLoad(bucketPtrVar);
-            auto row_length = builder.CreateLoad(builder.CreatePointerCast(bucketPtr, _env->i32ptrType()));
-            auto row_ptr = builder.CreateGEP(bucketPtr, _env->i32Const(sizeof(int32_t)));
+            auto bucketPtr = builder.CreateLoad(_env->i8ptrType(), bucketPtrVar);
+            auto row_length = builder.CreateLoad(_env->i32Type(), builder.CreatePointerCast(bucketPtr, _env->i32ptrType()));
+            auto row_ptr = builder.MovePtrByBytes(bucketPtr, sizeof(int32_t));
             // update bucketPtr Var with sizeof(int32_t) + data length
-            builder.CreateStore(builder.CreateGEP(bucketPtr, builder.CreateAdd(row_length, _env->i32Const(sizeof(int32_t)))), bucketPtrVar);
+            builder.CreateStore(builder.MovePtrByBytes(bucketPtr, builder.CreateAdd(row_length, _env->i32Const(sizeof(int32_t)))), bucketPtrVar);
 
             // _env->debugPrint(builder, "decoding in-bucket row with length : ", row_length);
 
@@ -2926,14 +2931,14 @@ namespace tuplex {
 
             assert(hash_map && null_bucket);
 
-            IRBuilder<> builder(_lastBlock);
+            IRBuilder builder(_lastBlock);
             auto& context = builder.getContext();
 
             // _env->debugPrint(builder, "start join of " + leftRowType.desc() + " and " + rightRowType.desc());
 
             // hashmap & nullbucket should be i8**ptrs
-            hash_map = builder.CreateLoad(hash_map);
-            null_bucket = builder.CreateLoad(null_bucket);
+            hash_map = builder.CreateLoad(_env->i8ptrType(), hash_map);
+            null_bucket = builder.CreateLoad(_env->i8ptrType(), null_bucket);
             assert(hash_map->getType() == _env->i8ptrType());
             assert(null_bucket->getType() == _env->i8ptrType());
 
@@ -3031,7 +3036,7 @@ namespace tuplex {
             }
 
             // condition on bucket_value, i.e. if bucket != nullptr, then there's a match!
-            auto found_val = builder.CreateICmpNE(builder.CreateLoad(bucket_value), _env->i8nullptr());
+            auto found_val = builder.CreateICmpNE(builder.CreateLoad(_env->i8ptrType(), bucket_value), _env->i8nullptr());
 
 #ifndef NDEBUG
             // _env->debugPrint(builder, "match found: ", found_val);
@@ -3048,8 +3053,8 @@ namespace tuplex {
                 // bucket is valid, so extract num rows found
                 // (cf. TransformTask for in-bucket data structure)
                 //uint64_t info = (num_rows << 32ul) | bucket_size;
-                auto bucket = builder.CreateLoad(bucket_value);
-                auto info = builder.CreateLoad(builder.CreatePointerCast(bucket, _env->i64ptrType()));
+                auto bucket = builder.CreateLoad(_env->i8ptrType(), bucket_value);
+                auto info = builder.CreateLoad(_env->i64Type(), builder.CreatePointerCast(bucket, _env->i64ptrType()));
                 // truncation yields lower 32 bit (= bucket_size)
                 auto bucket_size = builder.CreateTrunc(info, _env->i32Type(), "bucket_size");
                 // right shift by 32 yields size (= num_rows)
@@ -3058,7 +3063,7 @@ namespace tuplex {
 
                 // var for bucket ptr
                 auto bucketPtrVar = _env->CreateFirstBlockAlloca(builder, _env->i8ptrType(), "bucket_ptr");
-                builder.CreateStore(builder.CreateGEP(bucket, _env->i32Const(sizeof(int64_t))), bucketPtrVar); // offset bucket by 8 bytes / 64 bit
+                builder.CreateStore(builder.MovePtrByBytes(bucket, sizeof(int64_t)), bucketPtrVar); // offset bucket by 8 bytes / 64 bit
 
                 createInnerJoinBucketLoop(builder, num_rows_to_join, bucketPtrVar, buildRight, buildBucketType,
                                           resultType, probeKeyIndex);
@@ -3080,15 +3085,15 @@ namespace tuplex {
                 // bucket is valid, so extract num rows found
                 // (cf. TransformTask for in-bucket data structure)
                 //uint64_t info = (num_rows << 32ul) | bucket_size;
-                auto bucket = builder.CreateLoad(bucket_value);
-                auto info = builder.CreateLoad(builder.CreatePointerCast(bucket, _env->i64ptrType()));
+                auto bucket = builder.CreateLoad(_env->i8ptrType(), bucket_value);
+                auto info = builder.CreateLoad(_env->i64Type(), builder.CreatePointerCast(bucket, _env->i64ptrType()));
                 // truncation yields lower 32 bit (= bucket_size)
                 auto bucket_size = builder.CreateTrunc(info, _env->i32Type(), "bucket_size");
                 // right shift by 32 yields size (= num_rows)
                 auto bucket_num_rows_to_join = builder.CreateLShr(info, 32, "num_rows_to_join");
                 bucket_num_rows_to_join = builder.CreateTrunc(bucket_num_rows_to_join, _env->i32Type());
 
-                builder.CreateStore(builder.CreateGEP(bucket, _env->i32Const(sizeof(int64_t))), bucketPtrVar); // offset bucket by 8 bytes / 64 bit
+                builder.CreateStore(builder.MovePtrByBytes(bucket, sizeof(int64_t)), bucketPtrVar); // offset bucket by 8 bytes / 64 bit
 
                 builder.CreateBr(bbNext);
 
@@ -3127,17 +3132,13 @@ namespace tuplex {
            auto aggLLVMType = env().pythonToLLVMType(aggType);
            assert(aggLLVMType->getPointerTo() == intermediateOutputPtr()->getType());
 
-           IRBuilder<> builder(_lastBlock);
+           IRBuilder builder(_lastBlock);
            auto& context = builder.getContext();
 
            // fetch aggregate value
            FlattenedTuple ftAgg = FlattenedTuple::fromLLVMStructVal(_env.get(), builder, intermediateOutputPtr(), aggType);
 
-           // debug code
-           auto x0 = builder.CreateStructGEP(intermediateOutputPtr(), 0);
-           auto x1 = builder.CreateLoad(x0);
-
-           // // compile aggregation function and add it in.
+           // compile aggregation function and add it in.
 
             // new combined flattened tuple to pass to function
             auto combinedType = python::Type::makeTupleType({aggType, _lastRowResult.getTupleType()}); // this should be compatible to input type of aggUDF!
@@ -3161,7 +3162,7 @@ namespace tuplex {
            // store in what operator called here (needed for exception handler)
            assignToVariable(builder, "exceptionOperatorID", env().i64Const(operatorID));
            // as stated in the map operation, the result type needs to be allocated within the entry block
-           IRBuilder<> variableBuilder(_constructorBlock);
+           IRBuilder variableBuilder(_constructorBlock);
            _lastTupleResultVar = variableBuilder.CreateAlloca(cf.getLLVMResultType(env()),
                                                               0, nullptr);
            _lastRowInput = _lastRowResult;

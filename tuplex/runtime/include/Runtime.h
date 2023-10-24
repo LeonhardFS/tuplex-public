@@ -151,6 +151,9 @@ extern double rt_py_pow(double base, double exponent, int64_t* ecCode);
 // this is a fix b.c. LLVM9 has a bug when it comes to storing double values into an array...
 extern void llvm9_store_double(double* ptr, double value, int64_t idx);
 
+// spanner function for CSV parsing
+int fallback_spanner(const char* ptr, const char c1, const char c2, const char c3, const char c4);
+
 #ifdef __cplusplus
 }
 #endif

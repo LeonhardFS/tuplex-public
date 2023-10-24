@@ -3,12 +3,9 @@ CMAKE_MINIMUM_REQUIRED(VERSION 3.12 FATAL_ERROR)
 # name of the lambda function
 set(LAMBDA_NAME tplxlam)
 
-# enable c++14
-set(CMAKE_CXX_STANDARD 14)
+# enable c++17
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-# enable c11
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # only compiles on Linux, check here
 if(NOT ${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
@@ -47,10 +44,12 @@ add_executable(${LAMBDA_NAME} "src/main.cc"
 set_target_properties(${LAMBDA_NAME} PROPERTIES ENABLE_EXPORTS 1)
 message(STATUS "Protobuf libs are: ${Protobuf_LIBRARIES}")
 
+# for tigetnum, set_curterm, del_curterm
+find_package(Curses REQUIRED)
+
 # note: for the Lambda, the interpreter gets actually embedded. Therefore link to it!
-target_link_libraries(${LAMBDA_NAME} PRIVATE AWS::aws-lambda-runtime
-        libio libutils libcore libcodegen libcpythonadapter
-        ${AWSSDK_LINK_LIBRARIES} ${Boost_LIBRARIES} ${LibMagic_LIBRARIES} ${Protobuf_LIBRARIES} ${Python3_LIBRARIES})
+target_link_libraries(${LAMBDA_NAME} PRIVATE AWS::aws-lambda-runtime ${AWSSDK_LINK_LIBRARIES}
+        libio libutils libcore libcodegen libcpythonadapter ${Protobuf_LIBRARIES} ${Boost_LIBRARIES} ${ORC_LIBRARIES} ${LibMagic_LIBRARIES} ${Python3_LIBRARIES} ${CURSES_LIBRARIES})
 target_compile_features(${LAMBDA_NAME} PRIVATE "cxx_std_11")
 
 # add dw libs for more insight into debugging

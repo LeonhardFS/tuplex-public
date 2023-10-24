@@ -77,17 +77,15 @@ namespace tuplex {
             for (int i = 0; i < func->arg_size(); ++i) {
                 auto& arg = *(func->arg_begin() + i);
 
-                // set attribute
+                // set attribute names
                 if(0 == i) {
                     arg.setName("outRow");
-                    // maybe align by 8?
-
                     _retValPtr = &arg; // set retval ptr!
                 }
 
                 if(1 == i) {
                     arg.setName("inRow");
-                    //arg.addAttr(Attribute::ByVal);
+                    // arg.addAttr(Attribute::ByVal);
                     // maybe align by 8?
                 }
             }
@@ -106,7 +104,7 @@ namespace tuplex {
             // create first basic block within function & add statements to load tuple elements correctly
             // and store them via a lookup map
             _body = BasicBlock::Create(_context, "body", _func._func);
-            IRBuilder<> builder(_body);
+            IRBuilder builder(_body);
 
             unflattenParameters(builder, parameters, isFirstArgTuple);
         }
@@ -140,7 +138,7 @@ namespace tuplex {
         }
 
 
-        void LambdaFunctionBuilder::unflattenParameters(llvm::IRBuilder<> &builder, NParameterList *params,
+        void LambdaFunctionBuilder::unflattenParameters(codegen::IRBuilder &builder, NParameterList *params,
                                                         bool isFirstArgTuple) {
             assert(_func._pyArgType != python::Type::UNKNOWN);
             assert(_func._func);
@@ -190,7 +188,7 @@ namespace tuplex {
         }
 
         LambdaFunction LambdaFunctionBuilder::exitWithException(const ExceptionCode &ec) {
-            auto builder = getLLVMBuilder();
+            auto builder = getIRBuilder();
             auto ecCode = _env->i64Const(ecToI64(ec));
             builder.CreateRet(ecCode);
             _body = nullptr;
@@ -201,7 +199,7 @@ namespace tuplex {
             assert(_retValPtr);
 
             auto res = retValue.val;
-            auto builder = getLLVMBuilder();
+            auto builder = getIRBuilder();
             auto output_type = _fto.getTupleType();
 
             // @TODO: optimize & test/resolve for tuples! it's not a struct type but rather a pointer to a struct type!
@@ -227,7 +225,7 @@ namespace tuplex {
             }
 
             // retValue might be also a pointer to a tuple type (need to check b.c. of list/dict also using pointers!)
-            if(res && output_type.isTupleType() && res->getType()->isPointerTy() && res->getType()->getPointerElementType()->isStructTy()) {
+            if(res && output_type.isTupleType() && res->getType()->isPointerTy() && output_type.isTupleType()) {
                 _fto = FlattenedTuple::fromLLVMStructVal(_env, builder, res, output_type);
                 res = _fto.getLoad(builder);
             }
@@ -276,7 +274,7 @@ namespace tuplex {
         }
 
 
-        llvm::IRBuilder<> LambdaFunctionBuilder::addException(llvm::IRBuilder<> &builder,
+        codegen::IRBuilder LambdaFunctionBuilder::addException(const codegen::IRBuilder &builder,
                                                               llvm::Value *ecCode,
                                                               llvm::Value *condition,
                                                               const std::string& exception_message) {
@@ -321,7 +319,7 @@ namespace tuplex {
             return builder;
         }
 
-        llvm::IRBuilder<> LambdaFunctionBuilder::addException(llvm::IRBuilder<> &builder, ExceptionCode ec,
+        IRBuilder LambdaFunctionBuilder::addException(const codegen::IRBuilder &builder, ExceptionCode ec,
                                                               llvm::Value *condition, const std::string& exception_message) {
             assert(condition && condition->getType() == _env->i1Type());
             return addException(builder, _env->i32Const(ecToI32(ec)), condition, exception_message);
@@ -346,7 +344,7 @@ namespace tuplex {
             return lf;
         }
 
-        void LambdaFunction::callWithExceptionHandler(llvm::IRBuilder<> &builder, llvm::Value* const resVal, llvm::BasicBlock* const handler,
+        void LambdaFunction::callWithExceptionHandler(codegen::IRBuilder& builder, llvm::Value* const resVal, llvm::BasicBlock* const handler,
                                                               llvm::Value* const exceptionCode,
                                                               const std::vector<llvm::Value *>&  args) {
 

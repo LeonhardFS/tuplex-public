@@ -69,7 +69,7 @@ namespace tuplex {
             bool containsVarLenField() const;
 
             // encode i1 arrays as 64bit bitmaps to easily store!
-            std::vector<llvm::Value*> getBitmap(llvm::IRBuilder<> &builder) const;
+            std::vector<llvm::Value*> getBitmap(const codegen::IRBuilder& builder) const;
 
             // print write info
             inline void printWriteInfo(llvm::IRBuilder<>& builder, llvm::Value* target_ptr, llvm::Value* base_ptr, llvm::Value* size) {
@@ -166,7 +166,7 @@ namespace tuplex {
              * @param isnull nullptr or i1 element
              * @return
              */
-            void set(llvm::IRBuilder<> &builder, const std::vector<int>& index, llvm::Value *value, llvm::Value *size, llvm::Value *is_null);
+            void set(const codegen::IRBuilder& builder, const std::vector<int>& index, llvm::Value *value, llvm::Value *size, llvm::Value *is_null);
 
             /*!
              * assign subtree of this flattenedtuple via another flattenedtuple
@@ -174,7 +174,7 @@ namespace tuplex {
              * @param index
              * @param t
              */
-            void set(llvm::IRBuilder<>& builder, const std::vector<int>& index, const FlattenedTuple& t);
+            void set(const codegen::IRBuilder& builder, const std::vector<int>& index, const FlattenedTuple& t);
 
             /*!
              * sets a dummy value at the current index position. I.e., a null-value for the corresponding type
@@ -188,7 +188,7 @@ namespace tuplex {
              * @param builder
              * @param input memory addr from where to start deserialization
              */
-            void deserializationCode(llvm::IRBuilder<> &builder, llvm::Value *input);
+            void deserializationCode(const codegen::IRBuilder& builder, llvm::Value *input);
 
 
             /*!
@@ -199,7 +199,7 @@ namespace tuplex {
              * @param insufficientCapacityHandler basicblock where to jump to when there are not enough bytes left to store the data.
              * @return serialization size (how many bytes where written)
              */
-            llvm::Value *serializationCode(llvm::IRBuilder<> &builder, llvm::Value *output,
+            llvm::Value *serializationCode(const codegen::IRBuilder& builder, llvm::Value *output,
                                            llvm::Value *capacity, llvm::BasicBlock *insufficientCapacityHandler) const;
 
             /*!
@@ -208,14 +208,14 @@ namespace tuplex {
              * @param ptr
              * @return difference of pointer pos to start ptr (i.e., serialized size)
              */
-            llvm::Value* serialize(llvm::IRBuilder<> &builder, llvm::Value *ptr) const;
+            llvm::Value* serialize(const codegen::IRBuilder &builder, llvm::Value *ptr) const;
 
             /*!
              * allocates via internal enviornment new memory block and fits tuple in
              * @param builder
              * @return memory pointer and size of serialized tuple
              */
-            codegen::SerializableValue serializeToMemory(llvm::IRBuilder<> &builder) const;
+            codegen::SerializableValue serializeToMemory(const codegen::IRBuilder& builder) const;
 
 
             std::vector<llvm::Type *> getTypes();
@@ -230,7 +230,7 @@ namespace tuplex {
               * @return
               */
             static FlattenedTuple fromLLVMStructVal(LLVMEnvironment *env,
-                                                    llvm::IRBuilder<> &builder,
+                                                    const codegen::IRBuilder& builder,
                                                     llvm::Value *ptr,
                                                     const python::Type &type);
 
@@ -240,7 +240,7 @@ namespace tuplex {
              * @param row
              * @return
              */
-            static FlattenedTuple fromRow(LLVMEnvironment* env,  llvm::IRBuilder<>& builder, const Row& row);
+            static FlattenedTuple fromRow(LLVMEnvironment* env, const codegen::IRBuilder& builder, const Row& row);
 
             /*!
              * returns the nesting level for the flattened elements according to internal nesting algorithm
@@ -254,7 +254,7 @@ namespace tuplex {
              * variable length (serialized) type, 8 bytes for the varlen field is added.
              * @return llvm::Value representing the total size of the tuple
              */
-            llvm::Value *getSize(llvm::IRBuilder<> &builder) const;
+            llvm::Value *getSize(const codegen::IRBuilder& builder) const;
 
             /*!
              * sets ith element to be value/size. Automatically decodes tuples, ...
@@ -264,7 +264,7 @@ namespace tuplex {
              * @param val
              * @param size
              */
-            void setElement(llvm::IRBuilder<> &builder,
+            void setElement(const codegen::IRBuilder& builder,
                             const int iElement,
                             llvm::Value *val,
                             llvm::Value *size,
@@ -284,7 +284,7 @@ namespace tuplex {
              * returns the (flattened) tuple as value after alloc and filling in everything
              * @return
              */
-            llvm::Value *getLoad(llvm::IRBuilder<> &builder) const;
+            llvm::Value *getLoad(const codegen::IRBuilder& builder) const;
 
 
             /*!
@@ -292,7 +292,7 @@ namespace tuplex {
              * @param builder
              * @return ptr to getLLVMType() filled with data elements
              */
-            llvm::Value* loadToPtr(llvm::IRBuilder<>& builder, const std::string& twine="") const {
+            llvm::Value* loadToPtr(const codegen::IRBuilder& builder, const std::string& twine="") const {
                 auto ptr = alloc(builder, twine);
                 storeTo(builder, ptr);
                 return ptr;
@@ -310,7 +310,7 @@ namespace tuplex {
              * @param builder
              * @return alloc tuple
              */
-            llvm::Value *alloc(llvm::IRBuilder<> &builder, const std::string& twine="") const;
+            llvm::Value *alloc(const codegen::IRBuilder& builder, const std::string& twine="") const;
 
             /*!
              * stores contents to llvm struct val ptr.
@@ -319,7 +319,7 @@ namespace tuplex {
              * @param is_volatile whether to store to volatile memory location or not
              * @return
              */
-            void storeTo(llvm::IRBuilder<> &builder, llvm::Value *ptr, bool is_volatile=false) const;
+            void storeTo(const codegen::IRBuilder& builder, llvm::Value *ptr, bool is_volatile=false) const;
 
             /*!
              * returns the value at the given index. May be a tuple
@@ -327,7 +327,7 @@ namespace tuplex {
              * @param index
              * @return
              */
-            codegen::SerializableValue getLoad(llvm::IRBuilder<> &builder, const std::vector<int> &index);
+            codegen::SerializableValue getLoad(const codegen::IRBuilder& builder, const std::vector<int> &index);
 
             /*!
              * returns internal LLVM type to represent this flattened tuple structure
@@ -344,6 +344,39 @@ namespace tuplex {
                 return _flattenedTupleType;
             }
         };
+
+        extern std::shared_ptr<FlattenedTuple> decodeCells(LLVMEnvironment& env, IRBuilder& builder,
+                                                           const python::Type& rowType,
+                                                           size_t numCells,
+                                                           llvm::Value* cellsPtr,
+                                                           llvm::Value* sizesPtr,
+                                                           llvm::BasicBlock* nullErrorBlock,
+                                                           llvm::BasicBlock* valueErrorBlock,
+                                                           const std::vector<std::string>& null_values,
+                                                           const std::vector<size_t>& cell_indices);
+
+        extern std::shared_ptr<FlattenedTuple> decodeCells(LLVMEnvironment& env, IRBuilder& builder,
+                                                    const python::Type& rowType,
+                                                    llvm::Value* numCells,
+                                                    llvm::Value* cellsPtr,
+                                                    llvm::Value* sizesPtr,
+                                                    llvm::BasicBlock* cellCountMismatchErrorBlock,
+                                                    llvm::BasicBlock* nullErrorBlock,
+                                                    llvm::BasicBlock* valueErrorBlock,
+                                                    const std::vector<std::string>& null_values,
+                                                           const std::vector<size_t>& cell_indices);
+
+        inline std::shared_ptr<FlattenedTuple> decodeCells(LLVMEnvironment& env, IRBuilder& builder,
+                                                           const python::Type& rowType,
+                                                           llvm::Value* numCells,
+                                                           llvm::Value* cellsPtr,
+                                                           llvm::Value* sizesPtr,
+                                                           llvm::BasicBlock* exceptionBlock,
+                                                           const std::vector<std::string>& null_values,
+                                                           const std::vector<size_t>& cell_indices) {
+            return decodeCells(env, builder, rowType, numCells, cellsPtr, sizesPtr,
+                               exceptionBlock, exceptionBlock, exceptionBlock, null_values, cell_indices);
+        }
 
         /*!
          * convert normal tuple to general tuple by placing dummies.
@@ -537,6 +570,5 @@ namespace tuplex {
         }
     }
 }
-
 
 #endif //TUPLEX_FLATTENEDTUPLE_H

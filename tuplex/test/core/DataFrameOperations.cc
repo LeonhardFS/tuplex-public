@@ -71,8 +71,7 @@ TEST_F(DataFrameTest, PrefixNullTest) {
     auto confB = microTestOptions();
     // this should also work...
     confB.set("tuplex.optimizer.generateParser", "true");
-//    for(const auto& conf : vector<ContextOptions>{confB, confA}) {
-    for(const auto& conf : vector<ContextOptions>{confB}) {
+    for(const auto& conf : vector<ContextOptions>{confB, confA}) {
         Context c(conf);
         auto v = c.csv(uri.toPath(), std::vector<std::string>(),
                        false, ',', '"',

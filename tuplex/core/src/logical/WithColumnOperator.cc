@@ -76,9 +76,10 @@ namespace tuplex {
             return Schema::UNKNOWN;
         }
 
-        // could be exception -> return immediately then.
+        // could be exception, return then immediately
         if(udfRetRowType.isExceptionType())
             return Schema(Schema::MemoryLayout::ROW, udfRetRowType);
+
 
         assert(udfRetRowType.isTupleType());
         if(udfRetRowType.parameters().size() == 1)

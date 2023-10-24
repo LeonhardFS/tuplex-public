@@ -74,8 +74,8 @@ namespace tuplex {
             // @TODO: add tuplex loggers
             // => https://sdk.amazonaws.com/cpp/api/LATEST/class_aws_1_1_utils_1_1_logging_1_1_log_system_interface.html
 
-        // note: AWSSDk uses curl by default, can disable curl init here via https://sdk.amazonaws.com/cpp/api/LATEST/struct_aws_1_1_http_options.html
-        Aws::InitAPI(aws_options);
+            // note: AWSSDk uses curl by default, can disable curl init here via https://sdk.amazonaws.com/cpp/api/LATEST/struct_aws_1_1_http_options.html
+            Aws::InitAPI(aws_options);
 
             // init logging
 //        Aws::Utils::Logging::InitializeAWSLogging(
@@ -241,7 +241,6 @@ namespace tuplex {
         config.caPath = ns.caPath.c_str();
         config.verifySSL = ns.verifySSL;
     }
-
 }
 
 #endif

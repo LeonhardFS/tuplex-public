@@ -41,13 +41,13 @@ str_test_func_f compileNullValueComparisonFunction(tuplex::JITCompiler& jit, con
 #else
     Function* func = cast<Function>(env->getModule()->getOrInsertFunction(name, FT).getCallee());
 #endif
-    name = func->getName();
+    name = func->getName().str();
 
     auto args = mapLLVMFunctionArgs(func, vector<string>{"str"});
 
     BasicBlock* bbEntry = BasicBlock::Create(env->getContext(), "entry", func);
 
-    IRBuilder<> builder(bbEntry);
+    tuplex::codegen::IRBuilder builder(bbEntry);
 
     // execute compare code
     auto resVal = env->compareToNullValues(builder, args["str"], null_values);
@@ -130,13 +130,13 @@ bitmap_test_func_f compileBitmapTestFunction(tuplex::JITCompiler& jit) {
 #else
     Function* func = cast<Function>(env->getModule()->getOrInsertFunction(name, FT).getCallee());
 #endif
-    name = func->getName();
+    name = func->getName().str();
 
     auto args = mapLLVMFunctionArgs(func, vector<string>{"isnull", "pos"});
 
     BasicBlock* bbEntry = BasicBlock::Create(env->getContext(), "entry", func);
 
-    IRBuilder<> builder(bbEntry);
+    tuplex::codegen::IRBuilder builder(bbEntry);
 
     // isnull << pos is the result
     // does that work for pos > 32? doubt it...
@@ -318,15 +318,15 @@ TEST(LLVMENV, TupleStructs) {
     auto argTupleType = python::Type::makeTupleType({python::Type::makeOptionType(python::Type::STRING), python::Type::I64, python::Type::F64});
     auto retTupleType = python::Type::makeTupleType({python::Type::STRING, python::Type::F64});
 
-    FunctionType* FT = FunctionType::get(Type::getInt64Ty(ctx), {createStructType(ctx, retTupleType, "tuple")->getPointerTo(),
-                                                                 createStructType(ctx, argTupleType, "tuple")->getPointerTo()}, false);
+    auto llvm_in_type = env->getOrCreateTupleType(retTupleType);
+    auto llvm_out_type = env->getOrCreateTupleType(argTupleType);
+
+    FunctionType* FT = FunctionType::get(Type::getInt64Ty(ctx), {llvm_in_type->getPointerTo(),
+                                                                 llvm_out_type->getPointerTo()}, false);
 
     string name = "process_row";
-#if LLVM_VERSION_MAJOR < 9
-    Function* func = cast<Function>(env->getModule()->getOrInsertFunction(name, FT));
-#else
-    Function* func = cast<Function>(env->getModule()->getOrInsertFunction(name, FT).getCallee());
-#endif
+    auto func = getOrInsertFunction(*env->getModule(), name, FT);
+
     // add attributes to the arguments (sret, byval)
     for (int i = 0; i < func->arg_size(); ++i) {
         auto& arg = *(func->arg_begin() + i);
@@ -339,22 +339,25 @@ TEST(LLVMENV, TupleStructs) {
 
         if(1 == i) {
             arg.setName("inRow");
+
+            // attributes broken...
+            // arg.addAttr(Attribute::ByVal);
             //arg.addAttr(Attribute::ByVal);
             // maybe align by 8?
         }
     }
 
-    // add norecurse to function & inline hint
-    func->addFnAttr(Attribute::NoRecurse);
-    func->addFnAttr(Attribute::InlineHint);
-    func->addFnAttr(Attribute::NoUnwind); // explicitly disable unwind! (no external lib calls!)
+//    // add norecurse to function & inline hint
+//    func->addFnAttr(Attribute::NoRecurse);
+//    func->addFnAttr(Attribute::InlineHint);
+//    func->addFnAttr(Attribute::NoUnwind); // explicitly disable unwind! (no external lib calls!)
 
 
     auto argMap = mapLLVMFunctionArgs(func, {"outRow", "inRow"});
 
     // codegen
     BasicBlock* bbEntry = BasicBlock::Create(ctx, "entry", func);
-    IRBuilder<> builder(bbEntry);
+    tuplex::codegen::IRBuilder builder(bbEntry);
 
     auto val = env->getTupleElement(builder, argTupleType, argMap["inRow"], 0);
     env->setTupleElement(builder, retTupleType, argMap["outRow"], 1, SerializableValue(env->f64Const(3.141), nullptr, nullptr));
@@ -405,7 +408,7 @@ TEST(LLVMENV, SingleElementStructTypes) {
 
     // codegen
     BasicBlock* bbEntry = BasicBlock::Create(ctx, "entry", func);
-    IRBuilder<> builder(bbEntry);
+    ::tuplex::codegen::IRBuilder builder(bbEntry);
 
     auto et_res = env->getTupleElement(builder, et_type, argMap["outRow"], 0);
     auto ed_res = env->getTupleElement(builder, ed_type, argMap["inRow"], 0);
@@ -450,12 +453,12 @@ TEST(LLVMENV, StringConstantFromGlobal) {
 #endif
 
     BasicBlock* bb = BasicBlock::Create(ctx, "body", func);
-    IRBuilder<> builder(bb);
+    tuplex::codegen::IRBuilder builder(bb);
 
     auto strObj = env->strConst(builder, "teststring");
     builder.CreateRet(env->i64Const(0));
 
-    EXPECT_EQ(codegen::globalVariableToString(strObj), "teststring");
+    EXPECT_EQ(env->globalVariableToString(strObj), "teststring");
 }
 
 extern "C" void throwingFunc() {

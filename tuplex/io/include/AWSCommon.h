@@ -63,7 +63,7 @@ namespace tuplex {
     extern bool initAWS(const AWSCredentials& credentials=AWSCredentials::get(), const NetworkSettings& ns=NetworkSettings(), bool requesterPay=false);
 
     /*!
-     * shuts down AWS SDK (freeing resourced).
+     * shuts down AWS SDK (freeing resources).
      */
     extern void shutdownAWS();
 
