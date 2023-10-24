@@ -28,7 +28,7 @@
 #include <experimental/ListHelper.h>
 
 #include <regex>
-#include "FlattenedTuple.h"
+#include <codegen/FlattenedTuple.h>
 
 using namespace llvm;
 
@@ -54,7 +54,7 @@ namespace tuplex {
 
 
         // @TODO: refactor codegenHelper???
-        SerializableValue constantValuedTypeToLLVM(llvm::IRBuilder<>& builder, const python::Type& const_type) {
+        SerializableValue constantValuedTypeToLLVM(const codegen::IRBuilder& builder, const python::Type& const_type) {
 
             if(!const_type.isConstantValued())
                 throw std::runtime_error("Given type " + const_type.desc() + " is not constant velued, error");

@@ -1023,7 +1023,7 @@ namespace tuplex {
 
 
         // for variable length fields => offset and size packing!
-        inline llvm::Value* pack_offset_and_size(llvm::IRBuilder<>& builder, llvm::Value* offset, llvm::Value* size) {
+        inline llvm::Value* pack_offset_and_size(const codegen::IRBuilder& builder, llvm::Value* offset, llvm::Value* size) {
             auto& ctx = builder.GetInsertBlock()->getContext();
 
             // truncate or ext both offset and size to 32bit
@@ -1034,7 +1034,7 @@ namespace tuplex {
             return info;
         }
 
-        inline std::tuple<llvm::Value*, llvm::Value*> unpack_offset_and_size(llvm::IRBuilder<>& builder, llvm::Value* info) {
+        inline std::tuple<llvm::Value*, llvm::Value*> unpack_offset_and_size(const codegen::IRBuilder& builder, llvm::Value* info) {
             using namespace llvm;
 
             // truncation yields lower 32 bit (= offset)

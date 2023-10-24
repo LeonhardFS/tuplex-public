@@ -184,7 +184,7 @@ namespace tuplex {
             std::unordered_map<std::vector<llvm::Type *>, llvm::Type *> _generatedIteratorTypes;
             // string: function name; BlockAddress*: BlockAddress* to be filled in an iterator struct
             std::unordered_map<std::string, llvm::BlockAddress *> _generatedIteratorUpdateIndexFunctions;
-            std::unordered_map<llvm::Type *, python::Type> _typeMapping;
+            std::unordered_map<llvm::Type *, std::set<python::Type>> _typeMapping;
 
             // track string constants (globals), avoid duplicates and allow to retrieve the string value from a ptr.
             std::unordered_multimap<std::string, llvm::Value*> _stringMap;
@@ -655,27 +655,6 @@ namespace tuplex {
 
                 return stype;
             }
-
-            // lifetime intrinsics -1 means variable sized.
-            // cf. https://llvm.org/docs/LangRef.html#llvm-lifetime-start-intrinsic
-            inline llvm::Value* lifetimeStart(llvm::IRBuilder<>& builder, llvm::Value* ptr, llvm::Value* size) {
-                assert(size->getType()->isIntegerTy() && llvm::isa<llvm::Constant>(size));
-                return createBinaryIntrinsic(builder, llvm::Intrinsic::ID::lifetime_start, size, ptr);
-            }
-
-            inline llvm::Value* lifetimeEnd(llvm::IRBuilder<>& builder, llvm::Value* ptr, llvm::Value* size) {
-                assert(size->getType()->isIntegerTy() && llvm::isa<llvm::Constant>(size));
-                return createBinaryIntrinsic(builder, llvm::Intrinsic::ID::lifetime_end, size, ptr);
-            }
-
-            inline llvm::Value* lifetimeStart(llvm::IRBuilder<>& builder, llvm::Value* ptr) {
-                return lifetimeStart(builder, ptr, i64Const(-1));
-            }
-
-            inline llvm::Value* lifetimeEnd(llvm::IRBuilder<>& builder, llvm::Value* ptr) {
-                return lifetimeEnd(builder, ptr, i64Const(-1));
-            }
-
 
             /*!
              * internally cmp returns an llvm i1 object. want to upcast to boolean type

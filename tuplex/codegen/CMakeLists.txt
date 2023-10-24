@@ -138,9 +138,8 @@ endif()
 # by this library
 target_include_directories(libcodegen PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
-        PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/managed
         ${LLVM_INCLUDE_DIRS}
+        ${CMAKE_CURRENT_SOURCE_DIR}/managed
         ${Boost_INCLUDE_DIR}
         ${ANTLR4Runtime_INCLUDE_DIR}
         ${PCRE2_INCLUDE_DIRS}

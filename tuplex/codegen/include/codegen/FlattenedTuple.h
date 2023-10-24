@@ -550,7 +550,7 @@ namespace tuplex {
          * @return vector of the 8 byte blocks.
          */
         inline std::tuple<llvm::Value*, std::vector<llvm::Value*>> deserializeBitmap(LLVMEnvironment& env,
-                                                                                             llvm::IRBuilder<>& builder,
+                                                                                             const codegen::IRBuilder& builder,
                                                                                              llvm::Value* ptr,
                                                                                              size_t numBits) {
             using namespace std;

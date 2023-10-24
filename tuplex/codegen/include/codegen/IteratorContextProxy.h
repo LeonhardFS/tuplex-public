@@ -15,7 +15,7 @@
 #include <codegen/LambdaFunction.h>
 #include <codegen/LLVMEnvironment.h>
 #include <ast/ASTAnnotation.h>
-#include <CodegenHelper.h>
+#include <codegen/CodegenHelper.h>
 
 namespace tuplex {
     namespace codegen{
