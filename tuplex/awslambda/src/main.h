@@ -19,7 +19,7 @@
 #include <nlohmann/json.hpp>
 #include <Utils.h>
 
-#include <Lambda.pb.h>
+#include <managed/proto/Lambda.pb.h>
 #include <Python.h>
 
 #include <ee/aws/LambdaWorkerApp.h>

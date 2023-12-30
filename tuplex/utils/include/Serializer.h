@@ -60,6 +60,7 @@ namespace tuplex {
             free_and_reset();
         }
 
+
         void provideSpace(const size_t numBytes);
 
         void* buffer() { assert(_buffer); return _buffer; }
@@ -125,7 +126,7 @@ namespace tuplex {
         Serializer& appendWithoutInference(const option<Tuple> &tuple, const python::Type &tupleType);
         Serializer& appendWithoutInference(const uint8_t* buf, size_t bufSize);
 
-        Serializer& appendWithoutInference(const Field f);
+        Serializer& appendWithoutInference(const Field& f);
 
         inline bool hasSchemaVarLenFields() const {
             // from _isVarLenField, if any element is set to true return true
@@ -145,7 +146,8 @@ namespace tuplex {
         Serializer(bool autoSchema = true) : _autoSchema(autoSchema),
                                              _fixedLenFields(_bufferGrowthConstant),
                                              _varLenFields(_bufferGrowthConstant), _col(0)   {}
-         ~Serializer() {
+
+        ~Serializer() {
 
         }
 
@@ -163,7 +165,6 @@ namespace tuplex {
         // make non-copyable
         Serializer(const Serializer& other) = delete;
         Serializer& operator = (const Serializer& other) = delete;
-
 
         Serializer& reset();
 
@@ -198,11 +199,13 @@ namespace tuplex {
 
         Serializer& appendObject(const uint8_t* buf, size_t bufSize);
 
+        Serializer& appendField(const Field& f);
+
         Serializer& appendNull();
 
         // only define append for long when long and int64_t are not the same to avoid overload error
         template<class T=long>
-        typename std::enable_if<!std::is_same<int64_t, T>::value, Serializer&>::type append(const T l) { return append(static_cast<int64_t>(l)); }
+        typename std::enable_if<!std::is_same<int64_t, T>::value && !std::is_same<Field, T>::value, Serializer&>::type append(const T l) { return append(static_cast<int64_t>(l)); }
 
         Schema getSchema()  { fixSchema(); return _schema; }
 
@@ -344,6 +347,15 @@ namespace tuplex {
         std::vector<python::Type> v = {deductType(args)...};
         return Schema(Schema::MemoryLayout::UNKNOWN, python::TypeFactory::instance().createOrGetTupleType(v));
     }
+
+    /*!
+     * get size of list to serialize
+     * @param l
+     * @return
+     */
+    extern size_t serialized_list_size(const List& l);
+
+    size_t serialize_list_to_ptr(const List& l, uint8_t* ptr, size_t capacity_left);
 
 }
 

@@ -385,26 +385,6 @@ namespace tuplex {
            }
 
 
-            inline llvm::Value *CreateStructGEP(llvm::Value *Ptr, unsigned Idx,
-                                                const std::string &Name = "") const {
-#if LLVM_VERSION_MAJOR < 9
-                // compatibility
-                return get_or_throw().CreateConstInBoundsGEP2_32(nullptr, ptr, 0, idx, Name);
-#elif LLVM_VERSION_MAJOR < 15
-                assert(Ptr->getType()->isPointerTy());
-                auto pointeetype = Ptr->getType()->getPointerElementType();
-                assert(pointeetype);
-                return get_or_throw().CreateStructGEP(pointeetype, Ptr, Idx, Name);
-#else
-                //  return builder.CreateStructGEP(ptr, idx);
-                assert(Ptr->getType()->isPointerTy());
-                auto pointeetype = Ptr->getType()->getNonOpaquePointerElementType();
-                assert(pointeetype);
-                return get_or_throw().CreateStructGEP(pointeetype, Ptr, Idx, Name);
-#endif
-            }
-
-
             inline llvm::Value *CreateStructGEP(llvm::Value *Ptr, llvm::Type* pointee_type, unsigned Idx,
                                                 const std::string &Name = "") const {
 #if LLVM_VERSION_MAJOR < 9
@@ -428,25 +408,6 @@ namespace tuplex {
                 return get_or_throw().CreateConstGEP2_64(Ty, Ptr, Idx0, Idx1, Name);
             }
 
-            inline llvm::Value *CreateConstInBoundsGEP2_64(llvm::Value *Ptr, uint64_t Idx0,
-                                              uint64_t Idx1, const std::string &Name = "") const {
-                using namespace llvm;
-
-                 // cf. https://github.com/llvm/llvm-project/commit/544fa425c98d60042214bd78ee90abf0a46fa2ff
-                 assert(Ptr->getType());
-                llvm::Type *Ty = nullptr;
-
-                 // print types
-                 auto ptrType = cast<PointerType>(Ptr->getType()->getScalarType());
-                 Ty = ptrType->getPointerElementType();
-
-#if LLVM_VERSION_MAJOR >= 13
-                 // match
-                 assert(cast<PointerType>(Ptr->getType()->getScalarType())->isOpaqueOrPointeeTypeMatches(Ty));
-#endif
-                 return CreateConstInBoundsGEP2_64(Ptr, Ty, Idx0, Idx1, Name);
-             }
-
             inline llvm::Value *CreatePtrToInt(llvm::Value *V, llvm::Type *DestTy,
                                   const std::string &Name = "") { return get_or_throw().CreatePtrToInt(V, DestTy, Name); }
 
@@ -456,7 +417,7 @@ namespace tuplex {
 
             inline llvm::CallInst *CreateCall(llvm::FunctionType *FTy, llvm::Value *Callee,
 
-#if (LLVM_VERSION_MAJOR >= 10)
+#if (LLVM_VERSION_MAJOR >= 16)
                                         llvm::ArrayRef<llvm::Value *> Args = std::nullopt,
 #else
                     llvm::ArrayRef<llvm::Value *> Args = {},
@@ -468,7 +429,7 @@ namespace tuplex {
             }
 
             inline llvm::CallInst* CreateCall(llvm::Value* func_value,
-#if (LLVM_VERSION_MAJOR >= 10)
+#if (LLVM_VERSION_MAJOR >= 16)
                     llvm::ArrayRef<llvm::Value *> Args = std::nullopt,
 #else
                                               llvm::ArrayRef<llvm::Value *> Args = {},
@@ -482,7 +443,7 @@ namespace tuplex {
             }
 
             inline llvm::CallInst* CreateCall(llvm::Function* func,
-#if (LLVM_VERSION_MAJOR >= 10)
+#if (LLVM_VERSION_MAJOR >= 16)
                     llvm::ArrayRef<llvm::Value *> Args = std::nullopt,
 #else
                                               llvm::ArrayRef<llvm::Value *> Args = {},
@@ -493,7 +454,7 @@ namespace tuplex {
             }
 
             inline llvm::CallInst *CreateCall(llvm::FunctionCallee Callee,
-#if (LLVM_VERSION_MAJOR >= 10)
+#if (LLVM_VERSION_MAJOR >= 16)
                     llvm::ArrayRef<llvm::Value *> Args = std::nullopt,
 #else
                                               llvm::ArrayRef<llvm::Value *> Args = {},
@@ -531,19 +492,6 @@ namespace tuplex {
 #endif
              }
 
-            inline llvm::LoadInst *CreateLoad(llvm::Value *Ptr, const std::string& Name ="") const {
-                throw std::runtime_error("need to replace this call with typed call.");
-                assert(Ptr->getType()->getPointerElementType());
-                return CreateLoad(Ptr->getType()->getPointerElementType(), Ptr, Name);
-            }
-
-            inline llvm::Value *CreateGEP(llvm::Value *Ptr, llvm::ArrayRef<llvm::Value *> IdxList,
-                     const std::string &Name = "") const {
-                assert(Ptr->getType()->getScalarType()->getPointerElementType());
-                // this is deprecated
-                return CreateGEP(Ptr->getType()->getScalarType()->getPointerElementType(),
-                                 Ptr, IdxList, Name);
-            }
 
             inline llvm::Value* CreateInBoundsGEP(llvm::Value* Ptr, llvm::Type* pointee_type, llvm::Value* Idx) {
                  return get_or_throw().CreateInBoundsGEP(pointee_type, Ptr, {Idx});
@@ -669,15 +617,6 @@ namespace tuplex {
                 return get_or_throw().CreatePtrDiff(ElemTy, LHS, RHS, Name);
 #endif
             }
-
-            inline llvm::Value *CreatePtrDiff(llvm::Value *LHS, llvm::Value *RHS,
-                                 const std::string &Name = "") const {
-                assert(LHS->getType() == RHS->getType() && LHS->getType()->isPointerTy());
-                llvm::Type *ElemTy = LHS->getType()->getPointerElementType();
-                assert(ElemTy);
-                return CreatePtrDiff(ElemTy, LHS, RHS, Name);
-            }
-
 
             llvm::Value *CreateRetVoid() const {
                 return get_or_throw().CreateRetVoid();

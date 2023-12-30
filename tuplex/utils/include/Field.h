@@ -66,9 +66,11 @@ namespace tuplex {
                 type = type.getReturnType();
 
             return python::Type::STRING == type ||
-            type.isTupleType() || type.isDictionaryType() ||
-            python::Type::GENERICDICT == type || type.isListType() || type == python::Type::PYOBJECT;
+                   type.isTupleType() || type.isDictionaryType() ||
+                   python::Type::GENERICDICT == type || type.isListType() || type == python::Type::PYOBJECT;
         }
+
+        void deep_copy_from_other(const Field& other);
 
         std::string extractDesc(const python::Type& type) const; /// helper function to extract data
 
@@ -82,7 +84,6 @@ namespace tuplex {
     public:
 
         Field(): _ptrValue(nullptr), _type(python::Type::UNKNOWN), _size(0), _isNull(false) {}
-
         // copy and move constructor
         Field(const Field& other) : _type(other._type), _size(other._size), _isNull(other._isNull) {
             // deep copy...
@@ -225,6 +226,7 @@ namespace tuplex {
 
             return *this;
         }
+
 
         void* getPtr() const { return _ptrValue; }
         size_t getPtrSize() const { return _size; }

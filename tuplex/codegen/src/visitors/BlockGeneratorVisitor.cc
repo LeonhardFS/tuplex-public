@@ -3710,56 +3710,58 @@ namespace tuplex {
 
                 return ft.getLoad(builder, {idx});
             } else {
-                // THIS HERE IS BACKUP CODE, usable if the AST tree isn't reduced completely.
-                _logger.warn(
-                        "backup code used for [] operator: Make sure the AST tree is properly reduced in its literal expressions.");
-
-                // ast tree is not completely reduced here, so generate expressions
-                assert(isStaticValue(index_node, true));
-
-                FlattenedTuple ft = FlattenedTuple::fromLLVMStructVal(_env,
-                                                                      builder,
-                                                                      value.val,
-                                                                      value_node->getInferredType());
-                auto tupleNumElements = value_node->getInferredType().parameters().size();
-
-                // create temp struct type & use GEP method to retrieve the element.
-                // go over all the first level elements that are contained
-                std::vector<SerializableValue> elements;
-                std::vector<llvm::Type *> elementTypes;
-                for (int i = 0; i < tupleNumElements; ++i) {
-                    auto load = ft.getLoad(builder, {i});
-                    elements.push_back(load);
-                    elementTypes.push_back(load.val->getType());
-                }
-
-                // create new struct type to get the i-th element via getelementptr
-                auto structType = llvm::StructType::create(_env->getContext(), elementTypes, "indextuple");
-                // load the values into this struct type
-                auto alloc = builder.CreateAlloca(structType, 0, nullptr);
-                for (int i = 0; i < tupleNumElements; ++i)
-                    builder.CreateStore(elements[i].val, builder.CreateGEP(alloc, {i32Const(0), i32Const(i)}));
-
-
-                // fetch element
-                auto lookupPtr = builder.CreateGEP(alloc, {i32Const(0), builder.CreateTrunc(index.val,
-                                                                                            Type::getInt32Ty(
-                                                                                                    _env->getContext()))});
-
-                // also need to lookup size...
-                auto salloc = builder.CreateAlloca(llvm::ArrayType::get(_env->i64Type(), tupleNumElements), 0,
-                                                   nullptr);
-                // insert elements
-                for (int i = 0; i < tupleNumElements; ++i)
-                    builder.CreateStore(elements[i].size,
-                                        builder.CreateGEP(salloc, {i32Const(0), i32Const(i)}));
-
-                auto retSize = builder.CreateLoad(builder.CreateGEP(salloc, {i32Const(0),
-                                                                             builder.CreateTrunc(index.val,
-                                                                                                 Type::getInt32Ty(
-                                                                                                         _env->getContext()))}));
-                auto retVal = builder.CreateLoad(lookupPtr);
-                return SerializableValue(retVal, retSize);
+                throw std::runtime_error("indexing via [] for non homogenous tuple not supported for LLVM17+");
+//                // THIS HERE IS BACKUP CODE, usable if the AST tree isn't reduced completely.
+//                _logger.warn(
+//                        "backup code used for [] operator: Make sure the AST tree is properly reduced in its literal expressions.");
+//
+//                // ast tree is not completely reduced here, so generate expressions
+//                assert(isStaticValue(index_node, true));
+//
+//                FlattenedTuple ft = FlattenedTuple::fromLLVMStructVal(_env,
+//                                                                      builder,
+//                                                                      value.val,
+//                                                                      value_node->getInferredType());
+//                auto tupleNumElements = value_node->getInferredType().parameters().size();
+//
+//                // create temp struct type & use GEP method to retrieve the element.
+//                // go over all the first level elements that are contained
+//                std::vector<SerializableValue> elements;
+//                std::vector<llvm::Type *> elementTypes;
+//                for (int i = 0; i < tupleNumElements; ++i) {
+//                    auto load = ft.getLoad(builder, {i});
+//                    elements.push_back(load);
+//                    elementTypes.push_back(load.val->getType());
+//                }
+//
+//                // create new struct type to get the i-th element via getelementptr
+//                auto structType = llvm::StructType::create(_env->getContext(), elementTypes, "indextuple");
+//                // load the values into this struct type
+//                auto alloc = builder.CreateAlloca(structType, 0, nullptr);
+//                for (int i = 0; i < tupleNumElements; ++i)
+//                    builder.CreateStore(elements[i].val, builder.CreateStructGEP(alloc, structType, i));
+//
+//
+//                // fetch element
+//                auto lookupPtr = builder.CreateGEP(structType, alloc, {i32Const(0), builder.CreateTrunc(index.val,
+//                                                                                            Type::getInt32Ty(
+//                                                                                                    _env->getContext()))});
+//
+//                // also need to lookup size...
+//                auto llvm_array_type = llvm::ArrayType::get(_env->i64Type(), tupleNumElements);
+//                auto salloc = builder.CreateAlloca(llvm_array_type, 0,
+//                                                   nullptr);
+//                // insert elements
+//                for (int i = 0; i < tupleNumElements; ++i)
+//                    builder.CreateStore(elements[i].size,
+//                                        builder.CreateGEP(llvm_array_type, salloc, {i32Const(0), i32Const(i)}));
+//
+//                auto retSize = builder.CreateLoad(builder.getInt64Ty(), builder.CreateGEP(llvm_array_type, salloc, {i32Const(0),
+//                                                                             builder.CreateTrunc(index.val,
+//                                                                                                 Type::getInt32Ty(
+//                                                                                                         _env->getContext()))}));
+//                auto retVal = builder.CreateLoad(lookupPtr);
+//                return SerializableValue(retVal, retSize);
             }
         }
 
@@ -4151,6 +4153,41 @@ namespace tuplex {
                     auto str = globalVariableToString(value.val);
                     // escape to py
                     return make_tuple(escape_to_python_str(str), value_type);
+        SerializableValue
+        BlockGeneratorVisitor::CreateDummyValue(const codegen::IRBuilder& builder, const python::Type &type) {
+            // dummy value needs to be created for llvm to combine stuff.
+            SerializableValue retVal;
+            if (python::Type::BOOLEAN == type || python::Type::I64 == type) {
+                retVal.val = _env->i64Const(0);
+                retVal.size = _env->i64Const(sizeof(int64_t));
+            } else if (python::Type::F64 == type) {
+                retVal.val = _env->f64Const(0.0);
+                retVal.size = _env->i64Const(sizeof(double));
+            } else if (python::Type::STRING == type || type.isDictionaryType()) {
+                retVal.val = _env->i8ptrConst(nullptr);
+                retVal.size = _env->i64Const(0);
+            } else if (type.isListType()) {
+                auto llvmType = _env->createOrGetListType(type);
+                auto val = _env->CreateFirstBlockAlloca(builder, llvmType);
+                if (type == python::Type::EMPTYLIST) {
+                    builder.CreateStore(_env->i8nullptr(), val);
+                } else {
+                    auto elementType = type.elementType();
+                    if (elementType.isSingleValued()) {
+                        builder.CreateStore(_env->i64Const(0), val);
+                    } else {
+                        builder.CreateStore(_env->i64Const(0), builder.CreateStructGEP(val, llvmType, 0));
+                        builder.CreateStore(_env->i64Const(0), builder.CreateStructGEP(val, llvmType, 1));
+
+                        builder.CreateStore(llvm::ConstantPointerNull::get(
+                                llvm::dyn_cast<PointerType>(llvmType->getStructElementType(2))),
+                                            builder.CreateStructGEP(val, llvmType, 2));
+                        if (elementType == python::Type::STRING) {
+                            builder.CreateStore(llvm::ConstantPointerNull::get(
+                                    llvm::dyn_cast<PointerType>(llvmType->getStructElementType(3))),
+                                                builder.CreateStructGEP(val, llvmType, 3));
+                        }
+                    }
                 }
                 if(type == python::Type::BOOLEAN) {
                     auto i_val = llvm::cast<ConstantInt>(value.val)->getSExtValue();
@@ -5638,10 +5675,11 @@ namespace tuplex {
                         // empty iterator is always exhausted
                         loopCond = _env->i1Const(false);
                     } else {
+                        auto iterator = exprAlloc.val;
                         // increment iterator index by 1 and check if it is exhausted
-                        auto iteratorExhausted = _iteratorContextProxy->updateIteratorIndex(builder, exprAlloc.val, iteratorInfo);
+                        auto iteratorExhausted = _iteratorContextProxy->updateIteratorIndex(builder, iterator, iteratorInfo);
                         // decrement iterator index by 1
-                        _iteratorContextProxy->incrementIteratorIndex(builder, exprAlloc.val, iteratorInfo, -1);
+                        increment_iterator_index(*_env, builder, iterator, iteratorInfo, -1);
                         // loopCond = !iteratorExhausted i.e. if iterator exhausted, ends the loop
                         loopCond = builder.CreateICmpEQ(iteratorExhausted, _env->i1Const(false));
                     }
@@ -5670,8 +5708,9 @@ namespace tuplex {
                 // first iteration is guaranteed to exist, or an exception would have been raised earlier
                 _logger.debug("first iteration of for loop unrolled to allow type-stability during loop");
                 if(exprType.isIteratorType()) {
+                    auto iterator = exprAlloc.val;
                     // increment iterator index by 1
-                    _iteratorContextProxy->incrementIteratorIndex(builder, exprAlloc.val, iteratorInfo, 1);
+                    increment_iterator_index(*_env, builder, iterator, iteratorInfo, 1);
                 } else {
                     builder.CreateStore(builder.CreateAdd(start, step), currPtr);
                 }

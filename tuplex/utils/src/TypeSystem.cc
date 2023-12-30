@@ -1631,7 +1631,7 @@ namespace python {
 //
 //        // check for optional type
 //        bool makeOption = false;
-//        // underlyingType: remove outermost Option if it exists
+//        // underlyingType: remove outermost Option if exists
 //        python::Type aUnderlyingType = a;
 //        python::Type bUnderlyingType = b;
 //        if(a.isOptionType()) {
@@ -1642,6 +1642,14 @@ namespace python {
 //        if(b.isOptionType()) {
 //            makeOption = true;
 //            bUnderlyingType = b.getReturnType();
+//        }
+//
+//        // if makeOption -> recursive call
+//        if(makeOption) {
+//            auto ans = unifyTypes(aUnderlyingType, bUnderlyingType);
+//            if(python::Type::UNKNOWN == ans)
+//                return ans;
+//            return python::Type::makeOptionType(ans);
 //        }
 //
 //        // same underlying types? make option
@@ -1683,6 +1691,18 @@ namespace python {
 //            return python::Type::makeListType(newElementType);
 //        }
 //
+//        // any list is compatible with empty list
+//        if(aUnderlyingType.isListType() && bUnderlyingType == python::Type::EMPTYLIST)
+//            return aUnderlyingType;
+//        if(aUnderlyingType == python::Type::EMPTYLIST && bUnderlyingType.isListType())
+//            return bUnderlyingType;
+//
+//        // any dict is compatible with empty dict
+//        if(aUnderlyingType.isDictionaryType() && bUnderlyingType == python::Type::EMPTYDICT)
+//            return aUnderlyingType;
+//        if(aUnderlyingType == python::Type::EMPTYDICT && bUnderlyingType.isDictionaryType())
+//            return bUnderlyingType;
+//
 //        // tuple type? check if every parameter type compatible
 //        if(aUnderlyingType.isTupleType() && bUnderlyingType.isTupleType()) {
 //            if (aUnderlyingType.parameters().size() != bUnderlyingType.parameters().size()) {
@@ -1704,24 +1724,24 @@ namespace python {
 //            }
 //            return python::Type::makeTupleType(newTuple);
 //        }
-//
-//        // dictionary type
-//        if(aUnderlyingType.isDictionaryType() && bUnderlyingType.isDictionaryType()) {
-//            auto key_t = unifyTypes(aUnderlyingType.keyType(), bUnderlyingType.keyType(), autoUpcast);
-//            auto val_t = unifyTypes(aUnderlyingType.elementType(), bUnderlyingType.elementType(), autoUpcast);
-//            if(key_t == python::Type::UNKNOWN || val_t == python::Type::UNKNOWN) {
-//                return python::Type::UNKNOWN;
-//            }
-//            if(makeOption) {
-//                return python::Type::makeOptionType(python::Type::makeDictionaryType(key_t, val_t));
-//            } else {
-//                return python::Type::makeDictionaryType(key_t, val_t);
-//            }
-//        }
-//
-//        // other non-supported types
-//        return python::Type::UNKNOWN;
-//    }
+
+        // dictionary type
+        if(aUnderlyingType.isDictionaryType() && bUnderlyingType.isDictionaryType()) {
+            auto key_t = unifyTypes(aUnderlyingType.keyType(), bUnderlyingType.keyType(), autoUpcast);
+            auto val_t = unifyTypes(aUnderlyingType.elementType(), bUnderlyingType.elementType(), autoUpcast);
+            if(key_t == python::Type::UNKNOWN || val_t == python::Type::UNKNOWN) {
+                return python::Type::UNKNOWN;
+            }
+            if(makeOption) {
+                return python::Type::makeOptionType(python::Type::makeDictionaryType(key_t, val_t));
+            } else {
+                return python::Type::makeDictionaryType(key_t, val_t);
+            }
+        }
+
+        // other non-supported types
+        return python::Type::UNKNOWN;
+    }
 
     bool python::Type::isZeroSerializationSize() const {
         if(*this == python::Type::NULLVALUE)

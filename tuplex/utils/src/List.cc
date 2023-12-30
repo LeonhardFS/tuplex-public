@@ -11,6 +11,7 @@
 #include <List.h>
 #include <sstream>
 #include <string>
+#include <Serializer.h>
 #include <TypeHelper.h>
 
 namespace tuplex {
@@ -19,6 +20,7 @@ namespace tuplex {
         if(elements.empty()) {
             _numElements = 0;
             _elements = nullptr;
+            _listType = python::Type::EMPTYLIST;
         } else {
             _numElements = elements.size();
             _elements = new Field[_numElements];
@@ -29,9 +31,9 @@ namespace tuplex {
             auto uni_type = el_type;
             bool is_homogeneous = true;
             for(unsigned i = 1; i < elements.size(); ++i) {
+                uni_type = unifyTypes(uni_type, elements[i].getType());
                 if(elements[i].getType() != el_type)
                     is_homogeneous = false;
-                uni_type = unifyTypes(uni_type, elements[i].getType());
             }
 
             if(is_homogeneous) {
@@ -43,18 +45,21 @@ namespace tuplex {
                                                  + elements[0].getType().desc());
                     _elements[i] = elements[i];
                 }
+                _listType = python::Type::makeListType(uni_type);
             } else if(python::Type::UNKNOWN != uni_type) {
                 _listType = python::Type::makeListType(uni_type);
                 // cast each element up
                 for(unsigned i = 0; i < _numElements; ++i)
                     _elements[i] = Field::upcastTo_unsafe(elements[i], uni_type);
             } else {
-                // heterogenous list...
+                // heterogeneous list...
                 _listType = python::Type::makeListType(python::Type::PYOBJECT);
                 for(unsigned i = 0; i < _numElements; ++i)
                     _elements[i] = elements[i];
             }
         }
+        assert(_numElements != 0 && _listType != python::Type::EMPTYLIST);
+        assert(!_listType.isIllDefined());
     }
 
     List::List(const List &other) {
@@ -133,7 +138,7 @@ namespace tuplex {
 
     python::Type List::getType() const {
         if(_numElements > 0)
-            return _listType; //python::Type::makeListType(_elements[0].getType());
+            return _listType;
         else
             return python::Type::EMPTYLIST;
     }
@@ -172,9 +177,19 @@ namespace tuplex {
         assert(L->_elements == nullptr);
         L->_numElements = _numElements;
         L->_elements = new Field[L->_numElements];
+        L->_listType = _listType;
         for(unsigned i = 0; i < _numElements; ++i) {
             L->_elements[i] = _elements[i];
         }
         return L;
+    }
+
+    size_t List::serialized_length() const {
+       return serialized_list_size(*this);
+    }
+
+    size_t List::serialize_to(uint8_t *ptr) const {
+        auto len = serialized_list_size(*this);
+        return serialize_list_to_ptr(*this, ptr, len);
     }
 }

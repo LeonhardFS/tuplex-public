@@ -83,7 +83,6 @@ public:
         for(auto p : _partitions)
             p->unlock();
     }
-
 private:
     URI _uri;
     std::vector<Partition *> _partitions;

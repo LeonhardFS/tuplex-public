@@ -78,24 +78,13 @@ namespace llvm {
         CallInst *CI = CallInst::Create(Callee, Ops, Name);
         if (FMFSource)
             CI->copyFastMathFlags(FMFSource);
-#if (LLVM_VERSION_MAJOR <= 14)
+#if (LLVM_VERSION_MAJOR <= 15)
         builder.GetInsertBlock()->getInstList().insert(builder.GetInsertPoint(), CI);
 #else
         CI->insertInto(builder.GetInsertBlock(), builder.GetInsertBlock()->begin());
 #endif
         builder.SetInstDebugLocation(CI);
         return CI;
-    }
-
-    inline Value* CreateStructGEP(const tuplex::codegen::IRBuilder& builder,
-                                  Value* ptr,
-                                  unsigned int idx, const Twine& Name="") {
-#if LLVM_VERSION_MAJOR < 9
-        // compatibility
-        return builder.CreateConstInBoundsGEP2_32(nullptr, ptr, 0, idx, Name);
-#else
-        return builder.CreateStructGEP(ptr, idx);
-#endif
     }
 
      inline llvm::Value* getOrInsertCallable(Module& mod, const std::string& name, FunctionType* FT) {
@@ -1123,10 +1112,6 @@ namespace tuplex {
              */
             SerializableValue i64ToString(const codegen::IRBuilder& builder, llvm::Value* value);
 
-            static inline llvm::Value* CreateStructGEP(const codegen::IRBuilder& builder, llvm::Value* ptr, unsigned int idx, const std::string& Name="") {
-                return builder.CreateStructGEP(ptr, idx, Name);
-            }
-
             /*!
              * creates logic for cond ? <trueblock> : <elseblock>
              * @param condition
@@ -1204,6 +1189,8 @@ namespace tuplex {
             llvm::BlockAddress *createOrGetUpdateIteratorIndexFunctionDefaultBlockAddress(const codegen::IRBuilder &builder,
                                                                                           const python::Type &iterableType,
                                                                                           bool reverse=false);
+
+            llvm::Value *cbool_const(bool b);
         };
 
 // i.e. there should be a function

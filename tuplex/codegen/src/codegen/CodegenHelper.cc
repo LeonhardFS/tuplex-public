@@ -27,7 +27,9 @@
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/IRReader/IRReader.h>
+#if LLVM_VERSION_MAJOR < 17
 #include <llvm/MC/SubtargetFeature.h>
+#endif
 #include <llvm/IR/CFG.h> // to iterate over predecessors/successors easily
 #include <codegen/LLVMEnvironment.h>
 #include <codegen/LambdaFunction.h>

@@ -66,6 +66,7 @@ namespace tuplex {
             other._schema = Schema::UNKNOWN;
         }
 
+
         // new constructor using variadic templates
         template<typename... Targs> Row(Targs... Fargs) {
             vec_build(_values, Fargs...);

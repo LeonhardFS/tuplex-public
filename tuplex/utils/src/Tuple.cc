@@ -11,6 +11,7 @@
 #include <Tuple.h>
 #include <sstream>
 #include <string>
+#include <Serializer.h>
 
 namespace tuplex {
 
@@ -140,4 +141,28 @@ namespace tuplex {
         }
         return t;
     }
+
+    size_t Tuple::serialized_length() const {
+        if(_numElements == 0)
+            return 0;
+
+        // use Serializer to check length
+        Serializer s;
+        for(unsigned i = 0; i < _numElements; ++i)
+            s.appendField(_elements[i]);
+        return s.length();
+    }
+
+    size_t Tuple::serialize_to(uint8_t* ptr) const {
+        if(_numElements == 0)
+            return 0;
+
+        // use Serializer to check length
+        Serializer s;
+        for(unsigned i = 0; i < _numElements; ++i)
+            s.appendField(_elements[i]);
+        auto length = s.length();
+        return s.serialize(ptr, length);
+    }
 }
+

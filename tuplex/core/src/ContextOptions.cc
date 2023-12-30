@@ -617,7 +617,7 @@ namespace tuplex {
         // check first with pathParent, then PATH
         std::vector<std::string> failedPaths;
         for(const auto& c : candidates) {
-            URI p = URI(pathParent.empty() ? c : pathParent + "/" + c);
+            URI p = !pathParent.empty() ? URI(pathParent.empty() ? c : pathParent + "/" + c) : URI(c);
             if(p.exists() && p.isFile())
                 return p;
             else
