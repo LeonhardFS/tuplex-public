@@ -15,7 +15,8 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/")
 
 # Option on whether to use shared libraries or perform a static link.
 # Must be identical to how AWS SDK was installed. E.g., when installing brew aws-sdk-cpp the default is
-# shared for the AWS C++ SDK build.
+# shared for the AWS C++ SDK build.\
+
 # --> We use static build per default.
 option(BUILD_SHARED_LIBS "Build shared libraries" OFF)
 option(SKIP_AWS_TESTS "Skip AWS tests" ON)

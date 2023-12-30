@@ -38,17 +38,6 @@ namespace tuplex {
 
         ~Tuple();
 
-//        Tuple(const Tuple& other) : _numElements(other._numElements), _elements(nullptr) {
-//            _elements = new Field[_numElements];
-//            for(unsigned i = 0; i < _numElements; ++i)
-//                _elements[i] = other._elements[i];
-//        }
-
-        Tuple(Tuple&& other) : _numElements(other._numElements), _elements(other._elements) {
-            other._numElements = 0;
-            other._elements = nullptr;
-        }
-
         // new variadic template param ctor
          template<typename... Targs> explicit Tuple(Targs... Fargs) {
             std::vector<Field> elements;

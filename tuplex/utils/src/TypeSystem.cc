@@ -1724,24 +1724,24 @@ namespace python {
 //            }
 //            return python::Type::makeTupleType(newTuple);
 //        }
-
-        // dictionary type
-        if(aUnderlyingType.isDictionaryType() && bUnderlyingType.isDictionaryType()) {
-            auto key_t = unifyTypes(aUnderlyingType.keyType(), bUnderlyingType.keyType(), autoUpcast);
-            auto val_t = unifyTypes(aUnderlyingType.elementType(), bUnderlyingType.elementType(), autoUpcast);
-            if(key_t == python::Type::UNKNOWN || val_t == python::Type::UNKNOWN) {
-                return python::Type::UNKNOWN;
-            }
-            if(makeOption) {
-                return python::Type::makeOptionType(python::Type::makeDictionaryType(key_t, val_t));
-            } else {
-                return python::Type::makeDictionaryType(key_t, val_t);
-            }
-        }
-
-        // other non-supported types
-        return python::Type::UNKNOWN;
-    }
+//
+//        // dictionary type
+//        if(aUnderlyingType.isDictionaryType() && bUnderlyingType.isDictionaryType()) {
+//            auto key_t = unifyTypes(aUnderlyingType.keyType(), bUnderlyingType.keyType(), autoUpcast);
+//            auto val_t = unifyTypes(aUnderlyingType.elementType(), bUnderlyingType.elementType(), autoUpcast);
+//            if(key_t == python::Type::UNKNOWN || val_t == python::Type::UNKNOWN) {
+//                return python::Type::UNKNOWN;
+//            }
+//            if(makeOption) {
+//                return python::Type::makeOptionType(python::Type::makeDictionaryType(key_t, val_t));
+//            } else {
+//                return python::Type::makeDictionaryType(key_t, val_t);
+//            }
+//        }
+//
+//        // other non-supported types
+//        return python::Type::UNKNOWN;
+//    }
 
     bool python::Type::isZeroSerializationSize() const {
         if(*this == python::Type::NULLVALUE)

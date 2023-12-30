@@ -25,7 +25,7 @@
 #include <boost/algorithm/string/join.hpp>
 
 #include "Base.h"
-#include "UTF8Utils.h"
+#include "utf8/UTF8Utils.h"
 
 namespace tuplex {
     // helper functions for data conversion (optimized for correct input)

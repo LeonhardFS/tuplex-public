@@ -16,7 +16,7 @@
 #define TUPLEX_JITCOMPILER_LLVM13_H
 
 // common interface
-#include "IJITCompiler.h"
+#include <jit/IJITCompiler.h>
 
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
 

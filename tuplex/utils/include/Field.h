@@ -79,8 +79,6 @@ namespace tuplex {
 
         // parses JSON and converts it into python syntax (together with type)
         std::string internalJSONToPythonString() const;
-
-        void deep_copy_from_other(const Field& other);
     public:
 
         Field(): _ptrValue(nullptr), _type(python::Type::UNKNOWN), _size(0), _isNull(false) {}

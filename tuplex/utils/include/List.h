@@ -42,11 +42,6 @@ namespace tuplex {
 
         ~List();
 
-        List(List&& other) : _numElements(other._numElements), _elements(other._elements), _listType(other._listType) {
-            other._numElements = 0;
-            other._elements = nullptr;
-        }
-
         // new variadic template param ctor
          template<typename... Targs> explicit List(Targs... Fargs) {
             std::vector<Field> elements;

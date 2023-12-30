@@ -392,7 +392,7 @@ namespace tuplex {
                     return it->second;
                 else {
                     llvm::Type *t = createTupleStructType(tuple_type, twine);
-                    std::string name = t->getStructName();
+                    std::string name = t->getStructName().str();
                     _generatedTupleTypes[tuple_type] = t;
                     return t;
                 }

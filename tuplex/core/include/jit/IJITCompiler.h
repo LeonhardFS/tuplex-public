@@ -16,10 +16,10 @@
 #include <vector>
 
 #include <Utils.h>
-#include <CodegenHelper.h>
+#include <codegen/CodegenHelper.h>
 
 // for the mangling hack
-#include <physical/PythonCallbacks.h>
+#include <physical/codegen/PythonCallbacks.h>
 #include <hashmap.h>
 
 #include <llvm/IR/Module.h>

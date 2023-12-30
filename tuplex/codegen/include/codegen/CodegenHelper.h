@@ -50,6 +50,7 @@
 
 #include <nlohmann/json.hpp>
 #include <cstddef>
+#include <llvm/TargetParser/Host.h>
 
 namespace tuplex {
     namespace codegen {

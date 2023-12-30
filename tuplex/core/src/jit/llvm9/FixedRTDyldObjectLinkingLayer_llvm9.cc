@@ -10,12 +10,8 @@
 // need to include some llvm file, so version is picked up
 #include <llvm/IR/IRBuilder.h>
 
-<<<<<<<< HEAD:tuplex/core/src/jit/FixedRTDyldObjectLinkingLayer.cc
-#include <jit/FixedRTDyldObjectLinkingLayer.h>
-========
 #if LLVM_VERSION_MAJOR <= 9
 #include <llvm9/FixedRTDyldObjectLinkingLayer_llvm9.h>
->>>>>>>> master:tuplex/core/src/llvm9/FixedRTDyldObjectLinkingLayer_llvm9.cc
 
 namespace {
 

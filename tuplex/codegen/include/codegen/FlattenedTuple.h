@@ -74,7 +74,7 @@ namespace tuplex {
             // print write info
             inline void printWriteInfo(llvm::IRBuilder<>& builder, llvm::Value* target_ptr, llvm::Value* base_ptr, llvm::Value* size) {
 #ifndef NDEBUG
-                _env->printValue(builder, builder.CreatePtrDiff(target_ptr, base_ptr), "Writing to offset position=");
+                _env->printValue(builder, builder.CreatePtrDiff(builder.getInt8Ty(), target_ptr, base_ptr), "Writing to offset position=");
                 _env->printValue(builder, size, "Writing num_bytes=");
 #endif
             }
@@ -559,10 +559,10 @@ namespace tuplex {
             vector<llvm::Value*> bitmap;
             for(unsigned i = 0; i < numBitmapElements; ++i) {
                 // read as 64bit int from memory
-                auto bitmapElement = builder.CreateLoad(builder.CreateBitCast(ptr, env.i64ptrType()), "bitmap_part");
+                auto bitmapElement = builder.CreateLoad(builder.getInt64Ty(), ptr, "bitmap_part");
                 bitmap.emplace_back(bitmapElement);
                 // move onto next pointer
-                ptr = builder.CreateGEP(ptr, env.i32Const(sizeof(int64_t)));
+                ptr = builder.MovePtrByBytes(ptr, sizeof(int64_t));
             }
 
             // return updated ptr & bitmap
