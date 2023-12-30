@@ -50,6 +50,9 @@ namespace tuplex {
          * @return true if compilation was successful, false in case of failure.
          */
         virtual bool compile(std::unique_ptr<llvm::Module> mod) = 0;
+
+
+        virtual bool compileObjectBuffer(const std::string &object_buffer, std::string dylib_name) = 0;
     };
 }
 

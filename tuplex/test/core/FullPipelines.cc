@@ -989,12 +989,12 @@ TEST_F(PipelinesTest, ZillowWithGeneratedParser) {
 
     auto zpath = "../resources/pipelines/zillow/zillow_noexc.csv";
     auto cache = false;
-    // for reference deactivate all options!
+    // for reference, deactivate all options!
     auto opt_ref = testOptions();
     opt_ref.set("tuplex.runTimeMemory", "128MB");
     opt_ref.set("tuplex.executorCount", "0"); // single-threaded
     opt_ref.set("tuplex.useLLVMOptimizer", "false"); // deactivate
-    opt_ref.set(tuplex.optimizer.retypeUsingOptimizedInputSchema", "false");
+    opt_ref.set("tuplex.optimizer.retypeUsingOptimizedInputSchema", "false");
     opt_ref.set("tuplex.optimizer.selectionPushdown", "false");
     opt_ref.set("tuplex.optimizer.generateParser", "false");
 

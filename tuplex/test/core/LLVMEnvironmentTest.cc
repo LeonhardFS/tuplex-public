@@ -580,7 +580,7 @@ namespace tuplex {
             auto args = mapLLVMFunctionArgs(func, {"x"});
 
             auto body = BasicBlock::Create(env->getContext(), "body", func);
-            IRBuilder<> builder(body);
+            IRBuilder builder(body);
 
             auto ret = builder.CreateAdd(args["x"], env->i64Const(i_const));
 

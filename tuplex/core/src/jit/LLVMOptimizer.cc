@@ -233,6 +233,7 @@ namespace tuplex {
         //Optimize(mod, 2, 0);
 
         // // perform some basic passes (for fast opt) -> defer complex logic to general-case.
-        optimizePipelineI(mod);
+//        optimizePipelineI(mod);
+        Optimize(mod, 2, 0);
     }
 }

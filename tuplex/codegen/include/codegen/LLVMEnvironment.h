@@ -2245,7 +2245,7 @@ namespace tuplex {
         */
         extern SerializableValue CreateDummyValue(LLVMEnvironment& env, llvm::IRBuilder<>& builder, const python::Type& type);
 
-        extern SerializableValue constantValuedTypeToLLVM(llvm::IRBuilder<>& builder, const python::Type& const_type);
+        extern SerializableValue constantValuedTypeToLLVM(const codegen::IRBuilder& builder, const python::Type& const_type);
 
         inline llvm::Constant *cbool_const(llvm::LLVMContext &ctx, bool b) {
             auto type = ctypeToLLVM<bool>(ctx);

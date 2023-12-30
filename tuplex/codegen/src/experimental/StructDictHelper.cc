@@ -1035,7 +1035,7 @@ namespace tuplex {
         }
 
         // deserializastion code...
-        SerializableValue struct_dict_deserialize_from_memory(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* ptr, const python::Type& dict_type) {
+        SerializableValue struct_dict_deserialize_from_memory(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* ptr, const python::Type& dict_type) {
             auto& logger = Logger::instance().logger("codegen");
             assert(dict_type.isStructuredDictionaryType());
 
