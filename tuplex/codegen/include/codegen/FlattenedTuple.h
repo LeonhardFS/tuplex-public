@@ -72,7 +72,7 @@ namespace tuplex {
             std::vector<llvm::Value*> getBitmap(const codegen::IRBuilder& builder) const;
 
             // print write info
-            inline void printWriteInfo(llvm::IRBuilder<>& builder, llvm::Value* target_ptr, llvm::Value* base_ptr, llvm::Value* size) {
+            inline void printWriteInfo(const codegen::IRBuilder& builder, llvm::Value* target_ptr, llvm::Value* base_ptr, llvm::Value* size) {
 #ifndef NDEBUG
                 _env->printValue(builder, builder.CreatePtrDiff(builder.getInt8Ty(), target_ptr, base_ptr), "Writing to offset position=");
                 _env->printValue(builder, size, "Writing num_bytes=");
@@ -86,7 +86,7 @@ namespace tuplex {
                                                           _flattenedTupleType(other._flattenedTupleType),
                                                           _forceZeroTerminatedStrings(other._forceZeroTerminatedStrings) {}
 
-            FlattenedTuple &operator=(const FlattenedTuple &other) {
+            FlattenedTuple &operator = (const FlattenedTuple &other) {
                 _env = other._env;
                 _tree = other._tree;
                 _flattenedTupleType = other._flattenedTupleType;

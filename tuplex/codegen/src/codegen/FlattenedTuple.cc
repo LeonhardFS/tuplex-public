@@ -589,7 +589,7 @@ namespace tuplex {
             return serializationSize;
         }
 
-        void FlattenedTuple::serialize(const codegen::IRBuilder& builder, llvm::Value *ptr) const {
+        llvm::Value* FlattenedTuple::serialize(const codegen::IRBuilder& builder, llvm::Value *ptr) const {
             using namespace llvm;
             using namespace std;
 
@@ -714,7 +714,7 @@ namespace tuplex {
                         builder.CreateStore(info, builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)), false);
 
                         // write to i8 pointer
-                        Value *outptr = builder.CreateGEP(lastPtr, offset, "varoff");
+                        Value *outptr = builder.MovePtrByBytes(lastPtr, offset, "varoff");
 
                         // write actual data to outptr
                         auto s_info = struct_dict_serialize_to_memory(*_env, builder, field, dict_type, outptr);
@@ -725,19 +725,19 @@ namespace tuplex {
                          // print info
                          auto bitmap_pos_idx = 0;
                          if(struct_dict_has_bitmap(dict_type)) {
-                             auto bitmap_val = builder.CreateLoad(builder.CreatePointerCast(builder.CreateGEP(s_info.val, _env->i64Const(bitmap_pos_idx)), _env->i64ptrType()));
+                             auto bitmap_val = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(builder.CreateGEP(s_info.val, _env->i64Const(bitmap_pos_idx)), _env->i64ptrType()));
                              // _env->printValue(builder, bitmap_val, "bitmap:      ");
                              bitmap_pos_idx += 8;
                          }
                         if(struct_dict_has_presence_map(dict_type)) {
-                            auto bitmap_val = builder.CreateLoad(builder.CreatePointerCast(builder.CreateGEP(s_info.val, _env->i64Const(bitmap_pos_idx)), _env->i64ptrType()));
+                            auto bitmap_val = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(builder.CreateGEP(s_info.val, _env->i64Const(bitmap_pos_idx)), _env->i64ptrType()));
                             // _env->printValue(builder, bitmap_val, "presence map: ");
                             bitmap_pos_idx += 8;
                         }
 #endif
                         // also varlensize needs to be output separately, so add
                         varlenSize = builder.CreateAdd(varlenSize, size);
-                        lastPtr = builder.CreateGEP(lastPtr, _env->i32Const(sizeof(int64_t)), "outptr");
+                        lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t), "outptr");
                         serialized_idx++;
                         continue; // field done.
                     } else {
