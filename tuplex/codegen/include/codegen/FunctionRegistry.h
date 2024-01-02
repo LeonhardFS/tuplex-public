@@ -99,9 +99,7 @@ namespace tuplex {
             SerializableValue createIntCast(LambdaFunctionBuilder& lfb, const codegen::IRBuilder& builder, python::Type argsType, const std::vector<tuplex::codegen::SerializableValue> &args);
 
             SerializableValue createCapwordsCall(LambdaFunctionBuilder& lfb, const codegen::IRBuilder& builder, const SerializableValue& caller);
-            SerializableValue createAbsCall(LambdaFunctionBuilder& lfb, llvm::IRBuilder<>& builder, python::Type argsType, const std::vector<tuplex::codegen::SerializableValue> &args);
-
-            SerializableValue createCapwordsCall(LambdaFunctionBuilder& lfb, llvm::IRBuilder<>& builder, const SerializableValue& caller);
+            SerializableValue createAbsCall(LambdaFunctionBuilder& lfb, const IRBuilder& builder, python::Type argsType, const std::vector<tuplex::codegen::SerializableValue> &args);
 
             SerializableValue
             createReSearchCall(LambdaFunctionBuilder &lfb, const codegen::IRBuilder& builder, const python::Type &argsType,
@@ -224,7 +222,7 @@ namespace tuplex {
             SerializableValue createMathCeilFloorCall(LambdaFunctionBuilder& lfb, const codegen::IRBuilder& builder, const std::string& qual_name, const SerializableValue& arg);
 
             // print function
-            SerializableValue createPrintCall(LambdaFunctionBuilder& lfb, llvm::IRBuilder<>& builder, const python::Type& argsType, const std::vector<SerializableValue>& args);
+            SerializableValue createPrintCall(LambdaFunctionBuilder& lfb, const IRBuilder& builder, const python::Type& argsType, const std::vector<SerializableValue>& args);
 
         private:
             LLVMEnvironment& _env;

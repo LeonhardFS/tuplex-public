@@ -82,7 +82,7 @@ namespace tuplex {
             }
         }
 
-        SerializableValue FunctionRegistry::createAbsCall(LambdaFunctionBuilder &lfb, llvm::IRBuilder<> &builder,
+        SerializableValue FunctionRegistry::createAbsCall(LambdaFunctionBuilder &lfb, const IRBuilder& builder,
                                                           python::Type argsType,
                                                           const std::vector<tuplex::codegen::SerializableValue> &args) {
             auto& logger = Logger::instance().logger("codegen");
@@ -105,7 +105,7 @@ namespace tuplex {
                 return SerializableValue(val, _env.i64Const(sizeof(double)));
             } else if(python::Type::F64 == type) {
                 assert(arg.val);
-                auto val = builder.createUnaryIntrinsic(LLVMIntrinsic::fabs, arg.val);
+                auto val = builder.CreateUnaryIntrinsic(LLVMIntrinsic::fabs, arg.val);
                 return SerializableValue(val, _env.i64Const(sizeof(double)));
             } else {
                 throw std::runtime_error("invalid type " + type.desc() + " for abs call");
@@ -1568,7 +1568,7 @@ namespace tuplex {
         }
 
     SerializableValue FunctionRegistry::createPrintCall(tuplex::codegen::LambdaFunctionBuilder &lfb,
-                                                        llvm::IRBuilder<> &builder,
+                                                        const IRBuilder& builder,
                                                         const python::Type &argsType,
                                                         const std::vector<SerializableValue> &args) {
            // how many args are there? need to convert everything to str and then concat using whitespace in between
@@ -1605,16 +1605,16 @@ namespace tuplex {
            for(const auto& v : strArgs) {
                // copy str content
                builder.CreateMemCpy(strPtr, 0, v.val, 0, v.size);
-               strPtr = builder.CreateGEP(strPtr, builder.CreateSub(v.size, _env.i64Const(1)));
+               strPtr = builder.MovePtrByBytes(strPtr, builder.CreateSub(v.size, _env.i64Const(1)));
                builder.CreateStore(_env.i8Const(sep), strPtr);
-               strPtr = builder.CreateGEP(strPtr, _env.i64Const(1));
+               strPtr = builder.MovePtrByBytes(strPtr, 1);
            }
            builder.CreateStore(_env.i8Const(end), strPtr);
-           strPtr = builder.CreateGEP(strPtr, _env.i64Const(1));
+           strPtr = builder.MovePtrByBytes(strPtr, 1);
            builder.CreateStore(_env.i8Const('\0'), strPtr);
 
            // call printf function
-           // TODO: need to adjust this later and make it threadsafe...
+           // TODO: need to adjust this later and make it thread-safe...
            auto printf_func = printf_prototype(builder.getContext(), _env.getModule().get());
            llvm::Value *sFormat = builder.CreateGlobalStringPtr("%s");
            builder.CreateCall(printf_func, {sFormat, str});
@@ -2265,7 +2265,7 @@ namespace tuplex {
             return {replaced_str, builder.CreateLoad(builder.getInt64Ty(), sizeVar)};
         }
 
-        void check_is_not_nullptr(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* ptr, const std::string& message) {
+        void check_is_not_nullptr(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* ptr, const std::string& message) {
             using namespace llvm;
             assert(ptr->getType()->isPointerTy());
             auto icmp_nullptr = builder.CreateICmpEQ(ptr, env.nullConstant(ptr->getType()));
@@ -2281,7 +2281,7 @@ namespace tuplex {
 
         // return true if rhs == lhs, false else.
         llvm::Value* equal_comparison(LLVMEnvironment& env,
-                                      llvm::IRBuilder<>& builder,
+                                      const IRBuilder& builder,
                                       const python::Type& rhs_type,
                                       const SerializableValue& rhs,
                                       const python::Type& lhs_type,

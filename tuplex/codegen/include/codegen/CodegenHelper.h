@@ -599,6 +599,26 @@ namespace tuplex {
 
             }
 
+
+            inline llvm::CallInst* CreateMemSet(llvm::Value *Ptr, llvm::Value *Val, llvm::Value *Size, unsigned Align,
+                                    bool isVolatile = false, llvm::MDNode *TBAATag = nullptr,
+                                    llvm::MDNode *ScopeTag = nullptr,
+                                    llvm::MDNode *NoAliasTag = nullptr) const {
+#if LLVM_VERSION_MAJOR == 9
+                return get_or_throw().CreateMemSet(Ptr, Val, Size, Align, isVolatile, TBAATag, ScopeTag, NoAliasTag);
+#elif LLVM_VERSION_MAJOR > 9
+#error "not implemented"
+#endif
+            }
+
+             inline llvm::CallInst* CreateMemSet(llvm::Value *Ptr, llvm::Value *Val, uint64_t Size, unsigned Align,
+                                                 bool isVolatile = false, llvm::MDNode *TBAATag = nullptr,
+                                                 llvm::MDNode *ScopeTag = nullptr,
+                                                 llvm::MDNode *NoAliasTag = nullptr) const {
+                return CreateMemSet(Ptr, Val, llvm::ConstantInt::get(llvm::Type::getInt64Ty(getContext()), llvm::APInt(Size, 64)),
+                                    Align, isVolatile, TBAATag, ScopeTag, NoAliasTag);
+            }
+
             inline llvm::PHINode* CreatePHI(llvm::Type* type, unsigned NumReservedValues, const std::string& twine="") const {
                  assert(type);
                  return get_or_throw().CreatePHI(type, NumReservedValues, twine);

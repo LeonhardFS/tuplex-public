@@ -545,7 +545,7 @@ namespace tuplex {
                 return llvm::Type::getDoublePtrTy(_context, 0);
             }
 
-            inline llvm::Value* pack32iTo64i(llvm::IRBuilder<>& builder, llvm::Value* high, llvm::Value* low) {
+            inline llvm::Value* pack32iTo64i(const IRBuilder& builder, llvm::Value* high, llvm::Value* low) {
                 assert(high && low);
                 assert(high->getType() == i32Type());
                 assert(low->getType() == i32Type());
@@ -558,7 +558,7 @@ namespace tuplex {
                 return builder.CreateOr(higher_bits, lower_bits);
             }
 
-            inline void extract32iFrom64i(llvm::IRBuilder<>& builder, llvm::Value* val, llvm::Value** high, llvm::Value** low) {
+            inline void extract32iFrom64i(const IRBuilder& builder, llvm::Value* val, llvm::Value** high, llvm::Value** low) {
                 if(!high && !low)
                     return;
                 assert(val && val->getType() == i64Type());
@@ -572,7 +572,7 @@ namespace tuplex {
             }
 
 
-            inline llvm::Value* roundUpToMultiple(llvm::IRBuilder<>& builder, llvm::Value* num, int64_t factor) {
+            inline llvm::Value* roundUpToMultiple(const IRBuilder& builder, llvm::Value* num, int64_t factor) {
                 // use following formula:
                 // num - 1 - (num - 1) % factor + factor
 
@@ -707,7 +707,7 @@ namespace tuplex {
              * @param targetType
              * @return upcasted value
              */
-            SerializableValue upcastValue(llvm::IRBuilder<>& builder, const SerializableValue &val,
+            SerializableValue upcastValue(const IRBuilder& builder, const SerializableValue &val,
                                           const python::Type &type,
                                           const python::Type &targetType);
 
@@ -717,7 +717,7 @@ namespace tuplex {
              * @param type
              * @return a value representing some sort of value
              */
-            SerializableValue dummyValue(llvm::IRBuilder<> &builder, const python::Type &type);
+            SerializableValue dummyValue(const IRBuilder& builder, const python::Type &type);
 
             /*!
              * creates llvm code for boolean value corresponding to this environment
@@ -809,7 +809,7 @@ namespace tuplex {
              */
             llvm::Value *malloc(const codegen::IRBuilder& builder, llvm::Value *size);
 
-            inline llvm::Value* malloc(llvm::IRBuilder<>& builder, size_t size) { return malloc(builder, i64Const(size)); }
+            inline llvm::Value* malloc(const IRBuilder& builder, size_t size) { return malloc(builder, i64Const(size)); }
 
             /*!
              * call C's malloc function (need to generate free code as well!)
@@ -2243,7 +2243,7 @@ namespace tuplex {
         * @param type
         * @return dummy value
         */
-        extern SerializableValue CreateDummyValue(LLVMEnvironment& env, llvm::IRBuilder<>& builder, const python::Type& type);
+        extern SerializableValue CreateDummyValue(LLVMEnvironment& env, const IRBuilder& builder, const python::Type& type);
 
         extern SerializableValue constantValuedTypeToLLVM(const codegen::IRBuilder& builder, const python::Type& const_type);
 

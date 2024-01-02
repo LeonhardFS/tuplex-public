@@ -297,13 +297,14 @@ namespace tuplex {
                 // some checks
                 if(field_idx >= 0) {
                     assert(el.val);
-                    auto llvm_idx = CreateStructGEP(builder, ptr, field_idx);
+                    auto llvm_type = env.pythonToLLVMType(value_type);
+                    auto llvm_idx = builder.CreateStructGEP(llvm_type, ptr, field_idx);
                     builder.CreateStore(el.val, llvm_idx);
                 }
 
                 if(size_idx >= 0) {
                     assert(el.size);
-                    auto llvm_idx = CreateStructGEP(builder, ptr, size_idx);
+                    auto llvm_idx = builder.CreateStructGEP(builder.getInt64Ty(), ptr, size_idx);
                     builder.CreateStore(el.size, llvm_idx);
                 }
 
@@ -339,7 +340,7 @@ namespace tuplex {
             if(has_bitmap) {
                 for(unsigned i = 0; i < bitmap_entries.size(); ++i) {
                     auto bitmapPos = bitmap_entries[i].first;
-                    auto structBitmapIdx = CreateStructGEP(builder, ptr, 0ull); // bitmap comes first!
+                    auto structBitmapIdx = builder.CreateStructGEP(env.i8ptrType(), ptr, 0ull); // bitmap comes first!
                     auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, 0ull, bitmapPos);
                     builder.CreateStore(bitmap_entries[i].second, bitmapIdx);
                 }
@@ -348,7 +349,7 @@ namespace tuplex {
             if(has_bitmap) {
                 for(unsigned i = 0; i < presence_entries.size(); ++i) {
                     auto bitmapPos = presence_entries[i].first;
-                    auto structBitmapIdx = CreateStructGEP(builder, ptr, 1ull); // bitmap comes first!
+                    auto structBitmapIdx = builder.CreateStructGEP(env.i8ptrType(), ptr, 1ull); // bitmap comes first!
                     auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, 0ull, bitmapPos);
                     builder.CreateStore(presence_entries[i].second, bitmapIdx);
                 }

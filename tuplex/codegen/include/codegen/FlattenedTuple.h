@@ -122,7 +122,7 @@ namespace tuplex {
              * @param allow_simple_tuple_wrap because row-types per definition are
              * @return new FlattenedTuple.
              */
-            FlattenedTuple upcastTo(llvm::IRBuilder<>& builder, const python::Type& target_type, bool allow_simple_tuple_wrap=false) const;
+            FlattenedTuple upcastTo(const IRBuilder& builder, const python::Type& target_type, bool allow_simple_tuple_wrap=false) const;
 
             /*!
              * retrieves an element based on the index. I.e. to access the
@@ -156,7 +156,7 @@ namespace tuplex {
 
             inline python::Type fieldType(int index) const { return getFieldTypes()[index]; }
 
-            void print(llvm::IRBuilder<>& builder) const;
+            void print(const IRBuilder& builder) const;
 
             /*!
              * set using tuple index an element to a value.
@@ -181,7 +181,7 @@ namespace tuplex {
              * @param builder
              * @param index
              */
-            void setDummy(llvm::IRBuilder<>& builder, const std::vector<int>& index);
+            void setDummy(const IRBuilder& builder, const std::vector<int>& index);
 
             /*!
              * deserializes i8* pointer
@@ -303,7 +303,7 @@ namespace tuplex {
              * @param builder
              * @return ptr to getLLVMType() filled with data elements.
              */
-            llvm::Value* loadToHeapPtr(llvm::IRBuilder<>& builder)const;
+            llvm::Value* loadToHeapPtr(const IRBuilder& builder)const;
 
             /*!
              * creates alloc for llvm struct val representing this tuple
@@ -387,7 +387,7 @@ namespace tuplex {
          * @param mapping
          * @return flattened tuple upcast to general type.
          */
-        inline FlattenedTuple normalToGeneralTuple(llvm::IRBuilder<>& builder,
+        inline FlattenedTuple normalToGeneralTuple(const IRBuilder& builder,
                                                    const FlattenedTuple& normal_tuple,
                                                    const python::Type& normal_case,
                                                    const python::Type& general_case,
@@ -449,7 +449,7 @@ namespace tuplex {
             }
         }
 
-        inline FlattenedTuple normalToGeneralTupleWithNullCompatibility(llvm::IRBuilder<>& builder,
+        inline FlattenedTuple normalToGeneralTupleWithNullCompatibility(const IRBuilder& builder,
                                                                LLVMEnvironment* env,
                                                                const FlattenedTuple& normal_tuple,
                                                                const python::Type& normal_case,

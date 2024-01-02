@@ -2830,7 +2830,7 @@ namespace tuplex {
             return ss.str();
         }
 
-        SerializableValue LLVMEnvironment::dummyValue(llvm::IRBuilder<> &builder, const python::Type &type) {
+        SerializableValue LLVMEnvironment::dummyValue(const IRBuilder& builder, const python::Type &type) {
             // dummy value needs to be created for llvm to combine stuff.
             SerializableValue retVal;
             if (python::Type::BOOLEAN == type || python::Type::I64 == type) {
@@ -2848,7 +2848,7 @@ namespace tuplex {
                 retVal.is_null = i1Const(false);
             } else if(type.isListType()) {
                 // allocate list ptr and init with zero length!
-                auto llvm_list_type = getOrCreateListType(type);
+                auto llvm_list_type = createOrGetListType(type);
                 auto list_ptr = CreateFirstBlockAlloca(builder, llvm_list_type, "dummy_list");
                 list_init_empty(*this, builder, list_ptr, type);
                 retVal.val = list_ptr;
@@ -2862,7 +2862,7 @@ namespace tuplex {
             return retVal;
         }
 
-        SerializableValue LLVMEnvironment::upcastValue(llvm::IRBuilder<>& builder, const SerializableValue &val,
+        SerializableValue LLVMEnvironment::upcastValue(const IRBuilder& builder, const SerializableValue &val,
                                                       const python::Type &type,
                                                       const python::Type &targetType) {
             if(!canUpcastType(type, targetType))
@@ -3012,7 +3012,7 @@ namespace tuplex {
             return structType;
         }
 
-        SerializableValue CreateDummyValue(LLVMEnvironment& env, llvm::IRBuilder<>& builder, const python::Type& type) {
+        SerializableValue CreateDummyValue(LLVMEnvironment& env, const IRBuilder& builder, const python::Type& type) {
             using namespace llvm;
 
             // dummy value needs to be created for llvm to combine stuff.

@@ -85,7 +85,7 @@ namespace tuplex {
             return _tree.fieldType(index);
         }
 
-        void FlattenedTuple::setDummy(llvm::IRBuilder<> &builder, const std::vector<int> &index) {
+        void FlattenedTuple::setDummy(const IRBuilder& builder, const std::vector<int> &index) {
             // is it a single value or a compound/tuple type?
             auto field_type = _tree.fieldType(index);
             if(field_type.isTupleType() && field_type != python::Type::EMPTYTUPLE) {
@@ -725,12 +725,12 @@ namespace tuplex {
                          // print info
                          auto bitmap_pos_idx = 0;
                          if(struct_dict_has_bitmap(dict_type)) {
-                             auto bitmap_val = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(builder.CreateGEP(s_info.val, _env->i64Const(bitmap_pos_idx)), _env->i64ptrType()));
+                             auto bitmap_val = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(builder.CreateGEP(builder.getInt64Ty(), s_info.val, _env->i64Const(bitmap_pos_idx)), _env->i64ptrType()));
                              // _env->printValue(builder, bitmap_val, "bitmap:      ");
                              bitmap_pos_idx += 8;
                          }
                         if(struct_dict_has_presence_map(dict_type)) {
-                            auto bitmap_val = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(builder.CreateGEP(s_info.val, _env->i64Const(bitmap_pos_idx)), _env->i64ptrType()));
+                            auto bitmap_val = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(builder.CreateGEP(builder.getInt64Ty(), s_info.val, _env->i64Const(bitmap_pos_idx)), _env->i64ptrType()));
                             // _env->printValue(builder, bitmap_val, "presence map: ");
                             bitmap_pos_idx += 8;
                         }
@@ -919,13 +919,13 @@ namespace tuplex {
             if(hasVarField) {
                 // _env->printValue(builder, varlenSize, "storing total varlen fields size = ");
                 builder.CreateStore(varlenSize, builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0))); // last field
-                lastPtr = builder.CreateGEP(lastPtr, _env->i32Const(sizeof(int64_t)));
+                lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t));
                 // add varlength
-                lastPtr = builder.CreateGEP(lastPtr, varlenSize);
+                lastPtr = builder.MovePtrByBytes(lastPtr, varlenSize);
             }
 
             // return diff
-            auto bytes_written = builder.CreatePtrDiff(lastPtr, original_start_ptr);
+            auto bytes_written = builder.CreatePtrDiff(builder.getInt8Ty(), lastPtr, original_start_ptr);
 
             // _env->printValue(builder, bytes_written, "bytes written: ");
             return bytes_written;
@@ -974,10 +974,11 @@ namespace tuplex {
                 if(elementType.isStructuredDictionaryType()) {
                     // either struct.dict or struct.dict* supported.
                     assert(val->getType()->isStructTy() ||
-                          (val->getType()->isPointerTy() && val->getType()->getPointerElementType()->isStructTy()));
+                          (val->getType()->isPointerTy() && LLVM_VERSION_MAJOR <= 15 && val->getType()->getPointerElementType()->isStructTy()));
                     if(val->getType()->isPointerTy()) {
+                        auto llvm_struct_type = _env->getOrCreateStructuredDictType(elementType);
                         // perform load!
-                        val = builder.CreateLoad(val);
+                        val = builder.CreateLoad(llvm_struct_type, val);
                     }
                     size = nullptr; // needs to be calculated...
                 }
@@ -1168,10 +1169,9 @@ namespace tuplex {
             // copy structure llvm like out
             auto llvmType = getLLVMType();
 
-            auto cb = getFirstBlockBuilder(builder);
-            auto tuple_ptr = cb.CreateAlloca(llvmType, 0, nullptr, twine);
+            auto tuple_ptr = _env->CreateFirstBlockAlloca(builder, llvmType, twine);
 
-            // get tuple indices and initialize values!
+            // get tuple indices and initialize values!d
             for(unsigned i = 0; i < _flattenedTupleType.parameters().size(); ++i) {
                 auto indices = getTupleIndices(_flattenedTupleType, i);
 
@@ -1193,7 +1193,7 @@ namespace tuplex {
             // return _env->CreateFirstBlockAlloca(builder, llvmType, twine);
         }
 
-        void FlattenedTuple::storeTo(llvm::IRBuilder<> &builder, llvm::Value *ptr, bool is_volatile) const {
+        void FlattenedTuple::storeTo(const IRBuilder& builder, llvm::Value *ptr, bool is_volatile) const {
             // check that type corresponds
             auto llvmType = getLLVMType();
 
@@ -1458,7 +1458,7 @@ namespace tuplex {
                     builder.SetInsertPoint(bbNullCheckPassed);
                 }
 
-                t = t.withoutOptions();
+                t = t.withoutOption();
 
                 llvm::Value* cellStr = nullptr, *cellSize = nullptr;
 
@@ -1532,7 +1532,7 @@ namespace tuplex {
                                sizesPtr, nullErrorBlock, valueErrorBlock, null_values, cell_indices);
         }
 
-        FlattenedTuple FlattenedTuple::upcastTo(llvm::IRBuilder<>& builder,
+        FlattenedTuple FlattenedTuple::upcastTo(const IRBuilder& builder,
                                                 const python::Type& target_type,
                                                 bool allow_simple_tuple_wrap) const {
 
@@ -1600,7 +1600,7 @@ namespace tuplex {
             return ft;
         }
 
-        llvm::Value *FlattenedTuple::loadToHeapPtr(llvm::IRBuilder<> &builder) const {
+        llvm::Value *FlattenedTuple::loadToHeapPtr(const IRBuilder& builder) const {
             auto llvm_type = getLLVMType(); assert(llvm_type);
 
             const auto& DL = _env->getModule()->getDataLayout();
