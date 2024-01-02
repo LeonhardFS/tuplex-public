@@ -10,16 +10,16 @@ namespace tuplex {
     namespace codegen {
 
         // forward declare:
-        llvm::Value* list_serialize_varitems_to(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr,
+        llvm::Value* list_serialize_varitems_to(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr,
                                                 const python::Type& list_type, llvm::Value* dest_ptr,
                                                 std::function<llvm::Value*(LLVMEnvironment&, llvm::IRBuilder<>&, llvm::Value*, llvm::Value*)> f_item_size,
                                                 std::function<llvm::Value*(LLVMEnvironment&, llvm::IRBuilder<>&, llvm::Value*, llvm::Value*, llvm::Value*)> f_item_serialize_to);
 
-        void list_free(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr, const python::Type& list_type) {
+        void list_free(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, const python::Type& list_type) {
             // list should only use runtime allocations -> hence free later!
         }
 
-        void list_init_empty(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr, const python::Type& list_type) {
+        void list_init_empty(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, const python::Type& list_type) {
             using namespace llvm;
             using namespace std;
 
@@ -151,7 +151,7 @@ namespace tuplex {
         }
 
         // helper function to allocate and store a pointer via rtmalloc + potentially initialize it
-        void list_init_array(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr, llvm::Value* capacity, size_t struct_index, bool initialize) {
+        void list_init_array(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, llvm::Value* capacity, size_t struct_index, bool initialize) {
             using namespace llvm;
             using namespace std;
 
@@ -183,7 +183,7 @@ namespace tuplex {
         }
 
 
-        void list_reserve_capacity(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr, const python::Type& list_type, llvm::Value* capacity, bool initialize) {
+        void list_reserve_capacity(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, const python::Type& list_type, llvm::Value* capacity, bool initialize) {
             // reserve capacity
             // --> free upfront
             list_free(env, builder, list_ptr, list_type);
@@ -275,7 +275,7 @@ namespace tuplex {
         }
 
         // NEW version
-        SerializableValue list_load_value(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr, const python::Type& list_type, llvm::Value* idx) {
+        SerializableValue list_load_value(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, const python::Type& list_type, llvm::Value* idx) {
             SerializableValue ret;
             auto element_type = list_type.elementType();
 
@@ -349,7 +349,7 @@ namespace tuplex {
         }
 
 //        // old and buggy
-//        SerializableValue list_load_value(LLVMEnvironment& env, llvm::IRBuilder<>& builder,
+//        SerializableValue list_load_value(LLVMEnvironment& env, const IRBuilder& builder,
 //                              llvm::Value* list_ptr,
 //                              const python::Type& list_type,
 //                              llvm::Value* idx) {
@@ -559,7 +559,7 @@ namespace tuplex {
 //        }
 
 
-        void list_store_value(LLVMEnvironment& env, llvm::IRBuilder<>& builder,
+        void list_store_value(LLVMEnvironment& env, const IRBuilder& builder,
                               llvm::Value* list_ptr,
                               const python::Type& list_type,
                               llvm::Value* idx,
@@ -771,7 +771,7 @@ namespace tuplex {
         }
 
 
-        void list_store_size(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr, const python::Type& list_type, llvm::Value* size) {
+        void list_store_size(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, const python::Type& list_type, llvm::Value* size) {
             assert(list_type.isListType());
             if(python::Type::EMPTYLIST == list_type)
                 return; // nothing to do
@@ -821,7 +821,7 @@ namespace tuplex {
             }
         }
 
-        llvm::Value* list_length(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr, const python::Type& list_type) {
+        llvm::Value* list_length(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, const python::Type& list_type) {
             assert(list_type.isListType());
             if(python::Type::EMPTYLIST == list_type)
                 return env.i64Const(0); // empty list is well,... guess (drum roll) -> empty.
@@ -873,11 +873,11 @@ namespace tuplex {
             }
         }
 
-        llvm::Value* list_of_structs_size(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr, const python::Type& list_type) {
+        llvm::Value* list_of_structs_size(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, const python::Type& list_type) {
             using namespace llvm;
 
             // should be same as in serialize_to!!!
-            auto f_struct_element_size = [list_type](LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
+            auto f_struct_element_size = [list_type](LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
                 assert(index && index->getType() == env.i64Type());
 
                 auto element_type = list_type.elementType();
@@ -895,11 +895,11 @@ namespace tuplex {
             return list_of_varitems_serialized_size(env, builder, list_ptr, list_type, f_struct_element_size);
         }
 
-        llvm::Value* list_of_lists_size(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr, const python::Type& list_type) {
+        llvm::Value* list_of_lists_size(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, const python::Type& list_type) {
             // new
 
             // define proper helper functions here
-            auto list_get_list_item_size = [list_type](LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
+            auto list_get_list_item_size = [list_type](LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
                 assert(index && index->getType() == env.i64Type());
 
                 auto element_type = list_type.elementType();
@@ -922,7 +922,7 @@ namespace tuplex {
             return list_of_varitems_serialized_size(env, builder, list_ptr, list_type, list_get_list_item_size);
         }
 
-        FlattenedTuple get_tuple_item(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr, const python::Type& list_type, llvm::Value* index) {
+        FlattenedTuple get_tuple_item(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, const python::Type& list_type, llvm::Value* index) {
 
             assert(index && index->getType() == env.i64Type());
             auto element_type = list_type.elementType();
@@ -969,10 +969,10 @@ namespace tuplex {
         }
 
 
-        llvm::Value* list_of_tuples_size(LLVMEnvironment& env, llvm::IRBuilder<>& builder,
+        llvm::Value* list_of_tuples_size(LLVMEnvironment& env, const IRBuilder& builder,
                                          llvm::Value* list_ptr, const python::Type& list_type) {
 
-            auto f_tuple_element_size = [list_type](LLVMEnvironment& env, llvm::IRBuilder<>& builder,
+            auto f_tuple_element_size = [list_type](LLVMEnvironment& env, const IRBuilder& builder,
                     llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
                 auto element_type = list_type.elementType();
                 assert(element_type.isTupleType());
@@ -992,7 +992,7 @@ namespace tuplex {
             return l_size;
         }
 
-        static llvm::Value* list_serialize_fixed_sized_to(LLVMEnvironment& env, llvm::IRBuilder<>& builder,
+        static llvm::Value* list_serialize_fixed_sized_to(LLVMEnvironment& env, const IRBuilder& builder,
                                                           llvm::Value* list_ptr,
                                                           const python::Type& list_type,
                                                           llvm::Value* dest_ptr) {
@@ -1019,13 +1019,13 @@ namespace tuplex {
             return size;
         }
 
-        llvm::Value* list_of_structs_serialize_to(LLVMEnvironment& env, llvm::IRBuilder<>& builder,
+        llvm::Value* list_of_structs_serialize_to(LLVMEnvironment& env, const IRBuilder& builder,
                                                   llvm::Value* list_ptr, const python::Type& list_type,
                                                   llvm::Value* dest_ptr) {
             // quite complex, basically write like strings/pyobjects incl. offset array!
 
             // -> there may be structs that are of fixed size. Could write them optimized. for now, write as var always...
-            auto f_struct_element_size = [list_type](LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
+            auto f_struct_element_size = [list_type](LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
                 assert(index && index->getType() == env.i64Type());
 
                 auto element_type = list_type.elementType();
@@ -1040,7 +1040,7 @@ namespace tuplex {
                 return item_size;
             };
 
-            auto f_struct_element_serialize_to = [list_type](LLVMEnvironment& env, llvm::IRBuilder<>& builder,
+            auto f_struct_element_serialize_to = [list_type](LLVMEnvironment& env, const IRBuilder& builder,
                                                             llvm::Value* list_ptr, llvm::Value* index, llvm::Value* dest_ptr) -> llvm::Value* {
 
                 assert(index && index->getType() == env.i64Type());
@@ -1063,7 +1063,7 @@ namespace tuplex {
         }
 
         llvm::Value* list_of_tuples_serialize_to(LLVMEnvironment& env,
-                                                 llvm::IRBuilder<>& builder,
+                                                 const IRBuilder& builder,
                                                  llvm::Value* list_ptr,
                                                  const python::Type& list_type,
                                                  llvm::Value* dest_ptr) {
@@ -1072,7 +1072,7 @@ namespace tuplex {
             // -> there may be structs that are of fixed size. Could write them optimized.
             // for now, write as var always...
             // -> use same Lambda func for size helper func...
-            auto f_tuple_element_size = [list_type](LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
+            auto f_tuple_element_size = [list_type](LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
                 assert(index && index->getType() == env.i64Type());
 
                 auto element_type = list_type.elementType();
@@ -1088,7 +1088,7 @@ namespace tuplex {
                 return item_size;
             };
 
-            auto f_tuple_element_serialize_to = [list_type](LLVMEnvironment& env, llvm::IRBuilder<>& builder,
+            auto f_tuple_element_serialize_to = [list_type](LLVMEnvironment& env, const IRBuilder& builder,
                                                              llvm::Value* list_ptr, llvm::Value* index, llvm::Value* dest_ptr) -> llvm::Value* {
 
                 assert(index && index->getType() == env.i64Type());
@@ -1111,7 +1111,7 @@ namespace tuplex {
         }
 
         // generic list of variable fields serialization function
-        llvm::Value* list_serialize_varitems_to(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr,
+        llvm::Value* list_serialize_varitems_to(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr,
                                                const python::Type& list_type, llvm::Value* dest_ptr,
                                                 std::function<llvm::Value*(LLVMEnvironment&, llvm::IRBuilder<>&, llvm::Value*, llvm::Value*)> f_item_size,
                                                 std::function<llvm::Value*(LLVMEnvironment&, llvm::IRBuilder<>&, llvm::Value*, llvm::Value*, llvm::Value*)> f_item_serialize_to) {
@@ -1219,7 +1219,7 @@ namespace tuplex {
         }
 
         // generic list of variable fields serialization function
-        llvm::Value* list_of_varitems_serialized_size(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr,
+        llvm::Value* list_of_varitems_serialized_size(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr,
                                                 const python::Type& list_type,
                                                 std::function<llvm::Value*(LLVMEnvironment&, llvm::IRBuilder<>&, llvm::Value*, llvm::Value*)> f_item_size) {
             using namespace llvm;
@@ -1286,12 +1286,12 @@ namespace tuplex {
         }
 
 
-        llvm::Value* list_of_lists_serialize_to(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr,
+        llvm::Value* list_of_lists_serialize_to(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr,
                                                 const python::Type& list_type, llvm::Value* dest_ptr) {
 
             // define proper helper functions here
             // @TODO: refactor s.t. this here is the same as the in the list size function.
-            auto list_get_list_item_size = [list_type](LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
+            auto list_get_list_item_size = [list_type](LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
                 assert(index && index->getType() == env.i64Type());
 
                 auto element_type = list_type.elementType();
@@ -1311,7 +1311,7 @@ namespace tuplex {
                 return item_size;
             };
 
-            auto list_serialize_list_item = [list_type](LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr, llvm::Value* index, llvm::Value* dest_ptr) -> llvm::Value* {
+            auto list_serialize_list_item = [list_type](LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, llvm::Value* index, llvm::Value* dest_ptr) -> llvm::Value* {
                 assert(index && index->getType() == env.i64Type());
 
                 auto element_type = list_type.elementType();
@@ -1335,9 +1335,9 @@ namespace tuplex {
             return l_size;
         }
 
-        llvm::Value* list_serialized_size_str_like(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr,
+        llvm::Value* list_serialized_size_str_like(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr,
         const python::Type& list_type) {
-            auto list_get_str_like_item_size = [list_type](LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
+            auto list_get_str_like_item_size = [list_type](LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
                 assert(index && index->getType() == env.i64Type());
 
                 auto element_type = list_type.elementType();
@@ -1354,9 +1354,9 @@ namespace tuplex {
             return list_of_varitems_serialized_size(env, builder, list_ptr, list_type, list_get_str_like_item_size);
         }
 
-        llvm::Value* list_serialize_str_like_to(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr,
+        llvm::Value* list_serialize_str_like_to(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr,
                                                 const python::Type& list_type, llvm::Value* dest_ptr) {
-            auto list_get_str_like_item_size = [list_type](LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
+            auto list_get_str_like_item_size = [list_type](LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
                 assert(index && index->getType() == env.i64Type());
 
                 auto element_type = list_type.elementType();
@@ -1370,7 +1370,7 @@ namespace tuplex {
                 return item_size;
             };
 
-            auto list_serialize_str_like_item = [list_type](LLVMEnvironment& env, llvm::IRBuilder<>& builder,
+            auto list_serialize_str_like_item = [list_type](LLVMEnvironment& env, const IRBuilder& builder,
                     llvm::Value* list_ptr, llvm::Value* index, llvm::Value* dest_ptr) -> llvm::Value* {
 
                 assert(index && index->getType() == env.i64Type());
@@ -1407,7 +1407,7 @@ namespace tuplex {
             return l_size;
         }
 
-        llvm::Value* list_serialize_to(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr, const python::Type& list_type, llvm::Value* dest_ptr) {
+        llvm::Value* list_serialize_to(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, const python::Type& list_type, llvm::Value* dest_ptr) {
 
             using namespace llvm;
             using namespace std;
@@ -1449,7 +1449,7 @@ namespace tuplex {
             return nullptr;
         }
 
-        llvm::Value* list_serialized_size(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr, const python::Type& list_type) {
+        llvm::Value* list_serialized_size(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, const python::Type& list_type) {
             using namespace llvm;
             using namespace std;
 
@@ -1583,7 +1583,7 @@ namespace tuplex {
         }
 
         std::tuple<llvm::Value*, SerializableValue> list_deserialize_from(LLVMEnvironment& env,
-                                                                          llvm::IRBuilder<>& builder,
+                                                                          const IRBuilder& builder,
                                                                           llvm::Value* ptr,
                                                                           const python::Type& list_type) {
             using namespace std;
@@ -1679,7 +1679,7 @@ namespace tuplex {
         }
 
         // new, create func
-        llvm::Value* list_upcast(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr,
+        llvm::Value* list_upcast(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr,
                                  const python::Type& list_type, const python::Type& target_list_type) {
             // function creation can be cached...
             auto llvm_list_type = env.pythonToLLVMType(list_type);
@@ -1716,7 +1716,7 @@ namespace tuplex {
         }
 
         // old, causes bug in LLVM for float...
-//        llvm::Value* list_upcast(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* list_ptr,
+//        llvm::Value* list_upcast(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr,
 //                                 const python::Type& list_type, const python::Type& target_list_type) {
 //
 //            env.debugPrint(builder, "enter list upcast function " + list_type.desc() + " -> " + target_list_type.desc());

@@ -20,6 +20,8 @@
 
 #if LLVM_VERSION_MAJOR > 9
 #include <llvm/AsmParser/Parser.h>
+#include <llvm/TargetParser/Host.h>
+
 #endif
 
 #if LLVM_VERSION_MAJOR >= 9
@@ -50,7 +52,6 @@
 
 #include <nlohmann/json.hpp>
 #include <cstddef>
-#include <llvm/TargetParser/Host.h>
 
 namespace tuplex {
     namespace codegen {
