@@ -47,7 +47,7 @@ namespace tuplex {
             // if(obj != nullptr)
             //    JsonItem_Free(obj)
             // obj = nullptr
-            auto is_null = builder.CreateICmpEQ(builder.CreateLoad(obj_var), env.i8nullptr());
+            auto is_null = builder.CreateICmpEQ(builder.CreateLoad(env.i8ptrType(), obj_var), env.i8nullptr());
             BasicBlock* bFree = BasicBlock::Create(env.getContext(), "free_object", builder.GetInsertBlock()->getParent());
             BasicBlock* bContinue = BasicBlock::Create(env.getContext(), "null_object", builder.GetInsertBlock()->getParent());
             builder.CreateCondBr(is_null, bContinue, bFree);
@@ -76,7 +76,7 @@ namespace tuplex {
             builder.SetInsertPoint(bFree);
 
             // call free func
-            json_freeArray(env, builder, builder.CreateLoad(arr_var));
+            json_freeArray(env, builder, builder.CreateLoad(env.i8ptrType(), arr_var));
 
             builder.CreateBr(bContinue);
             builder.SetInsertPoint(bContinue);

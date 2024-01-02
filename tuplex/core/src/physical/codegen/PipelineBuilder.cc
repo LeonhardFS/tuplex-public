@@ -23,7 +23,7 @@ namespace tuplex {
 
         // reusable function b.c. needs to be done in resolver too.
         // @TODO: fix this function, it's not doing proper upcasting...
-        FlattenedTuple castRow(IRBuilder& builder, const FlattenedTuple& row, const python::Type& target_type) {
+        FlattenedTuple castRow(const IRBuilder& builder, const FlattenedTuple& row, const python::Type& target_type) {
             Logger::instance().defaultLogger().warn("using deprecated function, please change in code.");
             return row.upcastTo(builder, target_type);
         }

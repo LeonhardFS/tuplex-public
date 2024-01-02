@@ -105,7 +105,7 @@ namespace tuplex {
                 return SerializableValue(val, _env.i64Const(sizeof(double)));
             } else if(python::Type::F64 == type) {
                 assert(arg.val);
-                auto val = createUnaryIntrinsic(builder, llvm::Intrinsic::ID::fabs, arg.val);
+                auto val = builder.CreateUnaryIntrinsic(LLVMIntrinsic::fabs, arg.val);
                 return SerializableValue(val, _env.i64Const(sizeof(double)));
             } else {
                 throw std::runtime_error("invalid type " + type.desc() + " for abs call");

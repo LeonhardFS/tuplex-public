@@ -955,7 +955,7 @@ namespace tuplex {
              * @param builder
              * @return None
              */
-            static SerializableValue None(llvm::IRBuilder<>& builder) {
+            static SerializableValue None(const IRBuilder& builder) {
                 auto is_null = llvm::Constant::getIntegerValue(llvm::Type::getInt1Ty(builder.getContext()), llvm::APInt(1, true));
                 return SerializableValue(nullptr, nullptr, is_null);
             }

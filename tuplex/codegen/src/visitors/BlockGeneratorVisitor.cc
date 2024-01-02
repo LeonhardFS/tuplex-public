@@ -66,7 +66,7 @@ namespace tuplex {
 
             // add SerializableValue with null indicator set to true!
             //            _blockStack.push_back(SerializableValue(nullptr, nullptr, _env->i1Const(true))); // ... is_null=true!
-            auto builder = _lfb->getLLVMBuilder();
+            auto builder = _lfb->getIRBuilder();
             _blockStack.push_back(SerializableValue::None(builder)); // ... is_null=true!
         }
 
