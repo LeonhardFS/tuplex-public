@@ -63,6 +63,8 @@ namespace tuplex {
             using ObjLayerT = llvm::orc::RTDyldObjectLinkingLayer;
             using CompileLayerT = llvm::orc::IRCompileLayer<ObjLayerT, llvm::orc::SimpleCompiler>;
             using ModuleHandleT = CompileLayerT::ModuleHandleT;
+
+            inline bool compileObjectBuffer(const std::string &object_buffer) { return compileObjectBuffer(object_buffer, ""); }
         private:
             std::unique_ptr<llvm::TargetMachine> TM;
             std::string dataLayoutStr;
@@ -263,8 +265,10 @@ namespace tuplex {
     // JIT compiler based on LLVM's ORCv2 JIT classes
     class JITCompiler : public IJITCompiler {
     public:
-        JITCompiler();
+        JITCompiler(const llvm::CodeGenOpt::Level& codegen_opt_level=llvm::CodeGenOpt::Default);
         ~JITCompiler();
+
+        inline bool compileObjectBuffer(const std::string &object_buffer) { return compileObjectBuffer(object_buffer, ""); }
 
         /*!
          * return pointer address of compiled symbol

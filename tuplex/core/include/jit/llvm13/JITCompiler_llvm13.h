@@ -30,8 +30,10 @@ namespace tuplex {
     // JIT compiler based on LLVM's ORCv2 JIT classes
     class JITCompiler : public IJITCompiler {
     public:
-        ATTRIBUTE_NO_SANITIZE_ADDRESS JITCompiler();
+        ATTRIBUTE_NO_SANITIZE_ADDRESS JITCompiler(const llvm::CodeGenOpt::Level& codegen_opt_level=llvm::CodeGenOpt::Default);
         ~JITCompiler();
+
+        inline bool compileObjectBuffer(const std::string &object_buffer) { return compileObjectBuffer(object_buffer, ""); }
 
         /*!
          * return pointer address of compiled symbol

@@ -561,8 +561,8 @@ namespace tuplex {
 
             BasicBlock *bbISBody = BasicBlock::Create(env->getContext(), "", fastPathInitStageFunc);
             BasicBlock *bbRSBody = BasicBlock::Create(env->getContext(), "", fastPathReleaseStageFunc);
-            IRBuilder<> isBuilder(bbISBody);
-            IRBuilder<> rsBuilder(bbRSBody);
+            IRBuilder isBuilder(bbISBody);
+            IRBuilder rsBuilder(bbRSBody);
             auto isArgs = codegen::mapLLVMFunctionArgs(fastPathInitStageFunc, {"num_args", "hashmaps", "null_buckets"});
 
             // debug print
@@ -665,11 +665,11 @@ namespace tuplex {
                         auto null_bucket_global = env->createNullInitializedGlobal(null_bucket_global_name,
                                                                                    env->i8ptrType());
 
-                        isBuilder.CreateStore(isBuilder.CreateLoad(
-                                isBuilder.CreateGEP(isArgs["hashmaps"], env->i32Const(global_var_cnt))),
+                        isBuilder.CreateStore(isBuilder.CreateLoad(env->i8ptrType(),
+                                isBuilder.CreateGEP(env->i8ptrType(), isArgs["hashmaps"], env->i32Const(global_var_cnt))),
                                               hash_map_global);
-                        isBuilder.CreateStore(isBuilder.CreateLoad(
-                                isBuilder.CreateGEP(isArgs["null_buckets"], env->i32Const(global_var_cnt))),
+                        isBuilder.CreateStore(isBuilder.CreateLoad(env->i8ptrType(),
+                                isBuilder.CreateGEP(env->i8ptrType(), isArgs["null_buckets"], env->i32Const(global_var_cnt))),
                                               null_bucket_global);
 
                         rsBuilder.CreateStore(env->i8nullptr(), hash_map_global);
@@ -1221,8 +1221,8 @@ namespace tuplex {
 
             BasicBlock *bbISBody = BasicBlock::Create(env->getContext(), "", slowPathInitStageFunc);
             BasicBlock *bbRSBody = BasicBlock::Create(env->getContext(), "", slowPathReleaseStageFunc);
-            IRBuilder<> isBuilder(bbISBody);
-            IRBuilder<> rsBuilder(bbRSBody);
+            IRBuilder isBuilder(bbISBody);
+            IRBuilder rsBuilder(bbRSBody);
             auto isArgs = codegen::mapLLVMFunctionArgs(slowPathInitStageFunc,
                                                                  {"num_args", "hashmaps", "null_buckets"});
 
@@ -1321,11 +1321,11 @@ namespace tuplex {
                         auto null_bucket_global = env->createNullInitializedGlobal(null_bucket_global_name,
                                                                                    env->i8ptrType());
 
-                        isBuilder.CreateStore(isBuilder.CreateLoad(
-                                isBuilder.CreateGEP(isArgs["hashmaps"], env->i32Const(global_var_cnt))),
+                        isBuilder.CreateStore(isBuilder.CreateLoad(env->i8ptrType(),
+                                isBuilder.CreateGEP(env->i8ptrType(), isArgs["hashmaps"], env->i32Const(global_var_cnt))),
                                               hash_map_global);
-                        isBuilder.CreateStore(isBuilder.CreateLoad(
-                                isBuilder.CreateGEP(isArgs["null_buckets"], env->i32Const(global_var_cnt))),
+                        isBuilder.CreateStore(isBuilder.CreateLoad(env->i8ptrType(),
+                                                                   isBuilder.CreateGEP(env->i8ptrType(), isArgs["null_buckets"], env->i32Const(global_var_cnt))),
                                               null_bucket_global);
 
                         rsBuilder.CreateStore(env->i8nullptr(), hash_map_global);

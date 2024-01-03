@@ -1001,7 +1001,7 @@ namespace tuplex {
             if(!jit.compile(std::move(slow_path_mod)))
                 throw std::runtime_error("could not compile slow code for stage " + std::to_string(number()));
         } else {
-            if(!jit.IJITCompiler::compileObjectBuffer(slow_path_code))
+            if(!jit.compileObjectBuffer(slow_path_code))
                 throw std::runtime_error("Could not load slow-code path from object code for stage " + std::to_string(number()));
         }
 

@@ -53,8 +53,6 @@ namespace tuplex {
 
 
         virtual bool compileObjectBuffer(const std::string &object_buffer, std::string dylib_name) = 0;
-
-        inline bool compileObjectBuffer(const std::string &object_buffer) { return compileObjectBuffer(object_buffer, ""); }
     };
 }
 

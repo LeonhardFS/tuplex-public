@@ -152,7 +152,7 @@ namespace tuplex {
         return true;
     }
 
-    JITCompiler::JITCompiler() {
+    JITCompiler::JITCompiler(const llvm::CodeGenOpt::Level& codegen_opt_level) {
         codegen::initLLVM(); // lazy initialization of LLVM backend.
 
         // create new LLJIT instance, details under https://www.youtube.com/watch?v=MOQG5vkh9J8
@@ -176,7 +176,7 @@ namespace tuplex {
 
         // set optimized flags for host system
         auto& tmb = tmBuilder.get();
-        tmb.setCodeGenOptLevel(CodeGenOpt::Aggressive);
+        tmb.setCodeGenOptLevel(codegen_opt_level);
         tmb.setCodeModel(CodeModel::Large);
         tmb.setCPU(CPUStr);
         tmb.setRelocationModel(Reloc::Model::PIC_);
