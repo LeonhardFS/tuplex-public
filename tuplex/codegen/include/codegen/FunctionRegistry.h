@@ -81,8 +81,8 @@ namespace tuplex {
             SerializableValue createUpperCall(const codegen::IRBuilder& builder, const SerializableValue& caller);
             SerializableValue createSwapcaseCall(const codegen::IRBuilder& builder, const SerializableValue& caller);
             SerializableValue createFindCall(const codegen::IRBuilder& builder, const SerializableValue& caller, const SerializableValue& needle);
-            SerializableValue createStrFindCall(llvm::IRBuilder<>& builder, const SerializableValue& caller, const SerializableValue& needle);
-            SerializableValue createListFindCall(llvm::IRBuilder<> &builder,
+            SerializableValue createStrFindCall(const IRBuilder& builder, const SerializableValue& caller, const SerializableValue& needle);
+            SerializableValue createListFindCall(const IRBuilder& builder,
                                                  const python::Type& list_type,
                                                  const tuplex::codegen::SerializableValue &list,
                                                  const python::Type& needle_type,
@@ -178,7 +178,7 @@ namespace tuplex {
                               const python::Type &retType);
 
             SerializableValue createDictGetCall(LambdaFunctionBuilder& lfb,
-                                                llvm::IRBuilder<>& builder,
+                                                const IRBuilder& builder,
                                                 const SerializableValue& caller,
                                                 const python::Type& callerType,
                                                 const std::vector<tuplex::codegen::SerializableValue>& args,

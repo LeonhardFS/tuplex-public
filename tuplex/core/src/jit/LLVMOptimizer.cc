@@ -68,6 +68,7 @@
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/Analysis/LoopAnalysisManager.h>
 #include <llvm/Passes/PassBuilder.h>
+#include "codegen/CodegenHelper.h"
 
 using namespace llvm;
 

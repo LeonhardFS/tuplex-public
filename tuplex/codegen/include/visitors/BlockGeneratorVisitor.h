@@ -70,7 +70,7 @@ namespace codegen {
     class BlockGeneratorVisitor : public ApatheticVisitor, public IFailable {
     private:
 
-        void generateReturnWithNullExtraction(llvm::IRBuilder<>& builder,
+        void generateReturnWithNullExtraction(const IRBuilder& builder,
                                           const SerializableValue& retVal,
                                           const python::Type& retType,
                                           const python::Type& desiredRetType,
@@ -211,7 +211,7 @@ namespace codegen {
                         // allocate new pointer at start of func
                         // special case: no instructions yet present?
                         auto& firstBlock = builder.GetInsertBlock()->getParent()->getEntryBlock();
-                        llvm::IRBuilder<> ctorBuilder(&firstBlock);
+                        IRBuilder ctorBuilder(&firstBlock);
 
                         // when first block is not empty, go to first instruction
                         if(!firstBlock.empty()) {
@@ -332,7 +332,7 @@ namespace codegen {
 
             VariableRealization() : defined(nullptr), original_defined_ptr(nullptr), isParameter(false) {}
 
-            static VariableRealization fromSlot(codegen::IRBuilder&builder, const std::string& name, const VariableSlot& slot) {
+            static VariableRealization fromSlot(codegen::IRBuilder& builder, const std::string& name, const VariableSlot& slot) {
 
                 // parameters are always defined, so quick result here:
                 if(slot.isParameter) {
@@ -687,7 +687,7 @@ namespace codegen {
          * @param idx_expr_node the AST node of the expression (optional)
          * @return true if it worked, false else.
          */
-        bool subscriptStructDict(llvm::IRBuilder<>& builder,
+        bool subscriptStructDict(const IRBuilder& builder,
                                  SerializableValue *out_ret,
                                  const python::Type& value_type,
                                  const SerializableValue& value,

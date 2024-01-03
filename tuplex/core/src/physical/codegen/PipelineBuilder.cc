@@ -2010,7 +2010,7 @@ namespace tuplex {
             return build();
         }
 
-        PipelineBuilder::PipelineResult PipelineBuilder::call(IRBuilder &builder,
+        PipelineBuilder::PipelineResult PipelineBuilder::call(const IRBuilder &builder,
                                                               llvm::Function *func,
                                                               const FlattenedTuple &ft,
                                                               llvm::Value *userData,

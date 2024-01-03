@@ -40,7 +40,7 @@ namespace tuplex {
                             bool terminateEarlyOnLimitCode,
                             llvm::Function* processRowFunc=nullptr);
 
-            void callProcessFuncWithHandler(IRBuilder &builder, llvm::Value *userData,
+            void callProcessFuncWithHandler(const IRBuilder &builder, llvm::Value *userData,
                                             const FlattenedTuple &tuple,
                                             llvm::Value *normalRowCountVar, llvm::Value *rowNumberVar,
                                             llvm::Value *inputRowPtr, llvm::Value *inputRowSize,

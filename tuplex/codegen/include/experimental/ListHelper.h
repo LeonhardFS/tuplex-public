@@ -82,7 +82,7 @@ namespace tuplex {
 
         llvm::Value* list_of_varitems_serialized_size(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr,
                                                       const python::Type& list_type,
-                                                      std::function<llvm::Value*(LLVMEnvironment&, llvm::IRBuilder<>&, llvm::Value*, llvm::Value*)> f_item_size);
+                                                      std::function<llvm::Value*(LLVMEnvironment&, const IRBuilder&, llvm::Value*, llvm::Value*)> f_item_size);
 
         extern llvm::Value* list_upcast(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr,
                                         const python::Type& list_type, const python::Type& target_list_type);

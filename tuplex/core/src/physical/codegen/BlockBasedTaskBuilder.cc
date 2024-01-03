@@ -196,7 +196,7 @@ namespace tuplex {
             return {};
         }
 
-        llvm::BasicBlock *BlockBasedTaskBuilder::exceptionBlock(llvm::IRBuilder<> &builder, llvm::Value *userData,
+        llvm::BasicBlock *BlockBasedTaskBuilder::exceptionBlock(const IRBuilder &builder, llvm::Value *userData,
                                                                 llvm::Value *exceptionCode,
                                                                 llvm::Value *exceptionOperatorID,
                                                                 std::function<ExceptionDetails(
@@ -254,7 +254,7 @@ namespace tuplex {
             return block;
         }
 
-        llvm::BasicBlock* BlockBasedTaskBuilder::exceptionBlock(llvm::IRBuilder<>& builder,
+        llvm::BasicBlock* BlockBasedTaskBuilder::exceptionBlock(const IRBuilder& builder,
                 llvm::Value* userData,
                 llvm::Value *exceptionCode,
                 llvm::Value *exceptionOperatorID,

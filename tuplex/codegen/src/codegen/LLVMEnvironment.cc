@@ -1008,7 +1008,7 @@ namespace tuplex {
             auto elementType = tupleType.parameters()[index];
 
             // get mapped llvm types
-            auto llvm_element_without_option_type = pythonToLLVMType(elementType.withoutOptions());
+            auto llvm_element_without_option_type = pythonToLLVMType(elementType.withoutOption());
             auto llvm_tuple_type = getOrCreateTupleType(tupleType);
 
             // special types (not serialized in memory, i.e. constants to be constructed from typing)
@@ -1174,59 +1174,58 @@ namespace tuplex {
                 return; // do not need to store, but bitmap is stored for them already.
 
             // extract elements
-            // auto structValIdx = builder.CreateStructGEP(tuplePtr, valueOffset);
-            auto structValIdx = CreateStructGEP(builder, tuplePtr, valueOffset);
+            auto structValIdx = builder.CreateStructGEP(tuplePtr, llvm_tuple_type, valueOffset);
             if (value.val) {
-                auto v = value.val;
+                auto llvm_val_to_store = value.val;
+                auto llvm_element_type = pythonToLLVMType(elementType);
                 // special case isStructDict or isListType b.c. they may be represented through a lazy pointer
                 if(elementType.isListType() || elementType.isStructuredDictionaryType()) {
 
                     // special case: list type of single-valued type. -> just store length as i64!
                     if(elementType.isListType() && elementType.elementType().isSingleValued()) {
                         // is it a pointer? then load and store i64, else store i64 directly
-                        assert(v->getType() == i64Type() || v->getType() == i64ptrType());
-                        if(v->getType() == i64ptrType())
-                            v = builder.CreateLoad(v);
-
-                        builder.CreateStore(v, structValIdx);
+                        if(llvm_val_to_store->getType()->isPointerTy())
+                            llvm_val_to_store = builder.CreateLoad(builder.getInt64Ty(), llvm_val_to_store);
+                        assert(llvm_val_to_store->getType() == builder.getInt64Ty());
+                        builder.CreateStore(llvm_val_to_store, structValIdx);
                     } else {
-                        if(v->getType() != structValIdx->getType()) {
-                            if(v->getType() == structValIdx->getType()->getPointerElementType()) {
+                        if(llvm_val_to_store->getType() != structValIdx->getType()) {
+                            if(llvm_val_to_store->getType() == structValIdx->getType()->getPointerElementType()) {
                                 // load (special treatment for nested structures...)
-                                auto ptr = CreateFirstBlockAlloca(builder, v->getType());
+                                auto ptr = CreateFirstBlockAlloca(builder, llvm_val_to_store->getType());
 
                                 // store -> direct load?
-                                auto struct_type = v->getType();
-                                for(unsigned i = 0; i < struct_type->getStructNumElements(); ++i) {
-                                    auto item = CreateStructLoad(builder, v, i);
+                                auto llvm_struct_type = llvm_val_to_store->getType();
+                                for(unsigned i = 0; i < llvm_struct_type->getStructNumElements(); ++i) {
+                                    auto item = builder.CreateStructLoad(llvm_struct_type, llvm_val_to_store, i);
                                     // what is the type?
                                     auto item_type = getLLVMTypeName(item->getType());
-                                    auto target_idx = CreateStructGEP(builder, ptr, i);
+                                    auto target_idx = builder.CreateStructGEP(ptr, llvm_struct_type, i);
                                     builder.CreateStore(item, target_idx, is_volatile);
                                 }
 
-                                v = ptr;
+                                llvm_val_to_store = ptr;
 
                             } else {
-                                throw std::runtime_error("incompatible type " + getLLVMTypeName(v->getType()) + " found for storing data.");
+                                throw std::runtime_error("incompatible type " + getLLVMTypeName(llvm_val_to_store->getType()) + " found for storing data.");
                             }
                         }
 
                         // however, nested structs/aggs should be memcopied
-                        auto i8_src = builder.CreatePointerCast(v, i8ptrType());
+                        auto i8_src = builder.CreatePointerCast(llvm_val_to_store, i8ptrType());
                         auto i8_dest = builder.CreatePointerCast(structValIdx, i8ptrType());
                         auto& DL = _module->getDataLayout();
-                        auto struct_size = DL.getTypeAllocSize(v->getType()->getPointerElementType());
-                        builder.CreateMemCpy(i8_dest, 0, i8_src, 0, struct_size);
+                        auto struct_size = DL.getTypeAllocSize(llvm_val_to_store->getType()->getPointerElementType());
+                        builder.CreateMemCpy(i8_dest, 0, i8_src, 0, i64Const(struct_size));
                     }
                 } else {
                     // primitives can be stored
 
                     // special case: bool
                     if(python::Type::BOOLEAN == elementType)
-                        v = builder.CreateZExt(v, i64Type());
+                        llvm_val_to_store = builder.CreateZExt(llvm_val_to_store, i64Type());
 
-                    builder.CreateStore(v, structValIdx, is_volatile);
+                    builder.CreateStore(llvm_val_to_store, structValIdx, is_volatile);
                 }
             }
 
@@ -1234,13 +1233,9 @@ namespace tuplex {
             if (!elementType.isFixedSizeType() &&
                 !elementType.isListType() &&
                 !elementType.isStructuredDictionaryType()) {
-                // auto structSizeIdx = builder.CreateStructGEP(tuplePtr, sizeOffset);
-                auto structSizeIdx = CreateStructGEP(builder, tuplePtr, sizeOffset);
-
-                auto size_to_store = value.size ? value.size : i64Const(0);
-                builder.CreateStore(size_to_store, structSizeIdx, is_volatile);
-
-                // printValue(builder, size_to_store, "size stored at index " + std::to_string(index));
+                auto structSizeIdx = builder.CreateStructGEP(tuplePtr, llvm_tuple_type, sizeOffset);
+                if (value.size)
+                    builder.CreateStore(value.size, structSizeIdx, is_volatile);
             } else {
                 if(value.size) {
                     // std::cerr<<"got size field for element"<<std::endl;
@@ -1251,7 +1246,6 @@ namespace tuplex {
             //     printValue(builder, value.val, "set element " + std::to_string(index) + " of tuple " + tupleType.desc() + ", value: ");
             // if(value.size)
             //     printValue(builder, value.size, "set element " + std::to_string(index) + " of tuple " + tupleType.desc() + ", size: ");
-
         }
 
         llvm::Value *LLVMEnvironment::truthValueTest(const codegen::IRBuilder& builder, const SerializableValue &val,
@@ -1784,7 +1778,7 @@ namespace tuplex {
 
                     // same issue here
                     std::vector<llvm::Type*> member_types;
-                    member_types.push_back(getOrCreateListType(rt));
+                    member_types.push_back(createOrGetListType(rt));
                     member_types.push_back(Type::getInt1Ty(_context));
                     llvm::ArrayRef<llvm::Type *> members(member_types);
                     return llvm::StructType::create(_context, members, "list_opt", packed);
@@ -2325,14 +2319,14 @@ namespace tuplex {
             return matchCond;
         }
 
-        llvm::Value * LLVMEnvironment::getListSize(const codegen::IRBuilder& builder, llvm::Value *val,
+        llvm::Value * LLVMEnvironment::getListSize(const IRBuilder& builder, llvm::Value *val,
                                                    const python::Type &listType) {
             return list_length(*this, builder, val, listType);
             throw std::runtime_error("deprecated! replace!");
 
         }
 
-        SerializableValue parseBoolean(LLVMEnvironment& env, IRBuilder &builder, llvm::BasicBlock *bbFailed,
+        SerializableValue parseBoolean(LLVMEnvironment& env, const IRBuilder &builder, llvm::BasicBlock *bbFailed,
                                                               llvm::Value *str, llvm::Value *strSize,
                                                               llvm::Value *isnull) {
 
@@ -2379,7 +2373,7 @@ namespace tuplex {
                                      isnull);
         }
 
-        SerializableValue parseI64(LLVMEnvironment& env, IRBuilder &builder, llvm::BasicBlock *bbFailed,
+        SerializableValue parseI64(LLVMEnvironment& env, const IRBuilder &builder, llvm::BasicBlock *bbFailed,
                                    llvm::Value *str, llvm::Value *strSize,
                                    llvm::Value *isnull) {
 
@@ -2424,7 +2418,7 @@ namespace tuplex {
                                      isnull);
         }
 
-        SerializableValue parseF64(LLVMEnvironment& env, IRBuilder &builder, llvm::BasicBlock *bbFailed,
+        SerializableValue parseF64(LLVMEnvironment& env, const IRBuilder &builder, llvm::BasicBlock *bbFailed,
                                    llvm::Value *str, llvm::Value *strSize,
                                    llvm::Value *isnull) {
             using namespace llvm;
@@ -2467,7 +2461,7 @@ namespace tuplex {
                                      env.i64Const(sizeof(double)), isnull);
         }
 
-        llvm::Value* LLVMEnvironment::isInteger(const codegen::IRBuilder& builder, llvm::Value* value, llvm::Value* eps) {
+        llvm::Value* LLVMEnvironment::isInteger(const IRBuilder& builder, llvm::Value* value, llvm::Value* eps) {
             // shortcut for integer types
             if(value->getType()->isIntegerTy())
                 return i1Const(true);

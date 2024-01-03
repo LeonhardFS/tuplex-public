@@ -2045,7 +2045,7 @@ namespace tuplex {
 
         SerializableValue FunctionRegistry::createRandomChoiceCall(LambdaFunctionBuilder &lfb, const codegen::IRBuilder& builder, const python::Type &argType, const SerializableValue &arg) {
             if(argType == python::Type::STRING) {
-                lfb.addException(builder, ExceptionCode::INDEXERROR, builder.CreateICmpEQ(arg.size, _env.i64Const(1))); // index error if empty string
+                lfb.addException(builder, ExceptionCode::INDEXERROR, builder.CreateICmpEQ(arg.size, _env.i64Const(1)), "index error for empty string"); // index error if empty string
                 auto random_number = builder.CreateCall(uniformInt_prototype(_env.getContext(), _env.getModule().get()), {_env.i64Const(0), builder.CreateSub(arg.size, _env.i64Const(1))});
                 auto retstr = builder.CreatePointerCast(_env.malloc(builder, _env.i64Const(2)), _env.i8ptrType()); // create 1-char string
                 builder.CreateStore(builder.CreateLoad(builder.getInt8Ty(), builder.MovePtrByBytes(arg.val, random_number)), retstr); // store the character
@@ -2133,7 +2133,7 @@ namespace tuplex {
 
             // initialize sequence iterator
             SequenceIterator it(_env);
-            auto it_info = std::shared_ptr<IteratorInfo>(new IteratorInfo("iter", argsType, {}));
+            auto it_info = std::shared_ptr<IteratorInfo>(new IteratorInfo{"iter", argsType, {}});
             return it.initContext(lfb, builder, args.front(), argType, it_info);
         }
 
@@ -2291,7 +2291,8 @@ namespace tuplex {
             if(lhs_type != rhs_type)
                 throw std::runtime_error("not yet supported, compare between " + lhs_type.desc() + " == " + rhs_type.desc());
 
-            auto ret_var = env.CreateFirstBlockAlloca(builder, env.i1Type());
+            auto llvm_ret_var_type = env.i1Type();
+            auto ret_var = env.CreateFirstBlockAlloca(builder, llvm_ret_var_type);
             builder.CreateStore(env.i1Const(false), ret_var);
 
             auto rhs_is_null = !rhs.is_null ? env.i1Const(false) : rhs.is_null;
@@ -2330,76 +2331,10 @@ namespace tuplex {
 
             builder.SetInsertPoint(bbCompareDone);
 
-            // old
-
-//            // option
-//            if(lhs_type.isOptionType()) {
-//                assert(rhs_type.isOptionType());
-//                assert(rhs.is_null && lhs.is_null);
-//
-//                // if rhs xor lhs is true -> false
-//                auto xor_true = builder.CreateXor(rhs.is_null, lhs.is_null);
-//
-//                // env.printValue(builder, xor_true, "is either rhs or lhs null: ");
-//
-//                auto& ctx = env.getContext(); auto F = builder.GetInsertBlock()->getParent();
-//                BasicBlock *bbXorCase = BasicBlock::Create(ctx, "cmp_based_on_null_bit", F);
-//                BasicBlock *bbValueComparison = BasicBlock::Create(ctx, "cmp_based_on_value", F);
-//                BasicBlock *bbCompareDone = BasicBlock::Create(ctx, "cmp_done", F);
-//
-//                auto both_null = builder.CreateAnd(builder.CreateICmpEQ(rhs.is_null, env.i1Const(true)),
-//                                                   builder.CreateICmpEQ(rhs.is_null, lhs.is_null));
-//                // env.printValue(builder, both_null, "are both rhs and lhs null: ");
-//                auto cond = builder.CreateOr(both_null,
-//                                             xor_true);
-//                builder.CreateCondBr(cond, bbXorCase, bbValueComparison);
-//
-//
-//                builder.SetInsertPoint(bbXorCase);
-//                builder.CreateStore(both_null, ret_var);
-//                builder.CreateBr(bbCompareDone);
-//
-//                builder.SetInsertPoint(bbValueComparison);
-//                // compare values as they're
-//                auto el_type = rhs_type.withoutOption();
-//                assert(rhs_type.withoutOption() == lhs_type.withoutOption());
-//                if(python::Type::STRING == el_type) {
-//                    // cmp using strcmp (could be done faster...)
-//                    // need to compare using strcmp
-//                    FunctionType *ft = FunctionType::get(env.i32Type(), {env.i8ptrType(), env.i8ptrType()},
-//                                                         false);
-//
-//                    // check_is_not_nullptr(env, builder, rhs.val, "rhs is nullptr"); // <-- changing this line affects ability of code to run...!
-//                    // check_is_not_nullptr(env, builder, lhs.val, "lhs is nullptr");
-//
-//                    auto strcmp_f = env.getModule()->getOrInsertFunction("strcmp", ft);
-//                    auto cmp_res = builder.CreateICmpEQ(builder.CreateCall(strcmp_f, {rhs.val, lhs.val}), env.i32Const(0));
-//
-//                    // env.printValue(builder, rhs.val, "rhs value: ");
-//                    // env.printValue(builder, lhs.val, "lhs value: ");
-//                    // env.printValue(builder, cmp_res, "compare result: ");
-//
-//                    builder.CreateStore(cmp_res, ret_var);
-//                } else {
-//                    throw std::runtime_error("unsupported compare for type " + el_type.desc() + " ...");
-//                }
-//                builder.CreateBr(bbCompareDone);
-//                builder.SetInsertPoint(bbCompareDone);
-//            } else if(python::Type::STRING == lhs_type && python::Type::STRING == rhs_type) {
-//                FunctionType *ft = FunctionType::get(env.i32Type(), {env.i8ptrType(), env.i8ptrType()},
-//                                                     false);
-//                auto strcmp_f = env.getModule()->getOrInsertFunction("strcmp", ft);
-//                auto cmp_res = builder.CreateICmpEQ(builder.CreateCall(strcmp_f, {rhs.val, lhs.val}), env.i32Const(0));
-//
-//                builder.CreateStore(cmp_res, ret_var);
-//            } else {
-//                throw std::runtime_error("comparing " + lhs_type.desc() + " == " + rhs_type.desc() + " not yet implemented...");
-//            }
-
-            return builder.CreateLoad(ret_var);
+            return builder.CreateLoad(llvm_ret_var_type, ret_var);
         }
 
-        SerializableValue FunctionRegistry::createListFindCall(llvm::IRBuilder<> &builder,
+        SerializableValue FunctionRegistry::createListFindCall(const IRBuilder& builder,
                                                               const python::Type& list_type,
                                                               const tuplex::codegen::SerializableValue &list,
                                                               const python::Type& needle_type,
@@ -3139,7 +3074,7 @@ namespace tuplex {
 
         // do not call on elements that are not present. failure!
         llvm::Value* struct_pair_keys_equal(LLVMEnvironment& env,
-                                            llvm::IRBuilder<> &builder,
+                                            const IRBuilder& builder,
                                             const python::StructEntry& entry,
                                             const SerializableValue& key,
                                             const python::Type& key_type) {
@@ -3157,7 +3092,8 @@ namespace tuplex {
             }
         }
 
-        SerializableValue FunctionRegistry::createDictGetCall(LambdaFunctionBuilder &lfb, llvm::IRBuilder<> &builder,
+        SerializableValue FunctionRegistry::createDictGetCall(LambdaFunctionBuilder &lfb,
+                                                              const IRBuilder& builder,
                                                               const SerializableValue &caller,
                                                               const python::Type& callerType,
                                                               const std::vector<tuplex::codegen::SerializableValue> &args,
@@ -3229,7 +3165,8 @@ namespace tuplex {
 
                     // use variable for result and store default value (here null!)
                     SerializableValue var;
-                    var.val = _env.CreateFirstBlockAlloca(builder, _env.pythonToLLVMType(retType));
+                    auto llvm_val_type = _env.pythonToLLVMType(retType);
+                    var.val = _env.CreateFirstBlockAlloca(builder, llvm_val_type);
                     var.size = _env.CreateFirstBlockAlloca(builder, _env.i64Type());
                     var.is_null = _env.CreateFirstBlockAlloca(builder, _env.i1Type());
 
@@ -3344,9 +3281,9 @@ namespace tuplex {
                     lfb.setLastBlock(builder.GetInsertBlock());
 
                     // load variable!
-                    auto ret_val = SerializableValue(builder.CreateLoad(var.val),
-                                                     builder.CreateLoad(var.size),
-                                                     builder.CreateLoad(var.is_null));
+                    auto ret_val = SerializableValue(builder.CreateLoad(llvm_val_type, var.val),
+                                                     builder.CreateLoad(builder.getInt64Ty(), var.size),
+                                                     builder.CreateLoad(builder.getInt1Ty(), var.is_null));
 
                     // _env.printValue(builder, ret_val.val, "value: ");
                     return ret_val; // test...

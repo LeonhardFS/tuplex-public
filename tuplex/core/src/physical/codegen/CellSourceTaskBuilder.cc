@@ -47,7 +47,7 @@ namespace tuplex {
 
             // perform any checks on cells upfront!
             // --> i.e. after normal-case checks are performed, can parse as normal-case row!
-            auto outputRowNumber = builder.CreateLoad(outputRowNumberVar);
+            auto outputRowNumber = builder.CreateLoad(builder.getInt64Ty(), outputRowNumberVar);
             generateChecks(builder, userData, outputRowNumber, cellsPtr, sizesPtr);
 
             // get FlattenedTuple from deserializing all things + perform value conversions/type checks...
@@ -63,7 +63,7 @@ namespace tuplex {
                 // env().debugPrint(builder, "parsed following tuple from CSV: ");
                 // ft.print(builder);
 
-                auto res = PipelineBuilder::call(builder, pipFunc, ft, userData, builder.CreateLoad(outputRowNumberVar), initIntermediate(builder));
+                auto res = PipelineBuilder::call(builder, pipFunc, ft, userData, builder.CreateLoad(builder.getInt64Ty(), outputRowNumberVar), initIntermediate(builder));
                 auto ecCode = builder.CreateZExtOrTrunc(res.resultCode, env().i64Type());
                 auto ecOpID = builder.CreateZExtOrTrunc(res.exceptionOperatorID, env().i64Type());
                 auto numRowsCreated = builder.CreateZExtOrTrunc(res.numProducedRows, env().i64Type());
@@ -428,7 +428,7 @@ namespace tuplex {
             }
         }
 
-        void CellSourceTaskBuilder::generateChecks(llvm::IRBuilder<>& builder, llvm::Value* userData,
+        void CellSourceTaskBuilder::generateChecks(const IRBuilder& builder, llvm::Value* userData,
                                                    llvm::Value* rowNumber, llvm::Value* cellsPtr,
                                                    llvm::Value* sizesPtr) {
             using namespace llvm;

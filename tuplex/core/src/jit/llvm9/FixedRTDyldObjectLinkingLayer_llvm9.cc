@@ -11,7 +11,7 @@
 #include <llvm/IR/IRBuilder.h>
 
 #if LLVM_VERSION_MAJOR <= 9
-#include <llvm9/FixedRTDyldObjectLinkingLayer_llvm9.h>
+#include <jit/llvm9/FixedRTDyldObjectLinkingLayer_llvm9.h>
 
 namespace {
 

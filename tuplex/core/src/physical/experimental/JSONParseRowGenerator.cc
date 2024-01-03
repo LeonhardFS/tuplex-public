@@ -393,7 +393,7 @@ namespace tuplex {
             auto element_type = list_type.elementType();
 
             assert(array && array->getType() == _env.i8ptrType());
-            assert(list_ptr && list_ptr->getType() == _env.getOrCreateListType(list_type)->getPointerTo());
+            assert(list_ptr && list_ptr->getType() == _env.createOrGetListType(list_type)->getPointerTo());
             assert(num_elements && num_elements->getType() == _env.i64Type());
 
             // loop is basically:
@@ -624,7 +624,7 @@ namespace tuplex {
             auto element_type = list_type.elementType();
 
             // create list ptr (in any case!)
-            auto list_llvm_type = _env.getOrCreateListType(list_type);
+            auto list_llvm_type = _env.createOrGetListType(list_type);
             auto list_ptr = _env.CreateFirstBlockAlloca(builder, list_llvm_type);
             list_init_empty(_env, builder, list_ptr, list_type);
 
@@ -934,7 +934,7 @@ namespace tuplex {
                 return decodeEmptyList(builder, obj, key);
 
             // create list ptr (in any case!)
-            auto list_llvm_type = _env.getOrCreateListType(listType);
+            auto list_llvm_type = _env.createOrGetListType(listType);
             auto list_ptr = _env.CreateFirstBlockAlloca(builder, list_llvm_type);
             list_init_empty(_env, builder, list_ptr, listType);
 

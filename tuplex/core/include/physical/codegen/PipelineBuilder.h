@@ -454,7 +454,7 @@ namespace tuplex {
              * @return return value of this function
              */
             static PipelineResult
-            call(IRBuilder &builder, llvm::Function *func, const FlattenedTuple &ft, llvm::Value *userData,
+            call(const IRBuilder &builder, llvm::Function *func, const FlattenedTuple &ft, llvm::Value *userData,
                  llvm::Value *rowNumber, llvm::Value* intermediate=nullptr);
 
 
@@ -471,7 +471,6 @@ namespace tuplex {
                 }
                return false;
             }
-
         };
 
 

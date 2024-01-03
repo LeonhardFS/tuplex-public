@@ -759,7 +759,7 @@ namespace tuplex {
             return llvm::Constant::getIntegerValue(llvm::Type::getInt1Ty(ctx), llvm::APInt(64, value));
         }
 
-        llvm::Value* stringCompare(llvm::IRBuilder<> &builder, llvm::Value *ptr, const std::string &str,
+        llvm::Value* stringCompare(const IRBuilder& builder, llvm::Value *ptr, const std::string &str,
                                    bool include_zero=false) {
 
             auto& ctx = builder.getContext();
@@ -779,7 +779,7 @@ namespace tuplex {
                 // create str const by extracting string data
                 str_const = *((int64_t *) (str.c_str() + pos));
 
-                auto val = builder.CreateLoad(builder.CreatePointerCast(builder.CreateGEP(ptr, i32Const(ctx, pos)), i64ptrType(ctx)));
+                auto val = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(builder.MovePtrByBytes(ptr,  pos), i64ptrType(ctx)));
 
                 auto comp = builder.CreateICmpEQ(val, i64Const(ctx, str_const));
                 cond = builder.CreateAnd(cond, comp);
@@ -793,7 +793,7 @@ namespace tuplex {
 
                 // create str const by extracting string data
                 str_const = *((uint32_t *) (str.c_str() + pos));
-                auto val = builder.CreateLoad(builder.CreatePointerCast(builder.CreateGEP(ptr, i32Const(ctx, pos)), i32ptrType(ctx)));
+                auto val = builder.CreateLoad(builder.getInt32Ty(), builder.CreatePointerCast(builder.MovePtrByBytes(ptr,  pos), i32ptrType(ctx)));
                 auto comp = builder.CreateICmpEQ(val, i32Const(ctx, str_const));
                 cond = builder.CreateAnd(cond, comp);
 
@@ -804,7 +804,7 @@ namespace tuplex {
             // only 0, 1, 2, 3 bytes left.
             // do 8 bit compares
             for (int i = 0; i < numBytes; ++i) {
-                auto val = builder.CreateLoad(builder.CreateGEP(ptr, i32Const(ctx, pos)));
+                auto val = builder.CreateLoad(builder.getInt8Ty(), builder.MovePtrByBytes(ptr,  pos));
                 auto comp = builder.CreateICmpEQ(val, i8Const(ctx, str.c_str()[pos]));
                 cond = builder.CreateAnd(cond, comp);
                 pos++;

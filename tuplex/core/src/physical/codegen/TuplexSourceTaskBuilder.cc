@@ -48,7 +48,7 @@ namespace tuplex {
             }
         }
 
-        void TuplexSourceTaskBuilder::callProcessFuncWithHandler(IRBuilder &builder, llvm::Value *userData,
+        void TuplexSourceTaskBuilder::callProcessFuncWithHandler(const IRBuilder &builder, llvm::Value *userData,
                                                                  const FlattenedTuple& tuple,
                                                                  llvm::Value *normalRowCountVar,
                                                                  llvm::Value *rowNumberVar,

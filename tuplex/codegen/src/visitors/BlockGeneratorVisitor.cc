@@ -1751,8 +1751,8 @@ namespace tuplex {
                 }
 
                 // lists can be modified, so declare via alloca -> allows for modification (closure!)
-                if(type != python::Type::EMPTYLIST && type.withoutOptions().isListType() && !param.val->getType()->isPointerTy()) {
-                    auto llvm_list_type = _env->createOrGetListType(type.withoutOptions());
+                if(type != python::Type::EMPTYLIST && type.withoutOption().isListType() && !param.val->getType()->isPointerTy()) {
+                    auto llvm_list_type = _env->createOrGetListType(type.withoutOption());
                     assert(llvm_list_type == param.val->getType());
 
                     auto value = param.val;
@@ -3016,45 +3016,45 @@ namespace tuplex {
             }
         }
 
-        llvm::Value *BlockGeneratorVisitor::cJSONObjectFromValue(llvm::IRBuilder<>& builder,
-                                                                 const SerializableValue& value,
-                                                                 python::Type type) {
-            // optimized type? create deoptimized version!
-            llvm::Value* val = value.val;
-            if(type.isConstantValued()) {
-                return cJSONObjectFromValue(builder, constantValuedTypeToLLVM(builder, type), type.underlying());
-            }
-
-            assert(val);
-
-            if (val->getType()->isDoubleTy() && type == python::Type::F64) {
-                return builder.CreateCall(
-                        cJSONCreateNumber_prototype(_env->getContext(), _env->getModule().get()),
-                        {val});
-            } else if (val->getType()->isIntegerTy() && type == python::Type::I64) {
-                return builder.CreateCall(
-                        cJSONCreateNumber_prototype(_env->getContext(), _env->getModule().get()),
-                        {upCast(builder, val, _env->doubleType())});
-            } else if (val->getType()->isPointerTy() && type == python::Type::STRING) {
-                return builder.CreateCall(
-                        cJSONCreateString_prototype(_env->getContext(), _env->getModule().get()),
-                        {val});
-            } else if (val->getType()->isIntegerTy(8) && type == python::Type::BOOLEAN) {
-                return builder.CreateCall(
-                        cJSONCreateBool_prototype(_env->getContext(), _env->getModule().get()),
-                        {upCast(builder, val, _env->i64Type())});
-            } else {
-                std::string type_str;
-                std::string rso_str = "??";
-                if(val) {
-                    llvm::raw_string_ostream rso(type_str);
-                    val->getType()->print(rso);
-                    rso_str = rso.str();
-                }
-                error("Unsupported type in dictionary: " + type.desc() + "; llvm:" + rso_str);
-                return {};
-            }
-        }
+//        llvm::Value *BlockGeneratorVisitor::cJSONObjectFromValue(const IRBuilder<>& builder,
+//                                                                 const SerializableValue& value,
+//                                                                 python::Type type) {
+//            // optimized type? create deoptimized version!
+//            llvm::Value* val = value.val;
+//            if(type.isConstantValued()) {
+//                return cJSONObjectFromValue(builder, constantValuedTypeToLLVM(builder, type), type.underlying());
+//            }
+//
+//            assert(val);
+//
+//            if (val->getType()->isDoubleTy() && type == python::Type::F64) {
+//                return builder.CreateCall(
+//                        cJSONCreateNumber_prototype(_env->getContext(), _env->getModule().get()),
+//                        {val});
+//            } else if (val->getType()->isIntegerTy() && type == python::Type::I64) {
+//                return builder.CreateCall(
+//                        cJSONCreateNumber_prototype(_env->getContext(), _env->getModule().get()),
+//                        {upCast(builder, val, _env->doubleType())});
+//            } else if (val->getType()->isPointerTy() && type == python::Type::STRING) {
+//                return builder.CreateCall(
+//                        cJSONCreateString_prototype(_env->getContext(), _env->getModule().get()),
+//                        {val});
+//            } else if (val->getType()->isIntegerTy(8) && type == python::Type::BOOLEAN) {
+//                return builder.CreateCall(
+//                        cJSONCreateBool_prototype(_env->getContext(), _env->getModule().get()),
+//                        {upCast(builder, val, _env->i64Type())});
+//            } else {
+//                std::string type_str;
+//                std::string rso_str = "??";
+//                if(val) {
+//                    llvm::raw_string_ostream rso(type_str);
+//                    val->getType()->print(rso);
+//                    rso_str = rso.str();
+//                }
+//                error("Unsupported type in dictionary: " + type.desc() + "; llvm:" + rso_str);
+//                return {};
+//            }
+//        }
 
         SerializableValue
         BlockGeneratorVisitor::createCJSONFromDict(NDictionary *dict, const std::vector<SerializableValue> &keys,
@@ -3184,8 +3184,7 @@ namespace tuplex {
                 // new: use list helper functions
                 // create list ptr (in any case!)
                 auto num_elements = vals.size();
-                auto list_type = list->getInferredType();
-                auto list_llvm_type = _env->getOrCreateListType(list_type);
+                auto list_llvm_type = _env->createOrGetListType(list_type);
                 auto list_ptr = _env->CreateFirstBlockAlloca(builder, list_llvm_type);
                 list_init_empty(*_env, builder, list_ptr, list_type);
                 bool initialize_elements_as_null = false; // can skip this b.c. all elements are anyways going to be initialized.
@@ -3208,13 +3207,6 @@ namespace tuplex {
                 }
                 _lfb->setLastBlock(builder.GetInsertBlock());
                 addInstruction(list_ptr);
-
-                // TODO:
-                // --> change to passing around the pointer to the list, not the semi-loaded struct
-                // ---> THIS WILL HAVE IMPLICATIONS WHEREVER LISTS ARE USED.
-                // also listSize here is wrong. The listSize should be stored as part of the pointer. You can either pass 8 as listsize or null.
-
-                addInstruction(builder.CreateLoad(listAlloc), listSize);
             }
         }
 
@@ -3352,7 +3344,7 @@ namespace tuplex {
             auto iterType = listComprehension->generators[0]->iter->getInferredType();
             if(iterType == python::Type::RANGE || iterType == python::Type::STRING || (iterType.isListType() && iterType != python::Type::EMPTYLIST) || (iterType.isTupleType() && tupleElementsHaveSameType(iterType))) {
                 auto elementType = listComprehension->getInferredType().elementType();
-                auto listLLVMType = _env->getOrCreateListType(listComprehension->getInferredType());
+                auto listLLVMType = _env->createOrGetListType(listComprehension->getInferredType());
 
                 auto target = _blockStack.back(); // from comprehension
                 _blockStack.pop_back();
@@ -4153,41 +4145,6 @@ namespace tuplex {
                     auto str = globalVariableToString(value.val);
                     // escape to py
                     return make_tuple(escape_to_python_str(str), value_type);
-        SerializableValue
-        BlockGeneratorVisitor::CreateDummyValue(const codegen::IRBuilder& builder, const python::Type &type) {
-            // dummy value needs to be created for llvm to combine stuff.
-            SerializableValue retVal;
-            if (python::Type::BOOLEAN == type || python::Type::I64 == type) {
-                retVal.val = _env->i64Const(0);
-                retVal.size = _env->i64Const(sizeof(int64_t));
-            } else if (python::Type::F64 == type) {
-                retVal.val = _env->f64Const(0.0);
-                retVal.size = _env->i64Const(sizeof(double));
-            } else if (python::Type::STRING == type || type.isDictionaryType()) {
-                retVal.val = _env->i8ptrConst(nullptr);
-                retVal.size = _env->i64Const(0);
-            } else if (type.isListType()) {
-                auto llvmType = _env->createOrGetListType(type);
-                auto val = _env->CreateFirstBlockAlloca(builder, llvmType);
-                if (type == python::Type::EMPTYLIST) {
-                    builder.CreateStore(_env->i8nullptr(), val);
-                } else {
-                    auto elementType = type.elementType();
-                    if (elementType.isSingleValued()) {
-                        builder.CreateStore(_env->i64Const(0), val);
-                    } else {
-                        builder.CreateStore(_env->i64Const(0), builder.CreateStructGEP(val, llvmType, 0));
-                        builder.CreateStore(_env->i64Const(0), builder.CreateStructGEP(val, llvmType, 1));
-
-                        builder.CreateStore(llvm::ConstantPointerNull::get(
-                                llvm::dyn_cast<PointerType>(llvmType->getStructElementType(2))),
-                                            builder.CreateStructGEP(val, llvmType, 2));
-                        if (elementType == python::Type::STRING) {
-                            builder.CreateStore(llvm::ConstantPointerNull::get(
-                                    llvm::dyn_cast<PointerType>(llvmType->getStructElementType(3))),
-                                                builder.CreateStructGEP(val, llvmType, 3));
-                        }
-                    }
                 }
                 if(type == python::Type::BOOLEAN) {
                     auto i_val = llvm::cast<ConstantInt>(value.val)->getSExtValue();
@@ -4210,7 +4167,7 @@ namespace tuplex {
             return make_tuple("", python::Type::UNKNOWN);
         }
 
-        bool BlockGeneratorVisitor::subscriptStructDict(llvm::IRBuilder<> &builder,
+        bool BlockGeneratorVisitor::subscriptStructDict(const IRBuilder &builder,
                                                         SerializableValue *out_ret,
                                                         const python::Type &value_type,
                                                         const SerializableValue &value,
@@ -4368,7 +4325,7 @@ namespace tuplex {
         }
 
 
-        void BlockGeneratorVisitor::generateReturnWithNullExtraction(llvm::IRBuilder<>& builder,
+        void BlockGeneratorVisitor::generateReturnWithNullExtraction(const IRBuilder& builder,
                                                                      const SerializableValue& retVal,
                                                                      const python::Type& retType,
                                                                      const python::Type& desiredRetType,

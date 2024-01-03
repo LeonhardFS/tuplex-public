@@ -122,7 +122,7 @@ namespace tuplex {
                 builder.SetInsertPoint(lastFreeBlock);
 
                 // connect init to after init block
-                IRBuilder<> b(_initBlock);
+                IRBuilder b(_initBlock);
                 b.CreateBr(_afterInitBlock);
 
                 // call to create free sequence before bad parse is hit.

@@ -12,8 +12,8 @@ namespace tuplex {
         // forward declare:
         llvm::Value* list_serialize_varitems_to(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr,
                                                 const python::Type& list_type, llvm::Value* dest_ptr,
-                                                std::function<llvm::Value*(LLVMEnvironment&, llvm::IRBuilder<>&, llvm::Value*, llvm::Value*)> f_item_size,
-                                                std::function<llvm::Value*(LLVMEnvironment&, llvm::IRBuilder<>&, llvm::Value*, llvm::Value*, llvm::Value*)> f_item_serialize_to);
+                                                std::function<llvm::Value*(LLVMEnvironment&, const IRBuilder&, llvm::Value*, llvm::Value*)> f_item_size,
+                                                std::function<llvm::Value*(LLVMEnvironment&, const IRBuilder&, llvm::Value*, llvm::Value*, llvm::Value*)> f_item_serialize_to);
 
         void list_free(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, const python::Type& list_type) {
             // list should only use runtime allocations -> hence free later!
@@ -28,7 +28,7 @@ namespace tuplex {
                 return; // nothing to do
 
             // check ptr has correct type
-            auto llvm_list_type = env.getOrCreateListType(list_type);
+            auto llvm_list_type = env.createOrGetListType(list_type);
             if(list_ptr->getType() != llvm_list_type->getPointerTo())
                 throw std::runtime_error("expected pointer of " + env.getLLVMTypeName(llvm_list_type->getPointerTo()) + " but list_ptr has " + env.getLLVMTypeName(list_ptr->getType()));
 
@@ -41,11 +41,11 @@ namespace tuplex {
 
             if(elementType.isSingleValued()) {
                 if(elements_optional) {
-                    auto idx_capacity = CreateStructGEP(builder, list_ptr, 0); assert(idx_capacity->getType() == env.i64ptrType());
+                    auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
                     builder.CreateStore(env.i64Const(0), idx_capacity);
-                    auto idx_size = CreateStructGEP(builder, list_ptr, 1); assert(idx_size->getType() == env.i64ptrType());
+                    auto idx_size = builder.CreateStructGEP(list_ptr, llvm_list_type, 1); assert(idx_size->getType() == env.i64ptrType());
                     builder.CreateStore(env.i64Const(0), idx_size);
-                    auto idx_opt_values = CreateStructGEP(builder, list_ptr, 2);
+                    auto idx_opt_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
                     builder.CreateStore(env.nullConstant(env.i8ptrType()), idx_opt_values);
                 } else {
                     // the list is represented as single i64
@@ -56,17 +56,17 @@ namespace tuplex {
                       || elementType == python::Type::BOOLEAN) {
 
                 // a list consists of 3 fields: capacity, size and a pointer to the members
-                auto idx_capacity = CreateStructGEP(builder, list_ptr, 0); assert(idx_capacity->getType() == env.i64ptrType());
+                auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
                 builder.CreateStore(env.i64Const(0), idx_capacity);
-                auto idx_size = CreateStructGEP(builder, list_ptr, 1); assert(idx_size->getType() == env.i64ptrType());
+                auto idx_size = builder.CreateStructGEP(list_ptr, llvm_list_type, 1); assert(idx_size->getType() == env.i64ptrType());
                 builder.CreateStore(env.i64Const(0), idx_size);
 
-                auto idx_values = CreateStructGEP(builder, list_ptr, 2);
+                auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
                 llvm::Type* llvm_element_type = env.pythonToLLVMType(elementType);
                 builder.CreateStore(env.nullConstant(llvm_element_type->getPointerTo()), idx_values);
 
                 if(elements_optional) {
-                    auto idx_opt_values = CreateStructGEP(builder, list_ptr, 3);
+                    auto idx_opt_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 3);
                     builder.CreateStore(env.nullConstant(env.i8ptrType()), idx_opt_values);
                 }
 
@@ -74,19 +74,19 @@ namespace tuplex {
                       || elementType == python::Type::PYOBJECT) {
 
                 // string array/pyobject array is special. It contains 4 members! capacity, size and then arrays for the values and sizes
-                auto idx_capacity = CreateStructGEP(builder, list_ptr, 0); assert(idx_capacity->getType() == env.i64ptrType());
+                auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
                 builder.CreateStore(env.i64Const(0), idx_capacity);
-                auto idx_size = CreateStructGEP(builder, list_ptr, 1); assert(idx_size->getType() == env.i64ptrType());
+                auto idx_size = builder.CreateStructGEP(list_ptr, llvm_list_type, 1); assert(idx_size->getType() == env.i64ptrType());
                 builder.CreateStore(env.i64Const(0), idx_size);
 
-                auto idx_values = CreateStructGEP(builder, list_ptr, 2);
+                auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
                 builder.CreateStore(env.nullConstant(env.i8ptrType()->getPointerTo()), idx_values);
 
-                auto idx_sizes = CreateStructGEP(builder, list_ptr, 3);
+                auto idx_sizes = builder.CreateStructGEP(list_ptr, llvm_list_type, 3);
                 builder.CreateStore(env.nullConstant(env.i64ptrType()), idx_sizes);
 
                 if(elements_optional) {
-                    auto idx_opt_values = CreateStructGEP(builder, list_ptr, 4);
+                    auto idx_opt_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 4);
                     builder.CreateStore(env.nullConstant(env.i8ptrType()), idx_opt_values);
                 }
             } else if(elementType.isStructuredDictionaryType()) {
@@ -95,18 +95,18 @@ namespace tuplex {
                 // pointers to the list type!
                 // similar to above - yet, keep it here extra for more control...
                 // a list consists of 3 fields: capacity, size and a pointer to the members
-                auto idx_capacity = CreateStructGEP(builder, list_ptr, 0); assert(idx_capacity->getType() == env.i64ptrType());
+                auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
                 builder.CreateStore(env.i64Const(0), idx_capacity);
-                auto idx_size = CreateStructGEP(builder, list_ptr, 1); assert(idx_size->getType() == env.i64ptrType());
+                auto idx_size = builder.CreateStructGEP(list_ptr, llvm_list_type, 1); assert(idx_size->getType() == env.i64ptrType());
                 builder.CreateStore(env.i64Const(0), idx_size);
 
                 auto llvm_element_type = env.getOrCreateStructuredDictType(elementType);
 
-                auto idx_values = CreateStructGEP(builder, list_ptr, 2);
+                auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
                 builder.CreateStore(env.nullConstant(llvm_element_type->getPointerTo()), idx_values);
 
                 if(elements_optional) {
-                    auto idx_opt_values = CreateStructGEP(builder, list_ptr, 3);
+                    auto idx_opt_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 3);
                     builder.CreateStore(env.nullConstant(env.i8ptrType()), idx_opt_values);
                 }
 
@@ -114,35 +114,35 @@ namespace tuplex {
                 // pointers to the list type!
                 // similar to above - yet, keep it here extra for more control...
                 // a list consists of 3 fields: capacity, size and a pointer to the members
-                auto idx_capacity = CreateStructGEP(builder, list_ptr, 0); assert(idx_capacity->getType() == env.i64ptrType());
+                auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
                 builder.CreateStore(env.i64Const(0), idx_capacity);
-                auto idx_size = CreateStructGEP(builder, list_ptr, 1); assert(idx_size->getType() == env.i64ptrType());
+                auto idx_size = builder.CreateStructGEP(list_ptr, llvm_list_type, 1); assert(idx_size->getType() == env.i64ptrType());
                 builder.CreateStore(env.i64Const(0), idx_size);
 
-                auto llvm_element_type = env.getOrCreateListType(elementType);
-                auto idx_values = CreateStructGEP(builder, list_ptr, 2);
+                auto llvm_element_type = env.createOrGetListType(elementType);
+                auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
                 builder.CreateStore(env.nullConstant(llvm_element_type->getPointerTo()), idx_values);
 
                 if(elements_optional) {
-                    auto idx_opt_values = CreateStructGEP(builder, list_ptr, 3);
+                    auto idx_opt_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 3);
                     builder.CreateStore(env.nullConstant(env.i8ptrType()), idx_opt_values);
                 }
             } else if(elementType.isTupleType()) {
                 // pointers to the list type!
                 // similar to above - yet, keep it here extra for more control...
                 // a list consists of 3 fields: capacity, size and a pointer to the members
-                auto idx_capacity = CreateStructGEP(builder, list_ptr, 0); assert(idx_capacity->getType() == env.i64ptrType());
+                auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
                 builder.CreateStore(env.i64Const(0), idx_capacity);
-                auto idx_size = CreateStructGEP(builder, list_ptr, 1); assert(idx_size->getType() == env.i64ptrType());
+                auto idx_size = builder.CreateStructGEP(list_ptr, llvm_list_type, 1); assert(idx_size->getType() == env.i64ptrType());
                 builder.CreateStore(env.i64Const(0), idx_size);
 
                 auto llvm_element_type = env.getOrCreateTupleType(elementType);
 
-                auto idx_values = CreateStructGEP(builder, list_ptr, 2);
+                auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
                 builder.CreateStore(env.nullConstant(llvm_element_type->getPointerTo()->getPointerTo()), idx_values);
 
                 if(elements_optional) {
-                    auto idx_opt_values = CreateStructGEP(builder, list_ptr, 3);
+                    auto idx_opt_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 3);
                     builder.CreateStore(env.nullConstant(env.i8ptrType()), idx_opt_values);
                 }
             } else {
@@ -151,13 +151,15 @@ namespace tuplex {
         }
 
         // helper function to allocate and store a pointer via rtmalloc + potentially initialize it
-        void list_init_array(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, llvm::Value* capacity, size_t struct_index, bool initialize) {
+        void list_init_array(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, const python::Type& list_type, llvm::Value* capacity, size_t struct_index, bool initialize) {
             using namespace llvm;
             using namespace std;
 
             assert(list_ptr && capacity);
 
-            auto idx_values = CreateStructGEP(builder, list_ptr, struct_index);
+            auto llvm_list_type = env.createOrGetListType(list_type);
+
+            auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, struct_index);
             assert(idx_values && idx_values->getType()->isPointerTy());
 
             auto struct_type = list_ptr->getType()->getPointerElementType();
@@ -198,6 +200,8 @@ namespace tuplex {
             if(python::Type::EMPTYLIST == list_type)
                 return; // nothing to do
 
+            auto llvm_list_type = env.createOrGetListType(list_type);
+
             // cf. now getOrCreateListType(...) ==> different layouts depending on element type.
             // init accordingly.
             auto elementType = list_type.elementType();
@@ -208,10 +212,10 @@ namespace tuplex {
             if(elementType.isSingleValued()) {
                 if(elements_optional) {
                     // a list consists of 3 fields: capacity, size and a pointer to the members
-                    auto idx_capacity = CreateStructGEP(builder, list_ptr, 0); assert(idx_capacity->getType() == env.i64ptrType());
+                    auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
                     builder.CreateStore(capacity, idx_capacity);
 
-                    list_init_array(env, builder, list_ptr, capacity, 2, initialize);
+                    list_init_array(env, builder, list_ptr, list_type, capacity, 2, initialize);
                 } else
                 // the list is represented as single i64
                 builder.CreateStore(env.i64Const(0), list_ptr);
@@ -220,55 +224,55 @@ namespace tuplex {
                       || elementType == python::Type::BOOLEAN) {
 
                 // a list consists of 3 fields: capacity, size and a pointer to the members
-                auto idx_capacity = CreateStructGEP(builder, list_ptr, 0); assert(idx_capacity->getType() == env.i64ptrType());
+                auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
                 builder.CreateStore(capacity, idx_capacity);
 
-                list_init_array(env, builder, list_ptr, capacity, 2, initialize);
+                list_init_array(env, builder, list_ptr, list_type, capacity, 2, initialize);
                 if(elements_optional)
-                    list_init_array(env, builder, list_ptr, capacity, 3, initialize);
+                    list_init_array(env, builder, list_ptr, list_type, capacity, 3, initialize);
             } else if(elementType == python::Type::STRING
                       || elementType == python::Type::PYOBJECT) {
 
                 // string array/pyobject array is special. It contains 4 members! capacity, size and then arrays for the values and sizes
-                auto idx_capacity = CreateStructGEP(builder, list_ptr, 0); assert(idx_capacity->getType() == env.i64ptrType());
+                auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
                 builder.CreateStore(capacity, idx_capacity);
 
-                list_init_array(env, builder, list_ptr, capacity, 2, initialize);
-                list_init_array(env, builder, list_ptr, capacity, 3, initialize);
+                list_init_array(env, builder, list_ptr, list_type, capacity, 2, initialize);
+                list_init_array(env, builder, list_ptr, list_type, capacity, 3, initialize);
                 if(elements_optional)
-                    list_init_array(env, builder, list_ptr, capacity, 4, initialize);
+                    list_init_array(env, builder, list_ptr, list_type, capacity, 4, initialize);
             } else if(elementType.isStructuredDictionaryType()) {
 
                 // pointer to the structured dict type!
                 // similar to above - yet, keep it here extra for more control...
                 // a list consists of 3 fields: capacity, size and a pointer to the members
-                auto idx_capacity = CreateStructGEP(builder, list_ptr, 0); assert(idx_capacity->getType() == env.i64ptrType());
+                auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
                 builder.CreateStore(env.i64Const(0), idx_capacity);
 
-                list_init_array(env, builder, list_ptr, capacity, 2, initialize);
+                list_init_array(env, builder, list_ptr, list_type, capacity, 2, initialize);
                 if(elements_optional)
-                    list_init_array(env, builder, list_ptr, capacity, 3, initialize);
+                    list_init_array(env, builder, list_ptr, list_type, capacity, 3, initialize);
 
             } else if(elementType.isListType()) {
                 // pointers to the list type!
                 // similar to above - yet, keep it here extra for more control...
                 // a list consists of 3 fields: capacity, size and a pointer to the members
-                auto idx_capacity = CreateStructGEP(builder, list_ptr, 0); assert(idx_capacity->getType() == env.i64ptrType());
+                auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
                 builder.CreateStore(env.i64Const(0), idx_capacity);
 
-                list_init_array(env, builder, list_ptr, capacity, 2, initialize);
+                list_init_array(env, builder, list_ptr, list_type, capacity, 2, initialize);
                 if(elements_optional)
-                    list_init_array(env, builder, list_ptr, capacity, 3, initialize);
+                    list_init_array(env, builder, list_ptr, list_type, capacity, 3, initialize);
             } else if(elementType.isTupleType()) {
                 // pointers to the list type!
                 // similar to above - yet, keep it here extra for more control...
                 // a list consists of 3 fields: capacity, size and a pointer to the members
-                auto idx_capacity = CreateStructGEP(builder, list_ptr, 0); assert(idx_capacity->getType() == env.i64ptrType());
+                auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
                 builder.CreateStore(env.i64Const(0), idx_capacity);
 
-                list_init_array(env, builder, list_ptr, capacity, 2, initialize);
+                list_init_array(env, builder, list_ptr, list_type, capacity, 2, initialize);
                 if(elements_optional)
-                    list_init_array(env, builder, list_ptr, capacity, 3, initialize);
+                    list_init_array(env, builder, list_ptr, list_type, capacity, 3, initialize);
             } else {
                 throw std::runtime_error("Unsupported list element type: " + list_type.desc());
             }
@@ -311,14 +315,17 @@ namespace tuplex {
                 nullmap_index = -1;
 
 
+            auto llvm_list_type = env.createOrGetListType(list_type);
+
             // struct and list element types require special handling
             // @TODO: struct type, list in list loading...
             if(element_type.withoutOption().isListType() || element_type.withoutOption().isDictionaryType())
                 throw std::runtime_error("list type " + list_type.desc() + " load not yet supported.");
 
             // (1) fill value
-            auto data_ptr = CreateStructLoad(builder, list_ptr, data_index);
-            auto data_entry = builder.CreateLoad(builder.CreateGEP(data_ptr, idx));
+            auto llvm_value_type = env.pythonToLLVMType(list_type.elementType());
+            auto data_ptr = builder.CreateStructLoad(llvm_list_type, list_ptr, data_index);
+            auto data_entry = builder.CreateLoad(llvm_value_type, builder.CreateGEP(llvm_list_type->getStructElementType(data_index), data_ptr, idx));
             ret.val = data_entry;
 
             // special case string: -> could be nullptr, to ensure printing fill with empty str...
@@ -328,8 +335,8 @@ namespace tuplex {
 
             // (2) fill size
             if(size_idx >= 0) {
-                auto size_ptr = CreateStructLoad(builder, list_ptr, size_idx);
-                ret.size = builder.CreateLoad(builder.CreateGEP(size_ptr, idx));
+                auto size_ptr = builder.CreateStructLoad(llvm_list_type, list_ptr, size_idx);
+                ret.size = builder.CreateLoad(builder.getInt64Ty(), builder.CreateGEP(llvm_list_type->getStructElementType(size_idx), size_ptr, idx));
             } else {
                 ret.size = env.i64Const(sizeof(double));
             }
@@ -337,8 +344,8 @@ namespace tuplex {
             // (3) is null
             // load whether entry is null (or not)
             if(nullmap_index >= 1) {
-                auto nullmap_ptr = CreateStructLoad(builder, list_ptr, nullmap_index);
-                auto is_null = builder.CreateLoad(builder.CreateGEP(nullmap_ptr, idx));
+                auto nullmap_ptr = builder.CreateStructLoad(llvm_list_type, list_ptr, nullmap_index);
+                auto is_null = builder.CreateLoad(builder.getInt8Ty(), builder.CreateGEP(llvm_list_type->getStructElementType(nullmap_index), nullmap_ptr, idx));
                 assert(is_null->getType() == env.i8Type());
                 ret.is_null = builder.CreateICmpNE(is_null, env.i8Const(0));
             } else {
@@ -407,12 +414,12 @@ namespace tuplex {
 //
 //                // load whether null or not
 //                if(list_ptr->getType()->isPointerTy()) {
-//                    auto idx_nulls = CreateStructGEP(builder, list_ptr, struct_opt_index);
+//                    auto idx_nulls = builder.CreateStructGEP(list_ptr, llvm_list_type, struct_opt_index);
 //                    auto ptr = builder.CreateLoad(idx_nulls);
 //                    auto idx_null = builder.CreateGEP(ptr, idx);
 //                    ret.is_null = builder.CreateTrunc(builder.CreateLoad(idx_null), env.i1Type()); // could be == i8(0) as well
 //                } else {
-//                    auto idx_nulls = CreateStructGEP(builder, list_ptr, struct_opt_index);
+//                    auto idx_nulls = builder.CreateStructGEP(list_ptr, llvm_list_type, struct_opt_index);
 //                    auto ptr = idx_nulls;
 //                    auto idx_null = builder.CreateGEP(ptr, idx);
 //                    ret.is_null = builder.CreateTrunc(builder.CreateLoad(idx_null), env.i1Type()); // could be == i8(0) as well
@@ -431,7 +438,7 @@ namespace tuplex {
 //                      || elementType == python::Type::F64
 //                      || elementType == python::Type::BOOLEAN) {
 //
-//                auto idx_values = CreateStructGEP(builder, list_ptr, 2);
+//                auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
 //                llvm::Type* llvm_element_type = env.pythonToLLVMType(elementType);
 //                if(list_ptr->getType()->isPointerTy()) {
 //                    auto ptr = builder.CreateLoad(idx_values);
@@ -445,8 +452,8 @@ namespace tuplex {
 //                ret.is_null = env.i1Const(false);
 //            } else if(elementType == python::Type::STRING
 //                      || elementType == python::Type::PYOBJECT) {
-//                auto idx_values = CreateStructGEP(builder, list_ptr, 2);
-//                auto idx_sizes = CreateStructGEP(builder, list_ptr, 3);
+//                auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
+//                auto idx_sizes = builder.CreateStructGEP(list_ptr, llvm_list_type, 3);
 //
 //                if(list_ptr->getType()->isPointerTy()) {
 //                    auto ptr_values = builder.CreateLoad(idx_values);
@@ -469,11 +476,11 @@ namespace tuplex {
 //                // pointer to the structured dict type!
 //
 //                // this is quite simple, store a HEAP allocated pointer.
-//                auto idx_capacity = CreateStructGEP(builder, list_ptr, 0); assert(idx_capacity->getType() == env.i64ptrType());
+//                auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
 //                builder.CreateStore(env.i64Const(0), idx_capacity);
 //
 //                auto llvm_element_type = env.getOrCreateStructuredDictType(elementType);
-//                auto idx_values = CreateStructGEP(builder, list_ptr, 2);
+//                auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
 //
 //                // load pointer
 //                auto ptr = builder.CreateLoad(idx_values);
@@ -484,11 +491,11 @@ namespace tuplex {
 //                // pointers to the list type!
 //                // similar to above - yet, keep it here extra for more control...
 //                // a list consists of 3 fields: capacity, size and a pointer to the members
-//                auto idx_capacity = CreateStructGEP(builder, list_ptr, 0); assert(idx_capacity->getType() == env.i64ptrType());
+//                auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
 //                builder.CreateStore(env.i64Const(0), idx_capacity);
 //
-//                auto llvm_element_type = env.getOrCreateListType(elementType);
-//                auto idx_values = CreateStructGEP(builder, list_ptr, 2);
+//                auto llvm_element_type = env.createOrGetListType(elementType);
+//                auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
 //
 //                // load pointer
 //                auto ptr = builder.CreateLoad(idx_values);
@@ -502,7 +509,7 @@ namespace tuplex {
 ////                // pointers to the list type!
 ////                // similar to above - yet, keep it here extra for more control...
 ////                // a list consists of 3 fields: capacity, size and a pointer to the members
-////                auto idx_capacity = CreateStructGEP(builder, list_ptr, 0); assert(idx_capacity->getType() == env.i64ptrType());
+////                auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
 ////                builder.CreateStore(env.i64Const(0), idx_capacity);
 ////
 ////                auto llvm_element_type = env.getOrCreateTupleType(elementType);
@@ -580,7 +587,7 @@ namespace tuplex {
             // @TODO: create verify function for list pointer -> only one valid scenario ok...!
 
             // check ptr has correct type
-            auto llvm_list_type = env.getOrCreateListType(list_type);
+            auto llvm_list_type = env.createOrGetListType(list_type);
             if(list_ptr->getType() != llvm_list_type->getPointerTo())
                 throw std::runtime_error("expected pointer of " + env.getLLVMTypeName(llvm_list_type->getPointerTo()) + " but list_ptr has " + env.getLLVMTypeName(list_ptr->getType()));
 
@@ -624,10 +631,10 @@ namespace tuplex {
                 bStoreDone = BasicBlock::Create(ctx, "store_done", F);
 
                 // need to ALWAYS store null
-                auto idx_nulls = CreateStructGEP(builder, list_ptr, struct_opt_index);
+                auto idx_nulls = builder.CreateStructGEP(list_ptr, llvm_list_type, struct_opt_index);
                 assert(value.is_null);
-                auto ptr = builder.CreateLoad(idx_nulls);
-                auto idx_null = builder.CreateGEP(ptr, idx);
+                auto ptr = builder.CreateLoad(llvm_list_type->getStructElementType(struct_opt_index), idx_nulls);
+                auto idx_null = builder.CreateGEP(builder.getInt8Ty(), ptr, idx);
                 builder.CreateStore(builder.CreateZExtOrTrunc(value.is_null, env.i8Type()), idx_null);
 
                 // jump now according to block!
@@ -644,11 +651,12 @@ namespace tuplex {
 
                 // new:
                 auto data_index = 2;
-                auto data_ptr = CreateStructLoad(builder, list_ptr, data_index);
-                builder.CreateStore(value.val, builder.CreateGEP(data_ptr, idx));
+                auto data_ptr = builder.CreateStructLoad(llvm_list_type, list_ptr, data_index);
+                auto llvm_value_type = env.pythonToLLVMType(elementType);
+                builder.CreateStore(value.val, builder.CreateGEP(llvm_value_type, data_ptr, idx));
 
                 // old:
-                // auto idx_values = CreateStructGEP(builder, list_ptr, 2);
+                // auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
                 // llvm::Type* llvm_element_type = env.pythonToLLVMType(elementType);
                 // assert(value.val && llvm_element_type == value.val->getType());
                 // auto ptr = builder.CreateLoad(idx_values);
@@ -656,17 +664,18 @@ namespace tuplex {
                 // builder.CreateStore(value.val, idx_value);
             } else if(elementType == python::Type::STRING
                       || elementType == python::Type::PYOBJECT) {
-                auto idx_values = CreateStructGEP(builder, list_ptr, 2);
-                auto idx_sizes = CreateStructGEP(builder, list_ptr, 3);
+                auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
+                auto idx_sizes = builder.CreateStructGEP(list_ptr, llvm_list_type, 3);
 
                 // store value.val and value.size
                 assert(value.val && value.size);
 
-                auto ptr_values = builder.CreateLoad(idx_values);
-                auto ptr_sizes = builder.CreateLoad(idx_sizes);
+                auto ptr_values = builder.CreateLoad(llvm_list_type->getStructElementType(2), idx_values);
+                auto ptr_sizes = builder.CreateLoad(llvm_list_type->getStructElementType(3), idx_sizes);
 
-                auto idx_value = builder.CreateGEP(ptr_values, idx);
-                auto idx_size = builder.CreateGEP(ptr_sizes, idx);
+                auto llvm_value_type = env.pythonToLLVMType(elementType);
+                auto idx_value = builder.CreateGEP(llvm_value_type, ptr_values, idx);
+                auto idx_size = builder.CreateGEP(builder.getInt64Ty(), ptr_sizes, idx);
 
                 builder.CreateStore(value.val, idx_value);
                 builder.CreateStore(value.size, idx_size);
@@ -674,44 +683,45 @@ namespace tuplex {
                 // pointer to the structured dict type!
 
                 // this is quite simple, store a HEAP allocated pointer.
-                auto idx_capacity = CreateStructGEP(builder, list_ptr, 0); assert(idx_capacity->getType() == env.i64ptrType());
+                auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
                 builder.CreateStore(env.i64Const(0), idx_capacity);
 
                 auto llvm_element_type = env.getOrCreateStructuredDictType(elementType);
-                auto idx_values = CreateStructGEP(builder, list_ptr, 2);
+                auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
 
                 // store pointer
                 assert(value.val);
-                auto ptr = builder.CreateLoad(idx_values);
-                auto idx_value = builder.CreateGEP(ptr, idx);
+                auto llvm_value_type = env.pythonToLLVMType(elementType);
+                auto ptr = builder.CreateLoad(llvm_list_type->getStructElementType(2), idx_values);
+                auto idx_value = builder.CreateGEP(llvm_value_type, ptr, idx);
 
                 builder.CreateStore(value.val, idx_value);
             } else if(elementType.isListType()) {
                 // pointers to the list type!
                 // similar to above - yet, keep it here extra for more control...
                 // a list consists of 3 fields: capacity, size and a pointer to the members
-                auto idx_capacity = CreateStructGEP(builder, list_ptr, 0); assert(idx_capacity->getType() == env.i64ptrType());
+                auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
                 builder.CreateStore(env.i64Const(0), idx_capacity);
 
-                auto llvm_element_type = env.getOrCreateListType(elementType);
-                auto idx_values = CreateStructGEP(builder, list_ptr, 2);
+                auto llvm_element_type = env.createOrGetListType(elementType);
+                auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
 
                 // store pointer
                 assert(value.val);
-                auto ptr = builder.CreateLoad(idx_values);
-                auto idx_value = builder.CreateGEP(ptr, idx);
+                auto ptr = builder.CreateLoad(llvm_list_type->getStructElementType(2), idx_values);
+                auto idx_value = builder.CreateGEP(llvm_element_type, ptr, idx);
 
                 builder.CreateStore(value.val, idx_value);
             } else if(elementType.isTupleType()) {
                 // pointers to the list type!
                 // similar to above - yet, keep it here extra for more control...
                 // a list consists of 3 fields: capacity, size and a pointer to the members
-                auto idx_capacity = CreateStructGEP(builder, list_ptr, 0); assert(idx_capacity->getType() == env.i64ptrType());
+                auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
                 builder.CreateStore(env.i64Const(0), idx_capacity);
 
                 auto llvm_element_type = env.getOrCreateTupleType(elementType);
 
-                auto ptr_values = CreateStructLoad(builder, list_ptr, 2); // this should be a pointer
+                auto ptr_values = builder.CreateStructLoad(llvm_list_type, list_ptr, 2); // this should be a pointer
                 auto tuple = value.val;
 
                 // load FlattenedTuple from value (this ensures it is a heap ptr)
@@ -729,7 +739,7 @@ namespace tuplex {
                 // env.printValue(builder, heap_ptr, "pointer to store: ");
 
                 // store pointer --> should be HEAP allocated pointer. (maybe add attributes to check?)
-                auto target_idx = builder.CreateGEP(ptr_values, idx);
+                auto target_idx = builder.CreateGEP(llvm_element_type, ptr_values, idx);
 
                 // debug print:
                 // env.printValue(builder, builder.CreateLoad(target_idx), "pointer currently stored: ");
@@ -777,7 +787,7 @@ namespace tuplex {
                 return; // nothing to do
 
             // check ptr has correct type
-            auto llvm_list_type = env.getOrCreateListType(list_type);
+            auto llvm_list_type = env.createOrGetListType(list_type);
             if(list_ptr->getType() != llvm_list_type->getPointerTo())
                 throw std::runtime_error("expected pointer of " + env.getLLVMTypeName(llvm_list_type->getPointerTo()) + " but list_ptr has " + env.getLLVMTypeName(list_ptr->getType()));
 
@@ -792,7 +802,7 @@ namespace tuplex {
             if(elementType.isSingleValued()) {
                 if(elements_optional) {
                     // capacity is field 0...
-                    auto idx_size = CreateStructGEP(builder, list_ptr, 1); assert(idx_size->getType() == env.i64ptrType());
+                    auto idx_size = builder.CreateStructGEP(list_ptr, llvm_list_type, 1); assert(idx_size->getType() == env.i64ptrType());
                     builder.CreateStore(size, idx_size);
                 } else {
                     // the list is represented as single i64
@@ -801,20 +811,20 @@ namespace tuplex {
             } else if(elementType == python::Type::I64
                       || elementType == python::Type::F64
                       || elementType == python::Type::BOOLEAN) {
-                auto idx_size = CreateStructGEP(builder, list_ptr, 1); assert(idx_size->getType() == env.i64ptrType());
+                auto idx_size = builder.CreateStructGEP(list_ptr, llvm_list_type, 1); assert(idx_size->getType() == env.i64ptrType());
                 builder.CreateStore(size, idx_size);
             } else if(elementType == python::Type::STRING
                       || elementType == python::Type::PYOBJECT) {
-                auto idx_size = CreateStructGEP(builder, list_ptr, 1); assert(idx_size->getType() == env.i64ptrType());
+                auto idx_size = builder.CreateStructGEP(list_ptr, llvm_list_type, 1); assert(idx_size->getType() == env.i64ptrType());
                 builder.CreateStore(size, idx_size);
             } else if(elementType.isStructuredDictionaryType()) {
-                auto idx_size = CreateStructGEP(builder, list_ptr, 1); assert(idx_size->getType() == env.i64ptrType());
+                auto idx_size = builder.CreateStructGEP(list_ptr, llvm_list_type, 1); assert(idx_size->getType() == env.i64ptrType());
                 builder.CreateStore(size, idx_size);
             } else if(elementType.isListType()) {
-                auto idx_size = CreateStructGEP(builder, list_ptr, 1); assert(idx_size->getType() == env.i64ptrType());
+                auto idx_size = builder.CreateStructGEP(list_ptr, llvm_list_type, 1); assert(idx_size->getType() == env.i64ptrType());
                 builder.CreateStore(size, idx_size);
             } else if(elementType.isTupleType()) {
-                auto idx_size = CreateStructGEP(builder, list_ptr, 1); assert(idx_size->getType() == env.i64ptrType());
+                auto idx_size = builder.CreateStructGEP(list_ptr, llvm_list_type, 1); assert(idx_size->getType() == env.i64ptrType());
                 builder.CreateStore(size, idx_size);
             } else {
                 throw std::runtime_error("Unsupported list element type: " + list_type.desc());
@@ -827,7 +837,7 @@ namespace tuplex {
                 return env.i64Const(0); // empty list is well,... guess (drum roll) -> empty.
 
             // check ptr has correct type
-            auto llvm_list_type = env.getOrCreateListType(list_type);
+            auto llvm_list_type = env.createOrGetListType(list_type);
             // if(list_ptr->getType() != llvm_list_type->getPointerTo())
             //    throw std::runtime_error("expected pointer of " + env.getLLVMTypeName(llvm_list_type->getPointerTo()) + " but list_ptr has " + env.getLLVMTypeName(list_ptr->getType()));
 
@@ -856,7 +866,7 @@ namespace tuplex {
             if(elementType.isSingleValued() && !elements_optional) {
                 if(list_ptr->getType()->isPointerTy())
                     // the list is represented as single i64
-                    return builder.CreateLoad(list_ptr);
+                    return builder.CreateLoad(builder.getInt64Ty(), list_ptr);
                 else {
                     assert(list_ptr->getType() == env.i64Type());
                     return list_ptr;
@@ -865,8 +875,8 @@ namespace tuplex {
                 auto size_position = 1;
 
                 if(list_ptr->getType()->isPointerTy()) {
-                    auto idx_size = CreateStructGEP(builder, list_ptr, size_position); assert(idx_size->getType() == env.i64ptrType());
-                    return builder.CreateLoad(idx_size);
+                    auto idx_size = builder.CreateStructGEP(list_ptr, llvm_list_type, size_position); assert(idx_size->getType() == env.i64ptrType());
+                    return builder.CreateLoad(builder.getInt64Ty(), idx_size);
                 } else {
                     return builder.CreateExtractValue(list_ptr, std::vector<unsigned>(1, size_position));
                 }
@@ -884,9 +894,10 @@ namespace tuplex {
 
                 assert(element_type.isStructuredDictionaryType());
 
-                auto ptr_values = CreateStructLoad(builder, list_ptr, 2);
+                auto llvm_list_type = env.createOrGetListType(list_type);
+                auto ptr_values = builder.CreateStructLoad(llvm_list_type, list_ptr, 2);
 
-                auto item = builder.CreateGEP(ptr_values, index);
+                auto item = builder.CreateGEP(llvm_list_type->getStructElementType(2), ptr_values, index);
                 auto item_size = struct_dict_serialized_memory_size(env, builder, item, element_type).val;
 
                 return item_size;
@@ -906,12 +917,13 @@ namespace tuplex {
 
                 assert(element_type.isListType());
 
-                auto ptr_values = CreateStructLoad(builder, list_ptr, 2);
+                auto llvm_list_type = env.createOrGetListType(list_type);
+                auto ptr_values = builder.CreateStructLoad(llvm_list_type, list_ptr, 2);
                 assert(ptr_values->getType()->isPointerTy());
 
                 // fetch size by calling struct_size on each retrieved pointer! (they should be ALL valid)
                 // --> no check here!
-                auto item = builder.CreateGEP(ptr_values, index);
+                auto item = builder.CreateGEP(llvm_list_type->getStructElementType(2), ptr_values, index);
 
                 // call function! (or better said: emit the necessary code...)
                 auto item_size = list_serialized_size(env, builder, item, element_type);
@@ -932,23 +944,25 @@ namespace tuplex {
             // what type is there?
             unsigned ptr_position = 2;
             llvm::Value* ptr_values = nullptr;
+            auto llvm_list_type = env.createOrGetListType(list_type);
             if(list_ptr->getType()->isPointerTy()) {
-                auto idx_ptr = CreateStructGEP(builder, list_ptr, ptr_position);
+                auto idx_ptr = builder.CreateStructGEP(list_ptr, llvm_list_type, ptr_position);
                 //assert(idx_size->getType() == env.i64ptrType());
-                ptr_values = builder.CreateLoad(idx_ptr);
+                ptr_values = builder.CreateLoad(llvm_list_type->getStructElementType(ptr_position), idx_ptr);
             } else {
                 ptr_values = builder.CreateExtractValue(list_ptr, std::vector<unsigned>(1, ptr_position));
             }
 
-            //auto ptr_values = CreateStructGEP(builder, list_ptr, 2); // should be struct.tuple**
+            //auto ptr_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2); // should be struct.tuple**
 
             auto t_ptr_values = env.getLLVMTypeName(ptr_values->getType());
             // now load the i-th element from ptr_values as struct.tuple*
-            auto item_ptr = builder.CreateInBoundsGEP(ptr_values, std::vector<llvm::Value*>(1, index));
+            auto item_ptr = builder.CreateInBoundsGEP(ptr_values, llvm_list_type->getStructElementType(ptr_position), index);
             auto t_item_ptr = env.getLLVMTypeName(item_ptr->getType()); // should be struct.tuple**
 
-            auto item = builder.CreateLoad(item_ptr); // <-- should be struct.tuple*
-            auto t_item = env.getLLVMTypeName(item->getType());
+            auto llvm_value_type = env.pythonToLLVMType(element_type);
+            auto item = builder.CreateLoad(llvm_value_type, item_ptr); // <-- should be struct.tuple*
+            auto t_item = env.getLLVMTypeName(llvm_value_type);
             assert(item->getType()->isPointerTy()); // <-- this here fails...
 
             // debug print: retrieve heap ptr
@@ -1001,6 +1015,8 @@ namespace tuplex {
                    || elementType == python::Type::F64
                    || elementType == python::Type::BOOLEAN);
 
+            auto llvm_list_type = env.createOrGetListType(list_type);
+
             // note that size if basically 8 bytes for size + 8 * len
             // need to write in a loop -> yet can speed it up using memcpy!
 
@@ -1008,11 +1024,11 @@ namespace tuplex {
             auto len = list_length(env, builder, list_ptr, list_type);
             auto casted_dest_ptr = builder.CreateBitOrPointerCast(dest_ptr, env.i64ptrType());
             builder.CreateStore(len, casted_dest_ptr);
-            dest_ptr = builder.CreateGEP(dest_ptr, env.i64Const(8));
+            dest_ptr = builder.MovePtrByBytes(dest_ptr, sizeof(int64_t));
 
             // memcpy data_ptr
-            auto idx_values = CreateStructGEP(builder, list_ptr, 2);
-            auto ptr_values = builder.CreatePointerCast(builder.CreateLoad(idx_values), env.i8ptrType());
+            auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
+            auto ptr_values = builder.CreatePointerCast(builder.CreateLoad(env.i8ptrType(), idx_values), env.i8ptrType());
             auto data_size = builder.CreateMul(env.i64Const(8), len); // size in bytes!
             builder.CreateMemCpy(dest_ptr, 0, ptr_values, 0, data_size);
             auto size = builder.CreateAdd(env.i64Const(8), data_size);
@@ -1032,9 +1048,10 @@ namespace tuplex {
 
                 assert(element_type.isStructuredDictionaryType());
 
-                auto ptr_values = CreateStructLoad(builder, list_ptr, 2);
+                auto llvm_list_type = env.createOrGetListType(list_type);
+                auto ptr_values = builder.CreateStructLoad(llvm_list_type, list_ptr, 2);
 
-                auto item = builder.CreateGEP(ptr_values, index);
+                auto item = builder.CreateGEP(llvm_list_type->getStructElementType(2), ptr_values, index);
                 auto item_size = struct_dict_serialized_memory_size(env, builder, item, element_type).val;
 
                 return item_size;
@@ -1049,8 +1066,9 @@ namespace tuplex {
 
                 assert(element_type.isStructuredDictionaryType());
 
-                auto ptr_values = CreateStructLoad(builder, list_ptr, 2);
-                auto item = builder.CreateGEP(ptr_values, index);
+                auto llvm_list_type = env.createOrGetListType(list_type);
+                auto ptr_values = builder.CreateStructLoad(llvm_list_type, list_ptr, 2);
+                auto item = builder.CreateGEP(llvm_list_type->getStructElementType(2), ptr_values, index);
 
                 // call struct dict serialize
                 auto s_result = struct_dict_serialize_to_memory(env, builder, item, element_type, dest_ptr);
@@ -1113,8 +1131,8 @@ namespace tuplex {
         // generic list of variable fields serialization function
         llvm::Value* list_serialize_varitems_to(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr,
                                                const python::Type& list_type, llvm::Value* dest_ptr,
-                                                std::function<llvm::Value*(LLVMEnvironment&, llvm::IRBuilder<>&, llvm::Value*, llvm::Value*)> f_item_size,
-                                                std::function<llvm::Value*(LLVMEnvironment&, llvm::IRBuilder<>&, llvm::Value*, llvm::Value*, llvm::Value*)> f_item_serialize_to) {
+                                                std::function<llvm::Value*(LLVMEnvironment&, const IRBuilder&, llvm::Value*, llvm::Value*)> f_item_size,
+                                                std::function<llvm::Value*(LLVMEnvironment&, const IRBuilder&, llvm::Value*, llvm::Value*, llvm::Value*)> f_item_serialize_to) {
             using namespace llvm;
 
             assert(dest_ptr && dest_ptr->getType() == env.i8ptrType());
@@ -1134,10 +1152,10 @@ namespace tuplex {
             auto ptr = dest_ptr;
             builder.CreateStore(len, builder.CreatePointerCast(ptr, env.i64ptrType()));
             // env.debugPrint(builder, "stored length to pointer address");
-            ptr = builder.CreateGEP(ptr, env.i64Const(sizeof(int64_t)));
+            ptr = builder.MovePtrByBytes(ptr, sizeof(int64_t));
 
             auto info_start_ptr = ptr;
-            auto var_ptr = builder.CreateGEP(ptr, builder.CreateMul(len, env.i64Const(sizeof(int64_t)))); // offset from current is len * sizeof(int64_t)
+            auto var_ptr = builder.MovePtrByBytes(ptr, builder.CreateMul(len, env.i64Const(sizeof(int64_t)))); // offset from current is len * sizeof(int64_t)
 
             // generate loop to go over items.
             auto loop_i = env.CreateFirstBlockAlloca(builder, env.i64Type());
@@ -1157,7 +1175,7 @@ namespace tuplex {
                 // --- header ---
                 builder.SetInsertPoint(bLoopHeader);
                 // if i < len:
-                auto loop_i_val = builder.CreateLoad(loop_i);
+                auto loop_i_val = builder.CreateLoad(env.i64Type(), loop_i);
                 auto loop_cond = builder.CreateICmpULT(loop_i_val, len);
                 builder.CreateCondBr(loop_cond, bLoopBody, bLoopExit);
             }
@@ -1166,7 +1184,7 @@ namespace tuplex {
             {
                 // --- body ---
                 builder.SetInsertPoint(bLoopBody);
-                auto loop_i_val = builder.CreateLoad(loop_i);
+                auto loop_i_val = builder.CreateLoad(env.i64Type(), loop_i);
 
                 // env.printValue(builder, loop_i_val, "serializing item: ");
 
@@ -1175,10 +1193,10 @@ namespace tuplex {
 
                 // env.printValue(builder, item_size, "item size to serialize is: ");
 
-                auto varlen_bytes = builder.CreateLoad(varlen_bytes_var);
+                auto varlen_bytes = builder.CreateLoad(builder.getInt64Ty(), varlen_bytes_var);
                 assert(varlen_bytes->getType() == env.i64Type());
                 // env.printValue(builder, varlen_bytes, "so far serialized (bytes): ");
-                auto item_dest_ptr = builder.CreateGEP(var_ptr, varlen_bytes);
+                auto item_dest_ptr = builder.MovePtrByBytes(var_ptr, varlen_bytes);
                 // env.debugPrint(builder, "calling item func");
                 auto actual_size = f_item_serialize_to(env, builder, list_ptr, loop_i_val, item_dest_ptr);
                 //env.printValue(builder, actual_size, "actually realized item size is: ");
@@ -1194,7 +1212,7 @@ namespace tuplex {
                 auto info = pack_offset_and_size(builder, offset, item_size);
 
                 // store info & inc pointer
-                auto info_ptr = builder.CreateGEP(info_start_ptr, builder.CreateMul(env.i64Const(8), loop_i_val));
+                auto info_ptr = builder.MovePtrByBytes(info_start_ptr, builder.CreateMul(env.i64Const(8), loop_i_val));
                 builder.CreateStore(info, builder.CreatePointerCast(info_ptr, env.i64ptrType()));
 
                 // inc. variable length bytes serialized so far
@@ -1208,7 +1226,7 @@ namespace tuplex {
             builder.SetInsertPoint(bLoopExit);
 
             // calculate actual size
-            auto varlen_bytes = builder.CreateLoad(varlen_bytes_var);
+            auto varlen_bytes = builder.CreateLoad(builder.getInt64Ty(), varlen_bytes_var);
 
             auto size = builder.CreateAdd(env.i64Const(8), builder.CreateAdd(builder.CreateMul(env.i64Const(8), len), varlen_bytes));
             assert(size->getType() == env.i64Type());
@@ -1221,7 +1239,7 @@ namespace tuplex {
         // generic list of variable fields serialization function
         llvm::Value* list_of_varitems_serialized_size(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr,
                                                 const python::Type& list_type,
-                                                std::function<llvm::Value*(LLVMEnvironment&, llvm::IRBuilder<>&, llvm::Value*, llvm::Value*)> f_item_size) {
+                                                std::function<llvm::Value*(LLVMEnvironment&, const IRBuilder&, llvm::Value*, llvm::Value*)> f_item_size) {
             using namespace llvm;
 
             // serialization format of this is as follows:
@@ -1253,7 +1271,7 @@ namespace tuplex {
                 // --- header ---
                 builder.SetInsertPoint(bLoopHeader);
                 // if i < len:
-                auto loop_i_val = builder.CreateLoad(loop_i);
+                auto loop_i_val = builder.CreateLoad(env.i64Type(), loop_i);
                 auto loop_cond = builder.CreateICmpULT(loop_i_val, len);
                 builder.CreateCondBr(loop_cond, bLoopBody, bLoopExit);
             }
@@ -1262,11 +1280,11 @@ namespace tuplex {
             {
                 // --- body ---
                 builder.SetInsertPoint(bLoopBody);
-                auto loop_i_val = builder.CreateLoad(loop_i);
+                auto loop_i_val = builder.CreateLoad(env.i64Type(), loop_i);
 
                 // get item's serialized size
                 auto item_size = f_item_size(env, builder, list_ptr, loop_i_val);
-                auto varlen_bytes = builder.CreateLoad(varlen_bytes_var);
+                auto varlen_bytes = builder.CreateLoad(builder.getInt64Ty(), varlen_bytes_var);
 
                 // inc. variable length bytes serialized so far
                 builder.CreateStore(builder.CreateAdd(varlen_bytes, item_size), varlen_bytes_var);
@@ -1279,7 +1297,7 @@ namespace tuplex {
             builder.SetInsertPoint(bLoopExit);
 
             // calculate actual size
-            auto varlen_bytes = builder.CreateLoad(varlen_bytes_var);
+            auto varlen_bytes = builder.CreateLoad(builder.getInt64Ty(), varlen_bytes_var);
             auto size = builder.CreateAdd(env.i64Const(8), builder.CreateAdd(builder.CreateMul(env.i64Const(8), len), varlen_bytes));
             assert(size->getType() == env.i64Type());
             return size;
@@ -1298,12 +1316,13 @@ namespace tuplex {
 
                 assert(element_type.isListType());
 
-                auto ptr_values = CreateStructLoad(builder, list_ptr, 2);
+                auto llvm_list_type = env.createOrGetListType(list_type);
+                auto ptr_values = builder.CreateStructLoad(llvm_list_type, list_ptr, 2);
                 assert(ptr_values->getType()->isPointerTy());
 
                 // fetch size by calling struct_size on each retrieved pointer! (they should be ALL valid)
                 // --> no check here!
-                auto item = builder.CreateGEP(ptr_values, index);
+                auto item = builder.CreateGEP(llvm_list_type->getStructElementType(2), ptr_values, index);
 
                 // call function! (or better said: emit the necessary code...)
                 auto item_size = list_serialized_size(env, builder, item, element_type);
@@ -1317,13 +1336,14 @@ namespace tuplex {
                 auto element_type = list_type.elementType();
 
                 assert(element_type.isListType());
-
-                auto ptr_values = CreateStructLoad(builder, list_ptr, 2);
+                auto llvm_list_type = env.createOrGetListType(list_type);
+                auto ptr_values = builder.CreateStructLoad(llvm_list_type, list_ptr, 2);
                 assert(ptr_values->getType()->isPointerTy());
 
                 // fetch size by calling struct_size on each retrieved pointer! (they should be ALL valid)
                 // --> no check here!
-                auto item = builder.CreateGEP(ptr_values, index);
+                auto llvm_value_type = env.pythonToLLVMType(element_type);
+                auto item = builder.CreateGEP(llvm_value_type, ptr_values, index);
 
                 // call function! (or better said: emit the necessary code...)
                 auto item_size = list_serialize_to(env, builder, item, element_type, dest_ptr);
@@ -1344,10 +1364,12 @@ namespace tuplex {
 
                 assert(element_type == python::Type::STRING || element_type == python::Type::PYOBJECT);
 
-                auto idx_sizes = CreateStructGEP(builder, list_ptr, 3);
-                auto ptr_sizes = builder.CreateLoad(idx_sizes);
-                auto idx_size = builder.CreateGEP(ptr_sizes, index);
-                auto item_size = builder.CreateLoad(idx_size);
+                auto llvm_list_type = env.createOrGetListType(list_type);
+
+                auto idx_sizes = builder.CreateStructGEP(list_ptr, llvm_list_type, 3);
+                auto ptr_sizes = builder.CreateLoad(llvm_list_type->getStructElementType(3), idx_sizes);
+                auto idx_size = builder.CreateGEP(env.i64ptrType(), ptr_sizes, index);
+                auto item_size = builder.CreateLoad(env.i64Type(), idx_size);
                 return item_size;
             };
 
@@ -1363,10 +1385,12 @@ namespace tuplex {
 
                 assert(element_type == python::Type::STRING || element_type == python::Type::PYOBJECT);
 
-                auto idx_sizes = CreateStructGEP(builder, list_ptr, 3);
-                auto ptr_sizes = builder.CreateLoad(idx_sizes);
-                auto idx_size = builder.CreateGEP(ptr_sizes, index);
-                auto item_size = builder.CreateLoad(idx_size);
+                auto llvm_list_type = env.createOrGetListType(list_type);
+
+                auto idx_sizes = builder.CreateStructGEP(list_ptr, llvm_list_type, 3);
+                auto ptr_sizes = builder.CreateLoad(llvm_list_type->getStructElementType(3), idx_sizes);
+                auto idx_size = builder.CreateGEP(env.i64ptrType(), ptr_sizes, index);
+                auto item_size = builder.CreateLoad(env.i64Type(), idx_size);
                 return item_size;
             };
 
@@ -1379,17 +1403,19 @@ namespace tuplex {
 
                 assert(element_type == python::Type::STRING || element_type == python::Type::PYOBJECT);
 
-                auto ptr_values = CreateStructLoad(builder, list_ptr, 2);
-                auto ptr_sizes = CreateStructLoad(builder, list_ptr, 3);
+                auto llvm_list_type = env.createOrGetListType(list_type);
+                auto ptr_values = builder.CreateStructLoad(llvm_list_type, list_ptr, 2);
+                auto ptr_sizes = builder.CreateStructLoad(llvm_list_type, list_ptr, 3);
 
                 assert(ptr_values->getType() == env.i8ptrType()->getPointerTo(0));
                 assert(ptr_sizes->getType() == env.i64ptrType());
 
-                auto idx_value = builder.CreateGEP(ptr_values, index);
-                auto idx_size = builder.CreateGEP(ptr_sizes, index);
+                auto llvm_value_type = env.pythonToLLVMType(element_type);
+                auto idx_value = builder.CreateGEP(llvm_value_type, ptr_values, index);
+                auto idx_size = builder.CreateGEP(env.i64Type(), ptr_sizes, index);
 
-                auto item_size = builder.CreateLoad(idx_size);
-                auto str_ptr = builder.CreateLoad(idx_value);
+                auto item_size = builder.CreateLoad(env.i64Type(), idx_size);
+                auto str_ptr = builder.CreateLoad(llvm_value_type, idx_value);
                 assert(item_size->getType() == env.i64Type());
                 assert(str_ptr->getType() == env.i8ptrType());
 
@@ -1594,7 +1620,7 @@ namespace tuplex {
 
             // alloc list ptr
             SerializableValue list_val;
-            auto llvm_list_type = env.getOrCreateListType(list_type);
+            auto llvm_list_type = env.createOrGetListType(list_type);
 
             list_val.val = env.CreateFirstBlockAlloca(builder, llvm_list_type);
             list_init_empty(env, builder, list_val.val, list_type);
@@ -1628,7 +1654,7 @@ namespace tuplex {
 
             auto& ctx = func->getContext();
             BasicBlock* bbEntry = BasicBlock::Create(ctx, "entry", func);
-            IRBuilder<> builder(bbEntry);
+            IRBuilder builder(bbEntry);
             auto m = mapLLVMFunctionArgs(func, {"in", "out"});
             auto list_ptr = m["in"];
             auto target_list_ptr = m["out"];
@@ -1656,12 +1682,12 @@ namespace tuplex {
 
             builder.CreateBr(bbLoopHeader);
             builder.SetInsertPoint(bbLoopHeader);
-            auto icmp = builder.CreateICmpULT(builder.CreateLoad(i_var), list_size);
+            auto icmp = builder.CreateICmpULT(builder.CreateLoad(env.i64Type(), i_var), list_size);
             builder.CreateCondBr(icmp, bbLoopBody, bbLoopDone);
 
             builder.SetInsertPoint(bbLoopBody);
             // inc.
-            auto idx = builder.CreateLoad(i_var);
+            auto idx = builder.CreateLoad(env.i64Type(), i_var);
 
             // debug
             // env.printValue(builder, idx, "i=");

@@ -399,6 +399,16 @@ namespace tuplex {
 #endif
             }
 
+            inline llvm::Value* CreateStructLoad(llvm::Type* struct_type, llvm::Value* Ptr, unsigned Idx) const {
+                assert(struct_type && struct_type->isStructTy());
+                assert(Ptr && Ptr->getType()->isPointerTy());
+
+                assert(Idx < struct_type->getStructNumElements());
+
+                auto item_ptr = CreateStructGEP(Ptr, struct_type, Idx);
+                return CreateLoad(struct_type->getStructElementType(Idx), item_ptr);
+            }
+
             inline llvm::Value *CreateFCmpONE(llvm::Value *LHS, llvm::Value *RHS, const std::string &Name = "",
                                               llvm::MDNode *FPMathTag = nullptr) const {return get_or_throw().CreateFCmpONE(LHS, RHS, Name, FPMathTag); }
 
@@ -495,7 +505,7 @@ namespace tuplex {
              }
 
 
-            inline llvm::Value* CreateInBoundsGEP(llvm::Value* Ptr, llvm::Type* pointee_type, llvm::Value* Idx) {
+            inline llvm::Value* CreateInBoundsGEP(llvm::Value* Ptr, llvm::Type* pointee_type, llvm::Value* Idx) const {
                  return get_or_throw().CreateInBoundsGEP(pointee_type, Ptr, {Idx});
              }
 
@@ -1265,7 +1275,7 @@ namespace tuplex {
          * @param include_zero
          * @return i1 true if strings match, else i1 false
          */
-        extern llvm::Value* stringCompare(llvm::IRBuilder<> &builder, llvm::Value *ptr, const std::string &str,
+        extern llvm::Value* stringCompare(const IRBuilder& builder, llvm::Value *ptr, const std::string &str,
                                                    bool include_zero);
 
         /*!
