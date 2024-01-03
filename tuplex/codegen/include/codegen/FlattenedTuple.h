@@ -345,7 +345,7 @@ namespace tuplex {
             }
         };
 
-        extern std::shared_ptr<FlattenedTuple> decodeCells(LLVMEnvironment& env, IRBuilder& builder,
+        extern std::shared_ptr<FlattenedTuple> decodeCells(LLVMEnvironment& env, const IRBuilder& builder,
                                                            const python::Type& rowType,
                                                            size_t numCells,
                                                            llvm::Value* cellsPtr,
@@ -355,7 +355,7 @@ namespace tuplex {
                                                            const std::vector<std::string>& null_values,
                                                            const std::vector<size_t>& cell_indices);
 
-        extern std::shared_ptr<FlattenedTuple> decodeCells(LLVMEnvironment& env, IRBuilder& builder,
+        extern std::shared_ptr<FlattenedTuple> decodeCells(LLVMEnvironment& env, const IRBuilder& builder,
                                                     const python::Type& rowType,
                                                     llvm::Value* numCells,
                                                     llvm::Value* cellsPtr,
@@ -366,7 +366,7 @@ namespace tuplex {
                                                     const std::vector<std::string>& null_values,
                                                            const std::vector<size_t>& cell_indices);
 
-        inline std::shared_ptr<FlattenedTuple> decodeCells(LLVMEnvironment& env, IRBuilder& builder,
+        inline std::shared_ptr<FlattenedTuple> decodeCells(LLVMEnvironment& env, const IRBuilder& builder,
                                                            const python::Type& rowType,
                                                            llvm::Value* numCells,
                                                            llvm::Value* cellsPtr,

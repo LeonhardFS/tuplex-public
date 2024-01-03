@@ -266,14 +266,15 @@ namespace tuplex {
                         auto jop = dynamic_cast<JoinOperator*>(op.get()); assert(jop);
 
                         // TODO test this out, seems rather quick yet
-                        auto leftColumn = jop->buildRight() ? jop->leftColumn().value_or("") : jop->rightColumn().value_or("");
+                        auto leftColumn = jop->leftColumn().value_or(""); //jop->buildRight() ? jop->leftColumn().value_or("") : jop->rightColumn().value_or("");
+                        auto rightColumn = jop->rightColumn().value_or("");
                         auto bucketColumns = jop->bucketColumns();
                         if(jop->joinType() == JoinType::INNER) {
                             ppb.innerJoinDict(jop->getID(), next_hashmap_name(),
-                                              leftColumn, bucketColumns,
+                                              leftColumn, rightColumn, bucketColumns,
                                               jop->leftPrefix(), jop->leftSuffix(), jop->rightPrefix(), jop->rightSuffix());
                         } else if(jop->joinType() == JoinType::LEFT) {
-                            ppb.leftJoinDict(jop->getID(), next_hashmap_name(), leftColumn, bucketColumns,
+                            ppb.leftJoinDict(jop->getID(), next_hashmap_name(), leftColumn, rightColumn, bucketColumns,
                                              jop->leftPrefix(), jop->leftSuffix(), jop->rightPrefix(), jop->rightSuffix());
                         } else {
                             throw std::runtime_error("right join not yet supported!");

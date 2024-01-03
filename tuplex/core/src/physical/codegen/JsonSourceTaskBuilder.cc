@@ -78,11 +78,11 @@ namespace tuplex {
             //  env().debugPrint(builder, "---");
 
             // store in output var info
-            llvm::Value* normalRowCount = builder.CreateLoad(_normalRowCountVar);
-            normalRowCount = builder.CreateSub(normalRowCount, builder.CreateLoad(_badNormalRowCountVar));
+            llvm::Value* normalRowCount = builder.CreateLoad(builder.getInt64Ty(), _normalRowCountVar);
+            normalRowCount = builder.CreateSub(normalRowCount, builder.CreateLoad(builder.getInt64Ty(), _badNormalRowCountVar));
             env().storeIfNotNull(builder, normalRowCount, args["outNormalRowCount"]);
-            llvm::Value* badRowCount = builder.CreateAdd(builder.CreateLoad(_generalRowCountVar), builder.CreateLoad(_fallbackRowCountVar));
-            badRowCount = builder.CreateAdd(builder.CreateLoad(_badNormalRowCountVar), badRowCount);
+            llvm::Value* badRowCount = builder.CreateAdd(builder.CreateLoad(builder.getInt64Ty(), _generalRowCountVar), builder.CreateLoad(builder.getInt64Ty(), _fallbackRowCountVar));
+            badRowCount = builder.CreateAdd(builder.CreateLoad(builder.getInt64Ty(), _badNormalRowCountVar), badRowCount);
             env().storeIfNotNull(builder, badRowCount, args["outBadRowCount"]); // <-- i.e. exceptions
 
             builder.CreateRet(parsed_bytes);
@@ -91,7 +91,7 @@ namespace tuplex {
         }
 
         void
-        JsonSourceTaskBuilder::generateChecks(llvm::IRBuilder<> &builder,
+        JsonSourceTaskBuilder::generateChecks(const IRBuilder &builder,
                                               llvm::Value *userData,
                                               llvm::Value *rowNumber,
                                               llvm::Value* parser,
@@ -572,7 +572,7 @@ namespace tuplex {
 
                 // create badParse exception
                 // @TODO: throughput can be improved by using a single C++ function for all of this!
-                serializeBadParseException(builder, userData, _inputOperatorID, rowNumber(builder), line, builder.CreateLoad(size_var));
+                serializeBadParseException(builder, userData, _inputOperatorID, rowNumber(builder), line, builder.CreateLoad(builder.getInt64Ty(), size_var));
 #ifdef JSON_PARSER_TRACE_MEMORY
                  _env->debugPrint(builder, "got fallback-case row!");
 #endif
@@ -583,7 +583,7 @@ namespace tuplex {
                     // note: line could be empty line -> check whether to skip or not!
                     auto Fws = getOrInsertFunction(_env->getModule().get(), "Json_is_whitespace", ctypeToLLVM<bool>(_env->getContext()),
                                                    _env->i8ptrType(), _env->i64Type());
-                    auto ws_rc = builder.CreateCall(Fws, {line, builder.CreateLoad(size_var)});
+                    auto ws_rc = builder.CreateCall(Fws, {line, builder.CreateLoad(builder.getInt64Ty(), size_var)});
                     auto is_ws = builder.CreateICmpEQ(ws_rc, cbool_const(_env->getContext(), true));
 
 
@@ -598,14 +598,14 @@ namespace tuplex {
 
                     // only inc for non whitespace (would serialize here!)
                     builder.SetInsertPoint(bIsNotWhitespace);
-                    incVar(builder, _fallbackMemorySizeVar, builder.CreateLoad(size_var));
+                    incVar(builder, _fallbackMemorySizeVar, builder.CreateLoad(builder.getInt64Ty(), size_var));
                     incVar(builder, _fallbackRowCountVar);
                     incVar(builder, _rowNumberVar); // --> trick, else the white line is counted as row!
                     builder.CreateBr(bFallbackDone);
                     builder.SetInsertPoint(bFallbackDone);
                 }
                 else {
-                    incVar(builder, _fallbackMemorySizeVar, builder.CreateLoad(size_var));
+                    incVar(builder, _fallbackMemorySizeVar, builder.CreateLoad(builder.getInt64Ty(), size_var));
                     incVar(builder, _fallbackRowCountVar);
                 }
 
@@ -665,10 +665,10 @@ namespace tuplex {
             // free JSON parse (global object)
             freeJsonParse(builder, parser);
 
-            return builder.CreateLoad(_parsedBytesVar);
+            return builder.CreateLoad(builder.getInt64Ty(), _parsedBytesVar);
         }
 
-        llvm::Value* json_parseRowAsStructuredDict(LLVMEnvironment& env, llvm::IRBuilder<> &builder, const python::Type &dict_type,
+        llvm::Value* json_parseRowAsStructuredDict(LLVMEnvironment& env, const IRBuilder& builder, const python::Type &dict_type,
                 llvm::Value *j, llvm::BasicBlock *bbSchemaMismatch) {
             assert(j);
             using namespace llvm;
@@ -701,7 +701,7 @@ namespace tuplex {
 #ifdef JSON_PARSER_TRACE_MEMORY
             env.debugPrint(builder, "parsing data to row var");
 #endif
-            gen.parseToVariable(builder, builder.CreateLoad(obj_var), row_var);
+            gen.parseToVariable(builder, builder.CreateLoad(env.i8ptrType(), obj_var), row_var);
 
             // create new block (post - parse)
             BasicBlock *bPostParse = BasicBlock::Create(ctx, "post_parse", builder.GetInsertBlock()->getParent());
@@ -893,7 +893,7 @@ namespace tuplex {
 
             BasicBlock* bEntry = BasicBlock::Create(env.getContext(), "entry", F); // <-- call first!
             BasicBlock* bMismatch = BasicBlock::Create(env.getContext(), "mismatch", F);
-            IRBuilder<> builder(bMismatch);
+            IRBuilder builder(bMismatch);
             // free objects here
 
             builder.CreateRet(env.i64Const(ecToI64(ExceptionCode::BADPARSE_STRING_INPUT)));
@@ -981,7 +981,7 @@ namespace tuplex {
 
             auto func = getOrInsertFunction(env.getModule().get(), name, FT);
             BasicBlock* bEntry = BasicBlock::Create(env.getContext(), "entry", func);
-            IRBuilder<> builder(bEntry);
+            IRBuilder builder(bEntry);
 
 
             auto args = mapLLVMFunctionArgs(func, std::vector<std::string>({"tuple_out", "str", "str_size"}));
@@ -1018,7 +1018,7 @@ namespace tuplex {
             return json_generateParseRowFunction(*_env.get(), name, row_type, columns, unwrap_first_level);
         }
 
-        FlattenedTuple JsonSourceTaskBuilder::generateAndCallParseRowFunction(llvm::IRBuilder<> &parent_builder,
+        FlattenedTuple JsonSourceTaskBuilder::generateAndCallParseRowFunction(const IRBuilder& parent_builder,
                                                                               const std::string& name,
                                                                               const python::Type &row_type,
                                                                               const std::vector<std::string> &columns,
@@ -1062,7 +1062,7 @@ namespace tuplex {
         }
 
         llvm::Value *
-        JsonSourceTaskBuilder::parsedBytes(llvm::IRBuilder<> &builder, llvm::Value *parser, llvm::Value *buf_size) {
+        JsonSourceTaskBuilder::parsedBytes(const IRBuilder& builder, llvm::Value *parser, llvm::Value *buf_size) {
             using namespace llvm;
             // call func
             auto F = getOrInsertFunction(_env->getModule().get(), "JsonParser_TruncatedBytes", _env->i64Type(), _env->i8ptrType());
@@ -1073,7 +1073,7 @@ namespace tuplex {
         }
 
         // json helper funcs
-        llvm::Value *JsonSourceTaskBuilder::initJsonParser(llvm::IRBuilder<> &builder) {
+        llvm::Value *JsonSourceTaskBuilder::initJsonParser(const IRBuilder& builder) {
 
             auto F = getOrInsertFunction(_env->getModule().get(), "JsonParser_Init", _env->i8ptrType());
 
@@ -1083,7 +1083,7 @@ namespace tuplex {
             return j;
         }
 
-        llvm::Value *JsonSourceTaskBuilder::openJsonBuf(llvm::IRBuilder<> &builder, llvm::Value *j, llvm::Value *buf,
+        llvm::Value *JsonSourceTaskBuilder::openJsonBuf(const IRBuilder& builder, llvm::Value *j, llvm::Value *buf,
                                                      llvm::Value *buf_size) {
             assert(j);
             auto F = getOrInsertFunction(_env->getModule().get(), "JsonParser_open", _env->i64Type(), _env->i8ptrType(),
@@ -1091,14 +1091,14 @@ namespace tuplex {
             return builder.CreateCall(F, {j, buf, buf_size});
         }
 
-        void JsonSourceTaskBuilder::freeJsonParse(llvm::IRBuilder<> &builder, llvm::Value *j) {
+        void JsonSourceTaskBuilder::freeJsonParse(const IRBuilder& builder, llvm::Value *j) {
             auto &ctx = _env->getContext();
             auto F = getOrInsertFunction(_env->getModule().get(), "JsonParser_Free", llvm::Type::getVoidTy(ctx),
                                          _env->i8ptrType());
             builder.CreateCall(F, j);
         }
 
-        void JsonSourceTaskBuilder::exitMainFunctionWithError(llvm::IRBuilder<> &builder, llvm::Value *exitCondition,
+        void JsonSourceTaskBuilder::exitMainFunctionWithError(const IRBuilder& builder, llvm::Value *exitCondition,
                                                               llvm::Value *exitCode) {
             using namespace llvm;
             auto &ctx = _env->getContext();
@@ -1116,7 +1116,7 @@ namespace tuplex {
             builder.SetInsertPoint(bbContinue);
         }
 
-        llvm::Value *JsonSourceTaskBuilder::hasNextRow(llvm::IRBuilder<> &builder, llvm::Value *j) {
+        llvm::Value *JsonSourceTaskBuilder::hasNextRow(const IRBuilder& builder, llvm::Value *j) {
             auto &ctx = _env->getContext();
             auto F = getOrInsertFunction(_env->getModule().get(), "JsonParser_hasNextRow", ctypeToLLVM<bool>(ctx),
                                          _env->i8ptrType());
@@ -1126,7 +1126,7 @@ namespace tuplex {
                     llvm::Type::getIntNTy(ctx, ctypeToLLVM<bool>(ctx)->getIntegerBitWidth()), 1));
         }
 
-        void JsonSourceTaskBuilder::moveToNextRow(llvm::IRBuilder<> &builder, llvm::Value *j) {
+        void JsonSourceTaskBuilder::moveToNextRow(const IRBuilder& builder, llvm::Value *j) {
             // move
             using namespace llvm;
             auto &ctx = _env->getContext();
@@ -1143,7 +1143,7 @@ namespace tuplex {
         }
 
         llvm::Value *
-        JsonSourceTaskBuilder::parseRowAsStructuredDict(llvm::IRBuilder<> &builder, const python::Type &dict_type,
+        JsonSourceTaskBuilder::parseRowAsStructuredDict(const IRBuilder& builder, const python::Type &dict_type,
                                                         llvm::Value *j, llvm::BasicBlock *bbSchemaMismatch) {
             assert(j);
             using namespace llvm;
@@ -1173,7 +1173,7 @@ namespace tuplex {
 
             // create dict parser and store to row_var
             JSONParseRowGenerator gen(*_env.get(), dict_type, bbSchemaMismatch);
-            gen.parseToVariable(builder, builder.CreateLoad(obj_var), row_var);
+            gen.parseToVariable(builder, builder.CreateLoad(env().i8ptrType(), obj_var), row_var);
 //            // update free end
 //            auto bParseFreeStart = bParseFree;
 //            bParseFree = gen.generateFreeAllVars(bParseFree);
@@ -1198,7 +1198,7 @@ namespace tuplex {
             return row_var;
         }
 
-        llvm::Value *JsonSourceTaskBuilder::isDocumentOfObjectType(llvm::IRBuilder<> &builder, llvm::Value *j) {
+        llvm::Value *JsonSourceTaskBuilder::isDocumentOfObjectType(const IRBuilder& builder, llvm::Value *j) {
             using namespace llvm;
             auto &ctx = _env->getContext();
             auto F = getOrInsertFunction(_env->getModule().get(), "JsonParser_getDocType", _env->i64Type(),
@@ -1208,7 +1208,7 @@ namespace tuplex {
             return cond;
         }
 
-        FlattenedTuple JsonSourceTaskBuilder::parseRow(llvm::IRBuilder<> &builder, const python::Type &row_type,
+        FlattenedTuple JsonSourceTaskBuilder::parseRow(const IRBuilder& builder, const python::Type &row_type,
                                                        const std::vector<std::string>& columns,
                                                        bool unwrap_first_level, llvm::Value *parser,
                                                        llvm::BasicBlock *bbSchemaMismatch) {
@@ -1292,7 +1292,7 @@ namespace tuplex {
             return ft;
         }
 
-        void JsonSourceTaskBuilder::serializeAsNormalCaseException(llvm::IRBuilder<> &builder, llvm::Value *userData,
+        void JsonSourceTaskBuilder::serializeAsNormalCaseException(const IRBuilder& builder, llvm::Value *userData,
                                                                    int64_t operatorID, llvm::Value *row_no,
                                                                    const tuplex::codegen::FlattenedTuple &general_case_row) {
             // checks
@@ -1323,7 +1323,7 @@ namespace tuplex {
             builder.CreateCall(eh_func, {userData, ecCode, ecOpID, row_no, buf, buf_size});
         }
 
-        void JsonSourceTaskBuilder::serializeBadParseException(llvm::IRBuilder<> &builder,
+        void JsonSourceTaskBuilder::serializeBadParseException(const IRBuilder& builder,
                                                                llvm::Value* userData,
                                                                int64_t operatorID,
                                                                llvm::Value *row_no,
@@ -1347,12 +1347,12 @@ namespace tuplex {
 
             // write first number of cells to serialize. ( = 1)
             builder.CreateStore(_env->i64Const(1), builder.CreatePointerCast(ptr, _env->i64ptrType()));
-            ptr = builder.CreateGEP(ptr, _env->i64Const(sizeof(int64_t)));
+            ptr = builder.MovePtrByBytes(ptr, sizeof(int64_t));
             // write str info (size + offset)
             size_t offset = sizeof(int64_t); // trivial offset
             auto info = pack_offset_and_size(builder, _env->i64Const(offset), str_size);
             builder.CreateStore(info, builder.CreatePointerCast(ptr, _env->i64ptrType()));
-            ptr = builder.CreateGEP(ptr, _env->i64Const(sizeof(int64_t)));
+            ptr = builder.MovePtrByBytes(ptr, sizeof(int64_t));
             // memcpy string
             builder.CreateMemCpy(ptr, 0, str, 0, str_size);
 

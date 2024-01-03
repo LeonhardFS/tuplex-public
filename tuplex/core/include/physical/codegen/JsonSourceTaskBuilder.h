@@ -80,7 +80,7 @@ namespace tuplex {
                                 llvm::BasicBlock* bbBadRow);
 
             inline llvm::Value* incVar(const IRBuilder& builder, llvm::Value* var, llvm::Value* what_to_add) {
-                llvm::Value* val = builder.CreateLoad(var);
+                llvm::Value* val = builder.CreateLoad(builder.getInt64Ty(), var);
                 val = builder.CreateAdd(val, what_to_add);
                 builder.CreateStore(val, var);
                 return val;
@@ -90,16 +90,16 @@ namespace tuplex {
                 return incVar(builder, var, _env->i64Const(delta));
             }
 
-            inline llvm::Value *rowNumber(llvm::IRBuilder<> &builder) {
+            inline llvm::Value *rowNumber(const IRBuilder& builder) {
                 assert(_rowNumberVar);
                 assert(_rowNumberVar->getType() == _env->i64ptrType());
-                return builder.CreateLoad(_rowNumberVar);
+                return builder.CreateLoad(builder.getInt64Ty(), _rowNumberVar);
             }
 
             llvm::Value* parsedBytes(const IRBuilder& builder, llvm::Value* parser, llvm::Value* buf_size);
 
-            llvm::Value *isDocumentOfObjectType(llvm::IRBuilder<> &builder, llvm::Value *j);
-            llvm::Value* parseRowAsStructuredDict(llvm::IRBuilder<> &builder, const python::Type& dict_type, llvm::Value *j,
+            llvm::Value *isDocumentOfObjectType(const IRBuilder& builder, llvm::Value *j);
+            llvm::Value* parseRowAsStructuredDict(const IRBuilder& builder, const python::Type& dict_type, llvm::Value *j,
                                                   llvm::BasicBlock *bbSchemaMismatch);
 
             FlattenedTuple parseRow(const IRBuilder& builder, const python::Type& row_type,
@@ -113,7 +113,7 @@ namespace tuplex {
                                                      const std::vector<std::string>& columns,
                                                      bool unwrap_first_level);
 
-            FlattenedTuple generateAndCallParseRowFunction(llvm::IRBuilder<>& parent_builder,
+            FlattenedTuple generateAndCallParseRowFunction(const IRBuilder& parent_builder,
                                                            const std::string& name,
                                                            const python::Type& row_type,
                                                            const std::vector<std::string>& columns,
@@ -121,15 +121,15 @@ namespace tuplex {
                                                            llvm::Value* parser,
                                                            llvm::BasicBlock *bbSchemaMismatch);
 
-            llvm::Value *initJsonParser(llvm::IRBuilder<> &builder);
-            void freeJsonParse(llvm::IRBuilder<> &builder, llvm::Value *j);
-            llvm::Value *openJsonBuf(llvm::IRBuilder<> &builder, llvm::Value *j, llvm::Value *buf, llvm::Value *buf_size);
-            void exitMainFunctionWithError(llvm::IRBuilder<> &builder, llvm::Value *exitCondition, llvm::Value *exitCode);
-            llvm::Value *hasNextRow(llvm::IRBuilder<> &builder, llvm::Value *j);
-            void moveToNextRow(llvm::IRBuilder<> &builder, llvm::Value *j);
+            llvm::Value *initJsonParser(const IRBuilder& builder);
+            void freeJsonParse(const IRBuilder& builder, llvm::Value *j);
+            llvm::Value *openJsonBuf(const IRBuilder& builder, llvm::Value *j, llvm::Value *buf, llvm::Value *buf_size);
+            void exitMainFunctionWithError(const IRBuilder& builder, llvm::Value *exitCondition, llvm::Value *exitCode);
+            llvm::Value *hasNextRow(const IRBuilder& builder, llvm::Value *j);
+            void moveToNextRow(const IRBuilder& builder, llvm::Value *j);
 
             // serialize bad parse exception
-            void serializeBadParseException(llvm::IRBuilder<> &builder,
+            void serializeBadParseException(const IRBuilder& builder,
                                             llvm::Value* userData,
                                             int64_t operatorID,
                                             llvm::Value *row_no,

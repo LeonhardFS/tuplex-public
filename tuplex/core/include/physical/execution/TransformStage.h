@@ -461,6 +461,8 @@ namespace tuplex {
                if(syms->aggCombineFunctor)
                    aggCombineFunctor = syms->aggCombineFunctor;
             }
+
+            inline bool valid() const { return functor || functorWithExp || resolveFunctor || (aggInitFunctor && aggAggregateFunctor && aggCombineFunctor); }
         };
 
         // HACK!!!

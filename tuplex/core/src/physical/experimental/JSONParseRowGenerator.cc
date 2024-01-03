@@ -8,7 +8,7 @@
 namespace tuplex {
     namespace codegen {
         std::tuple<llvm::Value *, SerializableValue>
-        JSONParseRowGenerator::decodeString(llvm::IRBuilder<> &builder, llvm::Value *obj, llvm::Value *key) {
+        JSONParseRowGenerator::decodeString(const IRBuilder& builder, llvm::Value *obj, llvm::Value *key) {
             using namespace std;
             using namespace llvm;
 
@@ -23,14 +23,14 @@ namespace tuplex {
             auto str_size_var = _env.CreateFirstBlockVariable(builder, _env.i64Const(0), "s_size");
             llvm::Value* rc = builder.CreateCall(F, {obj, key, str_var, str_size_var});
             SerializableValue v;
-            v.val = builder.CreateLoad(str_var);
-            v.size = builder.CreateLoad(str_size_var);
+            v.val = builder.CreateLoad(_env.i8ptrType(), str_var);
+            v.size = builder.CreateLoad(_env.i64Type(), str_size_var);
             v.is_null = _env.i1Const(false);
             return make_tuple(rc, v);
         }
 
         std::tuple<llvm::Value *, SerializableValue>
-        JSONParseRowGenerator::decodeBoolean(llvm::IRBuilder<> &builder, llvm::Value *obj, llvm::Value *key) {
+        JSONParseRowGenerator::decodeBoolean(const IRBuilder& builder, llvm::Value *obj, llvm::Value *key) {
             using namespace std;
             using namespace llvm;
 
@@ -45,14 +45,14 @@ namespace tuplex {
             auto b_var = _env.CreateFirstBlockVariable(builder, cbool_const(_env.getContext(), false));
             llvm::Value* rc = builder.CreateCall(F, {obj, key, b_var});
             SerializableValue v;
-            v.val = _env.upcastToBoolean(builder, builder.CreateLoad(b_var));
+            v.val = _env.upcastToBoolean(builder, builder.CreateLoad(ctypeToLLVM<bool>(_env.getContext()), b_var));
             v.size = _env.i64Const(sizeof(int64_t));
             v.is_null = _env.i1Const(false);
             return make_tuple(rc, v);
         }
 
         std::tuple<llvm::Value *, SerializableValue>
-        JSONParseRowGenerator::decodeI64(llvm::IRBuilder<> &builder, llvm::Value *obj, llvm::Value *key) {
+        JSONParseRowGenerator::decodeI64(const IRBuilder& builder, llvm::Value *obj, llvm::Value *key) {
             using namespace std;
             using namespace llvm;
 
@@ -66,14 +66,14 @@ namespace tuplex {
             auto i_var = _env.CreateFirstBlockVariable(builder, _env.i64Const(0));
             llvm::Value* rc = builder.CreateCall(F, {obj, key, i_var});
             SerializableValue v;
-            v.val = builder.CreateLoad(i_var);
+            v.val = builder.CreateLoad(builder.getInt64Ty(), i_var);
             v.size = _env.i64Const(sizeof(int64_t));
             v.is_null = _env.i1Const(false);
             return make_tuple(rc, v);
         }
 
         std::tuple<llvm::Value *, SerializableValue>
-        JSONParseRowGenerator::decodeF64(llvm::IRBuilder<> &builder, llvm::Value *obj, llvm::Value *key) {
+        JSONParseRowGenerator::decodeF64(const IRBuilder& builder, llvm::Value *obj, llvm::Value *key) {
             using namespace std;
             using namespace llvm;
 
@@ -88,14 +88,14 @@ namespace tuplex {
             auto f_var = _env.CreateFirstBlockVariable(builder, _env.f64Const(0));
             llvm::Value* rc = builder.CreateCall(F, {obj, key, f_var});
             SerializableValue v;
-            v.val = builder.CreateLoad(f_var);
+            v.val = builder.CreateLoad(_env.doubleType(), f_var);
             v.size = _env.i64Const(sizeof(int64_t));
             v.is_null = _env.i1Const(false);
             return make_tuple(rc, v);
         }
 
         std::tuple<llvm::Value *, SerializableValue>
-        JSONParseRowGenerator::decodeEmptyDict(llvm::IRBuilder<> &builder, llvm::Value *obj, llvm::Value *key) {
+        JSONParseRowGenerator::decodeEmptyDict(const IRBuilder& builder, llvm::Value *obj, llvm::Value *key) {
             using namespace std;
             using namespace llvm;
 
@@ -122,7 +122,7 @@ namespace tuplex {
 
             // --- object found ---
             builder.SetInsertPoint(bbObjectFound);
-            auto sub_obj = builder.CreateLoad(sub_obj_var);
+            auto sub_obj = builder.CreateLoad(_env.i8ptrType(), sub_obj_var);
 
             // check how many entries
             auto num_keys = numberOfKeysInObject(builder, sub_obj);
@@ -147,7 +147,7 @@ namespace tuplex {
         }
 
         std::tuple<llvm::Value*, SerializableValue>
-        JSONParseRowGenerator::decodeNull(llvm::IRBuilder<> &builder, llvm::Value *obj, llvm::Value *key) {
+        JSONParseRowGenerator::decodeNull(const IRBuilder& builder, llvm::Value *obj, llvm::Value *key) {
             using namespace std;
             using namespace llvm;
 
@@ -165,7 +165,7 @@ namespace tuplex {
         }
 
         std::tuple<llvm::Value *, SerializableValue>
-        JSONParseRowGenerator::decodeEmptyList(llvm::IRBuilder<> &builder, llvm::Value *obj, llvm::Value *key) {
+        JSONParseRowGenerator::decodeEmptyList(const IRBuilder& builder, llvm::Value *obj, llvm::Value *key) {
             // similar to empty dict
 
             using namespace std;
@@ -191,7 +191,7 @@ namespace tuplex {
 
             // --- object found ---
             builder.SetInsertPoint(bbObjectFound);
-            auto item = builder.CreateLoad(item_var);
+            auto item = builder.CreateLoad(_env.i8ptrType(), item_var);
 
             // check how many entries
             auto num_elements = arraySize(builder, item);
@@ -216,7 +216,7 @@ namespace tuplex {
         }
 
         std::tuple<llvm::Value *, SerializableValue>
-        JSONParseRowGenerator::decodeBooleanFromArray(llvm::IRBuilder<> &builder, llvm::Value *array,
+        JSONParseRowGenerator::decodeBooleanFromArray(const IRBuilder& builder, llvm::Value *array,
                                                       llvm::Value *index) {
             using namespace std;
             using namespace llvm;
@@ -231,14 +231,14 @@ namespace tuplex {
             auto i_var = _env.CreateFirstBlockVariable(builder, _env.i64Const(0));
             llvm::Value* rc = builder.CreateCall(F, {array, index, i_var});
             SerializableValue v;
-            v.val = builder.CreateZExtOrTrunc(builder.CreateLoad(i_var), _env.getBooleanType());
+            v.val = builder.CreateZExtOrTrunc(builder.CreateLoad(builder.getInt64Ty(), i_var), _env.getBooleanType());
             v.size = _env.i64Const(sizeof(int64_t));
             v.is_null = _env.i1Const(false);
             return make_tuple(rc, v);
         }
 
         std::tuple<llvm::Value *, SerializableValue>
-        JSONParseRowGenerator::decodeI64FromArray(llvm::IRBuilder<> &builder, llvm::Value *array, llvm::Value *index) {
+        JSONParseRowGenerator::decodeI64FromArray(const IRBuilder& builder, llvm::Value *array, llvm::Value *index) {
             using namespace std;
             using namespace llvm;
 
@@ -252,14 +252,14 @@ namespace tuplex {
             auto i_var = _env.CreateFirstBlockVariable(builder, _env.i64Const(0));
             llvm::Value* rc = builder.CreateCall(F, {array, index, i_var});
             SerializableValue v;
-            v.val = builder.CreateLoad(i_var);
+            v.val = builder.CreateLoad(builder.getInt64Ty(), i_var);
             v.size = _env.i64Const(sizeof(int64_t));
             v.is_null = _env.i1Const(false);
             return make_tuple(rc, v);
         }
 
         std::tuple<llvm::Value *, SerializableValue>
-        JSONParseRowGenerator::decodeF64FromArray(llvm::IRBuilder<> &builder, llvm::Value *array, llvm::Value *index) {
+        JSONParseRowGenerator::decodeF64FromArray(const IRBuilder& builder, llvm::Value *array, llvm::Value *index) {
             using namespace std;
             using namespace llvm;
 
@@ -273,14 +273,14 @@ namespace tuplex {
             auto f_var = _env.CreateFirstBlockVariable(builder, _env.f64Const(0));
             llvm::Value* rc = builder.CreateCall(F, {array, index, f_var});
             SerializableValue v;
-            v.val = builder.CreateLoad(f_var);
+            v.val = builder.CreateLoad(_env.doubleType(), f_var);
             v.size = _env.i64Const(sizeof(int64_t));
             v.is_null = _env.i1Const(false);
             return make_tuple(rc, v);
         }
 
         std::tuple<llvm::Value *, SerializableValue>
-        JSONParseRowGenerator::decodeStringFromArray(llvm::IRBuilder<> &builder, llvm::Value *array,
+        JSONParseRowGenerator::decodeStringFromArray(const IRBuilder& builder, llvm::Value *array,
                                                      llvm::Value *index) {
             using namespace std;
             using namespace llvm;
@@ -298,14 +298,14 @@ namespace tuplex {
             builder.CreateStore(_env.i64Const(0), str_size_var);
             llvm::Value* rc = builder.CreateCall(F, {array, index, str_var, str_size_var});
             SerializableValue v;
-            v.val = builder.CreateLoad(str_var);
-            v.size = builder.CreateLoad(str_size_var);
+            v.val = builder.CreateLoad(_env.i8ptrType(), str_var);
+            v.size = builder.CreateLoad(builder.getInt64Ty(), str_size_var);
             v.is_null = _env.i1Const(false);
             return make_tuple(rc, v);
         }
 
         std::tuple<llvm::Value *, SerializableValue>
-        JSONParseRowGenerator::decodeObjectFromArray(llvm::IRBuilder<> &builder,
+        JSONParseRowGenerator::decodeObjectFromArray(const IRBuilder& builder,
                                                      llvm::Value *array,
                                                      llvm::Value *index,
                                                      const python::Type &dict_type) {
@@ -356,7 +356,7 @@ namespace tuplex {
 
                 builder.SetInsertPoint(bbDecodeItem);
                 // load item!
-                auto item = builder.CreateLoad(item_var);
+                auto item = builder.CreateLoad(_env.i8ptrType(), item_var);
                 // recurse using new prefix
                 // --> similar to flatten_recursive_helper(entries, kv_pair.valueType, access_path, include_maybe_structs);
                 decode(builder,
@@ -376,14 +376,14 @@ namespace tuplex {
 
 
             builder.SetInsertPoint(bbDecodeDone); // continue from here...
-            llvm::Value* rc = builder.CreateLoad(rc_var); // <-- error
+            llvm::Value* rc = builder.CreateLoad(_env.i64Type(), rc_var); // <-- error
             SerializableValue v;
-            v.val = builder.CreateLoad(dict_ptr);
+            v.val = builder.CreateLoad(llvm_dict_type->getPointerTo(), dict_ptr);
             return make_tuple(rc, v);
         }
 
 
-        llvm::Value* JSONParseRowGenerator::generateDecodeListItemsLoop(llvm::IRBuilder<> &builder, llvm::Value *array,
+        llvm::Value* JSONParseRowGenerator::generateDecodeListItemsLoop(const IRBuilder& builder, llvm::Value *array,
                                                                         llvm::Value *list_ptr, const python::Type &list_type,
                                                                         llvm::Value *num_elements) {
             using namespace llvm;
@@ -418,7 +418,7 @@ namespace tuplex {
                 // --- loop header ---
                 // if i < num_elements:
                 builder.SetInsertPoint(bLoopHeader);
-                auto loop_i_val = builder.CreateLoad(loop_i);
+                auto loop_i_val = builder.CreateLoad(builder.getInt64Ty(), loop_i);
                 auto loop_cond = builder.CreateICmpULT(loop_i_val, num_elements);
                 builder.CreateCondBr(loop_cond, bLoopBody, bLoopDone);
             }
@@ -432,7 +432,7 @@ namespace tuplex {
                 llvm::Value* item_rc = nullptr;
                 SerializableValue item;
 
-                auto index = builder.CreateLoad(loop_i);
+                auto index = builder.CreateLoad(builder.getInt64Ty(), loop_i);
 
                 // decode now element from array
                 std::tie(item_rc, item) = decodeFromArray(builder, array, index, element_type);
@@ -458,7 +458,7 @@ namespace tuplex {
                     // // next: store in list
                     // _env.printValue(builder, item.val, "decoded value: ");
 
-                    auto loop_i_val = builder.CreateLoad(loop_i);
+                    auto loop_i_val = builder.CreateLoad(builder.getInt64Ty(), loop_i);
                     list_store_value(_env, builder, list_ptr, list_type, loop_i_val, item);
 
                     // inc.
@@ -469,11 +469,11 @@ namespace tuplex {
 
             builder.SetInsertPoint(bLoopDone);
 
-            return builder.CreateLoad(rcVar);
+            return builder.CreateLoad(builder.getInt64Ty(), rcVar);
         }
 
         std::tuple<llvm::Value *, SerializableValue>
-        JSONParseRowGenerator::decodeNullFromArray(llvm::IRBuilder<> &builder, llvm::Value *array, llvm::Value *index) {
+        JSONParseRowGenerator::decodeNullFromArray(const IRBuilder& builder, llvm::Value *array, llvm::Value *index) {
 
             using namespace std;
             using namespace llvm;
@@ -491,7 +491,7 @@ namespace tuplex {
         }
 
         std::tuple<llvm::Value *, SerializableValue>
-        JSONParseRowGenerator::decodeOptionFromArray(llvm::IRBuilder<> &builder, const python::Type &option_type,
+        JSONParseRowGenerator::decodeOptionFromArray(const IRBuilder& builder, const python::Type &option_type,
                                                      llvm::Value *array, llvm::Value *index) {
             using namespace llvm;
 
@@ -516,7 +516,7 @@ namespace tuplex {
                 auto llvm_element_type = _env.getOrCreateStructuredDictType(element_type);
                 auto null_struct_var = _env.CreateFirstBlockAlloca(builder, llvm_element_type);
                 struct_dict_mem_zero(_env, builder, null_struct_var, element_type);
-                null_struct = builder.CreateLoad(null_struct_var);
+                null_struct = builder.CreateLoad(llvm_element_type, null_struct_var);
             }
 
             // check if it is null
@@ -591,7 +591,7 @@ namespace tuplex {
 
 
         std::tuple<llvm::Value *, SerializableValue>
-        JSONParseRowGenerator::decodeEmptyListFromArray(llvm::IRBuilder<> &builder, llvm::Value *array,
+        JSONParseRowGenerator::decodeEmptyListFromArray(const IRBuilder& builder, llvm::Value *array,
                                                         llvm::Value *index) {
             using namespace std;
             using namespace llvm;
@@ -609,7 +609,7 @@ namespace tuplex {
         }
 
         std::tuple<llvm::Value *, SerializableValue>
-        JSONParseRowGenerator::decodeListFromArray(llvm::IRBuilder<> &builder, const python::Type &list_type,
+        JSONParseRowGenerator::decodeListFromArray(const IRBuilder& builder, const python::Type &list_type,
                                                    llvm::Value *array, llvm::Value *index) {
             using namespace llvm;
             using namespace std;
@@ -660,7 +660,7 @@ namespace tuplex {
             // step 2: check that it is a homogenous list...
             auto list_element_type = list_type.elementType();
             builder.SetInsertPoint(bbArrayFound);
-            auto sub_array = builder.CreateLoad(item_var);
+            auto sub_array = builder.CreateLoad(_env.i8ptrType(), item_var);
             auto num_elements = arraySize(builder, sub_array);
 
             // debug print here number of elements...
@@ -690,14 +690,14 @@ namespace tuplex {
             }
 
             builder.SetInsertPoint(bbDecodeDone);
-            llvm::Value* rc = builder.CreateLoad(rc_var);
+            llvm::Value* rc = builder.CreateLoad(builder.getInt64Ty(), rc_var);
             SerializableValue value;
-            value.val = builder.CreateLoad(list_ptr); // retrieve the ptr representing the list
+            value.val = builder.CreateLoad(list_llvm_type, list_ptr); // retrieve the ptr representing the list
             return make_tuple(rc, value);
         }
 
         std::tuple<llvm::Value *, SerializableValue>
-        JSONParseRowGenerator::decodeFromArray(llvm::IRBuilder<> &builder, llvm::Value *array, llvm::Value *index,
+        JSONParseRowGenerator::decodeFromArray(const IRBuilder& builder, llvm::Value *array, llvm::Value *index,
                                                const python::Type &element_type) {
             using namespace llvm;
 
@@ -733,7 +733,7 @@ namespace tuplex {
         }
 
         std::tuple<llvm::Value *, SerializableValue>
-        JSONParseRowGenerator::decodeTupleFromArray(llvm::IRBuilder<> &builder, llvm::Value *array, llvm::Value *index,
+        JSONParseRowGenerator::decodeTupleFromArray(const IRBuilder& builder, llvm::Value *array, llvm::Value *index,
                                                     const python::Type &tuple_type, bool store_as_heap_ptr) {
             assert(tuple_type.isTupleType() || tuple_type == python::Type::EMPTYTUPLE);
             using namespace std;
@@ -782,7 +782,7 @@ namespace tuplex {
             // -----------------------------------------------------------
             // step 2: check that the array has the same size as the tuple! if not -> schema mismatch...
             builder.SetInsertPoint(bbArrayFound);
-            auto sub_array = builder.CreateLoad(item_var);
+            auto sub_array = builder.CreateLoad(_env.i8ptrType(), item_var);
             auto num_elements = arraySize(builder, sub_array);
 
             // debug print here number of elements...
@@ -825,7 +825,7 @@ namespace tuplex {
                 ft.set(builder, {(int)i}, item.val, item.size, item.is_null);
             }
 
-            llvm::Value* rc = builder.CreateLoad(rc_var);
+            llvm::Value* rc = builder.CreateLoad(builder.getInt64Ty(), rc_var);
             SerializableValue value;
             value.val = store_as_heap_ptr ? ft.loadToHeapPtr(builder) : ft.loadToPtr(builder);
 
@@ -833,7 +833,7 @@ namespace tuplex {
         }
 
         std::tuple<llvm::Value *, SerializableValue>
-        JSONParseRowGenerator::decodeTuple(llvm::IRBuilder<> &builder, llvm::Value *obj, llvm::Value *key,
+        JSONParseRowGenerator::decodeTuple(const IRBuilder& builder, llvm::Value *obj, llvm::Value *key,
                                            const python::Type &tupleType) {
             assert(tupleType.isTupleType() || tupleType == python::Type::EMPTYTUPLE);
             using namespace std;
@@ -876,7 +876,7 @@ namespace tuplex {
             // -----------------------------------------------------------
             // step 2: check that the array has the same size as the tuple! if not -> schema mismatch...
             builder.SetInsertPoint(bbArrayFound);
-            auto array = builder.CreateLoad(item_var);
+            auto array = builder.CreateLoad(_env.i8ptrType(), item_var);
             auto num_elements = arraySize(builder, array);
 
             // debug print here number of elements...
@@ -914,14 +914,14 @@ namespace tuplex {
                 ft.set(builder, {(int)i}, item.val, item.size, item.is_null);
             }
 
-            llvm::Value* rc = builder.CreateLoad(rc_var);
+            llvm::Value* rc = builder.CreateLoad(builder.getInt64Ty(), rc_var);
             SerializableValue value;
             value.val = ft.loadToPtr(builder);
             return make_tuple(rc, value);
         }
 
         std::tuple<llvm::Value *, SerializableValue>
-        JSONParseRowGenerator::decodeList(llvm::IRBuilder<> &builder, llvm::Value *obj, llvm::Value *key,
+        JSONParseRowGenerator::decodeList(const IRBuilder& builder, llvm::Value *obj, llvm::Value *key,
                                           const python::Type &listType) {
             using namespace std;
             using namespace llvm;
@@ -962,7 +962,7 @@ namespace tuplex {
             // step 2: check that it is a homogenous list...
             auto elementType = listType.elementType();
             builder.SetInsertPoint(bbArrayFound);
-            auto array = builder.CreateLoad(item_var);
+            auto array = builder.CreateLoad(_env.i8ptrType(), item_var);
             auto num_elements = arraySize(builder, array);
 
             // debug print here number of elements...
@@ -993,14 +993,14 @@ namespace tuplex {
             }
 
             builder.SetInsertPoint(bbDecodeDone);
-            llvm::Value* rc = builder.CreateLoad(rc_var);
+            llvm::Value* rc = builder.CreateLoad(builder.getInt64Ty(), rc_var);
             SerializableValue value;
-            value.val = builder.CreateLoad(list_ptr); // retrieve the ptr representing the list
+            value.val = builder.CreateLoad(list_llvm_type, list_ptr); // retrieve the ptr representing the list
             return make_tuple(rc, value);
         }
 
         std::tuple<llvm::Value *, llvm::Value *, SerializableValue>
-        JSONParseRowGenerator::decodeStructDictFieldFromObject(llvm::IRBuilder<> &builder, llvm::Value *obj,
+        JSONParseRowGenerator::decodeStructDictFieldFromObject(const IRBuilder& builder, llvm::Value *obj,
                                                                llvm::Value* key, const python::StructEntry &entry,
                                                                llvm::BasicBlock *bbSchemaMismatch) {
             using namespace std;
@@ -1059,7 +1059,7 @@ namespace tuplex {
             {
                 builder.SetInsertPoint(bbDecodeItem);
                 // load json obj
-                auto sub_object = builder.CreateLoad(sub_object_var);
+                auto sub_object = builder.CreateLoad(_env.i8ptrType(), sub_object_var);
                 // recurse using new prefix
                 // --> similar to flatten_recursive_helper(entries, kv_pair.valueType, access_path, include_maybe_structs);
                 decode(builder,
@@ -1073,12 +1073,12 @@ namespace tuplex {
 
             assert(is_present);
             assert(rc);
-            value.val = builder.CreateLoad(value_item_var); // <-- loads struct!
+            value.val = builder.CreateLoad(stype, value_item_var); // <-- loads struct!
             return make_tuple(rc, is_present, value);
         }
 
 
-        std::tuple<llvm::Value*, SerializableValue> JSONParseRowGenerator::decodeOption(llvm::IRBuilder<>& builder,
+        std::tuple<llvm::Value*, SerializableValue> JSONParseRowGenerator::decodeOption(const IRBuilder& builder,
                                                                  const python::Type& option_type,
                                                                  const python::StructEntry& entry,
                                                                  llvm::Value* obj,
@@ -1107,7 +1107,7 @@ namespace tuplex {
                 auto llvm_element_type = _env.getOrCreateStructuredDictType(element_type);
                 auto null_struct_var = _env.CreateFirstBlockAlloca(builder, llvm_element_type);
                 struct_dict_mem_zero(_env, builder, null_struct_var, element_type);
-                null_struct = builder.CreateLoad(null_struct_var);
+                null_struct = builder.CreateLoad(llvm_element_type, null_struct_var);
             }
 
             // check if it is null
@@ -1193,7 +1193,7 @@ namespace tuplex {
             return std::make_tuple(rc, value);
         }
 
-        std::tuple<llvm::Value*, llvm::Value*, SerializableValue> JSONParseRowGenerator::decodePrimitiveFieldFromObject(llvm::IRBuilder<>& builder,
+        std::tuple<llvm::Value*, llvm::Value*, SerializableValue> JSONParseRowGenerator::decodePrimitiveFieldFromObject(const IRBuilder& builder,
                                                                                                                         llvm::Value* obj,
                                                                                                                         llvm::Value* key,
                                                                                                                         const python::StructEntry& entry,
@@ -1274,7 +1274,7 @@ namespace tuplex {
             return make_tuple(rc, is_present, value);
         }
 
-        void JSONParseRowGenerator::perform_keyset_check(llvm::IRBuilder<> &builder, const python::Type &dict_type,
+        void JSONParseRowGenerator::perform_keyset_check(const IRBuilder& builder, const python::Type &dict_type,
                                                          llvm::Value *json_item, llvm::BasicBlock *bbMismatch) {
 
             using namespace llvm;
@@ -1335,7 +1335,7 @@ namespace tuplex {
             }
         }
 
-        void JSONParseRowGenerator::decode(llvm::IRBuilder<> &builder,
+        void JSONParseRowGenerator::decode(const IRBuilder& builder,
                                            llvm::Value* dict_ptr,
                                            const python::Type& dict_ptr_type,
                                            llvm::Value *object,
@@ -1408,7 +1408,7 @@ namespace tuplex {
 
                     builder.SetInsertPoint(bbDecodeItem);
                     // load item!
-                    auto item = builder.CreateLoad(item_var);
+                    auto item = builder.CreateLoad(_env.i8ptrType(), item_var);
 #ifdef JSON_PARSER_TRACE_MEMORY
                     // debug:
                     _env.printValue(builder, item, "associated with " + pointer2hex(item_var) + " in decode is: ");
@@ -1419,7 +1419,7 @@ namespace tuplex {
 
                     // keyset match?
                     if(generate_keyset_check) {
-                        perform_keyset_check(builder, kv_pair.valueType, builder.CreateLoad(item_var), bbSchemaMismatch);
+                        perform_keyset_check(builder, kv_pair.valueType, builder.CreateLoad(_env.i8ptrType(), item_var), bbSchemaMismatch);
                     }
 
                     builder.CreateBr(bbDecodeDone); // where ever builder is, continue to decode done for this item.
@@ -1459,7 +1459,7 @@ namespace tuplex {
             }
         }
 
-        llvm::Value *JSONParseRowGenerator::arraySize(llvm::IRBuilder<> &builder, llvm::Value *arr) {
+        llvm::Value *JSONParseRowGenerator::arraySize(const IRBuilder& builder, llvm::Value *arr) {
             assert(arr);
             assert(arr->getType() == _env.i8ptrType());
 
@@ -1472,7 +1472,7 @@ namespace tuplex {
             return builder.CreateCall(F, arr);
         }
 
-        llvm::Value *JSONParseRowGenerator::numberOfKeysInObject(llvm::IRBuilder<> &builder, llvm::Value *j) {
+        llvm::Value *JSONParseRowGenerator::numberOfKeysInObject(const IRBuilder& builder, llvm::Value *j) {
             assert(j);
 
             auto F = getOrInsertFunction(_env.getModule().get(), "JsonItem_numberOfKeys", _env.i64Type(),
@@ -1480,7 +1480,7 @@ namespace tuplex {
             return builder.CreateCall(F, j);
         }
 
-        llvm::Value *JSONParseRowGenerator::decodeFieldFromObject(llvm::IRBuilder<> &builder,
+        llvm::Value *JSONParseRowGenerator::decodeFieldFromObject(const IRBuilder& builder,
                                                                   llvm::Value *obj,
                                                                   const std::string &debug_path,
                                                                   tuplex::codegen::SerializableValue *out,
@@ -1513,8 +1513,8 @@ namespace tuplex {
                 auto str_var = _env.CreateFirstBlockVariable(builder, _env.i8nullptr(), "s");
                 auto str_size_var = _env.CreateFirstBlockVariable(builder, _env.i64Const(0), "s_size");
                 rc = builder.CreateCall(F, {obj, key, str_var, str_size_var});
-                v.val = builder.CreateLoad(str_var);
-                v.size = builder.CreateLoad(str_size_var);
+                v.val = builder.CreateLoad(_env.i8ptrType(), str_var);
+                v.size = builder.CreateLoad(builder.getInt64Ty(), str_size_var);
                 v.is_null = _env.i1Const(false);
             } else if (v_type == python::Type::BOOLEAN) {
                 auto F = getOrInsertFunction(mod, "JsonItem_getBoolean", _env.i64Type(), _env.i8ptrType(),
@@ -1522,7 +1522,7 @@ namespace tuplex {
                                              ctypeToLLVM<bool>(ctx)->getPointerTo());
                 auto b_var = _env.CreateFirstBlockVariable(builder, cbool_const(ctx, false));
                 rc = builder.CreateCall(F, {obj, key, b_var});
-                v.val = _env.upcastToBoolean(builder, builder.CreateLoad(b_var));
+                v.val = _env.upcastToBoolean(builder, builder.CreateLoad(ctypeToLLVM<bool>(ctx), b_var));
                 v.size = _env.i64Const(sizeof(int64_t));
                 v.is_null = _env.i1Const(false);
             } else if (v_type == python::Type::I64) {
@@ -1530,7 +1530,7 @@ namespace tuplex {
                                              _env.i64ptrType());
                 auto i_var = _env.CreateFirstBlockVariable(builder, _env.i64Const(0));
                 rc = builder.CreateCall(F, {obj, key, i_var});
-                v.val = builder.CreateLoad(i_var);
+                v.val = builder.CreateLoad(builder.getInt64Ty(), i_var);
                 v.size = _env.i64Const(sizeof(int64_t));
                 v.is_null = _env.i1Const(false);
             } else if (v_type == python::Type::F64) {
@@ -1539,7 +1539,7 @@ namespace tuplex {
                                              _env.doublePointerType());
                 auto f_var = _env.CreateFirstBlockVariable(builder, _env.f64Const(0));
                 rc = builder.CreateCall(F, {obj, key, f_var});
-                v.val = builder.CreateLoad(f_var);
+                v.val = builder.CreateLoad(_env.doubleType(), f_var);
                 v.size = _env.i64Const(sizeof(int64_t));
                 v.is_null = _env.i1Const(false);
             } else if (v_type.isStructuredDictionaryType()) {
@@ -1576,7 +1576,7 @@ namespace tuplex {
                     builder.SetInsertPoint(bbParseSub);
 
                     // continue parse if present
-                    auto sub_obj = builder.CreateLoad(obj_var);
+                    auto sub_obj = builder.CreateLoad(_env.i8ptrType(), obj_var);
                     // recurse...
                     parseDict(builder, sub_obj, debug_path + ".", alwaysPresent, v_type, true, bbSchemaMismatch);
                     builder.CreateBr(bbOK);
@@ -1587,7 +1587,7 @@ namespace tuplex {
                     builder.CreateCondBr(is_object, bbOK, bbSchemaMismatch);
                     builder.SetInsertPoint(bbOK);
 
-                    auto sub_obj = builder.CreateLoad(obj_var);
+                    auto sub_obj = builder.CreateLoad(_env.i8ptrType(), obj_var);
 
                     // recurse...
                     parseDict(builder, sub_obj, debug_path + ".", alwaysPresent, v_type, true, bbSchemaMismatch);
@@ -1618,7 +1618,7 @@ namespace tuplex {
                 builder.CreateCondBr(is_object, bbOK, bbSchemaMismatch);
                 builder.SetInsertPoint(bbOK);
 
-                auto sub_obj = builder.CreateLoad(obj_var);
+                auto sub_obj = builder.CreateLoad(_env.i8ptrType(), obj_var);
 
                 // check how many entries
                 auto num_keys = numberOfKeysInObject(builder, sub_obj);
@@ -1701,7 +1701,7 @@ namespace tuplex {
 //            assert(_freeEndBlock);
 //        }
 
-//        void JSONParseRowGenerator::freeArray(llvm::IRBuilder<> &builder, llvm::Value *arr) {
+//        void JSONParseRowGenerator::freeArray(const IRBuilder& builder, llvm::Value *arr) {
 //            using namespace llvm;
 //            auto &ctx = _env.getContext();
 //
@@ -1710,7 +1710,7 @@ namespace tuplex {
 //            builder.CreateCall(Ffreeobj, arr);
 //        }
 
-        void JSONParseRowGenerator::parseDict(llvm::IRBuilder<> &builder, llvm::Value *obj,
+        void JSONParseRowGenerator::parseDict(const IRBuilder& builder, llvm::Value *obj,
                                               const std::string &debug_path, bool alwaysPresent,
                                               const python::Type &t, bool check_that_all_keys_are_present,
                                               llvm::BasicBlock *bbSchemaMismatch) {
@@ -1823,7 +1823,7 @@ namespace tuplex {
         }
 
         llvm::Value *
-        JSONParseRowGenerator::addVar(llvm::IRBuilder<> &builder, llvm::Type *type, llvm::Value *initial_value,
+        JSONParseRowGenerator::addVar(const IRBuilder& builder, llvm::Type *type, llvm::Value *initial_value,
                                       const std::string &twine) {
             assert(type);
             // the trick here is to initialize in init block always.
