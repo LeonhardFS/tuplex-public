@@ -28,26 +28,26 @@ namespace tuplex {
             return row.upcastTo(builder, target_type);
         }
 
-        void PipelineBuilder::addVariable(IRBuilder &builder, const std::string name, llvm::Type *type,
+        void PipelineBuilder::addVariable(const IRBuilder &builder, const std::string name, llvm::Type *type,
                                                    llvm::Value *initialValue) {
-            _variables[name] = _env->CreateFirstBlockAlloca(builder, type);
+            _variables[name] = std::make_tuple(type, _env->CreateFirstBlockAlloca(builder, type));
             //_variables[name] = std::make_tuple(type, builder.CreateAlloca(type, 0, nullptr, name));
 
             if(initialValue)
                 builder.CreateStore(initialValue, std::get<1>(_variables[name]));
         }
 
-        llvm::Value* PipelineBuilder::getVariable(IRBuilder &builder, const std::string name) {
+        llvm::Value* PipelineBuilder::getVariable(const IRBuilder &builder, const std::string name) {
             assert(_variables.find(name) != _variables.end());
             return builder.CreateLoad(std::get<0>(_variables[name]), std::get<1>(_variables[name]));
         }
 
-        llvm::Value* PipelineBuilder::getPointerToVariable(IRBuilder &builder, const std::string name) {
+        llvm::Value* PipelineBuilder::getPointerToVariable(const IRBuilder &builder, const std::string name) {
             assert(_variables.find(name) != _variables.end());
             return std::get<1>(_variables[name]);
         }
 
-        void PipelineBuilder::assignToVariable(IRBuilder &builder, const std::string name,
+        void PipelineBuilder::assignToVariable(const IRBuilder &builder, const std::string name,
                                                         llvm::Value *newValue) {
             assert(_variables.find(name) != _variables.end());
             builder.CreateStore(newValue, std::get<1>(_variables[name]));
@@ -794,7 +794,7 @@ namespace tuplex {
             using namespace llvm;
             auto& logger = Logger::instance().logger("PipelineBuilder");
 
-            IRBuilder<> builder(_lastBlock);
+            IRBuilder builder(_lastBlock);
             _lastRowResult.print(builder);
             _lastBlock = builder.GetInsertBlock();
             return true;
@@ -1034,7 +1034,7 @@ namespace tuplex {
             return build();
         }
 
-        void PipelineBuilder::assignWriteCallbackReturnValue(IRBuilder &builder, int64_t operatorID,
+        void PipelineBuilder::assignWriteCallbackReturnValue(const IRBuilder &builder, int64_t operatorID,
                                                         llvm::CallInst *callbackECVal) {
             // check result of callback, if not 0 then return exception
             assert(builder.GetInsertBlock());
@@ -1053,7 +1053,7 @@ namespace tuplex {
             builder.SetInsertPoint(bbCallbackDone);
         }
 
-        SerializableValue PipelineBuilder::makeKey(IRBuilder &builder,
+        SerializableValue PipelineBuilder::makeKey(const IRBuilder &builder,
                                                    const tuplex::codegen::SerializableValue &key,
                                                    bool persist) {
             using namespace llvm;
@@ -1419,7 +1419,7 @@ namespace tuplex {
 
             // simple, need to only store bucket if necessary
             // start codegen here...
-            IRBuilder<> builder(_lastBlock);
+            IRBuilder builder(_lastBlock);
             auto &ctx = env().getContext();
             auto lastType = _lastRowResult.getTupleType();
 
@@ -1818,7 +1818,7 @@ namespace tuplex {
                         val = env.strConst(builder, const_val);
                         auto length = env.i64Const(const_val.size());
                         builder.CreateMemCpy(buf_ptr, 0, val, 0, length);
-                        buf_ptr = builder.CreateGEP(buf_ptr, length);
+                        buf_ptr = builder.MovePtrByBytes(buf_ptr, length);
                         continue;
                     }
 
@@ -1834,7 +1834,7 @@ namespace tuplex {
                         val = env.strConst(builder, const_val);
                         auto length = env.i64Const(const_val.size());
                         builder.CreateMemCpy(buf_ptr, 0, val, 0, length);
-                        buf_ptr = builder.CreateGEP(buf_ptr, length);
+                        buf_ptr = builder.MovePtrByBytes(buf_ptr, length);
                         continue;
                     }
 
@@ -1917,7 +1917,7 @@ namespace tuplex {
                 } else if(t.withoutOption() == python::Type::EMPTYTUPLE) {
                     auto emptyTupleConst = env.strConst(builder, "()");
                     builder.CreateMemCpy(buf_ptr, 0, emptyTupleConst, 0, env.i64Const(2));
-                    buf_ptr = builder.CreateGEP(buf_ptr, env.i32Const(2));
+                    buf_ptr = builder.MovePtrByBytes(buf_ptr, env.i32Const(2));
                 }
 
                 if(t.isOptionType()) {
@@ -2668,7 +2668,7 @@ namespace tuplex {
             return true;
         }
 
-        void PipelineBuilder::beginForLoop(IRBuilder &builder, llvm::Value *numIterations) {
+        void PipelineBuilder::beginForLoop(const IRBuilder &builder, llvm::Value *numIterations) {
 
             using namespace llvm;
             auto& context = builder.getContext();
@@ -2701,7 +2701,7 @@ namespace tuplex {
         }
 
 
-        void PipelineBuilder::createInnerJoinBucketLoop(IRBuilder& builder,
+        void PipelineBuilder::createInnerJoinBucketLoop(const IRBuilder& builder,
                                                         llvm::Value* num_rows_to_join,
                                                         llvm::Value* bucketPtrVar,
                                                         bool buildRight,
@@ -2807,7 +2807,7 @@ namespace tuplex {
             // _env->debugPrint(builder, "got result");
         }
 
-        void PipelineBuilder::createLeftJoinBucketLoop(IRBuilder &builder, llvm::Value *num_rows_to_join,
+        void PipelineBuilder::createLeftJoinBucketLoop(const IRBuilder &builder, llvm::Value *num_rows_to_join,
                                                        llvm::Value *bucketPtrVar, bool buildRight,
                                                        python::Type buildBucketType, python::Type resultType,
                                                        int probeKeyIndex, llvm::Value *match_found) {

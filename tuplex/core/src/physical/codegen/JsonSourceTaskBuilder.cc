@@ -54,7 +54,7 @@ namespace tuplex {
             auto args = mapLLVMFunctionArgs(func, {"userData", "inPtr", "inSize", "outNormalRowCount", "outBadRowCount", "ignoreLastRow"});
 
             BasicBlock* bbEntry = BasicBlock::Create(env().getContext(), "entry", func);
-            IRBuilder<> builder(bbEntry);
+            IRBuilder builder(bbEntry);
 
             auto bufPtr = args["inPtr"];
             auto bufSize = args["inSize"];
@@ -272,7 +272,7 @@ namespace tuplex {
 
         }
 
-        void JsonSourceTaskBuilder::initVars(llvm::IRBuilder<> &builder) {
+        void JsonSourceTaskBuilder::initVars(const IRBuilder& builder) {
             // input vars (read from reader)
             _normalRowCountVar = _env->CreateFirstBlockVariable(builder, _env->i64Const(0));
             _generalRowCountVar = _env->CreateFirstBlockVariable(builder, _env->i64Const(0));
@@ -293,7 +293,7 @@ namespace tuplex {
              _row_object_var = _env->CreateFirstBlockVariable(builder, _env->i8nullptr(), "row_object");
         }
 
-        llvm::Value *JsonSourceTaskBuilder::generateParseLoop(llvm::IRBuilder<> &builder,
+        llvm::Value *JsonSourceTaskBuilder::generateParseLoop(const IRBuilder &builder,
                                                               llvm::Value *bufPtr,
                                                               llvm::Value *bufSize,
                                                               llvm::Value *userData,
@@ -722,7 +722,7 @@ namespace tuplex {
             return row_var;
         }
 
-        FlattenedTuple json_parseRow(LLVMEnvironment& env, llvm::IRBuilder<>& builder, const python::Type& row_type,
+        FlattenedTuple json_parseRow(LLVMEnvironment& env, const IRBuilder& builder, const python::Type& row_type,
                                 const std::vector<std::string>& columns,
                                 bool unwrap_first_level,
                                 bool fill_missing_first_level_with_null,
@@ -922,7 +922,7 @@ namespace tuplex {
             return F;
         }
 
-        void json_freeParser(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* parser) {
+        void json_freeParser(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* parser) {
             auto &ctx = env.getContext();
             auto F = getOrInsertFunction(env.getModule().get(), "JsonParser_Free", llvm::Type::getVoidTy(ctx),
                                          env.i8ptrType());
@@ -930,7 +930,7 @@ namespace tuplex {
         }
 
         // chain for initializing parser (incl. go to code)
-        llvm::Value* json_retrieveParser(LLVMEnvironment& env, llvm::IRBuilder<>& builder,
+        llvm::Value* json_retrieveParser(LLVMEnvironment& env, const IRBuilder& builder,
                                          llvm::Value* str, llvm::Value* str_size, llvm::BasicBlock* bError) {
             using namespace llvm;
 

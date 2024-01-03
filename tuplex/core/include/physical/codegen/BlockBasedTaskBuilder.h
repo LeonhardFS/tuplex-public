@@ -121,9 +121,9 @@ namespace tuplex {
                                              llvm::Value* userData,
                                              llvm::Value* exceptionCode,
                                              llvm::Value* exceptionOperatorID,
-                                             std::function<ExceptionDetails(llvm::IRBuilder<>& builder)> lazyExceptFunc);
+                                             std::function<ExceptionDetails(const IRBuilder& builder)> lazyExceptFunc);
 
-            inline void callExceptHandler(llvm::IRBuilder<> &builder,
+            inline void callExceptHandler(const IRBuilder &builder,
                                              llvm::Value *userData,
                                              llvm::Value *exceptionCode,
                                              llvm::Value *exceptionOperatorID,

@@ -153,7 +153,7 @@ namespace tuplex {
                         // new, use lazy func!
                         auto bbException = exceptionBlock(builder, userData,
                                                           ecCode, ecOpID,
-                                                          [this, original_ecCode, ft, outputRowNumberVar](llvm::IRBuilder<>& builder) {
+                                                          [this, original_ecCode, ft, outputRowNumberVar](const IRBuilder& builder) {
                            ExceptionDetails except_details;
 
                            // debug: print original ecCode
@@ -164,7 +164,7 @@ namespace tuplex {
                             except_details.badDataPtr = serialized_row.val;
                             except_details.badDataLength = serialized_row.size;
                             except_details.fmt = exception_serialization_format();
-                            except_details.rowNumber = builder.CreateLoad(outputRowNumberVar);
+                            except_details.rowNumber = builder.CreateLoad(builder.getInt64Ty(), outputRowNumberVar);
                            return except_details;
                         });
 
@@ -190,7 +190,7 @@ namespace tuplex {
 
                         auto bbException = exceptionBlock(builder, userData,
                                                           nc_ecCode, nc_ecOpID,
-                                                          [this, nc_ecCode, &cellsPtr, &sizesPtr, outputRowNumberVar](llvm::IRBuilder<>& builder) {
+                                                          [this, nc_ecCode, &cellsPtr, &sizesPtr, outputRowNumberVar](const IRBuilder& builder) {
                             // serialize as bad parse -> NOTE: the normal-case checks have passed. Hence, use dummies
                             // _env->printValue(builder, llvm::cast<llvm::Value>(nc_ecCode), "cell source parse failed with code, serializing true data: ");
                             auto serialized_row = serializeBadParseException(builder, cellsPtr, sizesPtr, true, true);
@@ -199,7 +199,7 @@ namespace tuplex {
                             except_details.badDataPtr = serialized_row.val;
                             except_details.badDataLength = serialized_row.size;
                             except_details.fmt = exception_serialization_format();
-                            except_details.rowNumber = builder.CreateLoad(outputRowNumberVar);
+                            except_details.rowNumber = builder.CreateLoad(builder.getInt64Ty(), outputRowNumberVar);
                             return except_details;
                         });
                         builder.CreateBr(bbNoException);
@@ -242,7 +242,7 @@ namespace tuplex {
             return func;
         }
 
-        llvm::Value* null_check(LLVMEnvironment& env, llvm::IRBuilder<>& builder, const std::vector<std::string>& null_values,
+        llvm::Value* null_check(LLVMEnvironment& env, const IRBuilder& builder, const std::vector<std::string>& null_values,
                                 llvm::Value* cell_str, llvm::Value* cell_size) {
             if(null_values.empty())
                 return env.i1Const(false);
@@ -251,7 +251,7 @@ namespace tuplex {
             return env.compareToNullValues(builder, cell_str, null_values, true);
         }
 
-        SerializableValue parse_string_cell(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::BasicBlock* bParseError,
+        SerializableValue parse_string_cell(LLVMEnvironment& env, const IRBuilder& builder, llvm::BasicBlock* bParseError,
                                             const python::Type& cell_type, const std::vector<std::string>& null_values,
                                             llvm::Value* cell_str, llvm::Value* cell_size) {
             using namespace llvm;
@@ -317,20 +317,22 @@ namespace tuplex {
                 if(ret.size)
                     builder.CreateStore(ret.size, size_var);
 
+                auto llvm_value_type = env.pythonToLLVMType(cell_type);
+
                 builder.CreateBr(bParseDone);
                 builder.SetInsertPoint(bParseDone);
-                is_null = builder.CreateLoad(is_null_var);
+                is_null = builder.CreateLoad(builder.getInt1Ty(), is_null_var);
                 if(ret.val)
-                    value = builder.CreateLoad(value_var);
+                    value = builder.CreateLoad(llvm_value_type, value_var);
                 if(ret.size)
-                    size = builder.CreateLoad(size_var);
+                    size = builder.CreateLoad(builder.getInt64Ty(), size_var);
                 ret = SerializableValue(value, size, is_null);
             }
 
             return ret;
         }
 
-        SerializableValue CellSourceTaskBuilder::cachedParse(llvm::IRBuilder<>& builder,
+        SerializableValue CellSourceTaskBuilder::cachedParse(const IRBuilder& builder,
                                                              const python::Type& type, size_t colNo,
                                                              llvm::Value* cellsPtr,
                                                              llvm::Value* sizesPtr) {
@@ -353,11 +355,13 @@ namespace tuplex {
             };
 #endif
 
+            // cellsPtr is an array of i8 pointers (i.e. i8**)
+
             auto it = _parseCache.find(key);
             if(no_cache || it == _parseCache.end()) {
                 // perform parse
-                 auto cellStr = builder.CreateLoad(builder.CreateGEP(cellsPtr, env().i64Const(colNo)), "x" + std::to_string(colNo));
-                 auto cellSize = builder.CreateLoad(builder.CreateGEP(sizesPtr, env().i64Const(colNo)), "s" + std::to_string(colNo));
+                 auto cellStr = builder.CreateLoad(env().i8ptrType(), builder.CreateGEP(env().i8ptrType(), cellsPtr, env().i64Const(colNo)), "x" + std::to_string(colNo));
+                 auto cellSize = builder.CreateLoad(env().i64Type(), builder.CreateGEP(env().i64Type(), sizesPtr, env().i64Const(colNo)), "s" + std::to_string(colNo));
 
                 SerializableValue ret;
 
@@ -365,11 +369,11 @@ namespace tuplex {
                 python::Type t = type;
                     // option type? do NULL value interpretation
                     if(t.isOptionType()) {
-                        auto val = builder.CreateLoad(builder.CreateGEP(cellsPtr, env().i64Const(colNo)), "x" + std::to_string(colNo));
+                        auto val = builder.CreateLoad(env().i8ptrType(), builder.CreateGEP(env().i8ptrType(), cellsPtr, env().i64Const(colNo)), "x" + std::to_string(colNo));
                         isnull = nullCheck(builder, val);
                     } else if(t != python::Type::NULLVALUE) {
                         // null check, i.e. raise NULL value exception!
-                        auto val = builder.CreateLoad(builder.CreateGEP(cellsPtr, env().i64Const(colNo)), "x" + std::to_string(colNo));
+                        auto val = builder.CreateLoad(env().i8ptrType(), builder.CreateGEP(env().i8ptrType(), cellsPtr, env().i64Const(colNo)), "x" + std::to_string(colNo));
                         auto null_check = nullCheck(builder, val);
 
                         // if positive, exception!
@@ -390,8 +394,8 @@ namespace tuplex {
                     // values?
                     else if(python::Type::STRING == t) {
                         // fill in
-                        auto val = builder.CreateLoad(builder.CreateGEP(cellsPtr, env().i64Const(colNo)), "x" + std::to_string(colNo));
-                        auto size = builder.CreateLoad(builder.CreateGEP(sizesPtr, env().i64Const(colNo)), "s" + std::to_string(colNo));
+                        auto val = builder.CreateLoad(env().i8ptrType(), builder.CreateGEP(env().i8ptrType(), cellsPtr, env().i64Const(colNo)), "x" + std::to_string(colNo));
+                        auto size = builder.CreateLoad(env().i64Type(), builder.CreateGEP(env().i64Type(), sizesPtr, env().i64Const(colNo)), "s" + std::to_string(colNo));
                         ret = SerializableValue(val, size, isnull);
                     } else if(python::Type::BOOLEAN == t) {
                         // conversion code here
@@ -407,7 +411,7 @@ namespace tuplex {
                         ret = SerializableValue(val.val, val.size, isnull);
                     } else if(python::Type::NULLVALUE == t) {
                         // perform null check only, & set null element depending on result
-                        auto val = builder.CreateLoad(builder.CreateGEP(cellsPtr, env().i64Const(colNo)), "x" + std::to_string(colNo));
+                        auto val = builder.CreateLoad(env().i8ptrType(), builder.CreateGEP(env().i8ptrType(), cellsPtr, env().i64Const(colNo)), "x" + std::to_string(colNo));
                         isnull = nullCheck(builder, val);
 
                         // if not null, exception! ==> i.e. ValueError!
@@ -536,11 +540,11 @@ namespace tuplex {
 
                                         auto const_string = value;
 
-                                        auto sizePtr = builder.CreateGEP(sizesPtr, env().i64Const(i));
-                                        auto str_size = builder.CreateLoad(sizePtr);
+                                        auto sizePtr = builder.CreateGEP(env().i64Type(), sizesPtr, env().i64Const(i));
+                                        auto str_size = builder.CreateLoad(env().i64Type(), sizePtr);
                                         // size correct?
                                         auto size_ok = builder.CreateICmpEQ(str_size, env().i64Const(value.size() + 1));
-                                        auto ptr = builder.CreateLoad(builder.CreateGEP(cellsPtr, env().i64Const(i)));
+                                        auto ptr = builder.CreateLoad(env().i8ptrType(), builder.CreateGEP(env().i8ptrType(), cellsPtr, env().i64Const(i)));
                                         const auto& DL = env().getModule()->getDataLayout();
 
                                         // should be optimized to bcmp
@@ -623,7 +627,7 @@ namespace tuplex {
             builder.SetInsertPoint(bbChecksPassed); // continue generating here...
         }
 
-        FlattenedTuple CellSourceTaskBuilder::cellsToTuple(llvm::IRBuilder<>& builder,
+        FlattenedTuple CellSourceTaskBuilder::cellsToTuple(const IRBuilder& builder,
                                                            const std::vector<bool> columnsToSerialize,
                                                            const python::Type& inputRowType,
                                                            llvm::Value* cellsPtr,
@@ -657,7 +661,7 @@ namespace tuplex {
         }
 
         SerializableValue
-        CellSourceTaskBuilder::serializeFullRowAsBadParseException(llvm::IRBuilder<> &builder, llvm::Value *cellsPtr,
+        CellSourceTaskBuilder::serializeFullRowAsBadParseException(const IRBuilder& builder, llvm::Value *cellsPtr,
                                                                    llvm::Value *sizesPtr) const {
             std::vector<llvm::Value*> cell_strs;
             std::vector<llvm::Value*> cell_sizes;
@@ -666,8 +670,8 @@ namespace tuplex {
             // could optimize IF normal-case columns are contained within general-case, else a different schema is necesary.
             for(int i = 0; i < _columnsToSerialize.size(); ++i) {
                 auto colNo = i;
-                llvm::Value* cellStr = builder.CreateLoad(builder.CreateGEP(cellsPtr, _env->i64Const(colNo)), "x" + std::to_string(colNo));
-                llvm::Value* cellSize = builder.CreateLoad(builder.CreateGEP(sizesPtr, _env->i64Const(colNo)), "s" + std::to_string(colNo));
+                llvm::Value* cellStr = builder.CreateLoad(_env->i8ptrType(), builder.CreateGEP(_env->i8ptrType(), cellsPtr, _env->i64Const(colNo)), "x" + std::to_string(colNo));
+                llvm::Value* cellSize = builder.CreateLoad(_env->i64Type(), builder.CreateGEP(_env->i64Type(), sizesPtr, _env->i64Const(colNo)), "s" + std::to_string(colNo));
 
                 // zero terminate str
                 cellStr = _env->zeroTerminateString(builder, cellStr, cellSize);
@@ -695,7 +699,7 @@ namespace tuplex {
             // first 64bit is actual number of rows.
             llvm::Value* buf = row.val;
             builder.CreateStore(_env->i64Const(numCells), builder.CreatePointerCast(buf, _env->i64ptrType()));
-            buf = builder.CreateGEP(buf, _env->i32Const(sizeof(int64_t)));
+            buf = builder.MovePtrByBytes(buf, sizeof(int64_t));
 
             // store cells now incl. offsets...
             llvm::Value* acc_size = _env->i64Const(0);
@@ -715,17 +719,17 @@ namespace tuplex {
                 builder.CreateStore(info, builder.CreateBitCast(buf, _env->i64ptrType()), false);
 
                 // perform memcpy
-                auto dest_ptr = builder.CreateGEP(buf, offset);
+                auto dest_ptr = builder.MovePtrByBytes(buf, offset);
                 builder.CreateMemCpy(dest_ptr, 0, cell, 0, cell_size);
 
                 acc_size = builder.CreateAdd(acc_size, cell_size);
-                buf = builder.CreateGEP(buf, _env->i32Const(sizeof(int64_t)));
+                buf = builder.MovePtrByBytes(buf, sizeof(int64_t));
             }
 
             return row;
         }
 
-        SerializableValue CellSourceTaskBuilder::serializeGeneralColumnsAsBadParseException(llvm::IRBuilder<> &builder,
+        SerializableValue CellSourceTaskBuilder::serializeGeneralColumnsAsBadParseException(const IRBuilder& builder,
                                                                                             llvm::Value *cellsPtr,
                                                                                             llvm::Value *sizesPtr) const {
             // this is normal-case behavior, however bad-parse exceptions are always in general-case format.
@@ -751,8 +755,8 @@ namespace tuplex {
                 // should column be serialized? if so emit type logic!
                 if(_generalCaseColumnsToSerialize[i]) {
                     auto colNo = i;
-                    llvm::Value* cellStr = builder.CreateLoad(builder.CreateGEP(cellsPtr, _env->i64Const(colNo)), "x" + std::to_string(colNo));
-                    llvm::Value* cellSize = builder.CreateLoad(builder.CreateGEP(sizesPtr, _env->i64Const(colNo)), "s" + std::to_string(colNo));
+                    llvm::Value* cellStr = builder.CreateLoad(_env->i8ptrType(), builder.CreateGEP(_env->i8ptrType(), cellsPtr, _env->i64Const(colNo)), "x" + std::to_string(colNo));
+                    llvm::Value* cellSize = builder.CreateLoad(_env->i64Type(), builder.CreateGEP(_env->i64Type(), sizesPtr, _env->i64Const(colNo)), "s" + std::to_string(colNo));
 
                     assert(cellStr && cellSize);
                     // _env->printValue(builder, cellStr, "cell" + std::to_string(colNo) + ": ");
@@ -894,14 +898,14 @@ namespace tuplex {
         }
 
         SerializableValue
-        CellSourceTaskBuilder::serializeCellVector(llvm::IRBuilder<> &builder, const std::vector<llvm::Value *> &cells,
+        CellSourceTaskBuilder::serializeCellVector(const IRBuilder &builder, const std::vector<llvm::Value *> &cells,
                                                    const std::vector<llvm::Value *> &cell_sizes,
                                                    llvm::Value *empty_str) const {
            return serialize_cell_vector(*_env, builder, cells, cell_sizes, empty_str);
         }
 
         SerializableValue
-        CellSourceTaskBuilder::serializeBadParseException(llvm::IRBuilder<> &builder, llvm::Value *cellsPtr,
+        CellSourceTaskBuilder::serializeBadParseException(const IRBuilder &builder, llvm::Value *cellsPtr,
                                                           llvm::Value *sizesPtr, bool use_dummies, bool use_only_projected_general_case_columns) const {
 
             // special case: serialize full row? may be triggered through hyper mode?
@@ -925,8 +929,8 @@ namespace tuplex {
                 // should column be serialized? if so emit type logic!
                 if(_columnsToSerialize[i]) {
                     auto colNo = i;
-                    llvm::Value* cellStr = builder.CreateLoad(builder.CreateGEP(cellsPtr, _env->i64Const(colNo)), "x" + std::to_string(colNo));
-                    llvm::Value* cellSize = builder.CreateLoad(builder.CreateGEP(sizesPtr, _env->i64Const(colNo)), "s" + std::to_string(colNo));
+                    llvm::Value* cellStr = builder.CreateLoad(_env->i8ptrType(), builder.CreateGEP(_env->i8ptrType(), cellsPtr, _env->i64Const(colNo)), "x" + std::to_string(colNo));
+                    llvm::Value* cellSize = builder.CreateLoad(_env->i64Type(), builder.CreateGEP(_env->i64Type(), sizesPtr, _env->i64Const(colNo)), "s" + std::to_string(colNo));
 
                     // zero terminate str
                     cellStr = _env->zeroTerminateString(builder, cellStr, cellSize);
@@ -994,8 +998,8 @@ namespace tuplex {
                         } else {
                             // originals
                             size_t colNo = i;
-                            llvm::Value* cellStr = builder.CreateLoad(builder.CreateGEP(cellsPtr, _env->i64Const(colNo)), "x" + std::to_string(colNo));
-                            llvm::Value* cellSize = builder.CreateLoad(builder.CreateGEP(sizesPtr, _env->i64Const(colNo)), "s" + std::to_string(colNo));
+                            llvm::Value* cellStr = builder.CreateLoad(_env->i8ptrType(), builder.CreateGEP(_env->i8ptrType(), cellsPtr, _env->i64Const(colNo)), "x" + std::to_string(colNo));
+                            llvm::Value* cellSize = builder.CreateLoad(_env->i64Type(), builder.CreateGEP(_env->i64Type(), sizesPtr, _env->i64Const(colNo)), "s" + std::to_string(colNo));
 
                             // zero terminate str
                             cellStr = _env->zeroTerminateString(builder, cellStr, cellSize);
@@ -1022,14 +1026,14 @@ namespace tuplex {
         }
 
 
-        llvm::BasicBlock* CellSourceTaskBuilder::valueErrorBlock(llvm::IRBuilder<> &builder) {
+        llvm::BasicBlock* CellSourceTaskBuilder::valueErrorBlock(const IRBuilder &builder) {
             using namespace llvm;
 
             // create value error block lazily
             if(!_valueErrorBlock) {
                 _valueErrorBlock = BasicBlock::Create(env().getContext(), "value_error", builder.GetInsertBlock()->getParent());
 
-                IRBuilder<> b(_valueErrorBlock);
+                IRBuilder b(_valueErrorBlock);
 
 #ifndef NDEBUG
                  // env().debugPrint(b, "value error block entered.");
@@ -1042,11 +1046,11 @@ namespace tuplex {
             return _valueErrorBlock;
         }
 
-        llvm::BasicBlock* CellSourceTaskBuilder::nullErrorBlock(llvm::IRBuilder<> &builder) {
+        llvm::BasicBlock* CellSourceTaskBuilder::nullErrorBlock(const IRBuilder &builder) {
             using namespace llvm;
             if(!_nullErrorBlock) {
                 _nullErrorBlock = BasicBlock::Create(env().getContext(), "null_error", builder.GetInsertBlock()->getParent());
-                IRBuilder<> b(_nullErrorBlock);
+                IRBuilder b(_nullErrorBlock);
 
 #ifndef NDEBUG
                  // _env->debugPrint(b, "emitting NULLERROR (CellSourceTaskBuilder)");

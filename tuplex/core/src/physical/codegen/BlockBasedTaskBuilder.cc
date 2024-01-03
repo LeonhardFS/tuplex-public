@@ -200,7 +200,7 @@ namespace tuplex {
                                                                 llvm::Value *exceptionCode,
                                                                 llvm::Value *exceptionOperatorID,
                                                                 std::function<ExceptionDetails(
-                                                                        llvm::IRBuilder<> &)> lazyExceptFunc) {
+                                                                        const IRBuilder&)> lazyExceptFunc) {
             // creates new exception block w. handlers and so on
             using namespace llvm;
             auto func = builder.GetInsertBlock()->getParent(); assert(func);
@@ -263,7 +263,7 @@ namespace tuplex {
                 llvm::Value *badDataPtr,
                 llvm::Value *badDataLength) {
             return exceptionBlock(builder, userData, exceptionCode, exceptionOperatorID,
-                                  [=](llvm::IRBuilder<>& builder) {
+                                  [=](const IRBuilder& builder) {
                 ExceptionDetails except_details;
                 except_details.rowNumber = rowNumber;
                 except_details.fmt = fmt;

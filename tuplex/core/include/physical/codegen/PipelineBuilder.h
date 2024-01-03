@@ -64,8 +64,8 @@ namespace tuplex {
             }
 
             int _loopLevel; // at which loop level things are (used to call endLoop)
-            void beginForLoop(IRBuilder& builder, llvm::Value* numIterations);
-            void endForLoop(IRBuilder& builder);
+            void beginForLoop(const IRBuilder& builder, llvm::Value* numIterations);
+            void endForLoop(const IRBuilder& builder);
             std::unordered_map<std::string, llvm::Value*> _args;
 
             std::string _exceptionCallbackName; //! optional, indicates whether pipeline should call exception handler (or not). Often, this functionaliy is better placed a level up except for single row executors
@@ -88,14 +88,14 @@ namespace tuplex {
             // helper functions to use variables via alloc/store in code
             std::map<std::string, std::tuple<llvm::Type*, llvm::Value *>> _variables;
 
-            void addVariable(IRBuilder &builder, const std::string name, llvm::Type *type,
+            void addVariable(const IRBuilder &builder, const std::string name, llvm::Type *type,
                              llvm::Value *initialValue = nullptr);
 
-            llvm::Value *getVariable(IRBuilder &builder, const std::string name);
+            llvm::Value *getVariable(const IRBuilder &builder, const std::string name);
 
-            llvm::Value *getPointerToVariable(IRBuilder &builder, const std::string name);
+            llvm::Value *getPointerToVariable(const IRBuilder &builder, const std::string name);
 
-            void assignToVariable(IRBuilder &builder, const std::string name, llvm::Value *newValue);
+            void assignToVariable(const IRBuilder &builder, const std::string name, llvm::Value *newValue);
 
 //            inline llvm::Value *
 //            vec3_i64(llvm::IRBuilder<> &builder, llvm::Value *a0, llvm::Value *a1, llvm::Value *a2) {
@@ -130,9 +130,9 @@ namespace tuplex {
              * @param persist if true, then a copy will be made using C-malloc (not rtmalloc!)
              * @return
              */
-            SerializableValue makeKey(IRBuilder& builder, const SerializableValue& key, bool persist=true);
+            SerializableValue makeKey(const IRBuilder& builder, const SerializableValue& key, bool persist=true);
 
-            void createInnerJoinBucketLoop(IRBuilder& builder,
+            void createInnerJoinBucketLoop(const IRBuilder& builder,
                                            llvm::Value* num_rows_to_join,
                                            llvm::Value* bucketPtrVar,
                                            bool buildRight,
@@ -140,7 +140,7 @@ namespace tuplex {
                                            python::Type resultType,
                                            int probeKeyIndex);
 
-            void createLeftJoinBucketLoop(IRBuilder& builder,
+            void createLeftJoinBucketLoop(const IRBuilder& builder,
                                            llvm::Value* num_rows_to_join,
                                            llvm::Value* bucketPtrVar,
                                            bool buildRight,
@@ -151,7 +151,7 @@ namespace tuplex {
 
             static llvm::StructType* resultStructType(llvm::LLVMContext& ctx);
 
-            void assignWriteCallbackReturnValue(IRBuilder &builder, int64_t operatorID,
+            void assignWriteCallbackReturnValue(const IRBuilder &builder, int64_t operatorID,
                                                 llvm::CallInst *callbackECVal);
 
             llvm::Function *buildWithConstantKeyHashmapWriter(const std::string &callbackName,
@@ -162,7 +162,7 @@ namespace tuplex {
             [[nodiscard]] llvm::StructType* resultStructType() const {
                 return resultStructType(_env->getContext());
             }
-            inline void createRet(IRBuilder& builder, llvm::Value* ecCode, llvm::Value* opID, llvm::Value* numRows) {
+            inline void createRet(const IRBuilder& builder, llvm::Value* ecCode, llvm::Value* opID, llvm::Value* numRows) {
                 // cast to i32
                 auto rc = builder.CreateZExtOrTrunc(ecCode, env().i32Type());
                 auto id = builder.CreateZExtOrTrunc(opID, env().i32Type());

@@ -204,11 +204,6 @@ private:
             throw std::runtime_error("could not convert row type to orc batch.");
         }
     }
-
-    void releaseAllLocks() override {
-        for(auto p : _partitions)
-            p->unlock();
-    }
 };
 
 }

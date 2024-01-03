@@ -56,7 +56,7 @@ namespace tuplex {
             // this is row specific -> should be handled separately.
             llvm::Value* _row_object_var;
 
-            void initVars(llvm::IRBuilder<>& builder);
+            void initVars(const IRBuilder& builder);
 
             /*!
              * generate parse loop and return number of parsed bytes.
@@ -65,28 +65,28 @@ namespace tuplex {
              * @param bufSize
              * @return
              */
-            llvm::Value* generateParseLoop(llvm::IRBuilder<>& builder, llvm::Value* bufPtr, llvm::Value* bufSize,
+            llvm::Value* generateParseLoop(const IRBuilder& builder, llvm::Value* bufPtr, llvm::Value* bufSize,
                                            llvm::Value *userData,
                                            const std::vector<std::string>& normal_case_columns,
                                            const std::vector<std::string>& general_case_columns,
                                            bool unwrap_first_level,
                                            bool terminateEarlyOnLimitCode);
 
-            void generateChecks(llvm::IRBuilder<>& builder,
+            void generateChecks(const IRBuilder& builder,
                                 llvm::Value* userData,
                                 llvm::Value* rowNumber,
                                 llvm::Value* parser,
                                 llvm::BasicBlock* bbSkipRow,
                                 llvm::BasicBlock* bbBadRow);
 
-            inline llvm::Value* incVar(llvm::IRBuilder<>& builder, llvm::Value* var, llvm::Value* what_to_add) {
+            inline llvm::Value* incVar(const IRBuilder& builder, llvm::Value* var, llvm::Value* what_to_add) {
                 llvm::Value* val = builder.CreateLoad(var);
                 val = builder.CreateAdd(val, what_to_add);
                 builder.CreateStore(val, var);
                 return val;
             }
 
-            inline llvm::Value* incVar(llvm::IRBuilder<>& builder, llvm::Value* var, int64_t delta=1) {
+            inline llvm::Value* incVar(const IRBuilder& builder, llvm::Value* var, int64_t delta=1) {
                 return incVar(builder, var, _env->i64Const(delta));
             }
 
@@ -96,13 +96,13 @@ namespace tuplex {
                 return builder.CreateLoad(_rowNumberVar);
             }
 
-            llvm::Value* parsedBytes(llvm::IRBuilder<>& builder, llvm::Value* parser, llvm::Value* buf_size);
+            llvm::Value* parsedBytes(const IRBuilder& builder, llvm::Value* parser, llvm::Value* buf_size);
 
             llvm::Value *isDocumentOfObjectType(llvm::IRBuilder<> &builder, llvm::Value *j);
             llvm::Value* parseRowAsStructuredDict(llvm::IRBuilder<> &builder, const python::Type& dict_type, llvm::Value *j,
                                                   llvm::BasicBlock *bbSchemaMismatch);
 
-            FlattenedTuple parseRow(llvm::IRBuilder<>& builder, const python::Type& row_type,
+            FlattenedTuple parseRow(const IRBuilder& builder, const python::Type& row_type,
                                     const std::vector<std::string>& columns,
                                     bool unwrap_first_level,
                                     llvm::Value* parser,
@@ -136,7 +136,7 @@ namespace tuplex {
                                             llvm::Value *str,
                                             llvm::Value *str_size);
 
-            void serializeAsNormalCaseException(llvm::IRBuilder<>& builder,
+            void serializeAsNormalCaseException(const IRBuilder& builder,
                                                 llvm::Value* userData,
                                                 int64_t operatorID,
                                                 llvm::Value* row_no,
@@ -157,7 +157,7 @@ namespace tuplex {
          * @param bbSchemaMismatch
          * @return
          */
-        extern FlattenedTuple json_parseRow(LLVMEnvironment& env, llvm::IRBuilder<>& builder, const python::Type& row_type,
+        extern FlattenedTuple json_parseRow(LLVMEnvironment& env, const IRBuilder& builder, const python::Type& row_type,
                                             const std::vector<std::string>& columns,
                                             bool unwrap_first_level,
                                             bool fill_missing_first_level_with_null,

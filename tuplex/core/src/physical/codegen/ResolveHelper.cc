@@ -9,7 +9,7 @@ namespace tuplex {
     namespace codegen {
 
 
-        void handlePythonParallelizeException(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* ecCode) {
+        void handlePythonParallelizeException(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* ecCode) {
             using namespace llvm;
 
             auto& ctx = builder.getContext();
@@ -28,7 +28,7 @@ namespace tuplex {
             builder.SetInsertPoint(bIsNot);
         }
 
-        FlattenedTuple decodeCSVCells(LLVMEnvironment& env, llvm::IRBuilder<>& builder,
+        FlattenedTuple decodeCSVCells(LLVMEnvironment& env, const IRBuilder& builder,
                                       const std::shared_ptr<FileInputOperator>& input_op,
                                       const python::Type& pip_input_row_type,
                                       const ExceptionCode& return_code_on_parse_error,
@@ -43,7 +43,7 @@ namespace tuplex {
             FlattenedTuple ft(&env);
             ft.init(pip_input_row_type);
 
-            auto num_cells = builder.CreateLoad(builder.CreatePointerCast(buf, env.i64ptrType()));
+            auto num_cells = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(buf, env.i64ptrType()));
             int64_t num_desired_cells = pip_input_row_type.parameters().size();
 
             // quick check on whether number of cells matches.
@@ -62,14 +62,14 @@ namespace tuplex {
             // continue, parse cells according to schema!
             builder.SetInsertPoint(bCellCountOK);
 
-            Value* ptr = builder.CreateGEP(buf, env.i64Const(sizeof(int64_t)));
+            Value* ptr = builder.MovePtrByBytes(buf, sizeof(int64_t));
             // need to parse all cells
             for(unsigned i = 0; i < num_desired_cells; ++i) {
                 // decode cell & size
-                auto info = builder.CreateLoad(builder.CreatePointerCast(ptr, env.i64ptrType()));
+                auto info = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(ptr, env.i64ptrType()));
                 llvm::Value* offset=nullptr, *cell_size = nullptr;
                 std::tie(offset, cell_size) = unpack_offset_and_size(builder, info);
-                auto cell_str = builder.CreateGEP(ptr, offset);
+                auto cell_str = builder.MovePtrByBytes(ptr, offset);
 
                 auto cell_type = pip_input_row_type.parameters()[i];
 
@@ -89,7 +89,7 @@ namespace tuplex {
                 // assign to tuple
                 ft.set(builder, {(int)i}, cell.val, cell.size, cell.is_null);
 
-                ptr = builder.CreateGEP(ptr, env.i64Const(sizeof(int64_t)));
+                ptr = builder.MovePtrByBytes(ptr, sizeof(int64_t));
             }
 
             // env.freeAll(builder); // <-- is this correct?
@@ -101,7 +101,7 @@ namespace tuplex {
         }
 
 
-        FlattenedTuple decodeBadParseStringInputException(LLVMEnvironment& env, llvm::IRBuilder<>& builder,
+        FlattenedTuple decodeBadParseStringInputException(LLVMEnvironment& env, const IRBuilder& builder,
                                                           const std::shared_ptr<FileInputOperator>& input_op,
                                                           const python::Type& pip_input_row_type,
                                                           const ExceptionCode& return_code_on_parse_error,
@@ -141,17 +141,17 @@ namespace tuplex {
 
                     // extract string and length from data buffer
 
-                    auto num_cells = builder.CreateLoad(builder.CreatePointerCast(buf, env.i64ptrType()));
+                    auto num_cells = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(buf, env.i64ptrType()));
                     // env.printValue(builder, num_cells, "num cells: ");
 
                     // for JSON, single info and cell
-                    auto ptr = builder.CreateGEP(buf, env.i64Const(sizeof(int64_t)));
-                    auto info = builder.CreateLoad(builder.CreatePointerCast(ptr, env.i64ptrType()));
+                    auto ptr = builder.MovePtrByBytes(buf, sizeof(int64_t));
+                    auto info = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(ptr, env.i64ptrType()));
 
                     llvm::Value* offset=nullptr, *str_size = nullptr;
                     std::tie(offset, str_size) = unpack_offset_and_size(builder, info);
 
-                    auto str = builder.CreateGEP(ptr, offset);
+                    auto str = builder.MovePtrByBytes(ptr, offset);
 
                     // env.printValue(builder, offset, "offset (should be 8): ");
                     // env.printValue(builder, str, "data: ");
@@ -196,7 +196,7 @@ namespace tuplex {
         }
 
         void handleBadParseStringInputException(LLVMEnvironment& env,
-                                                llvm::IRBuilder<>& builder, const python::Type& pip_input_row_type,
+                                                const IRBuilder& builder, const python::Type& pip_input_row_type,
                                                 llvm::Function* pipeline_func,
                                                 const std::shared_ptr<FileInputOperator>& input_op,
                                                 llvm::Value* ecCode,
@@ -254,7 +254,7 @@ namespace tuplex {
 
         // env, builder, pip_input_row_type, pipFunc, ecCode, rowNo, userData, dataPtr, dataSize
         void handleGeneralCaseExceptionsFromTuplexMemory(LLVMEnvironment& env,
-                                                llvm::IRBuilder<>& builder,
+                                                const IRBuilder& builder,
                                                 const python::Type& general_case_input_row_type,
                                                 llvm::Function* pipeline_func,
                                                 llvm::Value* ecCode,
@@ -366,7 +366,7 @@ namespace tuplex {
             auto args = mapLLVMFunctionArgs(func, {"userData",  "rowNumber", "exceptionCode", "rowBuf", "bufSize",});
 
             auto body = BasicBlock::Create(ctx, "body", func);
-            IRBuilder<> builder(body);
+            IRBuilder builder(body);
             // decode according to exception type => i.e. decode according to pipeline builder + nullvalue opt!
             auto ecCode = args["exceptionCode"];
             auto dataPtr = args["rowBuf"];
