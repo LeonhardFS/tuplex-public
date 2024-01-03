@@ -8,7 +8,9 @@ INCLUDE_DIRECTORIES("${Python3_INCLUDE_DIRS}")
 # Source code & linking
 file(GLOB SOURCES src/*.cc)
 
-add_library(libcpythonadapter SHARED ${CMAKE_CURRENT_BINARY_DIR} ${SOURCES})
+add_library(libcpythonadapter ${LIBRARY_MODE} ${CMAKE_CURRENT_BINARY_DIR} ${SOURCES})
+set_target_properties(libcpythonadapter PROPERTIES PREFIX "")
+
 add_dependencies(libcpythonadapter libutils)
 
 # Specify here the include directories exported
