@@ -1258,14 +1258,6 @@ namespace tuplex {
             return llvm::Type::getInt8Ty(ctx)->getPointerTo(0)->getPointerTo();
         }
 
-        /*!
-         * returns the underlying string of a global variable, created e.g. via env->strConst.
-         * May throw exception if value is not a constantexpr
-         * @param value
-         * @return string or empty string if extraction failed.
-         */
-        extern std::string globalVariableToString(llvm::Value* value);
-
 
         /*!
          * compare string stored in ptr to constant str

@@ -3016,45 +3016,45 @@ namespace tuplex {
             }
         }
 
-//        llvm::Value *BlockGeneratorVisitor::cJSONObjectFromValue(const IRBuilder<>& builder,
-//                                                                 const SerializableValue& value,
-//                                                                 python::Type type) {
-//            // optimized type? create deoptimized version!
-//            llvm::Value* val = value.val;
-//            if(type.isConstantValued()) {
-//                return cJSONObjectFromValue(builder, constantValuedTypeToLLVM(builder, type), type.underlying());
-//            }
-//
-//            assert(val);
-//
-//            if (val->getType()->isDoubleTy() && type == python::Type::F64) {
-//                return builder.CreateCall(
-//                        cJSONCreateNumber_prototype(_env->getContext(), _env->getModule().get()),
-//                        {val});
-//            } else if (val->getType()->isIntegerTy() && type == python::Type::I64) {
-//                return builder.CreateCall(
-//                        cJSONCreateNumber_prototype(_env->getContext(), _env->getModule().get()),
-//                        {upCast(builder, val, _env->doubleType())});
-//            } else if (val->getType()->isPointerTy() && type == python::Type::STRING) {
-//                return builder.CreateCall(
-//                        cJSONCreateString_prototype(_env->getContext(), _env->getModule().get()),
-//                        {val});
-//            } else if (val->getType()->isIntegerTy(8) && type == python::Type::BOOLEAN) {
-//                return builder.CreateCall(
-//                        cJSONCreateBool_prototype(_env->getContext(), _env->getModule().get()),
-//                        {upCast(builder, val, _env->i64Type())});
-//            } else {
-//                std::string type_str;
-//                std::string rso_str = "??";
-//                if(val) {
-//                    llvm::raw_string_ostream rso(type_str);
-//                    val->getType()->print(rso);
-//                    rso_str = rso.str();
-//                }
-//                error("Unsupported type in dictionary: " + type.desc() + "; llvm:" + rso_str);
-//                return {};
-//            }
-//        }
+        llvm::Value *BlockGeneratorVisitor::cJSONObjectFromValue(const IRBuilder& builder,
+                                                                 const SerializableValue& value,
+                                                                 python::Type type) {
+            // optimized type? create deoptimized version!
+            llvm::Value* val = value.val;
+            if(type.isConstantValued()) {
+                return cJSONObjectFromValue(builder, constantValuedTypeToLLVM(builder, type), type.underlying());
+            }
+
+            assert(val);
+
+            if (val->getType()->isDoubleTy() && type == python::Type::F64) {
+                return builder.CreateCall(
+                        cJSONCreateNumber_prototype(_env->getContext(), _env->getModule().get()),
+                        {val});
+            } else if (val->getType()->isIntegerTy() && type == python::Type::I64) {
+                return builder.CreateCall(
+                        cJSONCreateNumber_prototype(_env->getContext(), _env->getModule().get()),
+                        {upCast(builder, val, _env->doubleType())});
+            } else if (val->getType()->isPointerTy() && type == python::Type::STRING) {
+                return builder.CreateCall(
+                        cJSONCreateString_prototype(_env->getContext(), _env->getModule().get()),
+                        {val});
+            } else if (val->getType()->isIntegerTy(8) && type == python::Type::BOOLEAN) {
+                return builder.CreateCall(
+                        cJSONCreateBool_prototype(_env->getContext(), _env->getModule().get()),
+                        {upCast(builder, val, _env->i64Type())});
+            } else {
+                std::string type_str;
+                std::string rso_str = "??";
+                if(val) {
+                    llvm::raw_string_ostream rso(type_str);
+                    val->getType()->print(rso);
+                    rso_str = rso.str();
+                }
+                error("Unsupported type in dictionary: " + type.desc() + "; llvm:" + rso_str);
+                return {};
+            }
+        }
 
         SerializableValue
         BlockGeneratorVisitor::createCJSONFromDict(NDictionary *dict, const std::vector<SerializableValue> &keys,
@@ -4114,7 +4114,7 @@ namespace tuplex {
             return true;
         }
 
-        std::tuple<std::string, python::Type> extractStaticKey(const python::Type& value_type, const SerializableValue& value, ASTNode *value_node) {
+        std::tuple<std::string, python::Type> extractStaticKey(LLVMEnvironment& env, const python::Type& value_type, const SerializableValue& value, ASTNode *value_node) {
             using namespace std;
 
             std::string key;
@@ -4142,7 +4142,7 @@ namespace tuplex {
                 // what type could it be?
                 if(type == python::Type::STRING) {
                     // fetch data...
-                    auto str = globalVariableToString(value.val);
+                    auto str = env.globalVariableToString(value.val);
                     // escape to py
                     return make_tuple(escape_to_python_str(str), value_type);
                 }
@@ -4179,7 +4179,7 @@ namespace tuplex {
             assert(value_type.isStructuredDictionaryType()); // -> what about the option stuff?
 
             // can only subscript if a static key can be extracted (for now)
-            auto t_key_and_type = extractStaticKey(idx_expr_type, idx_expr, idx_expr_node);
+            auto t_key_and_type = extractStaticKey(*_env, idx_expr_type, idx_expr, idx_expr_node);
             auto key = std::get<0>(t_key_and_type);
             auto key_type = std::get<1>(t_key_and_type);
 

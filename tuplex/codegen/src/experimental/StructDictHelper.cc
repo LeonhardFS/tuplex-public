@@ -923,7 +923,7 @@ namespace tuplex {
             return SerializableValue(size, bytes8, nullptr);
         }
 
-        llvm::Value* serializeBitmap(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* bitmap, llvm::Value* dest_ptr) {
+        llvm::Value* serializeBitmap(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* bitmap, llvm::Value* dest_ptr) {
             using namespace std;
 
             assert(bitmap && dest_ptr);
@@ -949,8 +949,8 @@ namespace tuplex {
                     builder.CreateStore(bitmap, bitmap_tmp);
                     bitmap = bitmap_tmp;
                 }
-                bitmapIdx = builder.CreateConstInBoundsGEP2_64(bitmap, 0ull, i);
-                auto bit = builder.CreateLoad(bitmapIdx);
+                bitmapIdx = builder.CreateConstInBoundsGEP2_64(bitmap, bitmap->getType(), 0ull, i);
+                auto bit = builder.CreateLoad(bitmap->getType(), bitmapIdx);
                 auto bit_ext = builder.CreateShl(builder.CreateZExt(bit, env.i64Type()), env.i64Const(i % 64ul));
                 bitmap_array[i / 64ul] = builder.CreateOr(bitmap_array[i / 64ul], bit_ext);
             }
@@ -958,7 +958,7 @@ namespace tuplex {
             // write out elements
             for(auto bitmap_element : bitmap_array) {
                 builder.CreateStore(bitmap_element, builder.CreatePointerCast(dest_ptr, env.i64ptrType()));
-                dest_ptr = builder.CreateGEP(dest_ptr, env.i64Const(sizeof(int64_t)));
+                dest_ptr = builder.MovePtrByBytes(dest_ptr, sizeof(int64_t));
             }
 
             return dest_ptr;
@@ -1508,7 +1508,7 @@ namespace tuplex {
 
 
         SerializableValue struct_dict_get_or_except(LLVMEnvironment& env,
-                                                    llvm::IRBuilder<>& builder,
+                                                    const IRBuilder& builder,
                                                     const python::Type& dict_type,
                                                     const std::string& key,
                                                     const python::Type& key_type,
@@ -1592,7 +1592,7 @@ namespace tuplex {
         // x['b'] = 20
         // ...
         SerializableValue struct_dict_upcast(LLVMEnvironment& env,
-                                             llvm::IRBuilder<>& builder,
+                                             const IRBuilder& builder,
                                              const SerializableValue& src,
                                              const python::Type& src_type,
                                              const python::Type& dest_type) {

@@ -789,7 +789,7 @@ namespace tuplex {
             return false;
         }
 
-        SerializableValue serialize_cell_vector(LLVMEnvironment& env, llvm::IRBuilder<>& builder,
+        SerializableValue serialize_cell_vector(LLVMEnvironment& env, const IRBuilder& builder,
                                                 const std::vector<llvm::Value *> &cells,
                                                 const std::vector<llvm::Value *> &cell_sizes,
                                                 llvm::Value *empty_str) {
