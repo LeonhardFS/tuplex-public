@@ -847,12 +847,12 @@ namespace tuplex {
             llvm::Value* buf = row.val;
             if(0 != num_empty_str) {
                 // store empty string (0) at end of buffer
-                auto idx = builder.CreateGEP(buf, builder.CreateSub(buf_size, env.i64Const(1)));
+                auto idx = builder.MovePtrByBytes(buf, builder.CreateSub(buf_size, env.i64Const(1)));
                 builder.CreateStore(env.i8Const('\0'), idx);
             }
 
             builder.CreateStore(env.i64Const(num_cells), builder.CreatePointerCast(buf, env.i64ptrType()));
-            buf = builder.CreateGEP(buf, env.i32Const(sizeof(int64_t)));
+            buf = builder.MovePtrByBytes(buf, env.i32Const(sizeof(int64_t)));
 
             // store general case cells now...
             llvm::Value* acc_size = env.i64Const(0);
@@ -875,11 +875,11 @@ namespace tuplex {
                     builder.CreateStore(info, builder.CreateBitCast(buf, env.i64ptrType()), false);
 
                     // perform memcpy
-                    auto dest_ptr = builder.CreateGEP(buf, offset);
+                    auto dest_ptr = builder.MovePtrByBytes(buf, offset);
                     builder.CreateMemCpy(dest_ptr, 0, cell, 0, cell_size);
 
                     acc_size = builder.CreateAdd(acc_size, cell_size);
-                    buf = builder.CreateGEP(buf, env.i32Const(sizeof(int64_t)));
+                    buf = builder.MovePtrByBytes(buf, sizeof(int64_t));
                 } else {
                     // dummy: use empty string at the end of buffer
                     // --> need to compute correct offset.
@@ -890,7 +890,7 @@ namespace tuplex {
                     builder.CreateStore(info, builder.CreateBitCast(buf, env.i64ptrType()), false);
 
                     // move buffer
-                    buf = builder.CreateGEP(buf, env.i32Const(sizeof(int64_t)));
+                    buf = builder.MovePtrByBytes(buf, sizeof(int64_t));
                 }
             }
 
