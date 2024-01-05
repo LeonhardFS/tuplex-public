@@ -212,14 +212,20 @@ protected:
 /// a simple wrapper class to call closeInterpreter on destruction
 class PyInterpreterGuard {
 public:
-    PyInterpreterGuard() {
+    PyInterpreterGuard(bool unlock=false) : _unlock(unlock) {
         python::initInterpreter();
         printf("*** CALLED initInterpreter ***\n");
+        if(_unlock)
+            python::unlockGIL();
     }
     ~PyInterpreterGuard() {
+        if(_unlock)
+            python::lockGIL();
         printf("*** CALLED closeInterpreter ***\n");
         python::closeInterpreter();
     }
+private:
+    bool _unlock;
 };
 
 

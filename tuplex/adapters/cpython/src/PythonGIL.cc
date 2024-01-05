@@ -94,6 +94,11 @@ namespace python {
         if(std::this_thread::get_id() == gil_main_thread_id) {
             if(!gilState)
                 gilState = PyGILState_GetThisThreadState();
+
+            // check gil state again, if not valid - is interpreter even initialized?
+            if(!gilState && !interpreterInitialized) {
+                throw std::runtime_error("failed to set valid gilState in lockGIL, interpreter not initialized");
+            }
             assert(gilState);
             PyEval_RestoreThread(gilState); // acquires GIL!
             gilState = nullptr;

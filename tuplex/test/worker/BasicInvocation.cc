@@ -46,6 +46,7 @@
 #include "nextconf/PerfEvent.hpp"
 #include "logical/LogicalPlan.h"
 #include "physical/execution/csvmonkey.h"
+#include "../core/TestUtils.h"
 
 // dummy so linking works
 namespace tuplex {
@@ -331,91 +332,97 @@ TEST(BasicInvocation, PurePythonMode) {
     // create a simple TransformStage reading in a file & saving it. Then, execute via Worker!
     // Note: This one is unoptimized, i.e. no projection pushdown, filter pushdown etc.
     ASSERT_TRUE(test_path.exists());
-    python::initInterpreter();
-    python::unlockGIL();
-    ContextOptions co = ContextOptions::defaults();
-    auto enable_nvo = false; // test later with true! --> important for everything to work properly together!
-    co.set("tuplex.optimizer.retypeUsingOptimizedInputSchema", enable_nvo ? "true" : "false");
-    co.set("tuplex.useInterpreterOnly", "true");
-
-    // // disable llvm optimizers?
-     co.set("tuplex.useLLVMOptimizer", "false");
-
-     codegen::StageBuilderConfiguration conf(co);
-    codegen::StageBuilder builder(0, true, conf); //;(0, true, true, false, 0.9, true, enable_nvo, true, false);
-    auto csvop = std::shared_ptr<FileInputOperator>(FileInputOperator::fromCsv(test_path.toString(), co,
-                                            option<bool>(true),
-                                            option<char>(','), option<char>('"'),
-                                            {""}, {}, {}, {}, DEFAULT_SAMPLING_MODE));
-    auto mapop = std::make_shared<MapOperator>(csvop, UDF("lambda x: {'origin_airport_id': x['ORIGIN_AIRPORT_ID'], 'dest_airport_id':x['DEST_AIRPORT_ID']}"), csvop->columns());
-    auto fop = std::make_shared<FileOutputOperator>(mapop, test_output_path, UDF(""), "csv", FileFormat::OUTFMT_CSV, defaultCSVOutputOptions());
-    builder.addFileInput(csvop);
-    builder.addOperator(mapop);
-    builder.addFileOutput(fop);
-
-    auto tstage = builder.build();
-
-    // transform to message
-    vfs = VirtualFileSystem::fromURI(test_path);
-    uint64_t input_file_size = 0;
-    vfs.file_size(test_path, input_file_size);
-    auto json_message = transformStageToReqMessage(tstage, URI(test_path).toPath(),
-                                                   input_file_size, test_output_path.toString(),
-                                                   true,
-                                                   num_threads,
-                                                   spillURI);
-
-    // save to file
+    std::string json_message = "INVALID";
     auto msg_file = URI("test_message.json");
-    stringToFile(msg_file, json_message);
+    {
+        PyInterpreterGuard guard(true);
+        ContextOptions co = ContextOptions::defaults();
+        auto enable_nvo = false; // test later with true! --> important for everything to work properly together!
+        co.set("tuplex.optimizer.retypeUsingOptimizedInputSchema", enable_nvo ? "true" : "false");
+        co.set("tuplex.useInterpreterOnly", "true");
 
-    python::lockGIL();
-    python::closeInterpreter();
+        // // disable llvm optimizers?
+        co.set("tuplex.useLLVMOptimizer", "false");
 
-    // start worker within same process to easier debug...
-    auto app = make_unique<WorkerApp>(WorkerSettings());
-    app->processJSONMessage(json_message);
-    app->shutdown();
+        codegen::StageBuilderConfiguration conf(co);
+        codegen::StageBuilder builder(0, true, conf); //;(0, true, true, false, 0.9, true, enable_nvo, true, false);
+        auto csvop = std::shared_ptr<FileInputOperator>(FileInputOperator::fromCsv(test_path.toString(), co,
+                                                                                   option<bool>(true),
+                                                                                   option<char>(','), option<char>('"'),
+                                                                                   {""}, {}, {}, {}, DEFAULT_SAMPLING_MODE));
+        auto mapop = std::make_shared<MapOperator>(csvop, UDF("lambda x: {'origin_airport_id': x['ORIGIN_AIRPORT_ID'], 'dest_airport_id':x['DEST_AIRPORT_ID']}"), csvop->columns());
+        auto fop = std::make_shared<FileOutputOperator>(mapop, test_output_path, UDF(""), "csv", FileFormat::OUTFMT_CSV, defaultCSVOutputOptions());
+        builder.addFileInput(csvop);
+        builder.addOperator(mapop);
+        builder.addFileOutput(fop);
 
-    // fetch output file and check contents...
-    auto file_content = fileToString(test_output_path.toString() + ".csv");
+        auto tstage = builder.build();
 
-    // check files are 1:1 the same!
-    EXPECT_EQ(file_content.size(), ref_content.size());
+        // transform to message
+        vfs = VirtualFileSystem::fromURI(test_path);
+        uint64_t input_file_size = 0;
+        vfs.file_size(test_path, input_file_size);
+        json_message = transformStageToReqMessage(tstage, URI(test_path).toPath(),
+                                                       input_file_size, test_output_path.toString(),
+                                                       true,
+                                                       num_threads,
+                                                       spillURI);
 
-    // because order may be different (unless specified), split into lines & sort and compare
-    auto res_lines = splitToLines(file_content);
-    auto ref_lines = splitToLines(ref_content);
-    std::sort(res_lines.begin(), res_lines.end());
-    std::sort(ref_lines.begin(), ref_lines.end());
-    ASSERT_EQ(res_lines.size(), ref_lines.size());
-    for(unsigned i = 0; i < std::min(res_lines.size(), ref_lines.size()); ++i) {
-        EXPECT_EQ(res_lines[i], ref_lines[i]);
+        // save to file
+        stringToFile(msg_file, json_message);
     }
+
+    std::vector<std::string> ref_lines;
+
+    {
+        PyInterpreterGuard guard(true);
+        // start worker within same process to easier debug...
+        auto app = make_unique<WorkerApp>(WorkerSettings());
+        app->processJSONMessage(json_message);
+        app->shutdown();
+
+        // fetch output file and check contents...
+        auto file_content = fileToString(test_output_path.toString() + ".csv");
+
+        // check files are 1:1 the same!
+        EXPECT_EQ(file_content.size(), ref_content.size());
+
+        // because order may be different (unless specified), split into lines & sort and compare
+        auto res_lines = splitToLines(file_content);
+        ref_lines = splitToLines(ref_content);
+        std::sort(res_lines.begin(), res_lines.end());
+        std::sort(ref_lines.begin(), ref_lines.end());
+        ASSERT_EQ(res_lines.size(), ref_lines.size());
+        for(unsigned i = 0; i < std::min(res_lines.size(), ref_lines.size()); ++i) {
+            EXPECT_EQ(res_lines[i], ref_lines[i]);
+        }
+    }
+
 
     // test again, but this time invoking the worker with a message as separate process.
+    {
+        // invoke worker with that message
+        Timer timer;
+        auto cmd = worker_path + " -m " + msg_file.toPath();
+        auto res_stdout = runCommand(cmd);
+        auto worker_invocation_duration = timer.time();
+        cout<<res_stdout<<endl;
+        cout<<"Invoking worker took: "<<worker_invocation_duration<<"s"<<endl;
 
-    // invoke worker with that message
-    Timer timer;
-    auto cmd = worker_path + " -m " + msg_file.toPath();
-    auto res_stdout = runCommand(cmd);
-    auto worker_invocation_duration = timer.time();
-    cout<<res_stdout<<endl;
-    cout<<"Invoking worker took: "<<worker_invocation_duration<<"s"<<endl;
+        // check result contents
+        cout<<"Checking worker results..."<<endl;
+        auto file_content = fileToString(test_output_path.toString() + ".csv");
 
-    // check result contents
-    cout<<"Checking worker results..."<<endl;
-    file_content = fileToString(test_output_path.toString() + ".csv");
-
-    // check files are 1:1 the same!
-    ASSERT_EQ(file_content.size(), ref_content.size());
-    res_lines = splitToLines(file_content);
-    std::sort(res_lines.begin(), res_lines.end());
-    EXPECT_EQ(res_lines.size(), ref_lines.size());
-    for(unsigned i = 0; i < std::min(res_lines.size(), ref_lines.size()); ++i) {
-        EXPECT_EQ(res_lines[i], ref_lines[i]);
+        // check files are 1:1 the same!
+        ASSERT_EQ(file_content.size(), ref_content.size());
+        auto res_lines = splitToLines(file_content);
+        std::sort(res_lines.begin(), res_lines.end());
+        EXPECT_EQ(res_lines.size(), ref_lines.size());
+        for(unsigned i = 0; i < std::min(res_lines.size(), ref_lines.size()); ++i) {
+            EXPECT_EQ(res_lines[i], ref_lines[i]);
+        }
+        cout<<"Invoked worker check done."<<endl;
     }
-    cout<<"Invoked worker check done."<<endl;
     cout<<"Test done."<<endl;
 }
 
