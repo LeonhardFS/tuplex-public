@@ -215,3 +215,12 @@ extern "C" void releasePythonFunction(uint8_t* pyobj) {
     // release GIL here
     python::unlockGIL();
 }
+
+extern "C" int debug_printf(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    auto rc = vprintf(format, args);
+    va_end(args);
+    std::cout.flush();
+    return rc;
+}

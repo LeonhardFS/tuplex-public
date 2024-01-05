@@ -39,7 +39,7 @@ namespace tuplex {
 #ifdef BUILD_WITH_CEREAL
         logger().info("Using Cereal AST serialization");
 #else
-        logger().info("Using JSON AST serializastion");
+        logger().info("Using JSON AST serialization");
 #endif
         // runtime library path
         auto runtime_path = ContextOptions::defaults().RUNTIME_LIBRARY().toPath();
