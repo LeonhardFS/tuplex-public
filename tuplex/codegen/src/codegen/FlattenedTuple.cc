@@ -1326,10 +1326,10 @@ namespace tuplex {
             // ndebug check
 #ifndef NDEBUG
             auto numOptions = 0;
-            for(auto t : types)
+            for(const auto& t : types)
                 if(t.isOptionType())
                     numOptions++;
-            assert(numOptions == numOptionalElements);
+            assert(numOptions <= numOptionalElements);
 #endif
 
             // construct bitmap using or operations

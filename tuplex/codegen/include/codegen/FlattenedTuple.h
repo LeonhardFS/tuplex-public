@@ -545,9 +545,9 @@ namespace tuplex {
          * deserialize bitmap from memory (bitmap stored as consecutive 8 byte blocks)
          * @param env
          * @param builder
-         * @param ptr
+         * @param ptr and i8* pointer for the starting memory address storing the bitmap as contiguous 8 bytes blocks.
          * @param numBits how many i1 comprise the bitmap
-         * @return vector of the 8 byte blocks.
+         * @return vector of the 8 byte blocks, i.e. each 8 byte block decoded as 8 byte uint64
          */
         inline std::tuple<llvm::Value*, std::vector<llvm::Value*>> deserializeBitmap(LLVMEnvironment& env,
                                                                                              const codegen::IRBuilder& builder,
@@ -559,7 +559,7 @@ namespace tuplex {
             vector<llvm::Value*> bitmap;
             for(unsigned i = 0; i < numBitmapElements; ++i) {
                 // read as 64bit int from memory
-                auto bitmapElement = builder.CreateLoad(builder.getInt64Ty(), ptr, "bitmap_part");
+                auto bitmapElement = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(ptr, env.i64ptrType()), "bitmap_part");
                 bitmap.emplace_back(bitmapElement);
                 // move onto next pointer
                 ptr = builder.MovePtrByBytes(ptr, sizeof(int64_t));

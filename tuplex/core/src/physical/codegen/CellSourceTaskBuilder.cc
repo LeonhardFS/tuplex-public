@@ -317,7 +317,7 @@ namespace tuplex {
                 if(ret.size)
                     builder.CreateStore(ret.size, size_var);
 
-                auto llvm_value_type = env.pythonToLLVMType(cell_type);
+                auto llvm_value_type = env.pythonToLLVMType(cell_type.withoutOption());
 
                 builder.CreateBr(bParseDone);
                 builder.SetInsertPoint(bParseDone);
