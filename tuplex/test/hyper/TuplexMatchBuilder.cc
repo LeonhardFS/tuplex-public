@@ -7,7 +7,7 @@
 namespace tuplex {
     namespace codegen {
 
-        llvm::Value* TuplexMatchBuilder::parseRowAsStructuredDict(llvm::IRBuilder<> &builder, const python::Type& row_type, llvm::Value *j,
+        llvm::Value* TuplexMatchBuilder::parseRowAsStructuredDict(const IRBuilder& builder, const python::Type& row_type, llvm::Value *j,
                                                           llvm::BasicBlock *bbSchemaMismatch) {
             assert(j);
             using namespace llvm;
@@ -32,7 +32,7 @@ namespace tuplex {
 
             // create dict parser and store to row_var
             JSONParseRowGenerator gen(_env, row_type, bbSchemaMismatch);
-            gen.parseToVariable(builder, builder.CreateLoad(obj_var), row_var);
+            gen.parseToVariable(builder, builder.CreateLoad(_env.i8ptrType(), obj_var), row_var);
 //            // update free end
 //            bParseFree = gen.generateFreeAllVars(bParseFree);
 //
@@ -54,7 +54,7 @@ namespace tuplex {
             return row_var;
         }
 
-        llvm::Value *TuplexMatchBuilder::isDocumentOfObjectType(llvm::IRBuilder<> &builder, llvm::Value *j) {
+        llvm::Value *TuplexMatchBuilder::isDocumentOfObjectType(const IRBuilder& builder, llvm::Value *j) {
             using namespace llvm;
             auto &ctx = _env.getContext();
             auto F = getOrInsertFunction(_env.getModule().get(), "JsonParser_getDocType", _env.i64Type(),
@@ -64,7 +64,7 @@ namespace tuplex {
             return cond;
         }
 
-        llvm::Value *TuplexMatchBuilder::hasNextRow(llvm::IRBuilder<> &builder, llvm::Value *j) {
+        llvm::Value *TuplexMatchBuilder::hasNextRow(const IRBuilder& builder, llvm::Value *j) {
             auto &ctx = _env.getContext();
             auto F = getOrInsertFunction(_env.getModule().get(), "JsonParser_hasNextRow", ctypeToLLVM<bool>(ctx),
                                          _env.i8ptrType());
@@ -74,7 +74,7 @@ namespace tuplex {
                     llvm::Type::getIntNTy(ctx, ctypeToLLVM<bool>(ctx)->getIntegerBitWidth()), 1));
         }
 
-        void TuplexMatchBuilder::moveToNextRow(llvm::IRBuilder<> &builder, llvm::Value *j) {
+        void TuplexMatchBuilder::moveToNextRow(const IRBuilder& builder, llvm::Value *j) {
             // move
             using namespace llvm;
             auto &ctx = _env.getContext();
@@ -93,7 +93,7 @@ namespace tuplex {
             _env.freeAll(builder); // -> call rtfree!
         }
 
-        void TuplexMatchBuilder::exitMainFunctionWithError(llvm::IRBuilder<> &builder, llvm::Value *exitCondition,
+        void TuplexMatchBuilder::exitMainFunctionWithError(const IRBuilder& builder, llvm::Value *exitCondition,
                                                               llvm::Value *exitCode) {
             using namespace llvm;
             auto &ctx = _env.getContext();
@@ -111,7 +111,7 @@ namespace tuplex {
             builder.SetInsertPoint(bbContinue);
         }
 
-        llvm::Value *TuplexMatchBuilder::initJsonParser(llvm::IRBuilder<> &builder) {
+        llvm::Value *TuplexMatchBuilder::initJsonParser(const IRBuilder &builder) {
 
             auto F = getOrInsertFunction(_env.getModule().get(), "JsonParser_Init", _env.i8ptrType());
 
@@ -121,7 +121,7 @@ namespace tuplex {
             return j;
         }
 
-        llvm::Value *TuplexMatchBuilder::openJsonBuf(llvm::IRBuilder<> &builder, llvm::Value *j, llvm::Value *buf,
+        llvm::Value *TuplexMatchBuilder::openJsonBuf(const IRBuilder& builder, llvm::Value *j, llvm::Value *buf,
                                                         llvm::Value *buf_size) {
             assert(j);
             auto F = getOrInsertFunction(_env.getModule().get(), "JsonParser_open", _env.i64Type(), _env.i8ptrType(),
@@ -129,14 +129,14 @@ namespace tuplex {
             return builder.CreateCall(F, {j, buf, buf_size});
         }
 
-        void TuplexMatchBuilder::freeJsonParse(llvm::IRBuilder<> &builder, llvm::Value *j) {
+        void TuplexMatchBuilder::freeJsonParse(const IRBuilder& builder, llvm::Value *j) {
             auto &ctx = _env.getContext();
             auto F = getOrInsertFunction(_env.getModule().get(), "JsonParser_Free", llvm::Type::getVoidTy(ctx),
                                          _env.i8ptrType());
             builder.CreateCall(F, j);
         }
 
-        llvm::Value *TuplexMatchBuilder::emitHackyFilterPromo(llvm::IRBuilder<> &builder, llvm::Value *parser,
+        llvm::Value *TuplexMatchBuilder::emitHackyFilterPromo(const IRBuilder& builder, llvm::Value *parser,
                                                               const std::string &hackyEventName,
                                                               llvm::BasicBlock *bbFailure) {
             // get directly type field from parser -> item.
@@ -155,7 +155,7 @@ namespace tuplex {
             json_release_object(_env, builder, obj_var);
             builder.CreateCall(Fgetobj, {parser, obj_var});
 
-            auto obj = builder.CreateLoad(obj_var);
+            auto obj = builder.CreateLoad(_env.i8ptrType(), obj_var);
             auto key = _env.strConst(builder, "type");
 
             // now get type and check!
@@ -166,8 +166,8 @@ namespace tuplex {
             auto str_size_var = _env.CreateFirstBlockVariable(builder, _env.i64Const(0), "s_size");
             llvm::Value* rc = builder.CreateCall(F, {obj, key, str_var, str_size_var});
             SerializableValue v;
-            v.val = builder.CreateLoad(str_var);
-            v.size = builder.CreateLoad(str_size_var);
+            v.val = builder.CreateLoad(_env.i8ptrType(), str_var);
+            v.size = builder.CreateLoad(builder.getInt64Ty(), str_size_var);
             v.is_null = _env.i1Const(false);
 
 
@@ -204,10 +204,10 @@ namespace tuplex {
 
             builder.SetInsertPoint(bContinue);
             // _env.printValue(builder, builder.CreateLoad(check_var), "check passed: ");
-            return builder.CreateLoad(check_var); // keep all rows -> i.e. parse.
+            return builder.CreateLoad(builder.getInt1Ty(), check_var); // keep all rows -> i.e. parse.
         }
 
-        void TuplexMatchBuilder::generateParseLoop(llvm::IRBuilder<> &builder,
+        void TuplexMatchBuilder::generateParseLoop(const IRBuilder &builder,
                                                    llvm::Value *bufPtr,
                                                    llvm::Value *bufSize,
                                                    bool hackyPromoteEventFilter,
@@ -352,7 +352,7 @@ namespace tuplex {
                     // note: line could be empty line -> check whether to skip or not!
                     auto Fws = getOrInsertFunction(_env.getModule().get(), "Json_is_whitespace", ctypeToLLVM<bool>(_env.getContext()),
                                                    _env.i8ptrType(), _env.i64Type());
-                    auto ws_rc = builder.CreateCall(Fws, {line, builder.CreateLoad(size_var)});
+                    auto ws_rc = builder.CreateCall(Fws, {line, builder.CreateLoad(builder.getInt64Ty(), size_var)});
                     auto is_ws = builder.CreateICmpEQ(ws_rc, cbool_const(_env.getContext(), true));
 
 
@@ -367,14 +367,14 @@ namespace tuplex {
 
                     // only inc for non whitespace (would serialize here!)
                     builder.SetInsertPoint(bIsNotWhitespace);
-                    incVar(builder, _fallbackMemorySizeVar, builder.CreateLoad(size_var));
+                    incVar(builder, _fallbackMemorySizeVar, builder.CreateLoad(builder.getInt64Ty(), size_var));
                     incVar(builder, _fallbackRowCountVar);
                     incVar(builder, _rowNumberVar); // --> trick, else the white line is counted as row!
                     builder.CreateBr(bFallbackDone);
                     builder.SetInsertPoint(bFallbackDone);
                 }
                 else {
-                    incVar(builder, _fallbackMemorySizeVar, builder.CreateLoad(size_var));
+                    incVar(builder, _fallbackMemorySizeVar, builder.CreateLoad(builder.getInt64Ty(), size_var));
                     incVar(builder, _fallbackRowCountVar);
                 }
 
@@ -440,7 +440,7 @@ namespace tuplex {
         }
 
 
-        void TuplexMatchBuilder::writeOutput(llvm::IRBuilder<> &builder, llvm::Value *var, llvm::Value *val) {
+        void TuplexMatchBuilder::writeOutput(const IRBuilder& builder, llvm::Value *var, llvm::Value *val) {
             using namespace llvm;
 
             assert(var && val);
@@ -488,7 +488,7 @@ namespace tuplex {
                                              "out_filtered_rows"});
 
             auto bbEntry = BasicBlock::Create(ctx, "entry", F);
-            IRBuilder<> builder(bbEntry);
+            IRBuilder builder(bbEntry);
 
             // allocate variables
             // _outTotalRowsVar = _env.CreateFirstBlockVariable(builder, _env.i64Const(0));
@@ -513,15 +513,15 @@ namespace tuplex {
             // i.e. parse first as normal row -> fail, try to parse as general row -> fail, fallback.
 
             writeOutput(builder, m["out_total_rows"], rowNumber(builder));
-            writeOutput(builder, m["out_normal_rows"], builder.CreateLoad(_normalRowCountVar));
-            writeOutput(builder, m["out_general_rows"], builder.CreateLoad(_generalRowCountVar));
-            writeOutput(builder, m["out_fallback_rows"], builder.CreateLoad(_fallbackRowCountVar));
+            writeOutput(builder, m["out_normal_rows"], builder.CreateLoad(builder.getInt64Ty(), _normalRowCountVar));
+            writeOutput(builder, m["out_general_rows"], builder.CreateLoad(builder.getInt64Ty(), _generalRowCountVar));
+            writeOutput(builder, m["out_fallback_rows"], builder.CreateLoad(builder.getInt64Ty(), _fallbackRowCountVar));
 
-            writeOutput(builder, m["out_normal_size"], builder.CreateLoad(_normalMemorySizeVar));
-            writeOutput(builder, m["out_general_size"], builder.CreateLoad(_generalMemorySizeVar));
-            writeOutput(builder, m["out_fallback_size"], builder.CreateLoad(_fallbackMemorySizeVar));
+            writeOutput(builder, m["out_normal_size"], builder.CreateLoad(builder.getInt64Ty(), _normalMemorySizeVar));
+            writeOutput(builder, m["out_general_size"], builder.CreateLoad(builder.getInt64Ty(), _generalMemorySizeVar));
+            writeOutput(builder, m["out_fallback_size"], builder.CreateLoad(builder.getInt64Ty(), _fallbackMemorySizeVar));
 
-            writeOutput(builder, m["out_filtered_rows"], builder.CreateLoad(_filteredOutRowsVar));
+            writeOutput(builder, m["out_filtered_rows"], builder.CreateLoad(builder.getInt64Ty(), _filteredOutRowsVar));
 
             builder.CreateRet(_env.i64Const(ecToI64(ExceptionCode::SUCCESS)));
         }

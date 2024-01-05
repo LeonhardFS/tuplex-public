@@ -80,7 +80,7 @@ namespace tuplex {
 
             // create dict parser and store to row_var
             JSONParseRowGenerator gen(_env, _rowType, bbSchemaMismatch);
-            gen.parseToVariable(builder, builder.CreateLoad(obj_var), row_var);
+            gen.parseToVariable(builder, builder.CreateLoad(_env.i8ptrType(), obj_var), row_var);
 
             auto s = struct_dict_serialized_memory_size(_env, builder, row_var, _rowType);
             // _env.printValue(builder, s.val, "size of row materialized in bytes is: ");
@@ -91,7 +91,7 @@ namespace tuplex {
             // _env.printValue(builder, serialization_res.size, "realized serialization size is: ");
 
             // inc total size with serialization size!
-            auto cur_total = builder.CreateLoad(_outTotalSerializationSize);
+            auto cur_total = builder.CreateLoad(builder.getInt64Ty(), _outTotalSerializationSize);
             auto new_total = builder.CreateAdd(cur_total, serialization_res.size);
             builder.CreateStore(new_total, _outTotalSerializationSize);
 
@@ -104,7 +104,7 @@ namespace tuplex {
             //parseAndPrint(builder, builder.CreateLoad(obj_var), "", true, _rowType, true, bbSchemaMismatch);
 
             // free obj_var...
-            json_freeObject(_env, builder, builder.CreateLoad(obj_var));
+            json_freeObject(_env, builder, builder.CreateLoad(_env.i8ptrType(), obj_var));
 #ifndef NDEBUG
             builder.CreateStore(_env.i8nullptr(), obj_var);
 #endif
@@ -149,7 +149,7 @@ namespace tuplex {
             // _env.printValue(builder, rowNumber(builder), "bad parse encountered for row number: ");
 
             // inc value
-            auto count = builder.CreateLoad(_badParseCountVar);
+            auto count = builder.CreateLoad(builder.getInt64Ty(), _badParseCountVar);
             builder.CreateStore(builder.CreateAdd(count, _env.i64Const(1)), _badParseCountVar);
 
             //_env.printValue(builder, line, "bad-parse for row: ");
@@ -322,12 +322,12 @@ namespace tuplex {
             freeJsonParse(builder, parser);
 
             _env.printValue(builder, rowNumber(builder), "parsed rows: ");
-            _env.printValue(builder, builder.CreateLoad(_badParseCountVar),
+            _env.printValue(builder, builder.CreateLoad(builder.getInt64Ty(), _badParseCountVar),
                             "thereof bad parse rows (schema mismatch): ");
 
             // store in vars
             builder.CreateStore(rowNumber(builder), _outTotalRowsVar);
-            builder.CreateStore(builder.CreateLoad(_badParseCountVar), _outTotalBadRowsVar);
+            builder.CreateStore(builder.CreateLoad(builder.getInt64Ty(), _badParseCountVar), _outTotalBadRowsVar);
         }
 
 

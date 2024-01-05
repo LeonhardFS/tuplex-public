@@ -208,7 +208,7 @@ namespace tuplex {
             auto argMap = mapLLVMFunctionArgs(func, {"buf", "buf_size", "out", "out_size"});
 
             BasicBlock* bBody = BasicBlock::Create(ctx, "entry", func);
-            IRBuilder<> builder(bBody);
+            IRBuilder builder(bBody);
 
             // create mismatch block
             BasicBlock* bbMismatch = BasicBlock::Create(ctx, "mismatch", func);
@@ -242,7 +242,7 @@ namespace tuplex {
 
             // parse now
             JSONParseRowGenerator gen(env, dict_type, bbMismatch);
-            gen.parseToVariable(builder, builder.CreateLoad(obj_var), row_var);
+            gen.parseToVariable(builder, builder.CreateLoad(env.i8ptrType(), obj_var), row_var);
 
             // ok, now serialize
             auto s_length = struct_dict_serialized_memory_size(env, builder, row_var, dict_type).val;
@@ -295,7 +295,7 @@ namespace tuplex {
             auto argMap = mapLLVMFunctionArgs(func, {"buf", "buf_size", "out", "out_size"});
 
             BasicBlock* bBody = BasicBlock::Create(ctx, "entry", func);
-            IRBuilder<> builder(bBody);
+            IRBuilder builder(bBody);
 
             // create mismatch block
             BasicBlock* bbMismatch = BasicBlock::Create(ctx, "mismatch", func);
@@ -340,7 +340,7 @@ namespace tuplex {
 
             // parse now
             JSONParseRowGenerator gen(env, dict_type, bbMismatch);
-            gen.parseToVariable(builder, builder.CreateLoad(obj_var), row_var);
+            gen.parseToVariable(builder, builder.CreateLoad(env.i8ptrType(), obj_var), row_var);
 
             // convert to tuple now and then serialize tuple
             // fetch columns from dict and assign to tuple!
@@ -810,7 +810,7 @@ TEST_F(JsonTuplexTest, ListOfTuples) {
     auto argMap = mapLLVMFunctionArgs(func, {"buf", "buf_size"});
 
     BasicBlock* bBody = BasicBlock::Create(ctx, "entry", func);
-    IRBuilder<> builder(bBody);
+    ::tuplex::codegen::IRBuilder builder(bBody);
 
     FlattenedTuple ft(&env);
 
@@ -825,7 +825,7 @@ TEST_F(JsonTuplexTest, ListOfTuples) {
     // create list now
     auto list_type = python::Type::makeListType(tuple_type);
 
-    auto list_llvm_type = env.getOrCreateListType(list_type);
+    auto list_llvm_type = env.createOrGetListType(list_type);
     auto list_ptr = env.CreateFirstBlockAlloca(builder, list_llvm_type);
 
     list_reserve_capacity(env, builder, list_ptr, list_type, env.i64Const(10), true);
@@ -834,7 +834,7 @@ TEST_F(JsonTuplexTest, ListOfTuples) {
     list_store_value(env, builder, list_ptr, list_type, env.i64Const(9), SerializableValue(tuple_ptr, nullptr, nullptr));
 
     // now get element from there.
-    auto tuple = builder.CreateLoad(tuple_ptr);
+    auto tuple = builder.CreateLoad(ft.getLLVMType(), tuple_ptr);
     FlattenedTuple ft_check = FlattenedTuple::fromLLVMStructVal(&env, builder, tuple, tuple_type);
 
     llvm::Value* size = ft_check.getSize(0);
