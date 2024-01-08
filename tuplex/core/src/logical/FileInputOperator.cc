@@ -1730,13 +1730,16 @@ namespace tuplex {
                     v = csv_parseRows(sample.c_str(), sample.size(), expectedColumnCount, file_offset,
                                       _delimiter, _quotechar, _null_values, limit);
                     sample_limit -= std::min(v.size(), limit);
-                    // offset = 0?
-                    if(file_offset == 0) {
-                        // header? ignore first row!
-                        if(_header && !v.empty())
+
+                    if(!v.empty()) {
+                        // offset = 0?
+                        if(file_offset == 0) {
+                            // header? ignore first row!
+                            if(_header)
+                                v.erase(v.begin());
+                        } else {
                             v.erase(v.begin());
-                    } else {
-                        v.erase(v.begin());
+                        }
                     }
                 }
             }
