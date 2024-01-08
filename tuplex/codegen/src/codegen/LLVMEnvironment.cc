@@ -1197,7 +1197,10 @@ namespace tuplex {
                                 // store -> direct load?
                                 auto llvm_struct_type = llvm_val_to_store->getType();
                                 for(unsigned i = 0; i < llvm_struct_type->getStructNumElements(); ++i) {
-                                    auto item = builder.CreateStructLoad(llvm_struct_type, llvm_val_to_store, i);
+                                    // note: list value is either i64 or list struct.
+                                    // never just a pointer, therefore load value from pointer if llvm_val_to_store is a pointer.
+                                    // else, use as item as is
+                                    auto item = !llvm_val_to_store->getType()->isPointerTy() ? llvm_val_to_store : builder.CreateStructLoad(llvm_struct_type, llvm_val_to_store, i);
                                     // what is the type?
                                     auto item_type = getLLVMTypeName(item->getType());
                                     auto target_idx = builder.CreateStructGEP(ptr, llvm_struct_type, i);

@@ -325,7 +325,7 @@ namespace tuplex {
             // (1) fill value
             auto llvm_value_type = env.pythonToLLVMType(list_type.elementType());
             auto data_ptr = builder.CreateStructLoad(llvm_list_type, list_ptr, data_index);
-            auto data_entry = builder.CreateLoad(llvm_value_type, builder.CreateGEP(llvm_list_type->getStructElementType(data_index), data_ptr, idx));
+            auto data_entry = builder.CreateLoad(llvm_value_type, builder.CreateGEP(llvm_value_type, data_ptr, idx));
             ret.val = data_entry;
 
             // special case string: -> could be nullptr, to ensure printing fill with empty str...
@@ -336,7 +336,7 @@ namespace tuplex {
             // (2) fill size
             if(size_idx >= 0) {
                 auto size_ptr = builder.CreateStructLoad(llvm_list_type, list_ptr, size_idx);
-                ret.size = builder.CreateLoad(builder.getInt64Ty(), builder.CreateGEP(llvm_list_type->getStructElementType(size_idx), size_ptr, idx));
+                ret.size = builder.CreateLoad(builder.getInt64Ty(), builder.CreateGEP(builder.getInt64Ty(), size_ptr, idx));
             } else {
                 ret.size = env.i64Const(sizeof(double));
             }
@@ -345,7 +345,7 @@ namespace tuplex {
             // load whether entry is null (or not)
             if(nullmap_index >= 1) {
                 auto nullmap_ptr = builder.CreateStructLoad(llvm_list_type, list_ptr, nullmap_index);
-                auto is_null = builder.CreateLoad(builder.getInt8Ty(), builder.CreateGEP(llvm_list_type->getStructElementType(nullmap_index), nullmap_ptr, idx));
+                auto is_null = builder.CreateLoad(builder.getInt8Ty(), builder.CreateGEP(builder.getInt8Ty(), nullmap_ptr, idx));
                 assert(is_null->getType() == env.i8Type());
                 ret.is_null = builder.CreateICmpNE(is_null, env.i8Const(0));
             } else {
