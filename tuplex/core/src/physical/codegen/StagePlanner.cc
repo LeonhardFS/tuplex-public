@@ -1995,7 +1995,6 @@ namespace tuplex {
             // run validation after forcing majority sample based type
             auto validation_rc = validatePipeline();
             logger.debug(std::string("post-specialization pipeline validation: ") + (validation_rc ? "ok" : "failed"));
-            assert(validation_rc);
             return validation_rc;
         }
     }

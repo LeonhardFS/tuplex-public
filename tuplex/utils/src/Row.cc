@@ -111,7 +111,7 @@ namespace tuplex {
             // use []
             ss<<"[";
             for(unsigned i = 0; i < getNumColumns(); ++i) {
-                ss<<escape_for_json(columns[i])<<":"<<_values[i].toJsonString();
+                ss<<_values[i].toJsonString();
                 if(i != getNumColumns() - 1)
                     ss<<",";
             }

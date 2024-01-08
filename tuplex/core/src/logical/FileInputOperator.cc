@@ -711,6 +711,10 @@ namespace tuplex {
             // when NVO is deactivated, normalcase and general case detected here are the same.
             auto normalcasetype = detectMajorityRowType(_rowsSample, co.NORMALCASE_THRESHOLD(), use_independent_columns, co.OPT_NULLVALUE_OPTIMIZATION());
 
+            if(python::Type::UNKNOWN == normalcasetype) {
+                throw std::runtime_error("failed to detect normal case type from sample for operator " + name());
+            }
+
             // general-case type is option[T] version of types encountered in normalcasetype.
             // for null, assume option[str].
             // -> this is required for hyperspecialization upcast + a meaningful assumption for the sample
