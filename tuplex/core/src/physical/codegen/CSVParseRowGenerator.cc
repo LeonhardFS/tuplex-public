@@ -254,9 +254,11 @@ namespace tuplex {
             // break;
             // }
 
+            auto charset_ptr = builder.CreatePointerCast(g_var, env.i8ptrType());
+
             // p[0] is same as loading ptr twice
             llvm::Value* p_idx = builder.CreateZExt(builder.CreateLoad(env.i8Type(), p), env.i32Type());
-            auto charset_p0 = builder.CreateLoad(env.i8Type(), builder.CreateInBoundsGEP(g_var, env.i8Type(), p_idx));
+            auto charset_p0 = builder.CreateLoad(env.i8Type(), builder.CreateInBoundsGEP(charset_ptr, env.i8Type(), p_idx));
             auto cond_p0 = builder.CreateICmpNE(charset_p0, env.i8Const(0));
             auto bbNextIf = BasicBlock::Create(context, "next_if", func);
             builder.CreateCondBr(cond_p0, bbLoopExit, bbNextIf);
@@ -267,7 +269,7 @@ namespace tuplex {
             //     break;
             // }
             p_idx = builder.CreateZExt(builder.CreateLoad(env.i8Type(), builder.MovePtrByBytes(p, 1)), env.i32Type());
-            auto charset_p1 = builder.CreateLoad(env.i8Type(), builder.CreateInBoundsGEP(g_var, env.i8Type(), p_idx));
+            auto charset_p1 = builder.CreateLoad(env.i8Type(), builder.CreateInBoundsGEP(charset_ptr, env.i8Type(), p_idx));
             auto cond_p1 = builder.CreateICmpNE(charset_p1, env.i8Const(0));
             bbNextIf = BasicBlock::Create(context, "next_if", func);
             auto bbIf = BasicBlock::Create(context, "if", func);
@@ -283,7 +285,7 @@ namespace tuplex {
             //                    break;
             //                }
             p_idx = builder.CreateZExt(builder.CreateLoad(env.i8Type(), builder.MovePtrByBytes(p, 2)), env.i32Type());
-            auto charset_p2 = builder.CreateLoad(env.i8Type(), builder.CreateInBoundsGEP(g_var, env.i8Type(), p_idx));
+            auto charset_p2 = builder.CreateLoad(env.i8Type(), builder.CreateInBoundsGEP(charset_ptr, env.i8Type(), p_idx));
             auto cond_p2 = builder.CreateICmpNE(charset_p2, env.i8Const(0));
             bbNextIf = BasicBlock::Create(context, "next_if", func);
             bbIf = BasicBlock::Create(context, "if", func);
@@ -300,7 +302,7 @@ namespace tuplex {
             //                    break;
             //                }
             p_idx = builder.CreateZExt(builder.CreateLoad(env.i8Type(), builder.MovePtrByBytes(p, 3)), env.i32Type());
-            auto charset_p3 = builder.CreateLoad(env.i8Type(), builder.CreateInBoundsGEP(g_var, env.i8Type(), p_idx));
+            auto charset_p3 = builder.CreateLoad(env.i8Type(), builder.CreateInBoundsGEP(charset_ptr, env.i8Type(), p_idx));
             auto cond_p3 = builder.CreateICmpNE(charset_p3, env.i8Const(0));
             bbNextIf = BasicBlock::Create(context, "next_if", func);
             bbIf = BasicBlock::Create(context, "if", func);
