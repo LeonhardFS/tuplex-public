@@ -1038,8 +1038,8 @@ namespace tuplex {
             dest_ptr = builder.MovePtrByBytes(dest_ptr, sizeof(int64_t));
 
             // memcpy data_ptr
-            auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
-            auto ptr_values = builder.CreatePointerCast(builder.CreateLoad(env.i8ptrType(), idx_values), env.i8ptrType());
+            auto ptr_values = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, 2);
+            ptr_values = builder.CreatePointerCast(ptr_values, env.i8ptrType());
             auto data_size = builder.CreateMul(env.i64Const(8), len); // size in bytes!
             builder.CreateMemCpy(dest_ptr, 0, ptr_values, 0, data_size);
             auto size = builder.CreateAdd(env.i64Const(8), data_size);

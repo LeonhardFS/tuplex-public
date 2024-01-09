@@ -900,7 +900,6 @@ namespace tuplex {
                         Value *store = builder.CreateStore(field, builder.CreateBitCast(lastPtr, Type::getDoublePtrTy(context, 0)), false);
                         lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(double), "outptr");
                     } else if(fieldType.isListType() && fieldType.elementType().isSingleValued()) {
-                        throw std::runtime_error("list not supported yet");
                         // store within output - the field is just the size of the list
                         Value *store = builder.CreateStore(field, builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)), false);
                         lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t), "outptr");
