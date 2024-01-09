@@ -357,6 +357,12 @@ namespace tuplex {
 
     size_t serialize_list_to_ptr(const List& l, uint8_t* ptr, size_t capacity_left);
 
+    inline std::tuple<size_t, size_t> unpack_offset_and_size_from_value(uint64_t data) {
+        uint64_t size = ((data & (0xFFFFFFFFl << 32)) >> 32) - 1;
+        uint64_t offset = data & 0xFFFFFFFF;
+        return std::make_tuple(offset, size);
+    }
+
 }
 
 #endif //TUPLEX_SERIALIZER_H

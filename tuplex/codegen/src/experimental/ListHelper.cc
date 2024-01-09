@@ -291,6 +291,17 @@ namespace tuplex {
                 if(element_type.isConstantValued())
                     return constantValuedTypeToLLVM(builder, element_type);
 
+                if(element_type == python::Type::EMPTYTUPLE) {
+                    auto llvm_empty_tuple_type = env.getEmptyTupleType();
+                    auto alloc = builder.CreateAlloca(llvm_empty_tuple_type, 0, nullptr);
+                    auto load = builder.CreateLoad(llvm_empty_tuple_type, alloc);
+                    return {load, env.i64Const(sizeof(int64_t))};
+                }
+
+                if(element_type == python::Type::EMPTYDICT || element_type == python::Type::EMPTYLIST) {
+                    return {};
+                }
+
                 throw std::runtime_error("list load of single-valued type " + element_type.desc() + " not yet supported");
             }
 
@@ -324,7 +335,7 @@ namespace tuplex {
 
             // (1) fill value
             auto llvm_value_type = env.pythonToLLVMType(list_type.elementType());
-            auto data_ptr = builder.CreateStructLoad(llvm_list_type, list_ptr, data_index);
+            auto data_ptr = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, data_index);
             auto data_entry = builder.CreateLoad(llvm_value_type, builder.CreateGEP(llvm_value_type, data_ptr, idx));
             ret.val = data_entry;
 
@@ -335,7 +346,7 @@ namespace tuplex {
 
             // (2) fill size
             if(size_idx >= 0) {
-                auto size_ptr = builder.CreateStructLoad(llvm_list_type, list_ptr, size_idx);
+                auto size_ptr = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, size_idx);
                 ret.size = builder.CreateLoad(builder.getInt64Ty(), builder.CreateGEP(builder.getInt64Ty(), size_ptr, idx));
             } else {
                 ret.size = env.i64Const(sizeof(double));
@@ -344,7 +355,7 @@ namespace tuplex {
             // (3) is null
             // load whether entry is null (or not)
             if(nullmap_index >= 1) {
-                auto nullmap_ptr = builder.CreateStructLoad(llvm_list_type, list_ptr, nullmap_index);
+                auto nullmap_ptr = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, nullmap_index);
                 auto is_null = builder.CreateLoad(builder.getInt8Ty(), builder.CreateGEP(builder.getInt8Ty(), nullmap_ptr, idx));
                 assert(is_null->getType() == env.i8Type());
                 ret.is_null = builder.CreateICmpNE(is_null, env.i8Const(0));
@@ -1366,9 +1377,8 @@ namespace tuplex {
 
                 auto llvm_list_type = env.createOrGetListType(list_type);
 
-                auto idx_sizes = builder.CreateStructGEP(list_ptr, llvm_list_type, 3);
-                auto ptr_sizes = builder.CreateLoad(llvm_list_type->getStructElementType(3), idx_sizes);
-                auto idx_size = builder.CreateGEP(env.i64ptrType(), ptr_sizes, index);
+                auto ptr_sizes = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, 3);
+                auto idx_size = builder.CreateGEP(env.i64Type(), ptr_sizes, index);
                 auto item_size = builder.CreateLoad(env.i64Type(), idx_size);
                 return item_size;
             };
@@ -1387,9 +1397,8 @@ namespace tuplex {
 
                 auto llvm_list_type = env.createOrGetListType(list_type);
 
-                auto idx_sizes = builder.CreateStructGEP(list_ptr, llvm_list_type, 3);
-                auto ptr_sizes = builder.CreateLoad(llvm_list_type->getStructElementType(3), idx_sizes);
-                auto idx_size = builder.CreateGEP(env.i64ptrType(), ptr_sizes, index);
+                auto ptr_sizes = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, 3);
+                auto idx_size = builder.CreateGEP(env.i64Type(), ptr_sizes, index);
                 auto item_size = builder.CreateLoad(env.i64Type(), idx_size);
                 return item_size;
             };
@@ -1404,8 +1413,8 @@ namespace tuplex {
                 assert(element_type == python::Type::STRING || element_type == python::Type::PYOBJECT);
 
                 auto llvm_list_type = env.createOrGetListType(list_type);
-                auto ptr_values = builder.CreateStructLoad(llvm_list_type, list_ptr, 2);
-                auto ptr_sizes = builder.CreateStructLoad(llvm_list_type, list_ptr, 3);
+                auto ptr_values = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, 2);
+                auto ptr_sizes = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, 3);
 
                 assert(ptr_values->getType() == env.i8ptrType()->getPointerTo(0));
                 assert(ptr_sizes->getType() == env.i64ptrType());

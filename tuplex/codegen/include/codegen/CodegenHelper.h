@@ -191,6 +191,17 @@ namespace tuplex {
                 return get_or_throw().CreateExtractValue(Agg, Idxs, Name);
             }
 
+             inline llvm::Value *CreateExtractValue(llvm::Value *Agg,
+                                                    unsigned Idx,
+                                                    const std::string &Name = "") const {
+                std::vector<unsigned> Idxs{Idx};
+                 return get_or_throw().CreateExtractValue(Agg, Idxs, Name);
+             }
+
+            inline llvm::Value* CreateExtractElement(llvm::Value *VecOrStruct, unsigned Idx, const std::string& name) const {
+                return get_or_throw().CreateExtractElement(VecOrStruct, Idx);
+            }
+
             inline llvm::Value *CreateSRem(llvm::Value *LHS, llvm::Value *RHS, const std::string &Name = "") const {
                 return get_or_throw().CreateSRem(LHS, RHS, Name);
             }
@@ -407,6 +418,26 @@ namespace tuplex {
 
                 auto item_ptr = CreateStructGEP(Ptr, struct_type, Idx);
                 return CreateLoad(struct_type->getStructElementType(Idx), item_ptr);
+            }
+
+            /*!
+             * extract element either from struct value or from struct pointer
+             * @param struct_type struct type
+             * @param PtrOrValue if pointer uses CreateStructLoad, if Value uses ExtractElement
+             * @param Idx index
+             * @return Value from struct at index
+             */
+            inline llvm::Value* CreateStructLoadOrExtract(llvm::Type* struct_type, llvm::Value* PtrOrValue, unsigned Idx) const {
+                assert(PtrOrValue);
+                if(PtrOrValue && PtrOrValue->getType()->isPointerTy()) {
+                    return CreateStructLoad(struct_type, PtrOrValue, Idx);
+                } else if(PtrOrValue && PtrOrValue->getType()->isStructTy()) {
+                    assert(Idx < PtrOrValue->getType()->getStructNumElements());
+                    auto item = CreateExtractValue(PtrOrValue, Idx);
+                    return item;
+                } else {
+                    throw std::runtime_error("PtrOrValue is not pointer nor struct.");
+                }
             }
 
             inline llvm::Value *CreateFCmpONE(llvm::Value *LHS, llvm::Value *RHS, const std::string &Name = "",

@@ -1693,6 +1693,8 @@ namespace tuplex {
             }
         }
 
+        size_t el_offset=0, el_size=0;
+
         if(elType == python::Type::I64) {
             for (size_t i = 0; i < numElements; i++) {
                 els.emplace_back(Field(*(int64_t *)ptr));
@@ -1711,22 +1713,22 @@ namespace tuplex {
         } else if(elType == python::Type::STRING) {
             // read each string
             for (size_t i = 0; i < numElements; i++) {
-                uint64_t strOffset = *(uint64_t *)ptr;
-                els.emplace_back(Field((const char *)(ptr + strOffset)));
+                std::tie(el_offset, el_size) = unpack_offset_and_size_from_value(*(uint64_t*)ptr);
+                els.emplace_back(Field((const char *)(ptr + el_offset)));
                 ptr += sizeof(uint64_t);
             }
         } else if(elType.isTupleType()) {
             // read each tuple
             for (size_t i = 0; i < numElements; i++) {
-                auto tupleOffset = *(uint64_t *) ptr;
-                els.emplace_back(Field(getTupleHelper(elType, ptr + tupleOffset)));
+                std::tie(el_offset, el_size) = unpack_offset_and_size_from_value(*(uint64_t*)ptr);
+                els.emplace_back(Field(getTupleHelper(elType, ptr + el_offset)));
                 ptr += sizeof(uint64_t);
             }
         } else if(elType.isListType()) {
             // read each list
             for (size_t i = 0; i < numElements; i++) {
-                auto listOffset = *(uint64_t *) ptr;
-                els.emplace_back(Field(getListHelper(elType, ptr + listOffset)));
+                std::tie(el_offset, el_size) = unpack_offset_and_size_from_value(*(uint64_t*)ptr);
+                els.emplace_back(Field(getListHelper(elType, ptr + el_offset)));
                 ptr += sizeof(uint64_t);
             }
         } else if(elType.isOptionType()) {
@@ -1738,8 +1740,8 @@ namespace tuplex {
                         // is None
                         els.emplace_back(Field(option<std::string>::none));
                     } else {
-                        uint64_t strOffset = *(uint64_t *)ptr;
-                        els.emplace_back(Field(option<std::string>((const char *)(ptr + strOffset))));
+                        std::tie(el_offset, el_size) = unpack_offset_and_size_from_value(*(uint64_t*)ptr);
+                        els.emplace_back(Field(option<std::string>((const char *)(ptr + el_offset))));
                         ptr += sizeof(uint64_t);
                     }
                 }
@@ -1750,9 +1752,9 @@ namespace tuplex {
                         // is None
                         els.emplace_back(Field::null(elType));
                     } else {
-                        auto tupleOffset = *(uint64_t *) ptr;
+                        std::tie(el_offset, el_size) = unpack_offset_and_size_from_value(*(uint64_t*)ptr);
                         els.emplace_back(Field(option<Tuple>(
-                                getTupleHelper(underlyingElType, ptr + tupleOffset))));
+                                getTupleHelper(underlyingElType, ptr + el_offset))));
                         ptr += sizeof(uint64_t);
                     }
                 }
@@ -1763,8 +1765,8 @@ namespace tuplex {
                         // is None
                         els.emplace_back(Field::null(elType));
                     } else {
-                        auto listOffset = *(uint64_t *) ptr;
-                        els.emplace_back(Field(option<List>(getListHelper(underlyingElType, ptr + listOffset))));
+                        std::tie(el_offset, el_size) = unpack_offset_and_size_from_value(*(uint64_t*)ptr);
+                        els.emplace_back(Field(option<List>(getListHelper(underlyingElType, ptr + el_offset))));
                         ptr += sizeof(uint64_t);
                     }
                 }
