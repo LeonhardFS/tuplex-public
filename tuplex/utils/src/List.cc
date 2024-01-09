@@ -57,8 +57,8 @@ namespace tuplex {
                 for(unsigned i = 0; i < _numElements; ++i)
                     _elements[i] = elements[i];
             }
+            assert(_numElements != 0 && _listType != python::Type::EMPTYLIST);
         }
-        assert(_numElements != 0 && _listType != python::Type::EMPTYLIST);
         assert(!_listType.isIllDefined());
     }
 

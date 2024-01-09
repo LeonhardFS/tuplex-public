@@ -87,6 +87,10 @@ namespace tuplex {
         if(optType == python::Type::ANY)
             return python::Type::ANY;
 
+        // range is the same (primitive type)
+        if(optType == python::Type::RANGE)
+            return optType;
+
         throw std::runtime_error("unsupported type " + optType.desc() + " encountered in "
                                  + std::string(__FILE__) + ":" + std::to_string(__LINE__));
     }

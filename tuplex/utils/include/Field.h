@@ -250,6 +250,8 @@ namespace tuplex {
             ar(_iValue, _type, _size, _isNull);
         }
 #endif
+
+        static Field from_constant_type(const python::Type &constant_type);
     };
 
     extern bool operator == (const Field& lhs, const Field& rhs);

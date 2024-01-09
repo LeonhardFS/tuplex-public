@@ -1485,10 +1485,17 @@ namespace tuplex {
             assert(phys_col < inferLength(_buffer) / sizeof(int64_t));
             auto num_elements = *((int64_t *) ((uint8_t *) _buffer + sizeof(int64_t) * phys_col + calcBitmapSize(_requiresBitmap)));
             for(int i=0; i<num_elements; i++) {
-                if(elType == python::Type::NULLVALUE) els.push_back(Field::null());
-                else if(elType == python::Type::EMPTYDICT) els.push_back(Field::empty_dict());
-                else if(elType == python::Type::EMPTYTUPLE) els.push_back(Field::empty_tuple());
-                else if(elType == python::Type::EMPTYLIST) els.push_back(Field::empty_list());
+                if(elType == python::Type::NULLVALUE)
+                    els.push_back(Field::null());
+                else if(elType == python::Type::EMPTYDICT)
+                    els.push_back(Field::empty_dict());
+                else if(elType == python::Type::EMPTYTUPLE)
+                    els.push_back(Field::empty_tuple());
+                else if(elType == python::Type::EMPTYLIST)
+                    els.push_back(Field::empty_list());
+                else if(elType.isConstantValued()) // constants count as single-valued as well.
+                    els.push_back(Field::from_constant_type(elType));
+
                 else throw std::runtime_error("Unsupported list element type deserialized: " + elType.desc());
             }
             return List::from_vector(els);
@@ -1663,6 +1670,9 @@ namespace tuplex {
         // get number of elements
         uint64_t numElements = *(uint64_t *)ptr;
         ptr += sizeof(uint64_t);
+
+        if(0 == numElements)
+            return List();
 
         if(listType.isSingleValued()) {
             // does not need memory data

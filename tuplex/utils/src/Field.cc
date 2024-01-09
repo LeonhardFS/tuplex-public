@@ -685,4 +685,41 @@ namespace tuplex {
         return "None";
     }
 
+    Field Field::from_constant_type(const python::Type &constant_type) {
+        assert(constant_type.isConstantValued());
+        auto t = constant_type.underlying();
+        auto value = constant_type.constant();
+        if(t == python::Type::BOOLEAN) {
+            if(value == "True")
+                return Field(true);
+            if(value == "False")
+                return Field(false);
+            throw std::runtime_error("Unknown boolean constant " + value + " in constant type to Field conversion.");
+        }
+
+        if(t == python::Type::I64) {
+            return Field((int64_t)std::stoi(value));
+        }
+
+        if(t == python::Type::F64) {
+            return Field(std::stod(value));
+        }
+
+        if(t == python::Type::STRING) {
+            return Field(value);
+        }
+
+        if(t == python::Type::EMPTYLIST)
+            return Field::empty_list();
+        if(t == python::Type::EMPTYDICT)
+            return Field::empty_dict();
+        if(t == python::Type::EMPTYTUPLE)
+            return Field::empty_tuple();
+
+        if(t == python::Type::NULLVALUE)
+            return Field::null();
+
+        throw std::runtime_error("unsupported conversion from constant type " + constant_type.desc() + " to Field, not implemented yet.");
+    }
+
 }

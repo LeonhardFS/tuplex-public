@@ -3345,15 +3345,16 @@ namespace tuplex {
 
             auto iterType = listComprehension->generators[0]->iter->getInferredType();
             if(iterType == python::Type::RANGE || iterType == python::Type::STRING || (iterType.isListType() && iterType != python::Type::EMPTYLIST) || (iterType.isTupleType() && tupleElementsHaveSameType(iterType))) {
-                auto elementType = listComprehension->getInferredType().elementType();
-                auto listLLVMType = _env->createOrGetListType(listComprehension->getInferredType());
+                auto list_type = listComprehension->getInferredType().withoutOption();
+                auto list_element_type = list_type.withoutOption().elementType();
+                auto listLLVMType = _env->createOrGetListType(list_type);
 
                 auto target = _blockStack.back(); // from comprehension
                 _blockStack.pop_back();
                 auto iter = _blockStack.back(); // from comprehension
                 _blockStack.pop_back();
 
-                llvm::Value *start, *stop, *step;
+                llvm::Value *start = nullptr, *stop = nullptr, *step = nullptr;
                 if(iterType == python::Type::RANGE) {
                     auto llvm_range_object_type = _env->getRangeObjectType();
                     // get range parameters
@@ -3393,44 +3394,21 @@ namespace tuplex {
                 auto hasnorem = builder.CreateICmpEQ(builder.CreateSRem(diff, step), _env->i64Const(0));
                 numiters = builder.CreateSelect(hasnorem, numiters, builder.CreateAdd(numiters, _env->i64Const(1)));
 
-                llvm::Value *listAlloc = _env->CreateFirstBlockAlloca(builder, listLLVMType,
-                                                                      "BGV_listComprehensionAlloc");
+                llvm::Value *list_ptr = _env->CreateFirstBlockAlloca(builder, listLLVMType,
+                                                                     "BGV_listComprehensionAlloc");
                 llvm::Value *listSize =  _env->CreateFirstBlockAlloca(builder, _env->i64Type(), "BGV_listComprehensionSize");
-                if(elementType == python::Type::NULLVALUE || elementType == python::Type::EMPTYDICT || elementType == python::Type::EMPTYTUPLE) {
-                    builder.CreateStore(numiters, listAlloc);
+
+                if(list_element_type == python::Type::NULLVALUE || list_element_type == python::Type::EMPTYDICT || list_element_type == python::Type::EMPTYTUPLE) {
+                    builder.CreateStore(numiters, list_ptr);
                     builder.CreateStore(_env->i64Const(8), listSize);
                 } else {
                     builder.CreateStore(builder.CreateAdd(builder.CreateMul(numiters, _env->i64Const(8)), _env->i64Const(8)), listSize);
 
-                    // load the list with its initial size
-                    auto list_capacity_ptr = builder.CreateStructGEP(listAlloc, listLLVMType, 0);
-                    builder.CreateStore(numiters, list_capacity_ptr);
-                    auto list_len_ptr = builder.CreateStructGEP(listAlloc, listLLVMType, 1);
-                    builder.CreateStore(numiters, list_len_ptr);
+                    // reserve capacity for list
+                    list_reserve_capacity(*_env, builder, list_ptr, list_type, numiters, false);
 
-                    // allocate the array
-                    size_t element_byte_size = 8; // f64, i64
-                    if (listComprehension->getInferredType().elementType() == python::Type::BOOLEAN)
-                        element_byte_size = 1; // single character elements
-                    auto list_arr_malloc = builder.CreatePointerCast(
-                            builder.malloc(builder.CreateMul(numiters, _env->i64Const(element_byte_size))),
-                            listLLVMType->getStructElementType(2));
-
-                    // store the new array back into the array pointer
-                    auto list_arr = builder.CreateStructGEP(listAlloc, listLLVMType, 2);
-                    builder.CreateStore(list_arr_malloc, list_arr);
-
-                    llvm::Value* list_sizearr_malloc;
-                    if(elementType == python::Type::STRING) {
-                        // allocate string len array
-                        list_sizearr_malloc = builder.CreatePointerCast(
-                                builder.malloc(builder.CreateMul(numiters, _env->i64Const(8))),
-                                listLLVMType->getStructElementType(3));
-
-                        // store the new array back into the array pointer
-                        auto list_sizearr = builder.CreateStructGEP(listAlloc, listLLVMType, 3);
-                        builder.CreateStore(list_sizearr_malloc, list_sizearr);
-                    }
+                    // store size as well
+                    list_store_size(*_env, builder, list_ptr, list_type, numiters);
 
                     // initialize target
                     llvm::Value *tuple_array, *tuple_sizes;
@@ -3480,9 +3458,6 @@ namespace tuplex {
                     builder.SetInsertPoint(bodyBlock1);
                     auto loopVar = builder.CreatePHI(_env->i64Type(), 2);
                     loopVar->addIncoming(_env->i64Const(0), startBB); // start the loop variable at 0
-
-                    auto llvm_element_type = _env->pythonToLLVMType(elementType);
-                    auto list_el = builder.CreateGEP(llvm_element_type, list_arr_malloc, loopVar);
                     _lfb->setLastBlock(bodyBlock1);
 
                     // -------
@@ -3499,14 +3474,7 @@ namespace tuplex {
                     assert(expression.is_null || expression.val);
 
                     _blockStack.pop_back();
-                    builder.CreateStore(expression.val, list_el);
-
-                    // if string values, store the lengths as well
-                    if (elementType == python::Type::STRING) {
-                        auto list_len_el = builder.CreateGEP(builder.getInt64Ty(), list_sizearr_malloc, loopVar);
-                        builder.CreateStore(expression.size, list_len_el);
-                        builder.CreateStore(builder.CreateAdd(builder.CreateLoad(builder.getInt64Ty(), listSize), expression.size), listSize);
-                    }
+                    list_store_element(*_env, builder, list_type, list_ptr, loopVar, expression);
 
                     auto nextLoopVar = builder.CreateAdd(loopVar, _env->i64Const(1));
                     loopVar->addIncoming(nextLoopVar, builder.GetInsertBlock()); // add nextloopvar as a phi node input to the loopvar
@@ -3554,7 +3522,7 @@ namespace tuplex {
                 }
 
                 // return list pointer + size
-                addInstruction(listAlloc, builder.CreateLoad(builder.getInt64Ty(), listSize));
+                addInstruction(list_ptr, builder.CreateLoad(builder.getInt64Ty(), listSize));
             } else {
                 throw std::runtime_error("Unsupported iterable in list comprehension codegen: " + iterType.desc());
             }
