@@ -1638,7 +1638,7 @@ namespace tuplex {
                 return make_tuple(ptr, list_val);
 
             // else, decode!
-
+            throw std::runtime_error("missing implementation for list_deserialize_from, need to add!");
 
             return make_tuple(ptr, list_val);
         }
