@@ -4035,6 +4035,14 @@ namespace tuplex {
                     }
                 }
 
+                if(value_type.isRowType()) {
+                    SerializableValue ret;
+                    if(subscriptRow(builder, &ret, value_type, value, index_type, index, sub->_expression.get())) {
+                        addInstruction(ret.val, ret.size, ret.is_null);
+                        return;
+                    }
+                }
+
                 // undefined
                 std::stringstream ss;
                 ss << "unsupported type encountered with [] operator.";
@@ -4135,6 +4143,66 @@ namespace tuplex {
                 return extractKeyFromASTNode(value_node);
             }
             return make_tuple("", python::Type::UNKNOWN);
+        }
+
+        bool BlockGeneratorVisitor::subscriptRow(const IRBuilder &builder,
+                                                 SerializableValue *out_ret,
+                                                 const python::Type &value_type,
+                                                 const SerializableValue &value,
+                                                 const python::Type &idx_expr_type,
+                                                 const SerializableValue &idx_expr,
+                                                 ASTNode *idx_expr_node) {
+            assert(value_type.isRowType());
+
+            // can only subscript if a static key can be extracted (for now)
+            auto t_key_and_type = extractStaticKey(idx_expr_type, idx_expr, idx_expr_node);
+            auto key = std::get<0>(t_key_and_type);
+            auto key_type = std::get<1>(t_key_and_type);
+
+            // handle constant types
+            if(key_type.isConstantValued()) {
+                key = key_type.constant();
+                key_type = key_type.underlying();
+            }
+
+            if(key_type == python::Type::UNKNOWN || key.empty())
+                return false;
+
+            if(key_type == python::Type::I64) {
+                auto idx = std::stoi(key);
+
+                if(idx < 0 || idx >= value_type.get_column_count()) {
+                    _lfb->exitWithException(ExceptionCode::INDEXERROR);
+                    return true;
+                }
+
+                // if not, fetch from FlattenedTuple index
+                auto ft = FlattenedTuple::fromLLVMStructVal(_env, builder, value.val, value_type);
+                auto ret = ft.getLoad(builder, {idx});
+                _lfb->setLastBlock(builder.GetInsertBlock());
+                if(out_ret)
+                    *out_ret = ret;
+                return true;
+            } else if(key_type == python::Type::STRING) {
+                auto columns = value_type.get_column_names();
+                auto it = std::find(columns.begin(), columns.end(), key);
+                int idx = it - columns.begin();
+                if(it == columns.end()) {
+                    _lfb->exitWithException(ExceptionCode::KEYERROR);
+                    return true;
+                }
+                // if not, fetch from FlattenedTuple index
+                auto ft = FlattenedTuple::fromLLVMStructVal(_env, builder, value.val, value_type);
+                auto ret = ft.getLoad(builder, {idx});
+                _lfb->setLastBlock(builder.GetInsertBlock());
+                if(out_ret)
+                    *out_ret = ret;
+                return true;
+
+            } else {
+                // indexerror / keyerror
+                return false;
+            }
         }
 
         bool BlockGeneratorVisitor::subscriptStructDict(const IRBuilder &builder,
@@ -5219,19 +5287,13 @@ namespace tuplex {
                 }
 
                 auto exceptionType = raise->_expression->getInferredType();
-                auto exceptionName = exceptionType.desc();
-
-                // get exception code corresponding to exceptionName!
-                auto ecCode = pythonClassToExceptionCode(exceptionName); // TODO: Custom exceptions?
+                auto ecCode = exception_type_to_code(exceptionType);
 
                 if(ecCode == ExceptionCode::UNKNOWN) {
                     error("could not decode raise ExceptionClass to code");
                     return;
                 }
 
-                // _lfb->addException(builder, ecCode, _env->i1Const(true));
-
-                // NEW: exit with exception!
                 _lfb->exitWithException(ecCode);
             }
         }
@@ -5264,15 +5326,15 @@ namespace tuplex {
                 // @TODO: aliasing??
                 if(sym && sym->symbolType == SymbolType::VARIABLE) {
                     // skip module types
-                    if(sym->types.front() == python::Type::MODULE)
+                    if(!sym->types.empty() && sym->types.front() == python::Type::MODULE)
                         continue;
 
                     // skip functions
-                    if(sym->types.front().isFunctionType())
+                    if(!sym->types.empty() && sym->types.front().isFunctionType())
                         continue;
 
                     // skip exceptions though note that they can get redefined...
-                    if(sym->types.front().isExceptionType())
+                    if(!sym->types.empty() && sym->types.front().isExceptionType())
                         continue;
 
                     auto it = _globals.find(name);

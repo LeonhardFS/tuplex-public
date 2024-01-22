@@ -307,7 +307,7 @@ namespace tuplex {
          * make a deep copy of the operator tree (needed because optimizers may rewrite UDFs.)
          * @return copy of this operator.
          */
-        virtual std::shared_ptr<LogicalOperator> clone(bool cloneParents=true) = 0;
+        virtual std::shared_ptr<LogicalOperator> clone(bool cloneParents=true) const = 0;
 
         /*!
          * used for cost based analysis (very dumb so far)
@@ -346,6 +346,15 @@ namespace tuplex {
         }
 #endif
     };
+
+    /*!
+     * helper to check that basic properties (input/output schema) are identical. Helpful to verify clone
+     * worked correctly.
+     * @param rhs some op
+     * @param lhs some op
+     * @return true if equal, false else
+     */
+    extern bool checkBasicEqualityOfOperators(const LogicalOperator& rhs, const LogicalOperator& lhs);
 }
 
 #ifdef BUILD_WITH_CEREAL

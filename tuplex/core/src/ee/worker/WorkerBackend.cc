@@ -10,6 +10,9 @@
 #include "ee/local/LocalBackend.h"
 
 namespace tuplex {
+
+    std::string find_worker(const std::string& path_hint);
+
     WorkerBackend::WorkerBackend(const tuplex::Context &context,
                                  const std::string &exe_path) : IBackend(context),
                                                                 _worker_exe_path(exe_path),
@@ -17,7 +20,6 @@ namespace tuplex {
                                                                 _deleteScratchDirOnShutdown(false),
                                                                 _logger(Logger::instance().logger("worker")),
                                                                 _scratchDir(URI::INVALID) {
-        _worker_exe_path = ensure_worker_path(exe_path);
 
         _driver.reset(new Executor(_options.DRIVER_MEMORY(),
                                    _options.PARTITION_SIZE(),
@@ -100,6 +102,18 @@ namespace tuplex {
         if (!requests.empty()) {
             logger().info("Invoking " + pluralize(requests.size(), "request") + " ...");
 
+
+            // check requests have all different output uris
+            std::set<std::string> output_uri_set;
+            for(const auto& req: requests)
+                output_uri_set.insert(req.baseoutputuri());
+            if(output_uri_set.size() != requests.size()) {
+                std::stringstream err_stream;
+                err_stream<<"Of "<<pluralize(requests.size(), "request")<<" only "<<output_uri_set.size()<<" unique output base uris found.";
+                logger().error(err_stream.str());
+                throw std::runtime_error(err_stream.str());
+            }
+
 #ifndef NDEBUG
             logger().debug("Emitting request files for easier debugging...");
             for(unsigned i = 0; i < requests.size(); ++i) {
@@ -109,37 +123,16 @@ namespace tuplex {
             }
             logger().debug("Debug files written (" + pluralize(requests.size(), "file") + ").");
 #endif
-            // process using local app
-            auto app = make_unique<WorkerApp>(WorkerSettings());
-            app->globalInit(true);
-            auto stats_array = nlohmann::json::array();
-            auto req_array = nlohmann::json::array();
+            nlohmann::json stats_array;
+            nlohmann::json req_array;
             size_t total_input_rows = 0;
             size_t total_num_output_rows = 0;
-            for (const auto &req: requests) {
-                Timer timer;
-                std::string json_buf;
-                google::protobuf::util::MessageToJsonString(req, &json_buf);
-                auto rc = app->processJSONMessage(json_buf);
-                // fetch result
-                auto stats = app->jsonStats();
 
-                if(stats.empty()) {
-                    throw std::runtime_error("no statistics available, internal error?");
-                }
 
-                auto j_stats = nlohmann::json::parse(stats);
-                nlohmann::json j;
-                auto j_req = nlohmann::json::parse(json_buf);
-                j["request"] = req.inputuris();
-                j["stats"] = j_stats;
-                stats_array.push_back(j);
-                total_num_output_rows += j_stats["output"]["normal"].get<size_t>() + j_stats["output"]["except"].get<size_t>();
-                total_input_rows += j_stats["input"]["total_input_row_count"].get<size_t>();
-                req_array.push_back(j_req);
-
-                logger().info("Processed request in " + std::to_string(timer.time()) + "s, rc=" + std::to_string(rc));
-            }
+            // process using multiple processes? -> i.e. pass message to worker executable
+            auto num_processes = _options.EXPERIMENTAL_WORKER_BACKEND_NUM_WORKERS();
+            logger().info("Context configured with " + pluralize(num_processes, "worker process") + " (experimental)");
+            processRequestsWithProcessPool(requests, &stats_array, &req_array, &total_input_rows, &total_num_output_rows, num_processes);
 
             logger().info("total input row count: " + std::to_string(total_input_rows));
             logger().info("total output row count: " + std::to_string(total_num_output_rows));
@@ -160,6 +153,66 @@ namespace tuplex {
             logger().warn("No requests generated, skipping stage.");
         }
         tstage->setMemoryResult({});
+    }
+
+    void WorkerBackend::processRequestsInline(const std::vector<messages::InvocationRequest> &requests,
+                                              nlohmann::json *out_stats_array, nlohmann::json *out_req_array,
+                                              size_t *out_total_input_rows, size_t *out_total_num_output_rows) const {
+        auto stats_array = nlohmann::json::array();
+        auto req_array= nlohmann::json::array();
+        auto total_input_rows= 0;
+        auto total_num_output_rows= 0;// process using local app
+
+        // check whether runtime has been loaded into process yet, if not load now
+        if(!runtime::loaded()) {
+            runtime::init(_options.RUNTIME_LIBRARY(true).toPath());
+        }
+
+        auto app = std::make_unique<WorkerApp>(WorkerSettings());
+        app->globalInit(true);
+        unsigned request_counter = 1;
+        Timer agg_timer;
+        for (const auto &req: requests) {
+            Timer timer;
+            std::string json_buf;
+            google::protobuf::json::MessageToJsonString(req, &json_buf);
+            auto rc = app->processJSONMessage(json_buf);
+            // fetch result
+            auto stats = app->jsonStats();
+
+            if(stats.empty()) {
+                throw std::runtime_error("no statistics available, internal error?");
+            }
+
+            auto j_stats = nlohmann::json::parse(stats);
+            nlohmann::json j;
+            auto j_req = nlohmann::json::parse(json_buf);
+            j["request"] = req.inputuris();
+            j["stats"] = j_stats;
+            stats_array.push_back(j);
+            total_num_output_rows += j_stats["output"]["normal"].get<std::size_t>() + j_stats["output"]["except"].get<std::size_t>();
+            total_input_rows += j_stats["input"]["total_input_row_count"].get<std::size_t>();
+            req_array.push_back(j_req);
+
+            double remaining_estimate = ((double)requests.size() - (double)request_counter) * (agg_timer.time() / (double) request_counter);
+
+            std::stringstream ss;
+            ss<<"Processed request "<<request_counter<<"/"<<requests.size()<<" in " + std::to_string(timer.time()) + "s, rc=" + std::to_string(rc)<<", elapsed="<<agg_timer.time()<<"s, est. remaining="<<remaining_estimate<<"s.";
+            logger().info(ss.str());
+            request_counter++;
+        }
+
+        app->shutdown();
+
+        // output
+        if(out_req_array)
+            *out_req_array = req_array;
+        if(out_stats_array)
+            *out_stats_array = stats_array;
+        if(out_total_input_rows)
+            *out_total_input_rows;
+        if(out_total_num_output_rows)
+            *out_total_num_output_rows;
     }
 
     std::vector<messages::InvocationRequest>
@@ -185,6 +238,7 @@ namespace tuplex {
         // @TODO: more sophisticated splitting of workload!
         Timer timer;
         int num_digits = ilog10c(uri_infos.size());
+        int part_no = 0; // counter for part numbers, always to be increased when a new part is needed.
         for (int i = 0; i < uri_infos.size(); ++i) {
             auto info = uri_infos[i];
 
@@ -193,7 +247,7 @@ namespace tuplex {
             auto num_parts_per_file = uri_size / splitSize;
 
             auto num_digits_part = ilog10c(num_parts_per_file + 1);
-            int part_no = 0;
+
             size_t cur_size = 0;
             while (cur_size < uri_size) {
                 messages::InvocationRequest req;
@@ -221,15 +275,14 @@ namespace tuplex {
 
                 // output uri of job? => final one? parts?
                 // => create temporary if output is local! i.e. to memory etc.
-                int taskNo = i;
                 if (tstage->outputMode() == EndPointMode::MEMORY) {
                     // create temp file in scratch dir!
                     req.set_baseoutputuri(scratchDir(hintsFromTransformStage(tstage)).join_path(
-                            "output.part" + fixedLength(taskNo, num_digits) + "_" +
+                            "output.part" + fixedLength(part_no, num_digits) + "_" +
                             fixedLength(part_no, num_digits_part)).toString());
                 } else if (tstage->outputMode() == EndPointMode::FILE) {
                     // create output URI based on taskNo
-                    auto uri = outputURI(tstage->outputPathUDF(), tstage->outputURI(), taskNo, tstage->outputFormat());
+                    auto uri = outputURI(tstage->outputPathUDF(), tstage->outputURI(), part_no, tstage->outputFormat());
                     req.set_baseoutputuri(uri.toPath());
                 } else if (tstage->outputMode() == EndPointMode::HASHTABLE) {
                     // there's two options now, either this is an end-stage (i.e., unique/aggregateByKey/...)
@@ -239,8 +292,9 @@ namespace tuplex {
                     req.set_baseoutputuri(temp_uri.toString());
                 } else throw std::runtime_error("unknown output endpoint in lambda backend");
                 requests.push_back(req);
-
                 part_no++;
+
+
                 cur_size += splitSize;
             }
         }
@@ -308,6 +362,161 @@ namespace tuplex {
         return URI::INVALID;
     }
 
+    /*!
+     * runs command and returns stdout?
+     * @param cmd
+     * @return stdout
+     */
+    static std::string runCommand(const std::string& cmd) {
+        std::array<char, 128> buffer;
+        std::string result;
+        std::shared_ptr<FILE> pipe(popen(cmd.c_str(), "r"), pclose);
+        if (!pipe) throw std::runtime_error("popen() failed!");
+        while (!feof(pipe.get())) {
+            if (fgets(buffer.data(), 128, pipe.get()) != nullptr)
+                result += buffer.data();
+        }
+        return result;
+    }
+
+    void WorkerBackend::processRequestsWithProcessPool(std::vector<messages::InvocationRequest> requests,
+                                                       nlohmann::json *out_stats_array, nlohmann::json *out_req_array,
+                                                       size_t *out_total_input_rows, size_t *out_total_output_rows,
+                                                       size_t num_processes_to_use) const {
+
+        if(requests.empty()) {
+            logger().info("no requests given, skip processing.");
+            return;
+        }
+
+        // fallback to inline if 0 given
+        if(0 == num_processes_to_use) {
+           logger().info("Processing requests within this process.");
+           processRequestsInline(requests, out_stats_array, out_req_array, out_total_input_rows, out_total_output_rows);
+           return;
+        }
+
+        {
+            std::stringstream ss;
+            ss<<"Starting processing "<<pluralize(requests.size(), "request")<<" using "<<pluralize(num_processes_to_use, "process");
+            logger().info(ss.str());
+        }
+
+        auto worker_path = find_worker(_options.EXPERIMENTAL_WORKER_PATH());
+        logger().info("Found worker executable " + worker_path);
+
+        // ensure scratch dir is writable
+        auto scratch_dir = _options.SCRATCH_DIR().toPath();
+
+        // swap via scratch dir messages
+
+
+        // launch threads and distribute work to them
+        std::vector<std::future<std::vector<nlohmann::json>>> process_futures;
+        auto n_requests = requests.size();
+        size_t n_requests_per_process = std::max((size_t)1u, n_requests / num_processes_to_use);
+        size_t n_remainder = n_requests % num_processes_to_use;
+        // distribute remainder now.
+        std::vector<size_t> n_tasks(num_processes_to_use, n_requests_per_process);
+        for(unsigned i = 0; i < n_remainder; ++i)
+            n_tasks[i]++;
+
+        // make sure n_tasks is fine
+        {
+            auto check_total = 0;
+            for(auto t: n_tasks)
+                check_total += t;
+            assert(check_total == n_requests);
+        }
+
+        // atomic counter (inc'ed whenever request has completed)
+        std::atomic_int atomic_request_counter = 0;
+
+        size_t offset = 0;
+        for(unsigned i = 0; i < num_processes_to_use; ++i) {
+
+            // create new thread
+            process_futures.push_back(std::async([this, worker_path, &atomic_request_counter, n_requests](unsigned process_id, const std::vector<messages::InvocationRequest>& requests) {
+
+                logger().info("Process " + std::to_string(process_id) + " got " + pluralize(requests.size(), "request") + " to process.");
+
+                unsigned request_no = 1;
+                std::vector<nlohmann::json> responses;
+                for(const auto& req : requests) {
+
+                    std::string prefix = std::to_string(atomic_request_counter) + "/" + std::to_string(n_requests) + " completed, ";
+
+                    {
+                        std::stringstream ss;
+                        ss<<prefix<<"Process "<<process_id<<" start request "<<request_no<<"/"<<requests.size();
+                        logger().info(ss.str());
+                    }
+
+                    Timer timer;
+                    auto message_path = _options.SCRATCH_DIR().join("message_process_" + std::to_string(process_id) + "_" + std::to_string(request_no-1) + ".json");
+                    auto stats_path = _options.SCRATCH_DIR().join("message_stats_" + std::to_string(process_id) + "_" + std::to_string(request_no-1) + ".json");
+
+                    std::string json_message;
+                    google::protobuf::util::MessageToJsonString(req, &json_message);
+
+                    // save to file
+                    stringToFile(message_path, json_message);
+
+                    auto cmd = worker_path + " -m " + message_path.toPath() + " -o " + stats_path.toPath();
+                    auto res_stdout = runCommand(cmd);
+
+                    // parse stats as answer out
+                    auto stats = nlohmann::json::parse(fileToString(stats_path));
+                    responses.push_back(stats);
+                    atomic_request_counter++;
+                    auto worker_invocation_duration = timer.time();
+                    {
+                        std::stringstream ss;
+                        ss<<prefix<<"Process "<<process_id<<" request "<<request_no<<"/"<<requests.size()<<" took "<<worker_invocation_duration<<"s";
+                        logger().info(ss.str());
+                    }
+                    request_no++;
+                }
+
+              return responses;
+            }, i, std::vector<messages::InvocationRequest>(requests.begin() + offset, requests.begin() + offset + n_tasks[i])));
+            offset += n_tasks[i];
+        }
+
+        std::vector<nlohmann::json> stats;
+        size_t total_input_rows = 0;
+        size_t total_output_rows = 0;
+        for(auto& f: process_futures) {
+            auto stat = f.get();
+            for(auto j_stats : stat) {
+                total_output_rows += j_stats["output"]["normal"].get<std::size_t>() + j_stats["output"]["except"].get<std::size_t>();
+                total_input_rows += j_stats["input"]["total_input_row_count"].get<std::size_t>();
+            }
+
+            std::copy(stat.begin(), stat.end(), std::back_inserter(stats));
+        }
+
+        if(out_stats_array)
+            *out_stats_array = stats;
+        //if(out_req_array) // --> correspondence must be achieved, i.e. read files back???
+        //    *out_req_array = requests;
+        if(out_total_input_rows)
+            *out_total_input_rows = total_input_rows;
+        if(out_total_output_rows)
+            *out_total_output_rows = total_output_rows;
+
+//        auto arr = nlohmann::json::array();
+//        for(const auto& stat : stats)
+//            arr.push_back(stat);
+//
+//        auto full_json_string = arr.dump();
+//        auto save_path = URI("./process_pool_stats.json");
+//        logger().info("Save detailed process pool stats to " + save_path.toString());
+//        stringToFile(save_path, full_json_string);
+
+        logger().info("Pool processing done.");
+    }
+
     void config_worker(messages::WorkerSettings *ws,
                                       const ContextOptions& options,
                                       size_t numThreads,
@@ -346,11 +555,18 @@ namespace tuplex {
         m_map["tuplex.sample.samplesPerStrata"] = std::to_string(options.AWS_LAMBDA_SAMPLE_SAMPLES_PER_STRATA());
     }
 
-    std::string find_worker() {
+    std::string find_worker(const std::string& path_hint) {
         using namespace tuplex;
+
+        if(fileExists(path_hint))
+            return eliminateSeparatorRuns(path_hint);
 
         // find worker executable (tuplex-worker)
         static const std::string exec_name = "tuplex-worker";
+
+        auto hint_and_name = path_hint + "/" + exec_name;
+        if(fileExists(hint_and_name))
+            return eliminateSeparatorRuns(hint_and_name);
 
         // check current working dir
         auto exec_dir = dir_from_pid(pid_from_self());
@@ -366,7 +582,7 @@ namespace tuplex {
     std::string ensure_worker_path(const std::string& exe_path) {
         if(exe_path.empty()) {
             // find relative to current path
-            auto path =  find_worker();
+            auto path =  find_worker("");
             if(!path.empty())
                 return path;
         } else {

@@ -325,8 +325,8 @@ namespace tuplex {
             assert(_fileInputParameters.empty());
 
             // fetch file input columns from original schema (before projection pushdown!)
-            _fileInputParameters["numInputColumns"] = std::to_string(
-                    csvop->getInputSchema().getRowType().parameters().size()); // actual count of input columns, not the projected out count!
+            auto input_column_count = extract_columns_from_type(csvop->getInputSchema().getRowType());
+            _fileInputParameters["numInputColumns"] = std::to_string(input_column_count); // actual count of input columns, not the projected out count!
             _fileInputParameters["hasHeader"] = boolToString(csvop->hasHeader());
             _fileInputParameters["delimiter"] = char2str(csvop->delimiter());
             _fileInputParameters["quotechar"] = char2str(csvop->quotechar());
@@ -588,6 +588,7 @@ namespace tuplex {
                 auto node = pathContext.operators[i];
                 assert(node);
                 UDFOperator *udfop = dynamic_cast<UDFOperator *>(node.get());
+
                 switch (node->type()) {
                     case LogicalOperatorType::MAP: {
                         if (!pip->mapOperation(node->getID(), udfop->getUDF(), ctx.normalCaseThreshold, ctx.allowUndefinedBehavior,
@@ -767,7 +768,7 @@ namespace tuplex {
 
 //                            // do not bucketize but simply use all hash keys!
 //                            std::vector<size_t> v;
-//                            auto num_columns = aop->getOutputSchema().getRowType().parameters().size();
+//                            auto num_columns = extract_columns_from_type(aop->getOutputSchema().getRowType());
 //                            for(size_t i = 0; i < num_columns; ++i)
 //                                v.push_back(i);
 //                            ctx.hashColKeys = v;
@@ -1465,12 +1466,20 @@ namespace tuplex {
             auto pip_func = slowPip->getFunction();
             auto pip_input_row_type = slowPip->inputRowType();
 
+            // convert to tuple type if row type
+            if(pip_input_row_type.isRowType())
+                pip_input_row_type = pip_input_row_type.get_columns_as_tuple_type();
+            // same for normal case type
+            auto normal_case_type = normalCaseType;
+            if(normal_case_type.isRowType())
+                normal_case_type = normal_case_type.get_columns_as_tuple_type();
+
             auto rowProcessFunc = codegen::createProcessExceptionRowWrapper(slowPip->env(),
                                                                             pip_input_row_type,
                                                                             pip_func,
                                                                             _inputNode->type() == LogicalOperatorType::FILEINPUT ? std::dynamic_pointer_cast<FileInputOperator>(_inputNode) : nullptr,
                                                                             ret.funcStageName/*funcResolveRowName*/,
-                                                                            normalCaseType,
+                                                                            normal_case_type,
                                                                             normalToGeneralMapping,
                                                                             null_values,
                                                                             _conf.policy);
@@ -1623,7 +1632,7 @@ namespace tuplex {
             stage->_normalCaseOutputSchema = _normalCaseOutputSchema;
             stage->_outputDataSetID = outputDataSetID();
             stage->_inputNodeID = _inputNodeID;
-            auto numColumns = stage->_generalCaseReadSchema.getRowType().parameters().size();
+            auto numColumns = extract_columns_from_type(stage->_generalCaseReadSchema.getRowType());
 //            if(_inputMode == EndPointMode::FILE && _inputNode) {
 //
 //
@@ -1849,9 +1858,9 @@ namespace tuplex {
                 // print out restricted stuff
                 std::stringstream ss;
                 ss<<"general case input row type: "<<codeGenerationContext.slowPathContext.inputSchema.getRowType().desc()<<std::endl;
-                ss<<"has #columns: "<<codeGenerationContext.slowPathContext.inputSchema.getRowType().parameters().size()<<std::endl;
+                ss<<"has #columns: "<<extract_columns_from_type(codeGenerationContext.slowPathContext.inputSchema.getRowType())<<std::endl;
                 ss<<"normal case input row type: "<<codeGenerationContext.fastPathContext.inputSchema.getRowType().desc()<<std::endl;
-                ss<<"has #columns: "<<codeGenerationContext.fastPathContext.inputSchema.getRowType().parameters().size()<<std::endl;
+                ss<<"has #columns: "<<extract_columns_from_type(codeGenerationContext.fastPathContext.inputSchema.getRowType())<<std::endl;
                 ss<<"general case output row type: "<<codeGenerationContext.slowPathContext.outputSchema.getRowType().desc()<<std::endl;
                 ss<<"normal case output row type: "<<codeGenerationContext.fastPathContext.outputSchema.getRowType().desc()<<std::endl;
                 logger.debug(ss.str());
@@ -2014,7 +2023,7 @@ namespace tuplex {
                 // basically just need to get general settings & general path and then encode that!
                 auto ctx = createCodeGenerationContext();
                 ctx.slowPathContext = getGeneralPathContext();
-                auto num_columns = ctx.slowPathContext.readSchema.getRowType().parameters().size();
+                auto num_columns = extract_columns_from_type(ctx.slowPathContext.readSchema.getRowType());
                 stage->_generalCaseColumnsToKeep = boolArrayToIndices<unsigned>(ctx.slowPathContext.columnsToRead);
 
                 // also important to encode into stage python code. Else, nowhere to be found!

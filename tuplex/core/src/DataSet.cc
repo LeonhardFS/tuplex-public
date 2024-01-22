@@ -326,25 +326,14 @@ namespace tuplex {
             return _context->makeError("select columns must contain at least one index");
 
         // check that all indices are valid
-        auto num_cols = _operator->getOutputSchema().getRowType().parameters().size();
+        auto num_cols = extract_columns_from_type(_operator->getOutputSchema().getRowType());
         for (auto idx : columnIndices)
             if (idx >= num_cols)
                 return _context->makeError(
                         "index in selectColumns can be at most " + std::to_string(num_cols) + ", is " +
                         std::to_string(idx));
 
-        // no missing cols, hence one can do selection.
-        // for this, create a simple UDF
-        std::string code;
-        if (columnIndices.size() == 1) {
-            code = "lambda t: t[" + std::to_string(columnIndices.front()) + "]";
-        } else {
-            code = "lambda t: (";
-            for (auto idx : columnIndices) {
-                code += "t[" + std::to_string(idx) + "], ";
-            }
-            code += ")";
-        }
+        auto code = generate_python_code_for_select_columns_udf(columnIndices);
 
         // now it is a simple map operator
         DataSet &ds = map(UDF(code).withCompilePolicy(_context->compilePolicy()));
@@ -408,7 +397,7 @@ namespace tuplex {
 
     size_t DataSet::numColumns() const {
         assert(schema().getRowType().isTupleType());
-        return this->schema().getRowType().parameters().size();
+        return extract_columns_from_type(this->schema().getRowType());
     }
 
     DataSet& DataSet::renameColumn(int index, const std::string &newColumnName) {
@@ -516,10 +505,11 @@ namespace tuplex {
         // no missing cols, hence one can do selection.
         // for this, create a simple UDF
         std::string code;
+        auto output_column_count = extract_columns_from_type(_operator->getOutputSchema().getRowType());
         if (columnNames.size() == 1) {
             auto idx = indexInVector(columnNames.front(), _columnNames);
             assert(idx >= 0);
-            assert(idx < _operator->getOutputSchema().getRowType().parameters().size());
+            assert(idx < output_column_count);
             //code += "t[" + std::to_string(idx) + "]";
             code = "lambda t: t['" + _columnNames[idx] + "']";
         } else {
@@ -527,7 +517,7 @@ namespace tuplex {
             for (std::string cn : columnNames) {
                 auto idx = indexInVector(cn, _columnNames);
                 assert(idx >= 0);
-                assert(idx < _operator->getOutputSchema().getRowType().parameters().size());
+                assert(idx < output_column_count);
                 // code += "t[" + std::to_string(idx) + "], ";
                 code += "t['" + _columnNames[idx] + "'], ";
 
@@ -904,6 +894,25 @@ namespace tuplex {
                 return false;
         } else {
             return false;
+        }
+    }
+
+    std::string generate_python_code_for_select_columns_udf(const std::vector<size_t> &column_indices) {
+        if(column_indices.empty())
+            return "lambda t: ()";
+
+        // no missing cols, hence one can do selection.
+        // for this, create a simple UDF
+        if (column_indices.size() == 1) {
+            return "lambda t: t[" + std::to_string(column_indices.front()) + "]";
+        } else {
+            std::stringstream code;
+            code << "lambda t: (";
+            for (auto idx : column_indices) {
+                code << "t[" + std::to_string(idx) + "], ";
+            }
+            code << ")";
+            return code.str();
         }
     }
 }

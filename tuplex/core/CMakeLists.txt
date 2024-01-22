@@ -57,6 +57,33 @@ if(BUILD_WITH_AWS)
     message(STATUS "protobuf headers (v${Protobuf_VERSION}): ${PROTO_HDRS}")
 endif()
 
+file(MAKE_DIRECTORY ${PROTO_BINARY_DIR})
+
+protobuf_generate(
+        TARGET proto-objects
+        OUT_VAR PROTO_GENERATED_FILES
+        IMPORT_DIRS ${PROTO_IMPORT_DIRS}
+        PROTOC_OUT_DIR "${PROTO_BINARY_DIR}")
+set_source_files_properties(${PROTO_GENERATED_FILES} PROPERTIES SKIP_UNITY_BUILD_INCLUSION on)
+
+protobuf_generate(
+        TARGET proto-objects
+        OUT_VAR PROTO_GENERATED_FILES
+        LANGUAGE cpp
+        # PLUGIN_OPTIONS "generate_mock_code=true"
+        IMPORT_DIRS ${PROTO_IMPORT_DIRS}
+        PROTOC_OUT_DIR "${PROTO_BINARY_DIR}")
+set_source_files_properties(${PROTO_GENERATED_FILES} PROPERTIES SKIP_UNITY_BUILD_INCLUSION on)
+
+target_include_directories(proto-objects PUBLIC "$<BUILD_INTERFACE:${PROTO_BINARY_DIR}>")
+
+set(PROTO_SRCS "${PROTO_TARGET_DIR}/Lambda.pb.cc")
+set(PROTO_HDRS "${PROTO_TARGET_DIR}/Lambda.pb.h")
+
+message(STATUS "protobuf sources (v${Protobuf_VERSION}): ${PROTO_SRCS}")
+message(STATUS "protobuf headers (v${Protobuf_VERSION}): ${PROTO_HDRS}")
+
+
 
 # CURL:
 # Note: AWS SDK is only compatible with curl build against OpenSSL. Check this here!

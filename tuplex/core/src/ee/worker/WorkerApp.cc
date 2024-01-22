@@ -448,6 +448,11 @@ namespace tuplex {
                 ss<<"maxrows="<<_settings.sampleLimitCount<<" ";
                 ss<<"stratasize="<<_settings.strataSize<<" ";
                 ss<<"samplesperstrata="<<_settings.samplesPerStrata<<" ";
+                ss<<"specializing on uri="<<uri<<", size="<<file_size;
+
+                if(uri.find("2012-10-15.json.sample:0-1596253") != std::string::npos)
+                    std::cout<<"found file"<<std::endl;
+
                 logger().info(ss.str());
             }
 
@@ -1599,6 +1604,11 @@ namespace tuplex {
     int64_t WorkerApp::processSource(int threadNo, int64_t inputNodeID, const FilePart& part, const TransformStage *tstage,
                                      const std::shared_ptr<TransformStage::JITSymbols>& syms, size_t* inputRowCount) {
         using namespace std;
+
+        if(!tstage)
+            throw std::runtime_error("null pointer for Transform Stage");
+        if(!syms->functor)
+            throw std::runtime_error("no compiled function pointer for codegened code found");
 
         // couple checks
         assert(tstage);

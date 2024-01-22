@@ -142,8 +142,14 @@ namespace tuplex {
                     std::vector<std::string> acc_column_names;
                     std::vector<python::Type> acc_col_types;
                     for(auto idx : acc_cols) {
-                        acc_column_names.push_back(_normal_case_columns[idx]);
-                        acc_col_types.push_back(_inputRowType.parameters()[idx]);
+                        if(_inputRowType.isRowType()) {
+                            assert(vec_equal(_normal_case_columns, _inputRowType.get_column_names()));
+                            acc_column_names.push_back(_inputRowType.get_column_name(idx));
+                            acc_col_types.push_back(_inputRowType.get_column_type(idx));
+                        } else {
+                            acc_column_names.push_back(_normal_case_columns[idx]);
+                            acc_col_types.push_back(_inputRowType.parameters()[idx]);
+                        }
                     }
 
                     // however, these here should show correct columns/types.
@@ -151,8 +157,13 @@ namespace tuplex {
                     ss<<"filter input schema: "<<python::Type::makeTupleType(acc_col_types).desc()<<"\n";
 
                     RetypeConfiguration conf;
+                    // @TODO: when always switching over to row type, can remove the column names here.
                     conf.columns = acc_column_names;
                     conf.row_type = python::Type::makeTupleType(acc_col_types);
+
+                    if(PARAM_USE_ROW_TYPE)
+                        conf.row_type = python::Type::makeRowType(acc_col_types, acc_column_names);
+
                     conf.is_projected = true;
 
                     // create filter op from scratch (avoid retyping etc., no parent needed)
@@ -187,12 +198,14 @@ namespace tuplex {
                         ss<<"filter requires "<<pluralize(conf.columns.size(), "column")<<": "<<conf.columns;
                         logger().debug(ss.str());
                         BasicBlock* bbFilterBadParse = BasicBlock::Create(ctx, "filter_" + std::to_string(fop->getID()) + "_bad_parse", builder.GetInsertBlock()->getParent());
-                        auto ft_filter = json_parseRow(env(), builder, conf.row_type, conf.columns, true, false, parser, bbFilterBadParse);
+                        auto tuple_row_type = conf.row_type.isRowType() ? conf.row_type.get_columns_as_tuple_type() : conf.row_type;
+                        assert(row_type_compatible_with_columns(tuple_row_type, conf.columns));
+                        auto ft_filter = json_parseRow(env(), builder, tuple_row_type, conf.columns, true, false, parser, bbFilterBadParse);
 
                         // debug print:
 #ifndef NDEBUG
                         for(unsigned i = 0; i < conf.columns.size(); ++i) {
-                            auto col_type = conf.row_type.parameters()[i];
+                            auto col_type = conf.row_type.isRowType() ? conf.row_type.get_column_type(i) : conf.row_type.parameters()[i];
 
                             // what type?
                             if(python::Type::STRING == col_type) {
@@ -264,7 +277,7 @@ namespace tuplex {
                     // env().debugPrint(builder, "promoted filter check passed.");
 
                     // create reduced input type for quick parsing
-                    assert(_inputRowType.isTupleType());
+                    assert(_inputRowType.isTupleType() || _inputRowType.isRowType());
                 } else {
                     throw std::runtime_error("Check not supported for JsonSourceTaskBuilder");
                 }
@@ -911,7 +924,9 @@ namespace tuplex {
                 unwrap_first_level = false;
             }
 
-            auto ft_parsed = json_parseRow(env, builder, row_type, columns, unwrap_first_level, true, parser, bMismatch);
+            auto tuple_row_type = row_type.isRowType() ? row_type.get_columns_as_tuple_type() : row_type;
+            assert(row_type_compatible_with_columns(tuple_row_type, columns));
+            auto ft_parsed = json_parseRow(env, builder, tuple_row_type, columns, unwrap_first_level, true, parser, bMismatch);
             ft_parsed.storeTo(builder, args["out_tuple"]);
 #ifdef JSON_PARSER_TRACE_MEMORY
             _env->debugPrint(builder, "tuple store to output ptr done.");

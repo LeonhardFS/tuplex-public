@@ -29,10 +29,11 @@ namespace tuplex {
         } else {
             // check if compiled, then hintschema
             if(_udf.isCompiled()) {
-                // remove types from UDF --> retype using parent...
-                _udf.removeTypes();
-
+                // when parent is given
                 if(parent) {
+                    // remove types from UDF --> retype using parent...
+                    _udf.removeTypes();
+
                     // rewrite column access if given info
                     if(!_udf.rewriteDictAccessInAST(parent->columns())) {
                         _good = false;
@@ -60,8 +61,10 @@ namespace tuplex {
 
     std::shared_ptr<FilterOperator> FilterOperator::from_udf(const UDF &udf, const python::Type &row_type,
                                                              const std::vector<std::string> &input_column_names) {
-        assert(row_type.isTupleType());
-        assert(!input_column_names.empty() && row_type.parameters().size() == input_column_names.size());
+       if(!row_type.isRowType()) {
+           assert(row_type.isTupleType());
+           assert(!input_column_names.empty() && row_type.parameters().size() == input_column_names.size());
+       }
 
         auto fop = std::shared_ptr<FilterOperator>(new FilterOperator(nullptr, udf, input_column_names));
 
@@ -70,8 +73,8 @@ namespace tuplex {
         // type
         if(fop->_udf.isCompiled()) {
 
-            // rewrite dict access
-            if(!input_column_names.empty() && !fop->_udf.rewriteDictAccessInAST(input_column_names))
+            // rewrite dict access (for non-rowtype types)
+            if(!input_column_names.empty() && !row_type.isRowType() && !fop->_udf.rewriteDictAccessInAST(input_column_names))
                 return nullptr;
 
             if(!fop->_udf.hintInputSchema(schema))
@@ -182,7 +185,7 @@ namespace tuplex {
     }
 
 
-    std::shared_ptr<LogicalOperator> FilterOperator::clone(bool cloneParents) {
+    std::shared_ptr<LogicalOperator> FilterOperator::clone(bool cloneParents) const {
         auto copy = new FilterOperator(cloneParents ? parent()->clone() : nullptr, _udf,
                                        UDFOperator::columns(),
                                        UDFOperator::rewriteMap());
@@ -190,6 +193,8 @@ namespace tuplex {
         copy->copyMembers(this);
         assert(getID() == copy->getID());
         copy->_good = _good;
+        if(cloneParents) // <-- getInputSchema for filter is based on parent. should clone with UDF though.
+            assert(checkBasicEqualityOfOperators(*copy, *this));
         return std::shared_ptr<LogicalOperator>(copy);
     }
 

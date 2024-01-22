@@ -12,6 +12,7 @@
 #define TUPLEX_FILEINPUTOPERATOR_H
 
 #include "LogicalOperator.h"
+#include "parameters.h"
 #include <physical/memory/Partition.h>
 #include <boost/align/aligned_allocator.hpp>
 
@@ -119,6 +120,28 @@ namespace tuplex {
                 // not set, use original
                 return rowType;
             }
+
+            if(PARAM_USE_ROW_TYPE) {
+                if(!rowType.isRowType()) {
+                    Logger::instance().logger("logical planner").error("PARAM_USE_ROW_TYPE set, but given rowType is " + rowType.desc() + ", assert will fail.");
+                }
+                assert(rowType.isRowType());
+                if(python::Type::EMPTYROW == rowType)
+                    return rowType;
+
+                assert(_columnsToSerialize.size() == rowType.get_column_names().size());
+                auto column_names = rowType.get_column_names();
+                std::vector<python::Type> projected_column_types;
+                std::vector<std::string> projected_column_names;
+                for(unsigned i = 0; i < std::min(column_names.size(), _columnsToSerialize.size()); ++i) {
+                    if(_columnsToSerialize[i]) {
+                        projected_column_types.push_back(rowType.get_column_type(i));
+                        projected_column_names.push_back(column_names[i]);
+                    }
+                }
+                return python::Type::makeRowType(projected_column_types, projected_column_names);
+            }
+
             // use columns to serialize to get projected type
             if(!rowType.isTupleType())
                 throw std::runtime_error("can't project row type, expected a tuple type but got " + rowType.desc());
@@ -211,8 +234,13 @@ namespace tuplex {
                 return generalCaseSchema().getRowType().parameters().size();
             } else {
                 // count!
-                assert(generalCaseSchema().getRowType().isTupleType());
-                assert(generalCaseSchema().getRowType().parameters().size() == _columnsToSerialize.size());
+                if(PARAM_USE_ROW_TYPE) {
+                    assert(generalCaseSchema().getRowType().isRowType());
+                    assert(generalCaseSchema().getRowType().get_column_count() == _columnsToSerialize.size());
+                } else {
+                    assert(generalCaseSchema().getRowType().isTupleType());
+                    assert(generalCaseSchema().getRowType().parameters().size() == _columnsToSerialize.size());
+                }
 
                 size_t num = 0;
                 for(auto flag : _columnsToSerialize)
@@ -251,7 +279,7 @@ namespace tuplex {
                           const ContextOptions& co,
                           const SamplingMode& sampling_mode);
 
-        FileInputOperator(FileInputOperator& other); // specialized copy constructor!
+        FileInputOperator(const FileInputOperator& other); // specialized copy constructor!
 
         aligned_string loadSample(size_t sampleSize, const URI& uri, size_t file_size, const SamplingMode& mode, bool use_cache=true, size_t* file_offset=nullptr);
         std::vector<size_t> translateOutputToInputIndices(const std::vector<size_t>& output_indices);
@@ -543,7 +571,10 @@ namespace tuplex {
          * @return number of input columns in file
          */
         inline size_t inputColumnCount() const {
-            return getInputSchema().getRowType().parameters().size();
+            if(PARAM_USE_ROW_TYPE)
+                return getInputSchema().getRowType().get_column_count();
+            else
+                return getInputSchema().getRowType().parameters().size();
         }
 
         /*!
@@ -553,7 +584,7 @@ namespace tuplex {
         std::unordered_map<int, int> projectionMap() const;
 
         FileFormat fileFormat() const { return _fmt; }
-        std::shared_ptr<LogicalOperator> clone(bool cloneParents) override;
+        std::shared_ptr<LogicalOperator> clone(bool cloneParents) const override;
 
         // transfer caches
         void cloneCaches(const FileInputOperator& other);

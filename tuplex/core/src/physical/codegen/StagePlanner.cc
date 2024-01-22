@@ -839,7 +839,7 @@ namespace tuplex {
                         auto columns_before = op->columns();
                         auto in_columns_before = op->inputColumns();
 
-                        checkRowType(last_rowtype);
+                        checkRowType(last_rowtype.isRowType() ? last_rowtype.get_columns_as_tuple_type() : last_rowtype);
                         // set FIRST the parent. Why? because operators like ignore depend on parent schema
                         // therefore, this needs to get updated first.
                         op->setParent(lastParent); // need to call this before retype, so that columns etc. can be utilized.
@@ -1035,7 +1035,7 @@ namespace tuplex {
                         last_columns = opt_ops.back()->columns();
                     }
 
-                    checkRowType(last_rowtype);
+                    checkRowType(last_rowtype.isRowType() ? last_rowtype.get_columns_as_tuple_type() : last_rowtype);
                 }
 
                 lastNode = node;
@@ -1116,7 +1116,8 @@ namespace tuplex {
         auto inputNode = path_ctx.inputNode;
         auto operators = path_ctx.operators;
 
-        size_t num_input_before_hyper = inputNode->getOutputSchema().getRowType().parameters().size();
+        auto input_row_type = inputNode->getOutputSchema().getRowType(); if(input_row_type.isRowType())input_row_type = input_row_type.get_columns_as_tuple_type();
+        size_t num_input_before_hyper = input_row_type.parameters().size();
         logger.info("number of input columns before hyperspecialization: " + std::to_string(num_input_before_hyper));
 
         // force resampling b.c. of thin layer
@@ -1182,10 +1183,11 @@ namespace tuplex {
             path_ctx.readSchema = fop->getOptimizedInputSchema(); // when null-value opt is used, then this is different! hence apply!
             path_ctx.columnsToRead = fop->columnsToSerialize();
              // print out columns & types!
-             assert(fop->columns().size() == path_ctx.inputSchema.getRowType().parameters().size());
-             for(unsigned i = 0; i < fop->columns().size(); ++i) {
-                 std::cout<<"col "<<i<<" (" + fop->columns()[i] + ")"<<": "<<path_ctx.inputSchema.getRowType().parameters()[i].desc()<<std::endl;
-             }
+            auto col_types = path_ctx.inputSchema.getRowType().isRowType() ? path_ctx.inputSchema.getRowType().get_column_types() : path_ctx.inputSchema.getRowType().parameters();
+            assert(fop->columns().size() == col_types.size());
+            for(unsigned i = 0; i < fop->columns().size(); ++i) {
+                std::cout<<"col "<<i<<" (" + fop->columns()[i] + ")"<<": "<<col_types[i].desc()<<std::endl;
+            }
 
         } else {
             path_ctx.inputSchema = path_ctx.inputNode->getOutputSchema();
@@ -1211,9 +1213,10 @@ namespace tuplex {
             std::stringstream ss;
             // print out normal-case columns and types
             unsigned pos = 0;
+            auto col_types = path_ctx.inputSchema.getRowType().isRowType() ? path_ctx.inputSchema.getRowType().get_column_types() : path_ctx.inputSchema.getRowType().parameters();
             for(unsigned i = 0; i < path_ctx.columnsToRead.size(); ++i) {
                 if(path_ctx.columnsToRead[i]) {
-                    ss<<"column "<<i<<" '"<<path_ctx.columns()[pos]<<"': "<<path_ctx.inputSchema.getRowType().parameters()[pos].desc()<<"\n";
+                    ss<<"column "<<i<<" '"<<path_ctx.columns()[pos]<<"': "<<col_types[pos].desc()<<"\n";
                     pos++;
                 }
             }
@@ -1281,8 +1284,8 @@ namespace tuplex {
 
         // the output schema (str in tocsv) case is not finalized yet...
         // stage->_normalCaseOutputSchema = Schema(stage->_normalCaseOutputSchema.getMemoryLayout(), path_ctx.outputSchema.getRowType());
-
-        size_t num_input_after_hyper = ctx.fastPathContext.inputNode->getOutputSchema().getRowType().parameters().size();
+        auto after_hyper_output_row_type = ctx.fastPathContext.inputNode->getOutputSchema().getRowType();
+        size_t num_input_after_hyper = after_hyper_output_row_type.isRowType() ? after_hyper_output_row_type.get_column_count() : after_hyper_output_row_type.parameters().size();
         logger.info("number of input columns after hyperspecialization: " + std::to_string(num_input_after_hyper));
 
         logger.info("generated code in " + std::to_string(timer.time()) + "s");
@@ -1823,6 +1826,7 @@ namespace tuplex {
 
             if(0 == original_sample_size) {
                 logger.debug("skip because empty original sample");
+                return;
             }
 
             std::vector<std::shared_ptr<LogicalOperator>> operators_post_op;
@@ -1843,6 +1847,11 @@ namespace tuplex {
                     // get sample! is it non-empty and smaller than the original sample size?
                     auto samples_post_filter = filter_node->getSample(original_sample_size, true);
                     logger.debug("sample size post-filter: " + pluralize(samples_post_filter.size(), "row"));
+
+                    // @TODD: There's two possibilities here:
+                    // [1] if sample is empty, replace pipeline with simple filter node throwing normal-case if filter condition is not met.
+                    // [2] sample is empty, ignore filter promot and continue with other majority case. Above is more aggressive, the other one less.
+
                     if(!samples_post_filter.empty() && samples_post_filter.size() < original_sample_size) {
                         logger.info("filter is candidate for promotion, reduced sample size from " + std::to_string(original_sample_size) + " -> " + std::to_string(samples_post_filter.size()));
 
@@ -1870,9 +1879,14 @@ namespace tuplex {
                             std::vector<std::string> acc_column_names;
                             std::vector<python::Type> acc_col_types;
                             auto acc_cols = filter_node->getUDF().getAccessedColumns(false);
+                            auto col_types = filter_node->getInputSchema().getRowType().isRowType() ? filter_node->getInputSchema().getRowType().get_column_types() : filter_node->getInputSchema().getRowType().parameters();
                             for(auto idx : acc_cols) {
                                 acc_column_names.push_back(filter_node->inputColumns()[idx]);
-                                acc_col_types.push_back(filter_node->getInputSchema().getRowType().parameters()[idx]);
+
+                                if(filter_node->getInputSchema().getRowType().isRowType()) {
+                                    assert(filter_node->inputColumns()[idx] == filter_node->getInputSchema().getRowType().get_column_names()[idx]);
+                                }
+                                acc_col_types.push_back(col_types[idx]);
                             }
 
                             // however, these here should show correct columns/types.
@@ -1973,6 +1987,16 @@ namespace tuplex {
             logger.debug("Of " + pluralize(sample.size(), "sample row") + ", " + std::to_string(num_passing) + " adhere to detected majority type.");
             for(unsigned i = 0; i < std::min(majRows.size(), 5ul); ++i)
                 std::cout<<majRows[i].toPythonString()<<std::endl;
+
+            // check if any forkevents are found in the sample
+            std::vector<std::string> rows_as_python_strings;
+            size_t fork_events_found = 0;
+            for(auto row : sample) {
+                rows_as_python_strings.push_back(row.toPythonString());
+                if(rows_as_python_strings.back().find("ForkEvent") != std::string::npos)
+                    fork_events_found++;
+            }
+            std::cout<<"Found forkevents: "<<fork_events_found<<"x"<<std::endl;
 #endif
 
 

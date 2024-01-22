@@ -19,7 +19,8 @@
 #include <nlohmann/json.hpp>
 #include <Utils.h>
 
-#include <managed/proto/Lambda.pb.h>
+#include <utils/Messages.h>
+
 #include <Python.h>
 
 #include <ee/aws/LambdaWorkerApp.h>

@@ -46,6 +46,7 @@ namespace python {
     const Type Type::GENERICTUPLE = python::TypeFactory::instance().createOrGetPrimitiveType("tuple");
     const Type Type::GENERICDICT = python::TypeFactory::instance().createOrGetDictionaryType(python::Type::PYOBJECT, python::Type::PYOBJECT);
     const Type Type::GENERICLIST = python::TypeFactory::instance().createOrGetListType(python::Type::PYOBJECT);
+    const Type Type::GENERICROW = python::TypeFactory::instance().createOrGetPrimitiveType("row");
     //const Type Type::GENERICSET = python::TypeFactory::instance().createOrGetSetType(python::Type::PYOBJECT); // @TODO: implement.
     const Type Type::VOID = python::TypeFactory::instance().createOrGetPrimitiveType("void");
     const Type Type::MATCHOBJECT = python::TypeFactory::instance().createOrGetPrimitiveType("matchobject");
@@ -761,6 +762,32 @@ namespace python {
         return index_error_type;
     }
 
+    std::string Type::get_column_name(int64_t index) const {
+        assert(isRowType());
+        auto& factory = TypeFactory::instance();
+        auto index_error_type = factory.getByName("IndexError");
+
+
+        const std::lock_guard<std::mutex> lock(factory._typeMapMutex);
+        auto it = factory._typeMap.find(_hash);
+        assert(it != factory._typeMap.end());
+        auto kv_pairs = factory._typeVec[it->second]._struct_pairs;
+
+        // search within names
+        if(kv_pairs.empty())
+            throw std::runtime_error("no column names in empty row");
+
+        // correct negative indices once
+        if(index < 0)
+            index += kv_pairs.size();
+
+        // invalid index?
+        if(index < 0 || index >= kv_pairs.size())
+            throw std::runtime_error("invalid index " + std::to_string(index) + " to access row type column names");
+
+        return kv_pairs[index].key;
+    }
+
     python::Type Type::get_column_type(int64_t index) const {
         assert(isRowType());
         auto& factory = TypeFactory::instance();
@@ -1258,6 +1285,7 @@ namespace python {
     }
 
     Type Type::propagateToTupleType(const python::Type &type) {
+        assert(!type.isRowType());
         if(type.isTupleType())
             return type;
         else
@@ -2412,6 +2440,36 @@ namespace python {
                 return false;
         }
         return true;
+    }
+
+    size_t Type::get_column_count() const {
+        assert(isRowType());
+        auto& factory = TypeFactory::instance();
+
+        const std::lock_guard<std::mutex> lock(factory._typeMapMutex);
+        auto it = factory._typeMap.find(_hash);
+        assert(it != factory._typeMap.end());
+        auto kv_pairs = factory._typeVec[it->second]._struct_pairs;
+        return kv_pairs.size();
+    }
+
+    std::vector<python::Type> Type::get_column_types() const {
+        assert(isRowType());
+        auto& factory = TypeFactory::instance();
+
+        const std::lock_guard<std::mutex> lock(factory._typeMapMutex);
+        auto it = factory._typeMap.find(_hash);
+        assert(it != factory._typeMap.end());
+        auto kv_pairs = factory._typeVec[it->second]._struct_pairs;
+        std::vector<python::Type> column_types;
+        column_types.reserve(kv_pairs.size());
+        for(const auto& entry : kv_pairs)
+            column_types.push_back(entry.valueType);
+        return column_types;
+    }
+
+    python::Type Type::get_columns_as_tuple_type() const {
+        return python::Type::makeTupleType(get_column_types());
     }
 
     std::vector<python::Type> primitiveTypes(bool return_options_as_well) {

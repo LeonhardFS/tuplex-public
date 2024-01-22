@@ -896,6 +896,11 @@ namespace tuplex {
             // annotation available?
             // -> then create type from arguments + return type!
             if(call->_func->hasAnnotation()) {
+
+                // Note: majority type here will simply return the type with the highest count.
+                // however, may be more worthwhile to have a type that allows e.g. for struct type some optional key pairs etc.
+                // for higher coverage.
+
                 auto ret_type = call->_func->annotation().majorityType();
                 python::Type func_type = python::Type::UNKNOWN;
                 if(!ret_type.isFunctionType()) {
@@ -1135,20 +1140,25 @@ namespace tuplex {
             assert(object_type != python::Type::UNKNOWN);
 
             auto lastCallParameterType = _lastCallParameterType.top();
-            // deoptimize, no optimized functins in symboltable
-            lastCallParameterType = deoptimizedType(lastCallParameterType);
 
-            // deoptimize object type as well..
-            object_type = deoptimizedType(object_type);
+            // chained type retrieval, first both optimized types
             auto type = _symbolTable.findAttributeType(object_type, attr->_attribute->_name, lastCallParameterType);
+            // then deoptimize first object type
+            if(is_undefined_attribute_type(type)) {
+                type = _symbolTable.findAttributeType(deoptimizedType(object_type), attr->_attribute->_name, lastCallParameterType);
+            }
+            // then call param type
+            if(is_undefined_attribute_type(type)) {
+                type = _symbolTable.findAttributeType(object_type, attr->_attribute->_name, deoptimizedType(lastCallParameterType));
+            }
+            // deoptimize both types
+            if(is_undefined_attribute_type(type)) {
+                type = _symbolTable.findAttributeType(deoptimizedType(object_type), attr->_attribute->_name, deoptimizedType(lastCallParameterType));
+            }
 
-            // special case: result type is UNKNOWN but an annotation exists? (check also func case!)
-            bool unknown_attribute_type = type == python::Type::UNKNOWN;
-            if(type.isFunctionType() && (type.getReturnType() == python::Type::UNKNOWN || type.getReturnType().isIllDefined()))
-                unknown_attribute_type = true;
-
+            // special case: result type is still UNKNOWN but an annotation exists? (check also func case!)
             // unknown type but annotation available? -> use that one
-            if(unknown_attribute_type) {
+            if(is_undefined_attribute_type(type)) {
                 // multiple options:
                 if(attr->_attribute->hasAnnotation()) {
                     // func or not?
@@ -1159,6 +1169,11 @@ namespace tuplex {
                         // regular attribute.
                         type = attr->_attribute->annotation().majorityType();
                     }
+                } else {
+                    // failed to annotate, yet do not make this a failing error.
+                    // this should result in normal or general case violation.
+                    // error("failed to annotate attribute " + object_type.desc() + "." + attr->_attribute->_name + " - could not find required annotation.");
+                    attr->setInferredType(python::Type::UNKNOWN);
                 }
 
 //                if(attr->hasAnnotation()) {
@@ -1176,6 +1191,13 @@ namespace tuplex {
             }
             attr->_attribute->setInferredType(type);
         }
+    }
+
+    bool TypeAnnotatorVisitor::is_undefined_attribute_type(python::Type &type) const {
+        auto unknown_attribute_type = type == python::Type::UNKNOWN;
+        if(type.isFunctionType() && (type.getReturnType() == python::Type::UNKNOWN || type.getReturnType().isIllDefined()))
+            unknown_attribute_type = true;
+        return unknown_attribute_type;
     }
 
     void TypeAnnotatorVisitor::typeStructuredDictSubscription(tuplex::NSubscription *sub, const python::Type &type) {
@@ -1237,6 +1259,106 @@ namespace tuplex {
         }
     }
 
+    /*
+     * helper function to check whether static indexing can be performed, check whether expression can be turned into static integer index.
+     * @param expression ASTNode to check for
+     * @param sequence_length length of tuple (or row type) to use for correcting negative integers
+     * @param output_index the index to return, write only on success
+     * @return true if success, false else
+     */
+    bool try_to_get_static_integer_index_from_expression(ASTNode* expression, size_t sequence_length, int* output_index) {
+        if(!expression)
+            return false;
+
+        // check whether expression is a literal (after constant folding), if so: different types are supported
+        if(expression->type() == ASTNodeType::Number || expression->type() == ASTNodeType::Boolean) {
+            // get index
+            int i = INT32_MIN;
+            static_assert(sizeof(int) == 4, "int must be 32 bit");
+            if(expression->type() == ASTNodeType::Number)
+                i = std::stoi(static_cast<NNumber*>(expression)->_value);
+            else if(expression->type() == ASTNodeType::Boolean)
+                i = static_cast<NBoolean*>(expression)->_value;
+
+            // correct i for negative indices (only once!)
+            if(i < 0)
+                i = sequence_length + i;
+
+            if(output_index)
+                *output_index = i;
+            return true;
+        } else if (expression->getInferredType().isConstantValued() &&
+                   (expression->getInferredType().underlying() == python::Type::I64 ||
+                    expression->getInferredType().underlying() == python::Type::BOOLEAN)) {
+            // the same works when constant-valued types are used
+            // get index
+            int i = INT32_MIN;
+            static_assert(sizeof(int) == 4, "int must be 32 bit");
+            if(expression->getInferredType().underlying() == python::Type::I64)
+                i = std::stoi(expression->getInferredType().constant());
+            else if(expression->getInferredType().underlying() == python::Type::BOOLEAN)
+                i = stringToBool(expression->getInferredType().constant());
+
+            // correct i for negative indices (only once!)
+            if(i < 0)
+                i = sequence_length + i;
+
+            if(output_index)
+                *output_index = i;
+            return true;
+        }
+
+        return false;
+    }
+
+    /*
+     * helper function to check whether static indexing can be performed for keys, i.e. return the index/position the expression
+     * would yield when indexing keys.
+     * @param expression ASTNode to check for
+     * @param keys string keys to check for
+     * @param output_index the index to return, write only on success
+     * @return true if success, false else
+     */
+    bool try_to_get_static_string_based_integer_index_from_expression(ASTNode* expression, const std::vector<std::string>& keys, int* output_index) {
+        if(!expression)
+            return false;
+
+        if(keys.empty())
+            return false;
+
+        int index = -1; // not found
+        auto it = keys.end();
+        bool found = false;
+        if(expression->type() == ASTNodeType::String) {
+            // get actual, string value
+            auto value = static_cast<NString*>(expression)->value();
+            it = std::find(keys.begin(), keys.end(), value);
+            // special case: empty string is not allowed
+            if(value.empty())
+                it = keys.end();
+            if(it != keys.end())
+                index = it - keys.begin();
+            found = true;
+        } else if(expression->getInferredType().isConstantValued() && expression->getInferredType().underlying() == python::Type::STRING) {
+            auto value = expression->getInferredType().constant();
+            it = std::find(keys.begin(), keys.end(), value);
+            // special case: empty string is not allowed
+            if(value.empty())
+                it = keys.end();
+            if(it != keys.end())
+                index = it - keys.begin();
+            found = true;
+        }
+
+        if(!found)
+            return false;
+
+        if(output_index) {
+            *output_index = index;
+        }
+        return true;
+    }
+
     void TypeAnnotatorVisitor::visit(NSubscription *sub) {
         // special case: annotation? can ignore visit.
         if(sub->hasAnnotation()) {
@@ -1284,47 +1406,12 @@ namespace tuplex {
                 sub->setInferredType(python::Type::UNKNOWN);
                 error("type error: string indices must be bool or int");
             } else {
-                // check whether expression is a literal (after constant folding), if so: different types are supported
-                if(sub->_expression->type() == ASTNodeType::Number || sub->_expression->type() == ASTNodeType::Boolean) {
-                    // get index
-                    int i = INT32_MIN;
-                    static_assert(sizeof(int) == 4, "int must be 32 bit");
-                    if(sub->_expression->type() == ASTNodeType::Number)
-                        i = std::stoi(static_cast<NNumber*>(sub->_expression.get())->_value);
-                    else if(sub->_expression->type() == ASTNodeType::Boolean)
-                        i = static_cast<NBoolean*>(sub->_expression.get())->_value;
 
-                    // correct i for negative indices (only once!)
-                    if(i < 0)
-                        i = type.parameters().size() + i;
-
-                    // now access ith member of the tuple
+                int i = 0;
+                if(try_to_get_static_integer_index_from_expression(sub->_expression.get(), type.parameters().size(), &i)) {
                     if(i < 0 || i >= type.parameters().size()) {
                         sub->setInferredType(python::Type::UNKNOWN);
-                        error("Index error: tried to access element at position" + std::to_string(i));
-                    } else {
-                        sub->setInferredType(type.parameters()[i]);
-                    }
-                } else if (sub->_expression->getInferredType().isConstantValued() &&
-                        (sub->_expression->getInferredType().underlying() == python::Type::I64 ||
-                                sub->_expression->getInferredType().underlying() == python::Type::BOOLEAN)) {
-                    // the same works when constant-valued types are used
-                    // get index
-                    int i = INT32_MIN;
-                    static_assert(sizeof(int) == 4, "int must be 32 bit");
-                    if(sub->_expression->getInferredType().underlying() == python::Type::I64)
-                        i = std::stoi(sub->_expression->getInferredType().constant());
-                    else if(sub->_expression->getInferredType().underlying() == python::Type::BOOLEAN)
-                        i = stringToBool(sub->_expression->getInferredType().constant());
-
-                    // correct i for negative indices (only once!)
-                    if(i < 0)
-                        i = type.parameters().size() + i;
-
-                    // now access ith member of the tuple
-                    if(i < 0 || i >= type.parameters().size()) {
-                        sub->setInferredType(python::Type::UNKNOWN);
-                        error("Index error: tried to access element at position" + std::to_string(i));
+                        error("Index error: tried to access element at position " + std::to_string(i));
                     } else {
                         sub->setInferredType(type.parameters()[i]);
                     }
@@ -1393,6 +1480,28 @@ namespace tuplex {
         } else if(type.isExceptionType()) {
             // if type is exception, do not further visit.
             sub->setInferredType(type);
+        } else if(type.isRowType() && PARAM_USE_ROW_TYPE) {
+            // use new row type here.
+            // there're now two options:
+            // [1] index via static expression
+            int index = 0;
+            bool rc_integer = false;
+            bool rc_string = false;
+            if((rc_integer = try_to_get_static_integer_index_from_expression(sub->_expression.get(), type.get_column_count(), &index)) ||
+                    (rc_string = try_to_get_static_string_based_integer_index_from_expression(sub->_expression.get(), type.get_column_names(), &index))) {
+                // check if valid index
+                if(index < 0 || index >= type.get_column_count()) {
+                    auto ec_code = rc_integer ? ExceptionCode::INDEXERROR : ExceptionCode::KEYERROR;
+                    sub->setInferredType(get_exception_type(ec_code)); // should be
+                    error("Index error: tried to access row element at position " + std::to_string(index));
+                } else {
+                    sub->setInferredType(type.get_column_type(index));
+                }
+            }
+            // [2] index via dynamic expression -> requires tracing
+            else {
+                fatal_error("no support for dynamic row type expression indexing yet.");
+            }
         } else {
             std::stringstream errMessage;
             errMessage<<"subscript operation [] is performed on unsupported type "<<type.desc();

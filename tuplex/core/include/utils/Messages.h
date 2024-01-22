@@ -5,10 +5,8 @@
 #ifndef TUPLEX_MESSAGES_H
 #define TUPLEX_MESSAGES_H
 
-#ifdef BUILD_WITH_AWS
 // collection of all protobuf messages + definitions
 #include <managed/proto/Lambda.pb.h>
-#endif
 
 namespace tuplex {
     enum class ResourceType : uint32_t {

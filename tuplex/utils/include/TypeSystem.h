@@ -70,6 +70,7 @@ namespace python {
         static const Type GENERICTUPLE; //! special type to accept ANY tuple object (helpful for symbol table)
         static const Type GENERICDICT; //! special type to accept ANY dictionary object
         static const Type GENERICLIST; //! special type to accept ANY list object
+        static const Type GENERICROW; //! special type to accept ANY row object
         static const Type MATCHOBJECT; //! python [re.match] regex match object
         static const Type RANGE; //! python [range] range object
         static const Type MODULE; //! generic module object, used in symbol table
@@ -273,6 +274,13 @@ namespace python {
         std::vector<std::string> get_column_names() const;
 
         /*!
+         * get a specific column name for an integer key (negative allowed
+         * @param index
+         * @return the column name, or throws and exception if invalid index for row type
+         */
+        std::string get_column_name(int64_t index) const;
+
+        /*!
          * get a specific column type for an integer key (negative allowed
          * @param index
          * @return the type or INDEXERROR if invalid index for row type
@@ -280,11 +288,23 @@ namespace python {
         python::Type get_column_type(int64_t index) const;
 
         /*!
-         * similat to the integer version, but checks for keys
+         * similar to the integer version, but checks for keys
          * @param key
          * @return the type or INDEXERROR if invalid
          */
         python::Type get_column_type(const std::string& key) const;
+
+        /*!
+         * for row types, retrieve column types.
+         * @return vector of column type
+         */
+        std::vector<python::Type> get_column_types() const;
+
+        /*!
+         * for Row type, return column types as tuple type
+         * @return type
+         */
+        python::Type get_columns_as_tuple_type() const;
 
         /*!
          * checks for row type whether there are column names or not
@@ -465,6 +485,8 @@ namespace python {
 
         bool all_struct_pairs_optional() const;
         bool all_struct_pairs_always_present() const;
+
+        size_t get_column_count() const;
     };
 
      struct StructEntry { // an entry of a structured dict
@@ -529,7 +551,8 @@ namespace python {
             bool _isVarLen; // params.empty && _isVarlen => GENERICTUPLE
 
             // type specific meta-data
-            // structured dict:
+            // used for structured dict, row type.
+            // note that order here matters, e.g. for row type.
             std::vector<StructEntry> _struct_pairs; // pairs for structured dicts.
 
             // opt properties
@@ -942,6 +965,20 @@ namespace tuplex {
         auto t = python::TypeFactory::instance().getByName(name);
         assert(t != python::Type::UNKNOWN);
         return t;
+    }
+
+    inline ExceptionCode exception_type_to_code(const python::Type& exception_type) {
+        // @TODO: what about custom classes? --> need to sync values for those as well.
+        assert(exception_type.isExceptionType());
+        return pythonClassToExceptionCode(exception_type.desc());
+    }
+
+    inline size_t extract_columns_from_type(const python::Type& row_type) {
+        if(row_type.isTupleType())
+            return row_type.parameters().size();
+        if(row_type.isRowType())
+            return row_type.get_column_count();
+        throw std::runtime_error("can not extract number of columns from type " + row_type.desc());
     }
 }
 

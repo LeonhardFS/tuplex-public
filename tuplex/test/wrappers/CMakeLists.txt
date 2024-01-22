@@ -31,6 +31,7 @@ if(APPLE)
             ${CURSES_LIBRARY}
             pybind11::embed
              Backward::Interface
+            ${Protobuf_LIBRARIES}
             )
 else()
     TARGET_LINK_LIBRARIES(testwrappers
@@ -43,6 +44,7 @@ else()
             ${Boost_LIBRARIES}
             ${CURSES_LIBRARY}
             pybind11::embed
+            ${Protobuf_LIBRARIES}
             )
 endif()
 

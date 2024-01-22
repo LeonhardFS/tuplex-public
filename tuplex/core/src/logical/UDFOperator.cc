@@ -77,7 +77,10 @@ namespace tuplex {
                 _udf.rewriteDictAccessInAST(_columnNames, "", conf.coltype_hints);
             }
 
-            _udf.removeTypes(conf.remove_existing_annotations, true);
+            if(PARAM_USE_ROW_TYPE)
+                _udf.removeTypes(conf.remove_existing_annotations, false);
+            else
+                _udf.removeTypes(conf.remove_existing_annotations, true);
 
             bool success = _udf.retype(conf.row_type);
 
@@ -154,6 +157,7 @@ namespace tuplex {
             // 3-stage typing
             // 1. try to type statically by simply annotating the AST
             logger.debug("performing static typing for UDF in operator " + name());
+            _udf.removeTypes(false);
             bool success = _udf.hintInputSchema(parentSchema, false, false);
 
             // check what the return type is. If it is of exception type, try to use a sample to get rid off branches that are off
@@ -210,6 +214,10 @@ namespace tuplex {
                     // => general case rows thus get transferred to interpreter...
                     logger.debug("performing traced typing for UDF in operator " + name());
                     auto rows_sample = parent()->getPythonicSample(MAX_TYPE_SAMPLING_ROWS);
+                    if(rows_sample.empty()) {
+                        logger.debug("operator " + name() + " can not deduce type by tracing sample as sample is empty.");
+                        return Schema::UNKNOWN;
+                    }
                     _udf.removeTypes(false);
                     success = _udf.hintSchemaWithSample(rows_sample,
                                                         parentSchema.getRowType(), true);
@@ -358,7 +366,16 @@ namespace tuplex {
     void UDFOperator::rewriteParametersInAST(const std::unordered_map<size_t, size_t> &rewriteMap) {
        _rewriteMap = rewriteMap;
        projectColumns(rewriteMap);
-        _udf.rewriteParametersInAST(rewriteMap);
+       if(!_udf.rewriteParametersInAST(rewriteMap)) {
+           std::stringstream ss;
+           ss<<"rewrite map: ";
+           for(auto kv: rewriteMap) {
+               ss<<kv.first<<" -> "<<kv.second<<",";
+           }
+           ss<<"\nudf input schema:  "<<_udf.getInputSchema().getRowType().desc();
+           ss<<"\nudf output schema: "<<_udf.getOutputSchema().getRowType().desc();
+           throw std::runtime_error("failed to rewrite operator " + name() + ", details:\n" + ss.str());
+       }
     }
 
     bool UDFOperator::performRetypeCheck(const python::Type& input_row_type, bool is_projected_row_type) {

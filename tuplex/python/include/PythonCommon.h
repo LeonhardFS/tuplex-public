@@ -1,4 +1,3 @@
-
 //--------------------------------------------------------------------------------------------------------------------//
 //                                                                                                                    //
 //                                      Tuplex: Blazing Fast Python Data Science                                      //
@@ -154,6 +153,13 @@ namespace tuplex {
 
         return py::cast<py::list>(listObj);
     }
+
+    /*!
+     * retrieve python version as X.Y.Z (hex) to check whether version of module matches up with interpreter version
+     * being run.
+     * @return python object holding formatted string like above.
+     */
+    extern py::object getPythonVersion();
 }
 
 #endif //TUPLEX_PYTHONCOMMON_H

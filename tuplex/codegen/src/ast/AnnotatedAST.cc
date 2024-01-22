@@ -659,8 +659,13 @@ namespace tuplex {
             }
             if(python::Type::UNKNOWN == getReturnType()) {
                 auto funcType = getFunctionAST()->getInferredType();
-                funcType = python::Type::makeFunctionType(funcType.getParamsType(), targetType);
-                setFunctionType(getFunctionAST(), funcType);
+                if(funcType.isFunctionType()) {
+                    funcType = python::Type::makeFunctionType(funcType.getParamsType(), targetType);
+                    setFunctionType(getFunctionAST(), funcType);
+                } else {
+                    throw std::runtime_error("funcType is " + funcType.desc() + ", can't set return type to " + targetType.desc());
+                }
+                return;
             }
 
             // check what actual return type is
@@ -689,8 +694,9 @@ namespace tuplex {
             auto params_type = type.getParamsType();
             if(func) {
                 // how many params does the function have?
-                assert(params_type.parameters().size() == func->_parameters->_args.size());
-                for(unsigned i = 0; i < params_type.parameters().size(); ++i) {
+                assert(extract_columns_from_type(params_type) == func->_parameters->_args.size());
+                for(unsigned i = 0; i < extract_columns_from_type(params_type); ++i) {
+                    assert(params_type.isTupleType());
                     func->_parameters->_args[i]->setInferredType(params_type.parameters()[i]);
                 }
                 func->_parameters->setInferredType(params_type);

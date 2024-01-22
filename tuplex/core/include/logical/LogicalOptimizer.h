@@ -13,6 +13,9 @@
 #include "Operators.h"
 #include <Context.h>
 
+// uncomment to trace logical plan optimization
+#define TRACE_LOGICAL_OPTIMIZATION
+
 namespace tuplex {
     class LogicalOptimizer {
     public:
@@ -60,6 +63,14 @@ namespace tuplex {
 
         // operator reordering (i.e. pullup/pulldown re join cardinality)
         static void reorderDataProcessingOperators(std::shared_ptr<LogicalOperator>& root);
+
+        /*!
+         * check that all operators are in good state
+         * @param op root operator
+         * @param message optional message to print if not good.
+         * @return whether good or not.
+         */
+        static bool ensureOperatorStateIsGood(const std::shared_ptr<LogicalOperator>& op, const std::string& message="");
 
         // @TODO: filter reordering optimization (sampling?)
 

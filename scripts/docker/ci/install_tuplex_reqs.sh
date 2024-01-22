@@ -39,7 +39,7 @@ mkdir -p $PREFIX/lib
 echo ">> Files will be downloaded to ${WORKDIR}/tuplex-downloads"
 WORKDIR=$WORKDIR/tuplex-downloads
 mkdir -p $WORKDIR
-yum install -y libedit-devel libzip-devel pkgconfig libxml2-devel uuid libuuid-devel libffi-devel graphviz-devel gflags-devel ncurses-devel   awscli java-11-openjdk libyaml-devel file-devel ninja-build zip unzip ninja-build --skip-broken
+yum install -y libedit-devel libzip-devel pkgconfig libxml2-devel uuid libuuid-devel libffi-devel graphviz-devel gflags-devel ncurses-devel awscli elfutils-devel java-11-openjdk libyaml-devel file-devel ninja-build zip unzip ninja-build openssh-clients --skip-broken
 
 # if java exists, remove via
 yum remove -y java-1.8.0-openjdk-headless

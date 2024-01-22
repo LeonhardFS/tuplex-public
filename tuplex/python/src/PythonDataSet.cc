@@ -661,13 +661,25 @@ namespace tuplex {
         // 2.) via strings
         // ==> mixture also ok...
         auto rowType = _dataset->schema().getRowType();
-        assert(rowType.isTupleType());
-        auto num_cols = rowType.parameters().size();
+
+        // exception type?
+        if(rowType.isExceptionType()) {
+            PythonDataSet pds;
+            pds.wrap(this->_dataset);
+            return pds;
+        }
+
+
+        assert(rowType.isTupleType() || rowType.isRowType());
+        auto num_cols = rowType.isTupleType() ? rowType.parameters().size() : rowType.get_column_count();
 
         // go through list
         // ==> Tuplex supports list and integer indices which may be mixed up even!
         std::vector<std::size_t> columnIndices;
         auto columns = _dataset->columns();
+
+        if(rowType.isRowType())
+            columns = rowType.get_column_names();
 
         PyObject * listObj = L.ptr();
         for (unsigned i = 0; i < py::len(L); ++i) {
@@ -1405,6 +1417,10 @@ namespace tuplex {
         }
 
         auto type = rs->schema().getRowType();
+
+        if(type.isRowType())
+            type = type.get_columns_as_tuple_type();
+
         // if single type, reset by one
         assert(type.isTupleType());
         if (type.parameters().size() == 1)

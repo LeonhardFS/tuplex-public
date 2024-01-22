@@ -29,6 +29,34 @@ namespace tuplex {
         return false;
     }
 
+    static void print_column_mapping(const python::Type& input_type, const python::Type& output_type, std::ostream& os) {
+        if(input_type == python::Type::UNKNOWN)
+            os<<"unknown";
+        else
+            os<<pluralize(extract_columns_from_type(input_type), "column");
+        os<<" -> ";
+        if(output_type == python::Type::UNKNOWN)
+            os<<"unknown";
+        else
+            os<<pluralize(extract_columns_from_type(output_type), "column");
+    }
+
+    static void print_rewrite_map(const std::shared_ptr<LogicalOperator>& op, const std::unordered_map<size_t, size_t>& rewriteMap, std::ostream& os=std::cout) {
+        os<<"operator "<<op->name()<<": ";
+        print_column_mapping(op->getInputSchema().getRowType(), op->getOutputSchema().getRowType(), os);
+        if(hasUDF(op.get())) {
+            os<<"\noperator has udf: ";
+            auto uop = std::dynamic_pointer_cast<UDFOperator>(op);
+            print_column_mapping(uop->getUDF().getInputSchema().getRowType(), uop->getUDF().getOutputSchema().getRowType(), os);
+        }
+
+        os<<"\nrewrite map: {";
+        for(auto kv : rewriteMap) {
+            os<<kv.first<<" -> "<<kv.second<<",";
+        }
+        os<<"}"<<std::endl;
+    }
+
     std::vector<std::shared_ptr<LogicalOperator>>
     LogicalOptimizer::optimize(std::vector<std::shared_ptr<LogicalOperator>> &operators, bool inplace) {
         if(!inplace)
@@ -84,6 +112,15 @@ namespace tuplex {
         return opt_ops;
     }
 
+    bool LogicalOptimizer::ensureOperatorStateIsGood(const std::shared_ptr<LogicalOperator> &op,
+                                                     const std::string &message) {
+        if(!op->parents().empty())
+            for(auto node : op->parents())
+                if(!ensureOperatorStateIsGood(node, message))
+                    return false;
+        return op->good();
+    }
+
     std::shared_ptr<LogicalOperator>
     LogicalOptimizer::optimize(const std::shared_ptr<LogicalOperator> &root, bool inplace) {
         using namespace std;
@@ -104,21 +141,31 @@ namespace tuplex {
 
         bool ignoreConstantTypedColumns = _options.OPT_CONSTANTFOLDING_OPTIMIZATION();
 
+        assert(ensureOperatorStateIsGood(root, "before opt plan"));
+
         if(_options.OPT_FILTER_PUSHDOWN()) {
             emitPartialFilters(node, ignoreConstantTypedColumns);
             optimizeFilters(node, ignoreConstantTypedColumns);
+
+            assert(ensureOperatorStateIsGood(node, "filter pushdown"));
         }
 
         // prune tree? (note for lambda x: true / lambda x: false the optimization will only work if constant-fold is active)
         if(_options.OPT_CONSTANTFOLDING_OPTIMIZATION()) {
             pruneConstantFilters(node, _options.OPT_SELECTION_PUSHDOWN());
+
+            assert(ensureOperatorStateIsGood(node, "constant folding"));
         }
 
         // @TODO: filter reordering! -> could be also done in a specializing way!
 
         // this opt makes only sense when joins (or flatmap later) are involved...
-        if(properties.hasJoin() && _options.OPT_OPERATOR_REORDERING())
+        if(properties.hasJoin() && _options.OPT_OPERATOR_REORDERING()) {
             reorderDataProcessingOperators(node);
+
+            assert(ensureOperatorStateIsGood(node, "operator reordering"));
+        }
+
 
         // projectionPushdown (to csv parser etc. if possible)
         // ==> i.e. only parse accessed fields!
@@ -136,6 +183,8 @@ namespace tuplex {
 
             // note: could remove identity functions...
             // i.e. lambda x: x or lambda x: (x[0], x[1], ..., x[len(x) - 1]) same for def...
+
+            assert(ensureOperatorStateIsGood(node, "selection pushdown"));
         }
 
         return node;
@@ -564,9 +613,33 @@ namespace tuplex {
         // type to restrict columns of?
         assert(op);
 
-        // get schemas
-        auto inputRowType = op->parents().size() != 1 ? python::Type::UNKNOWN : op->getInputSchema().getRowType(); // could be also a tuple of one element!!!
+        // get schemas (allow input schema for operators without any parent, i.e. sources)
+        auto inputRowType = op->parents().size() >= 1 ? python::Type::UNKNOWN : op->getInputSchema().getRowType(); // could be also a tuple of one element!!!
         auto outputRowType = op->getOutputSchema().getRowType();
+
+        // debug print
+#ifndef NDEBUG
+        {
+            std::stringstream ss;
+            if(outputRowType.isRowType()) {
+                auto column_names =outputRowType.get_column_names();
+                std::vector<std::string> req_column_names;
+                for(auto col_idx : requiredCols) {
+                    if(col_idx < column_names.size())
+                        req_column_names.push_back(column_names[col_idx]);
+                    else
+                        req_column_names.push_back("<INVALID INDEX>");
+                }
+                ss<<"operator "<<op->name()<<" requires (output) columns: "<<req_column_names;
+            } else {
+                //...
+                ss<<"could not retrieve output type for operator "<<op->name();
+            }
+            Logger::instance().logger("optimizer").debug(ss.str());
+
+
+        }
+#endif
 
         vector<size_t> accCols; // indices of accessed columns from input row type!
 
@@ -579,6 +652,10 @@ namespace tuplex {
                 case LogicalOperatorType::MAP:
                 case LogicalOperatorType::WITHCOLUMN:
                 case LogicalOperatorType::FILTER: {
+
+                    // @TODO: this here is static-based access visitor. Better to use sample-based visitor to push
+                    // more effectively down!
+
                     // UDF access of input...
                     accCols = udfop->getUDF().getAccessedColumns(ignoreConstantTypedColumns);
                     break;
@@ -849,8 +926,13 @@ namespace tuplex {
                 auto input_op_row_type = input_op->getInputSchema().getRowType();
                 vector<size_t> colsToSerialize;
                 for (auto idx : requiredCols) {
-                    if (idx < input_op_row_type.parameters().size())
+                    assert(PARAM_USE_ROW_TYPE && input_op_row_type.isRowType()); // <-- this should hold if param is true
+                    auto input_column_count = input_op_row_type.isRowType() ? input_op_row_type.get_column_count() : input_op_row_type.parameters().size();
+                    if (idx < input_column_count)
                         colsToSerialize.emplace_back(idx);
+                    else {
+                        throw std::runtime_error("invalid index for input op rewrite");
+                    }
                 }
                 sort(colsToSerialize.begin(), colsToSerialize.end());
 
@@ -858,23 +940,23 @@ namespace tuplex {
                 // info on columns + their types
                 cout<<"rewrite csv here with "<<ret<<endl;
                 cout<<"CSV columns before pushdown: "<<endl;
-                cout <<"names: " << csvop->columns() << endl;
-                cout <<"type: " << csvop->getOutputSchema().getRowType().desc() << endl;
+                cout <<"names: " << input_op->columns() << endl;
+                cout <<"type: " << input_op->getOutputSchema().getRowType().desc() << endl;
 
-                cout<<"CSV output type before pushdown: "<<csvop->getOutputSchema().getRowType().desc()<<endl;
+                cout<<input_op->name()<<" output type before pushdown: "<<input_op->getOutputSchema().getRowType().desc()<<endl;
 #endif
                 // actual projection pushdown into the parser...
                 // --> use here relative indices!
                 input_op->selectColumns(colsToSerialize, false);
 
 #ifdef TRACE_LOGICAL_OPTIMIZATION
-                cout<<"CSV output type after pushdown: "<<csvop->getOutputSchema().getRowType().desc()<<endl;
-                cout<<"CSV projection pushdown: selected "<<ret.size()<<" columns from "<<inputRowType.parameters().size()<<endl;
+                cout<<input_op->name()<<" output type after pushdown: "<<input_op->getOutputSchema().getRowType().desc()<<endl;
+                cout<<input_op->name()<<" projection pushdown: selected "<<ret.size()<<" columns from "<<extract_columns_from_type(inputRowType)<<endl;
 
                 // info on columns + their types
-                cout<<"CSV columns after pushdown: "<<endl;
-                cout <<"names: " << csvop->columns() << endl;
-                cout <<"type: " << csvop->getOutputSchema().getRowType().desc() << endl;
+                cout<<input_op->name()<<" columns after pushdown: "<<endl;
+                cout <<"names: " << input_op->columns() << endl;
+                cout <<"type: " << input_op->getOutputSchema().getRowType().desc() << endl;
 #endif
                 // ok todo further rewrite, so return req Cols for building!
                 return requiredCols;
@@ -902,8 +984,6 @@ namespace tuplex {
                 return colsToSerialize;
             }
 
-
-
             // make sure all source ops have been handled by above code!
             assert(!op->isDataSource());
 
@@ -928,18 +1008,26 @@ namespace tuplex {
                 }
             }
 
+#ifdef TRACE_LOGICAL_OPTIMIZATION
+            print_rewrite_map(op, rewriteMap);
+#endif
+
             // map stops rewrite, so rewrite map and then do not return anything!
             if(op->type() == LogicalOperatorType::MAP) {
                 // NOTE: rename ops continue rewrite mission!
                 auto mop = std::dynamic_pointer_cast<MapOperator>(op); assert(mop);
 
                 if(!mop->getUDF().empty()) {
-
+                    auto mop_input_row_type = mop->getInputSchema().getRowType();
 #ifdef TRACE_LOGICAL_OPTIMIZATION
                     // type should NOT change...
-                    cout<<"MAP type before projection pushdown: "<<mop->getOutputSchema().getRowType().desc()<<endl;
+                    cout<<mop->name()<<" type before projection pushdown: "<<mop->getOutputSchema().getRowType().desc()<<endl;
+                    cout<<mop->name()<<" number of input columns: "<<extract_columns_from_type(mop->getInputSchema().getRowType())<<endl;
+                    cout<<"  rewrite map, number of entries: "<<rewriteMap.size()<<endl;
 #endif
 
+                    // check if column count matches or unknown
+                    //if(python::Type::UNKNOWN == mop || rewriteMap.size() <= )
                     mop->rewriteParametersInAST(rewriteMap);
 
                     // rewrite all ResolveOperators following (skip ignore)
@@ -1253,7 +1341,7 @@ namespace tuplex {
                     // get constant map (for info)
                     auto colname_map = std::dynamic_pointer_cast<FilterOperator>(op)->getUDF().constantColumnMap();
 
-                    auto fop = std::shared_ptr<LogicalOperator>(new FilterOperator(grandparent, UDF(code, pickled_code), grandparent->columns()));
+                    auto fop = std::shared_ptr<UDFOperator>(new FilterOperator(grandparent, UDF(code, pickled_code), grandparent->columns()));
                     fop->setID(op->getID()); // clone with ID, important for exception tracking!
 
 #ifdef TRACE_LOGICAL_OPTIMIZATION
@@ -1407,11 +1495,11 @@ namespace tuplex {
                 // empty? i.e. rename? switch ok
                 auto mop = dynamic_cast<MapOperator*>(parent.get()); assert(mop);
 
-                // special case:
-                // select is ok, because it's a direct map, the same goes for some query which just reorders columns...
-                // => after rewrite!
-                if(isMapSelect(mop))
-                    return false;
+                // // special case:
+                // // select is ok, because it's a direct map, the same goes for some query which just reorders columns...
+                // // => after rewrite!
+                // if(isMapSelect(mop))
+                //    return false;
 
                 if(mop->getUDF().empty())
                     return false;

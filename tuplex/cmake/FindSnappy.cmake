@@ -14,7 +14,7 @@
 # Usage:
 #   caffe_parse_header(<file> <define1> <define2> <define3> ..)
 macro(caffe_parse_header FILENAME FILE_VAR)
-  set(vars_regex "")
+    set(vars_regex "")
   set(__parnet_scope OFF)
   set(__add_cache OFF)
   foreach(name ${ARGN})
@@ -64,10 +64,10 @@ include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(Snappy DEFAULT_MSG Snappy_INCLUDE_DIR Snappy_LIBRARIES)
 
 if(SNAPPY_FOUND)
-  message(STATUS "Found Snappy  (include: ${Snappy_INCLUDE_DIR}, library: ${Snappy_LIBRARIES})")
+    message(STATUS "Found Snappy  (include: ${Snappy_INCLUDE_DIR}, library: ${Snappy_LIBRARIES})")
   mark_as_advanced(Snappy_INCLUDE_DIR Snappy_LIBRARIES)
 
-  caffe_parse_header(${Snappy_INCLUDE_DIR}/snappy-stubs-public.h
-                     SNAPPY_VERION_LINES SNAPPY_MAJOR SNAPPY_MINOR SNAPPY_PATCHLEVEL)
-  set(Snappy_VERSION "${SNAPPY_MAJOR}.${SNAPPY_MINOR}.${SNAPPY_PATCHLEVEL}")
+    caffe_parse_header(${Snappy_INCLUDE_DIR}/snappy-stubs-public.h
+            SNAPPY_VERION_LINES SNAPPY_MAJOR SNAPPY_MINOR SNAPPY_PATCHLEVEL)
+    set(Snappy_VERSION "${SNAPPY_MAJOR}.${SNAPPY_MINOR}.${SNAPPY_PATCHLEVEL}")
 endif()

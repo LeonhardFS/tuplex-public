@@ -85,6 +85,12 @@ namespace tuplex {
         if(udfRetRowType.parameters().size() == 1)
             retType = retType.parameters().front();
 
+        if(PARAM_USE_ROW_TYPE && parentSchema.getRowType().isRowType()) {
+            // check whether index is contained or not
+            auto in_schema = parentSchema.getRowType();
+            return getOutputSchemaFromReturnAndInputRowType(retType, in_schema);
+        }
+
         // create new rowtype depending on output and where column is
         auto inParameters = parentSchema.getRowType().parameters();
 
@@ -100,6 +106,28 @@ namespace tuplex {
         else
             inParameters.emplace_back(retType);
         return Schema(Schema::MemoryLayout::ROW, python::Type::makeTupleType(inParameters));
+    }
+
+    Schema
+    WithColumnOperator::getOutputSchemaFromReturnAndInputRowType(const python::Type &retType, const python::Type &input_type) const {
+
+        if(retType == python::Type::UNKNOWN) {
+            return Schema::UNKNOWN;
+        }
+
+        auto in_column_count = input_type.get_column_count();
+        auto column_names = input_type.get_column_names();
+        auto column_types = input_type.get_column_types();
+        if(_columnToMapIndex < in_column_count)
+            column_types[_columnToMapIndex] = retType;
+        else {
+            if(column_names.empty())
+                column_names = std::vector<std::string>(in_column_count); // important to initialize.
+            column_names.push_back(_newColumn);
+            column_types.push_back(retType);
+        }
+        auto out_row_type = python::Type::makeRowType(column_types, column_names);
+        return Schema(Schema::MemoryLayout::ROW, out_row_type);
     }
 
     void WithColumnOperator::setDataSet(tuplex::DataSet *dsptr) {
@@ -138,6 +166,10 @@ namespace tuplex {
         // special case: UDF produced only exceptions -> set ret type to exception!
         if(udf_ret_type.isExceptionType()) {
             return Schema(Schema::MemoryLayout::ROW, udf_ret_type);
+        }
+
+        if(PARAM_USE_ROW_TYPE && in_schema.getRowType().isRowType()) {
+            return getOutputSchemaFromReturnAndInputRowType(udf_ret_type, in_schema.getRowType());
         }
 
         // check what schema is supposed to be
@@ -233,19 +265,40 @@ namespace tuplex {
         // get current input schema before rewrite
         auto input_schema = getInputSchema(); // this is the unrewritten one.
 
+        // special case: rewriting using row type: Challenge here is the newly added column, it may be part of the rewriteMap
+        // for this reason, remove it when retyping using row type
+        if(PARAM_USE_ROW_TYPE && input_schema.getRowType().isRowType()) {
+            auto input_column_count = _udf.inputColumnCount();
+            auto m = rewriteMap;
+            auto it = m.find(_columnToMapIndex); // part of it?
+            if(it != m.end() && it->first >= input_column_count) {
+                // is contained, remove
+                m.erase(it->first);
+            }
+
+            UDFOperator::rewriteParametersInAST(m);
+            _columnToMapIndex = calcColumnToMapIndex(UDFOperator::columns(), _newColumn);
+            setOutputSchema(inferSchema(input_schema, false));
+            return;
+        }
+
         // rewrite UDF & update schema
         UDFOperator::rewriteParametersInAST(rewriteMap);
         _columnToMapIndex = calcColumnToMapIndex(UDFOperator::columns(), _newColumn);
         setOutputSchema(inferSchema(input_schema, false)); // input schema is not rewritten, but parameters in AST are?
     }
 
-    std::shared_ptr<LogicalOperator> WithColumnOperator::clone(bool cloneParents) {
+    std::shared_ptr<LogicalOperator> WithColumnOperator::clone(bool cloneParents) const {
         auto copy = new WithColumnOperator(cloneParents ? parent()->clone() : nullptr, UDFOperator::columns(),
                                            _newColumn, _udf, UDFOperator::rewriteMap());
         copy->setDataSet(getDataSet());
         // clone id
         copy->copyMembers(this);
         assert(getID() == copy->getID());
+
+        // sanity check, output schema
+        if(cloneParents)
+            assert(checkBasicEqualityOfOperators(*copy, *this));
         return std::shared_ptr<LogicalOperator>(copy);
     }
 
@@ -259,11 +312,11 @@ namespace tuplex {
         auto oldIn = getInputSchema();
         auto oldOut = getOutputSchema();
 
-        assert(input_row_type.isTupleType());
-        auto colTypes = input_row_type.parameters();
+        assert(input_row_type.isTupleType() || input_row_type.isRowType());
+        auto colTypes = input_row_type.isRowType() ? input_row_type.get_column_types() : input_row_type.parameters();
 
         // check that number of parameters are identical, else can't rewrite (need to project first!)
-        size_t num_params_before_retype = oldIn.getRowType().parameters().size();
+        size_t num_params_before_retype = oldIn.getRowType().isRowType() ? oldIn.getRowType().get_column_count() : oldIn.getRowType().parameters().size();
         size_t num_params_after_retype = colTypes.size();
         if(num_params_before_retype != num_params_after_retype) {
             throw std::runtime_error("attempting to retype " + name() + " operator, but number of parameters does not match.");
@@ -273,9 +326,7 @@ namespace tuplex {
         auto rc = UDFOperator::retype(conf);
         _columnToMapIndex = calcColumnToMapIndex(UDFOperator::columns(), _newColumn);
         if(rc) {
-
             // update schema with result of UDF operator.
-
             return true;
         } else {
             return false;

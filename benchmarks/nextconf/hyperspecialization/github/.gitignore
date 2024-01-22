@@ -1,2 +1,5 @@
 results/
 job/
+local-exp/
+*.ndjson
+request*.json
