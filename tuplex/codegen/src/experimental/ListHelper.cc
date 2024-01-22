@@ -1620,24 +1620,58 @@ namespace tuplex {
         std::tuple<llvm::Value*, SerializableValue> list_deserialize_from(LLVMEnvironment& env,
                                                                           const IRBuilder& builder,
                                                                           llvm::Value* ptr,
-                                                                          const python::Type& list_type) {
+                                                                          const python::Type& list_type,
+                                                                          llvm::Value* is_null) {
             using namespace std;
             using namespace llvm;
 
             assert(ptr && ptr->getType() == env.i8ptrType());
             assert(list_type.isListType());
 
+            if(is_null)
+                throw std::runtime_error("Option[List] decode in list_deserialize_from not yet implemented.");
+
+            // fetch element type and whether there's a bitmap to indicate optional list elements.
+            auto elementType = list_type.elementType();
+            auto elements_optional = elementType.isOptionType();
+            if(elements_optional)
+                elementType = elementType.getReturnType();
+
             // alloc list ptr
             SerializableValue list_val;
             auto llvm_list_type = env.createOrGetListType(list_type);
 
-            list_val.val = env.CreateFirstBlockAlloca(builder, llvm_list_type);
+            auto list_ptr = env.CreateFirstBlockAlloca(builder, llvm_list_type);
+            list_val.val = list_ptr;
+            list_val.is_null = is_null;
             list_init_empty(env, builder, list_val.val, list_type);
 
             if(python::Type::EMPTYLIST == list_type)
                 return make_tuple(ptr, list_val);
 
-            // else, decode!
+            auto original_ptr = ptr;
+
+            // each list has first 8 bytes always store size
+            auto num_elements = builder.CreateLoad(builder.getInt64Ty(), builder.CreateBitCast(ptr, env.i64ptrType()), "list_num_elements");
+
+            // init list with capacity & store size
+            list_reserve_capacity(env, builder, list_ptr, list_type, num_elements, false);
+            list_store_size(env, builder, list_ptr, list_type, num_elements);
+
+            env.debugPrint(builder, "decoding list with num_elements=", num_elements);
+
+            // decode now depending on element type
+            // first check if list has optional elements, if so the next values will have the bitmap for the options
+            llvm::Value* opt_size = env.i64Const(0);
+            if(elements_optional) {
+                auto len = list_length(env, builder, list_ptr, list_type);
+                // store 1 byte?
+                opt_size = builder.CreateMul(env.i64Const(1), len);
+                // for efficiency, round up to multiple of 8. (alignment)
+                opt_size = env.roundUpToMultiple(builder, opt_size, sizeof(int64_t));
+            }
+
+
             throw std::runtime_error("missing implementation for list_deserialize_from, need to add!");
 
             return make_tuple(ptr, list_val);
