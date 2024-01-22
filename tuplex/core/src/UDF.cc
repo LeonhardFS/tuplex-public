@@ -684,7 +684,7 @@ namespace tuplex {
             }
 
             auto body = BasicBlock::Create(env.getContext(), "body", func);
-            IRBuilder<> builder(body);
+            IRBuilder builder(body);
             builder.CreateRet(env.i64Const(ecToI64(ec))); // <-- always returns ec code.
 
             return func->getName().str();

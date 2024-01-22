@@ -4155,7 +4155,7 @@ namespace tuplex {
             assert(value_type.isRowType());
 
             // can only subscript if a static key can be extracted (for now)
-            auto t_key_and_type = extractStaticKey(idx_expr_type, idx_expr, idx_expr_node);
+            auto t_key_and_type = extractStaticKey(*_env, idx_expr_type, idx_expr, idx_expr_node);
             auto key = std::get<0>(t_key_and_type);
             auto key_type = std::get<1>(t_key_and_type);
 

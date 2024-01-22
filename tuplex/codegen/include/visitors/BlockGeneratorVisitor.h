@@ -695,7 +695,7 @@ namespace codegen {
                                  const SerializableValue& idx_expr,
                                  ASTNode* idx_expr_node=nullptr);
 
-        bool subscriptRow(llvm::IRBuilder<> &builder,
+        bool subscriptRow(const IRBuilder &builder,
                                                  SerializableValue *out_ret,
                                                  const python::Type &value_type,
                                                  const SerializableValue &value,

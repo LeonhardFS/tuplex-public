@@ -3102,7 +3102,7 @@ namespace tuplex {
         }
 
         SerializableValue
-        FunctionRegistry::createRowGetCall(tuplex::codegen::LambdaFunctionBuilder &lfb, llvm::IRBuilder<> &builder,
+        FunctionRegistry::createRowGetCall(tuplex::codegen::LambdaFunctionBuilder &lfb, const IRBuilder &builder,
                                            const tuplex::codegen::SerializableValue &caller,
                                            const python::Type &callerType,
                                            const std::vector<tuplex::codegen::SerializableValue> &args,
@@ -3130,7 +3130,7 @@ namespace tuplex {
                 if(key_type.isConstantValued())
                     key_constant = key_type.constant();
                 if(llvm::dyn_cast<llvm::ConstantExpr>(args.front().val))
-                    key_constant = globalVariableToString(args.front().val);
+                    key_constant = _env.globalVariableToString(args.front().val);
 
                 // string constant?
                 if(!key_constant.empty()) {

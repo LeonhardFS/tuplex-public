@@ -574,7 +574,7 @@ namespace tuplex {
             return make_tuple(ptr, bitmap);
         }
 
-        inline SerializableValue tuple_load_element(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* tuple_ptr, const python::Type& tuple_type, unsigned idx) {
+        inline SerializableValue tuple_load_element(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* tuple_ptr, const python::Type& tuple_type, unsigned idx) {
             assert(tuple_type.isTupleType() && tuple_type.parameters().size() > 0);
 
             assert(tuple_type != python::Type::EMPTYTUPLE);
