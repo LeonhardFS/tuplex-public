@@ -143,9 +143,9 @@ FetchContent_MakeAvailable(simdjson)
 
 # set here dependencies, include_targets, link_targets
 if(BUILD_WITH_CEREAL)
-    set(UTILS_DEPENDENCIES fmt spdlog json cereal)
+    set(UTILS_DEPENDENCIES fmt spdlog json cereal simdjson)
 else()
-    set(UTILS_DEPENDENCIES fmt spdlog json)
+    set(UTILS_DEPENDENCIES fmt spdlog json simdjson)
 endif()
 
 set(UTILS_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include

@@ -14,7 +14,9 @@
 // include backward lib
 #ifdef __APPLE__
 // init backtrace
+#ifndef BACKWARD_HAS_DWARF
 #define BACKWARD_HAS_DWARF 1
+#endif
 #include <backward.hpp>
 backward::SignalHandling sh;
 #endif
