@@ -27,11 +27,20 @@ IF(BREW_FOUND)
         # check which version there is
         # if not sys.stdin.isatty():
         #    data = sys.stdin.readlines()
+        if(LLVM_ROOT_DIR)
+            message(STATUS "Given LLVM root directory: ${LLVM_ROOT_DIR}")
+            # check if llvm-config is available in directory
+            if(NOT EXISTS "${LLVM_ROOT_DIR}/bin/llvm-config")
+                message(FATAL_ERROR "could not find llvm-config in ${LLVM_ROOT_DIR}/bin/llvm-config")
+            endif()
+            set(BREW_LLVM_NOTFOUND 0)
+        else()
+            # could use brew prefix here, but let's leave it like this
+            EXECUTE_PROCESS(COMMAND bash "-c" "brew info llvm | grep Cellar | cut -d ' ' -f 1" OUTPUT_VARIABLE LLVM_ROOT_DIR RESULT_VARIABLE BREW_LLVM_NOTFOUND OUTPUT_STRIP_TRAILING_WHITESPACE)
+        endif()
 
-        # could use brew prefix here, but let's leave it like this
-        EXECUTE_PROCESS(COMMAND bash "-c" "brew info llvm | grep Cellar | cut -d ' ' -f 1" OUTPUT_VARIABLE LLVM_ROOT_DIR RESULT_VARIABLE BREW_LLVM_NOTFOUND OUTPUT_STRIP_TRAILING_WHITESPACE)
         IF(NOT BREW_LLVM_NOTFOUND EQUAL "0")
-            MESSAGE(WARNING "did not find llvm, you might install it via `brew install llvm@9`")
+            MESSAGE(WARNING "did not find LLVM, you might install it via `brew install llvm`")
         ELSE()
             # check version, needs to be within 5 and 9 incl.
             # i.e. execute something like /usr/local/opt/llvm/bin/llvm-config --version
