@@ -651,7 +651,7 @@ namespace tuplex {
 #if LLVM_VERSION_MAJOR == 9
                 return get_or_throw().CreateMemSet(Ptr, Val, Size, Align, isVolatile, TBAATag, ScopeTag, NoAliasTag);
 #elif LLVM_VERSION_MAJOR > 9
-#error "not implemented"
+                return get_or_throw().CreateMemSet(Ptr, Val, Size, llvm::MaybeAlign(Align), isVolatile, TBAATag, ScopeTag, NoAliasTag);
 #endif
             }
 
