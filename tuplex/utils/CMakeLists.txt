@@ -1,5 +1,9 @@
 # (c) 2018 L.Spiegelberg
 # contains util classes + definitions
+
+cmake_minimum_required(VERSION 3.16)
+cmake_policy(SET CMP0097 NEW)
+
 file(GLOB_RECURSE SOURCES src/*.cc src/*.c)
 file(GLOB_RECURSE INCLUDES include/*.h)
 
@@ -75,17 +79,6 @@ else()
     # Note: alternative is to use CJSON_HIDE_SYMBOLS IWTH AWS SDK.
 endif()
 
-# include simdjson, tutorial here https://github.com/simdjson/cmake_demo_single_file/blob/master/CMakeLists.txt
-include(FetchContent)
-FetchContent_Declare(
-        simdjson
-        GIT_REPOSITORY https://github.com/simdjson/simdjson.git
-        GIT_SHALLOW TRUE
-        GIT_TAG tags/v2.0.4
-)
-
-FetchContent_MakeAvailable(simdjson)
-
 # AWS SDK defines cjson since v1.5, yet if using BUILD_WITH_AWS=OFF make sure to add cJSON symbols...
 if(NOT BUILD_WITH_AWS)
     list(APPEND SOURCES ${cjson_SOURCE_DIR}/cJSON.c)
@@ -128,16 +121,35 @@ ExternalProject_Get_Property(cereal source_dir)
 set(cereal_INCLUDE_DIR ${source_dir}/include)
 endif()
 
-# include simdjson, tutorial here https://github.com/simdjson/cmake_demo_single_file/blob/master/CMakeLists.txt
-include(FetchContent)
-FetchContent_Declare(
-        simdjson
-        GIT_REPOSITORY https://github.com/simdjson/simdjson.git
-        GIT_SHALLOW TRUE
-        GIT_TAG tags/v3.0.0
-)
-FetchContent_MakeAvailable(simdjson)
+## include simdjson, tutorial here https://github.com/simdjson/cmake_demo_single_file/blob/master/CMakeLists.txt
+#include(FetchContent)
+#FetchContent_Declare(
+#        simdjson
+#        GIT_REPOSITORY https://github.com/simdjson/simdjson.git
+#        GIT_SHALLOW TRUE
+#        GIT_TAG tags/v3.6.3
+#)
+#FetchContent_MakeAvailable(simdjson)
 
+# Use external project here because simdjson contains a file <base.h> which
+# clashes with Tuplex's Base.h when imported.
+
+ExternalProject_Add(simdjson_repo
+        GIT_REPOSITORY    https://github.com/simdjson/simdjson.git
+        GIT_SHALLOW       TRUE
+        GIT_TAG tags/v3.6.3
+        CMAKE_ARGS -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}
+        PREFIX "${EXTERNAL_INSTALL_LOCATION}"
+        INSTALL_COMMAND "" # Disable install step
+)
+
+add_library(simdjson STATIC IMPORTED)
+ExternalProject_Get_Property(simdjson_repo binary_dir)
+set_target_properties(simdjson PROPERTIES IMPORTED_LOCATION "${binary_dir}/libsimdjson.a")
+ExternalProject_Get_Property(simdjson_repo source_dir)
+set(simdjson_INCLUDE_DIR ${source_dir}/include)
+set(simdjson_LIBRARY "${binary_dir}/libsimdjson.a")
+add_dependencies(simdjson simdjson_repo)
 # ------
 # dependencies
 
@@ -157,9 +169,10 @@ set(UTILS_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${cereal_INCLUDE_DIR}
         ${Boost_INCLUDE_DIR}
         ${AWSSDK_INCLUDE_DIR}
-        ${ZLIB_INCLUDE_DIRS})
+        ${ZLIB_INCLUDE_DIRS}
+        ${simdjson_INCLUDE_DIR})
 set(UTILS_LIBRARIES Boost::filesystem Boost::thread Boost::system
-        Boost::system Boost::iostreams ${ZLIB_LIBRARIES} ${AWSSDK_LINK_LIBRARIES} simdjson::simdjson)
+        Boost::system Boost::iostreams ${ZLIB_LIBRARIES} ${AWSSDK_LINK_LIBRARIES} simdjson)
 
 # object library
 add_dependencies(libutils ${UTILS_DEPENDENCIES})

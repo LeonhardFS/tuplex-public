@@ -33,15 +33,15 @@ option(BUILD_WITH_CEREAL "whether to enable cereal based serialization or not. D
 option(USE_PRECOMPILED_HEADERS "use precompiled headers" OFF)
 
 # set here library mode, depending on OS
-if(APPLE)
-    set(LIBRARY_MODE OBJECT)
-else()
+#if(APPLE)
+#    set(LIBRARY_MODE OBJECT)
+#else()
     if(BUILD_SHARED_LIBS)
         set(LIBRARY_MODE SHARED)
     else()
         set(LIBRARY_MODE STATIC)
     endif()
-endif()
+#endif()
 
 # variables:
 # AWS_S3_TEST_BUCKET ==> specifies bucket to run tests on!
