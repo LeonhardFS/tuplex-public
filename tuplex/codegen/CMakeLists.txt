@@ -76,6 +76,8 @@ if(LLVM_DIR)
 endif()
 MESSAGE(STATUS "Found LLVM include dirs at: " ${LLVM_INCLUDE_DIRS})
 MESSAGE(STATUS "LLVM library dir: ${LLVM_LIBRARY_DIRS}")
+message(STATUS "Requiring following LLVM components: ${LLVM_REQUIRED_COMPONENTS}")
+llvm_map_components_to_libnames(LLVM_LIBRARIES ${LLVM_REQUIRED_COMPONENTS})
 set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH} ${LLVM_LIBRARY_DIRS})
 
 include_directories(${LLVM_INCLUDE_DIRS})
@@ -154,6 +156,8 @@ target_include_directories(libcodegen PUBLIC
         ${PCRE2_INCLUDE_DIRS}
         )
 
+ASSERT_VAR(LLVM_LIBRARIES)
+
 # Declare the library
 target_link_libraries(libcodegen
         PUBLIC
@@ -167,4 +171,5 @@ target_link_libraries(libcodegen
         ${LLVM_LIBRARIES}
         ${ZLIB_LIBRARIES}
         ${CURSES_LIBRARIES}
+        ${LLVM_LIBRARIES}
         )
