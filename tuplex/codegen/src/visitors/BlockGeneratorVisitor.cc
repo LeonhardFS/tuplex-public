@@ -948,7 +948,7 @@ namespace tuplex {
                 loopVar->addIncoming(_env->i64Const(0), startBlock); // start loopvar at 0
 
                 // TODO: better compare for strings etc.
-                auto el = list_get_element(*_env, builder, rightType, R, loopVar).val;
+                auto el = list_load_value(*_env, builder, R, rightType, loopVar).val;
                 auto found = compareInst(builder, L, leftType, TokenType::EQEQUAL, el, elementType); // check for the element
                 builder.CreateStore(found, res);
 
@@ -3410,6 +3410,8 @@ namespace tuplex {
                     // store size as well
                     list_store_size(*_env, builder, list_ptr, list_type, numiters);
 
+                    // _env->debugPrint(builder, "allocated list of capacity and size: ", numiters);
+
                     // initialize target
                     llvm::Value *tuple_array, *tuple_sizes;
                     if(iterType == python::Type::RANGE) {
@@ -3433,7 +3435,7 @@ namespace tuplex {
                             // list ptr
                             auto llvm_list_type = _env->createOrGetListType(iterType);
 
-                            auto init_val = list_get_element(*_env, builder, iterType, iter.val, start);
+                            auto init_val = list_load_value(*_env, builder, iter.val, iterType,  start);
                             builder.CreateStore(init_val.val, target.val);
                             if(iterType.elementType() == python::Type::STRING) {
                                 builder.CreateStore(init_val.size, target.size);
@@ -3474,7 +3476,12 @@ namespace tuplex {
                     assert(expression.is_null || expression.val);
 
                     _blockStack.pop_back();
-                    list_store_element(*_env, builder, list_type, list_ptr, loopVar, expression);
+                    // _env->debugPrint(builder, "storing into list at position: ", loopVar);
+                    // _env->debugPrint(builder, "storing into list expression: ", expression.val);
+                    list_store_value(*_env, builder, list_ptr, list_type, loopVar, expression);
+
+                    // auto test_val = list_load_value(*_env, builder, list_ptr, list_type, loopVar);
+                    // _env->debugPrint(builder, "test-wise retrieved list element: ", test_val.val);
 
                     auto nextLoopVar = builder.CreateAdd(loopVar, _env->i64Const(1));
                     loopVar->addIncoming(nextLoopVar, builder.GetInsertBlock()); // add nextloopvar as a phi node input to the loopvar
@@ -3499,7 +3506,7 @@ namespace tuplex {
                             // don't need to do anything
                         } else {
 
-                            auto element = list_get_element(*_env, builder, iterType, iter.val, nextLoopVar);
+                            auto element = list_load_value(*_env, builder, iter.val, iterType, nextLoopVar);
                             builder.CreateStore(element.val, target.val);
                             if(iterType.elementType() == python::Type::STRING) {
                                 builder.CreateStore(element.size, target.size);
@@ -5927,7 +5934,7 @@ namespace tuplex {
                                                                         builder.CreateGEP(builder.getInt64Ty(), list_size_array_ptr, _env->i32Const(i)));
                                     addInstruction(idVal, idValSize);
                                 } else if(idType.isTupleType()) {
-                                    _env->debugPrint(builder, "assigning tuple");
+                                    // _env->debugPrint(builder, "assigning tuple");
                                     FlattenedTuple ft = FlattenedTuple::fromLLVMStructVal(_env, builder, idVal, idType);
                                     addInstruction(idVal, ft.getSize(builder));
                                 } else {

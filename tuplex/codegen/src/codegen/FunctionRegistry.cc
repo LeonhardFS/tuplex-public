@@ -2076,7 +2076,7 @@ namespace tuplex {
                     auto random_number = builder.CreateCall(uniformInt_prototype(_env.getContext(), _env.getModule().get()), {_env.i64Const(0), num_elements});
 
                     // list load
-                    auto sub = list_get_element(_env, builder, argType, arg.val, random_number);
+                    auto sub = list_load_value(_env, builder, arg.val, argType, random_number);
                     return sub;
                 }
             } else {

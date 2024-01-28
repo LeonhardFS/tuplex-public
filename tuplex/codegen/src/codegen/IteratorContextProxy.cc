@@ -9,6 +9,7 @@
 //--------------------------------------------------------------------------------------------------------------------//
 
 #include <codegen/IteratorContextProxy.h>
+#include "experimental/ListHelper.h"
 
 namespace tuplex {
     namespace codegen {
@@ -635,8 +636,7 @@ namespace tuplex {
             auto iterableAllocPtr = builder.CreateGEP(llvm_iterator_context_type, iterator, {_env.i32Const(0), _env.i32Const(2)});
             auto iterableAlloc = builder.CreateLoad(llvm_iterator_context_type->getStructElementType(2), iterableAllocPtr);
             if(iterablesType.isListType()) {
-
-                auto ret = list_get_element(_env, builder, iterablesType, iterableAlloc, index);
+                auto ret = list_load_value(_env, builder, iterableAlloc, iterablesType, index);
                 retVal = ret.val;
                 retSize = ret.size;
             } else if(iterablesType == python::Type::STRING) {

@@ -2269,13 +2269,6 @@ namespace tuplex {
             return llvm::ConstantInt::get(llvm::Type::getIntNTy(ctx, type->getIntegerBitWidth()), b);
         }
 
-        extern SerializableValue list_get_element(LLVMEnvironment& env, const codegen::IRBuilder& builder,
-                                                  const python::Type& list_type, llvm::Value* list_ptr, llvm::Value* index);
-
-        void list_store_element(LLVMEnvironment& env, const codegen::IRBuilder& builder,
-                                const python::Type& list_type, llvm::Value* list_ptr,
-                                llvm::Value* index, const SerializableValue& val);
-
         extern SerializableValue homogenous_tuple_dynamic_get_element(LLVMEnvironment& env, const codegen::IRBuilder& builder,
                                                                       const python::Type& tuple_type, llvm::Value* tuple, llvm::Value* index);
 

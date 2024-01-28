@@ -1037,12 +1037,15 @@ namespace tuplex {
             builder.CreateStore(len, casted_dest_ptr);
             dest_ptr = builder.MovePtrByBytes(dest_ptr, sizeof(int64_t));
 
+            env.debugPrint(builder, "serializing list of size: ", len);
+
             // memcpy data_ptr
             auto ptr_values = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, 2);
             ptr_values = builder.CreatePointerCast(ptr_values, env.i8ptrType());
             auto data_size = builder.CreateMul(env.i64Const(8), len); // size in bytes!
             builder.CreateMemCpy(dest_ptr, 0, ptr_values, 0, data_size);
             auto size = builder.CreateAdd(env.i64Const(8), data_size);
+            env.debugPrint(builder, "total serialized list size are bytes: ", size);
             return size;
         }
 
