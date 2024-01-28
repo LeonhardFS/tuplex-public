@@ -332,7 +332,16 @@ namespace tuplex {
             return false;
 
         if(PARAM_USE_ROW_TYPE) {
-            assert(hintType.isRowType() || hintType.isExceptionType());
+            // could be given as primitive
+            if(!hintType.isRowType() && !hintType.isExceptionType()) {
+                if(!hintType.isTupleType())
+                    hintType = codegenTypeToRowType(hintType);
+                assert(hintType.isTupleType());
+                // keep primitives as tuples
+                if(hintType.parameters().size() != 1)
+                    hintType = python::Type::makeRowType(hintType.parameters());
+            }
+            // assert(hintType.isRowType() || hintType.isExceptionType());
         } else {
             // if it's not a tuple type, go directly to the special case...
             if(!hintType.isTupleType())
@@ -345,10 +354,10 @@ namespace tuplex {
             return true;
         }
 
-        if(PARAM_USE_ROW_TYPE)
-            assert(hintType.isRowType());
-        else
-            assert(hintType.isTupleType());
+//        if(PARAM_USE_ROW_TYPE)
+//            assert(hintType.isRowType());
+//        else
+//            assert(hintType.isTupleType());
 
         // there are two cases now:
         // either the user accesses everything as a tuple or the first tuple gets unpacked (syntactical sugar)
@@ -360,7 +369,7 @@ namespace tuplex {
         } else if(1 == params.size()) {
 
             // simpler hinting using row type, for a single param - assume it's the full row
-            if(PARAM_USE_ROW_TYPE) {
+            if(PARAM_USE_ROW_TYPE && hintType.isRowType()) {
                 if(!hintParams({hintType}, params, true, removeBranches)) {
                     logTypingErrors(printErrors);
                     return false;
