@@ -820,11 +820,12 @@ namespace tuplex {
             // offset numbers
             size_t current_offset = sizeof(uint64_t) * l.numElements();
             for (size_t i = 0; i < l.numElements(); i++) {
-                *((uint64_t *)ptr) = current_offset;
+                auto current_size = strlen((char *) l.getField(i).getPtr()) + 1;
+                *((uint64_t *)ptr) = pack_offset_and_size(current_offset, current_size);
                 ptr += sizeof(uint64_t);
                 // update for next field: move forward one uint64_t, then add on the string
                 current_offset -= sizeof(uint64_t);
-                current_offset += strlen((char *) l.getField(i).getPtr()) + 1;
+                current_offset += current_size;
             }
             // string data
             for (size_t i = 0; i < l.numElements(); i++) {
@@ -1102,7 +1103,7 @@ namespace tuplex {
                         assert(varFieldSize >= 0);
 
                         // lower 32bit are offset, higher 32bit size in bytes of this varfield.
-                        int64_t info = varLenOffset | (varFieldSize << 32);
+                        int64_t info = pack_offset_and_size(varLenOffset, varFieldSize);
                         // write offset to ptr
                         *((int64_t *) ((uint8_t *) ptr + bitmapSize + offset)) = info;
 
