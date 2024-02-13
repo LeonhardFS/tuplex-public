@@ -363,6 +363,10 @@ namespace tuplex {
         return std::make_tuple(offset, size);
     }
 
+    inline uint64_t pack_offset_and_size(uint64_t offset, uint64_t size) {
+        return offset | (size << 32);
+    }
+
 }
 
 #endif //TUPLEX_SERIALIZER_H
