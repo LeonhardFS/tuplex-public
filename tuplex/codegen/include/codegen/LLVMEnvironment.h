@@ -736,6 +736,22 @@ namespace tuplex {
              */
             SerializableValue dummyValue(const IRBuilder& builder, const python::Type &type);
 
+            inline bool functionCacheHasKey(const std::string& key) const {
+                return _generatedFunctionCache.find(key) != _generatedFunctionCache.end();
+            }
+
+            inline llvm::Function* functionCacheGet(const std::string& key) const {
+                return _generatedFunctionCache.at(key);
+            }
+
+            inline bool functionCacheSet(const std::string& key, llvm::Function* function) {
+                assert(!functionCacheHasKey(key));
+                assert(function && function->getParent() == _module.get());
+                _generatedFunctionCache[key] = function;
+
+                return true;
+            }
+
             /*!
              * creates llvm code for boolean value corresponding to this environment
              * @param builder belonging to basic block where to insert instruction

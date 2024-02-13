@@ -2334,23 +2334,19 @@ namespace tuplex {
             return builder.CreateLoad(llvm_ret_var_type, ret_var);
         }
 
-        SerializableValue FunctionRegistry::createListFindCall(const IRBuilder& builder,
-                                                              const python::Type& list_type,
-                                                              const tuplex::codegen::SerializableValue &list,
-                                                              const python::Type& needle_type,
-                                                              const tuplex::codegen::SerializableValue &needle) {
+        llvm::Function* generate_list_index_function(LLVMEnvironment& env, const python::Type& list_type, const python::Type& value_type) {
 
             using namespace llvm;
 
-            auto list_ptr = list.val;
-
             // create a function which performs the search on top of the list via linear search and comparison.
-            auto val_type = needle.val ? needle.val->getType() : _env.i64Type(); // dummy i64 type in case
-            auto FT = FunctionType::get(_env.i64Type(), {list_ptr->getType(), needle.val->getType(),
-                                                         _env.i64Type(), _env.i1Type()}, false);
-            auto func = llvm::Function::Create(FT, Function::InternalLinkage, "listIndex", _env.getModule().get());
+            // Cache this function for reuse -> need to make sure there's an individual key associated.
+            auto llvm_value_type = env.pythonToLLVMType(value_type);
+            auto llvm_list_type = env.createOrGetListType(list_type);
+            auto FT = FunctionType::get(env.i64Type(), {llvm_list_type->getPointerTo(), llvm_value_type,
+                                                         env.i64Type(), env.i1Type()}, false);
+            auto func = llvm::Function::Create(FT, Function::InternalLinkage, "list_index", env.getModule().get());
             {
-                auto bbEntry = BasicBlock::Create(_env.getContext(), "entry", func);
+                auto bbEntry = BasicBlock::Create(env.getContext(), "entry", func);
                 llvm::IRBuilder<> builder(bbEntry);
                 auto args = mapLLVMFunctionArgs(func, {"list_ptr", "val", "size", "is_null"});
                 auto list_ptr = args["list_ptr"];
@@ -2358,7 +2354,7 @@ namespace tuplex {
 
 
                 // some debugging
-                auto num_list_elements = list_length(_env, builder, list_ptr, list_type);
+                auto num_list_elements = list_length(env, builder, list_ptr, list_type);
 
                 // _env.printValue(builder, num_list_elements, "got list of size: ");
                 // if(needle.val)_env.printValue(builder, needle.val, "needle to search for: ");
@@ -2367,8 +2363,8 @@ namespace tuplex {
 
                 // now create iteration & compare values
                 // generate loop to go over items.
-                auto loop_i = _env.CreateFirstBlockAlloca(builder, _env.i64Type());
-                builder.CreateStore(_env.i64Const(0), loop_i);
+                auto loop_i = env.CreateFirstBlockAlloca(builder, env.i64Type());
+                builder.CreateStore(env.i64Const(0), loop_i);
 
                 //// create item var
                 //auto el_type = list_type.elementType();
@@ -2377,7 +2373,7 @@ namespace tuplex {
                 //                             _env.CreateFirstBlockAlloca(builder, _env.i1Type()));
 
                 // start loop going over the size entries (--> this could be vectorized!)
-                auto& ctx = _env.getContext(); auto F = builder.GetInsertBlock()->getParent();
+                auto& ctx = env.getContext(); auto F = builder.GetInsertBlock()->getParent();
                 BasicBlock *bLoopHeader = BasicBlock::Create(ctx, "list_items_loop_header", F);
                 BasicBlock *bLoopBody = BasicBlock::Create(ctx, "list_items_loop_body", F);
                 BasicBlock *bLoopExit = BasicBlock::Create(ctx, "list_items_loop_done", F);
@@ -2403,7 +2399,7 @@ namespace tuplex {
                     auto loop_i_val = builder.CreateLoad(loop_i);
 
                     // fetch element, compare return if good... i
-                    auto el = list_load_value(_env, builder, list_ptr, list_type, loop_i_val);
+                    auto el = list_load_value(env, builder, list_ptr, list_type, loop_i_val);
 
                     //// store into var
                     //builder.CreateStore(el.val, item_var.val);
@@ -2421,7 +2417,7 @@ namespace tuplex {
                     //     _env.printValue(builder, el.is_null, "element is_null: ");
 
                     // compare against needle:
-                    auto cmp = equal_comparison(_env, builder, list_type.elementType(), el, needle_type, needle);
+                    auto cmp = equal_comparison(env, builder, list_type.elementType(), el, value_type, needle);
                     BasicBlock *bMatchFound = BasicBlock::Create(ctx, "item_match", F);
                     BasicBlock *bNoMatchFound = BasicBlock::Create(ctx, "item_nomatch", F);
                     builder.CreateCondBr(cmp, bMatchFound, bNoMatchFound);
@@ -2432,15 +2428,37 @@ namespace tuplex {
                     // only needed via str for test function...
 
                     // inc. loop counter
-                    builder.CreateStore(builder.CreateAdd(_env.i64Const(1), loop_i_val), loop_i);
+                    builder.CreateStore(builder.CreateAdd(env.i64Const(1), loop_i_val), loop_i);
                     builder.CreateBr(bLoopHeader);
                 }
 
                 builder.SetInsertPoint(bLoopExit);
 
 
-                builder.CreateRet(_env.i64Const(-1));
+                builder.CreateRet(env.i64Const(-1));
             }
+            return func;
+        }
+
+        SerializableValue FunctionRegistry::createListFindCall(const IRBuilder& builder,
+                                                              const python::Type& list_type,
+                                                              const tuplex::codegen::SerializableValue &list,
+                                                              const python::Type& needle_type,
+                                                              const tuplex::codegen::SerializableValue &needle) {
+
+            using namespace llvm;
+
+            // generate lazily function and cache in environment. This lowers burden on optimizer and size of code.
+            auto key = "list_index_" + list_type.desc() + "_" + needle_type.desc();
+            if(!_env.functionCacheHasKey(key)) {
+                _env.functionCacheSet(key, generate_list_index_function(_env, list_type, needle_type));
+            }
+            auto func = _env.functionCacheGet(key);
+            if(!func) {
+                throw std::runtime_error("could not retrieve function " + key);
+            }
+
+            auto list_ptr = list.val;
 
             // create call to created func
             auto val = needle.val ? needle.val : _env.i64Const(0);

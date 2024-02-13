@@ -334,7 +334,7 @@ namespace tuplex {
                 throw std::runtime_error("list type " + list_type.desc() + " load not yet supported.");
 
             // (1) fill value
-            auto llvm_value_type = env.pythonToLLVMType(list_type.elementType());
+            auto llvm_value_type = env.pythonToLLVMType(list_type.elementType().withoutOption());
             auto data_ptr = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, data_index);
             auto data_entry = builder.CreateLoad(llvm_value_type, builder.CreateGEP(llvm_value_type, data_ptr, idx));
             ret.val = data_entry;

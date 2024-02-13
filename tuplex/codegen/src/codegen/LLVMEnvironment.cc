@@ -2005,6 +2005,69 @@ namespace tuplex {
             return SerializableValue(str, builder.CreateLoad(i64Type(), str_size));
         }
 
+
+        llvm::Function* generate_i64_to_str_function(LLVMEnvironment& env) {
+            FunctionType *FT = FunctionType::get(env.i8ptrType(), {env.i64Type(), env.i64ptrType()}, false);
+
+            auto name = "i64_to_str";
+
+#if LLVM_VERSION_MAJOR < 9
+            Function* func = cast<Function>(env.getModule()->getOrInsertFunction(name, FT));
+#else
+            Function *func = cast<Function>(env.getModule()->getOrInsertFunction(name, FT).getCallee());
+#endif
+            auto argMap = mapLLVMFunctionArgs(func, {"value", "res_size_ptr"});
+
+            // Disable attributes to prevent wrong use
+            // func->addFnAttr(Attribute::NoUnwind);
+            // func->addFnAttr(Attribute::NoRecurse);
+            // func->addFnAttr(Attribute::InlineHint);
+
+            BasicBlock *bbEntry = BasicBlock::Create(env.getContext(), "entry", func);
+            IRBuilder b(bbEntry);
+
+            // use sprintf and speculate a bit on size upfront!
+            // then do logic to extend buffer if necessary
+            BasicBlock *bbCastDone = BasicBlock::Create(env.getContext(), "castDone_block",
+                                                        b.GetInsertBlock()->getParent());
+            BasicBlock *bbLargerBuf = BasicBlock::Create(env.getContext(), "strformat_realloc",
+                                                         b.GetInsertBlock()->getParent());
+
+            auto bufVar = b.CreateAlloca(env.i8ptrType());
+            auto fmtSize = env.i64Const(21); // 21 bytes for i64 should be fine as max length
+            std::string fmtString = "%" PRId64; // portable way to print %lld or %ld
+
+            b.CreateStore(env.malloc(b, fmtSize), bufVar);
+            auto snprintf_func = snprintf_prototype(env.getContext(), env.getModule().get());
+
+            //{csvRow, fmtSize, env().strConst(b, fmtString), ...}
+            auto charsRequired = b.CreateCall(snprintf_func, {b.CreateLoad(env.i8ptrType(), bufVar), fmtSize, env.strConst(b, fmtString),
+                                                              argMap["value"]});
+            auto sizeWritten = b.CreateAdd(b.CreateZExt(charsRequired, env.i64Type()), env.i64Const(1));
+
+            // now condition, is this greater than allocSize + 1?
+            auto notEnoughSpaceCond = b.CreateICmpSGT(sizeWritten, fmtSize);
+
+            // two checks: if size is too small, alloc larger buffer!!!
+            b.CreateCondBr(notEnoughSpaceCond, bbLargerBuf, bbCastDone);
+
+            // -- block begin --
+            b.SetInsertPoint(bbLargerBuf);
+            // realloc with sizeWritten
+            // store new malloc in bufVar
+            b.CreateStore(env.malloc(b, sizeWritten), bufVar);
+            b.CreateCall(snprintf_func,
+                         {b.CreateLoad(env.i8ptrType(), bufVar), sizeWritten, env.strConst(b, fmtString), argMap["value"]});
+
+            b.CreateBr(bbCastDone);
+            b.SetInsertPoint(bbCastDone);
+
+            b.CreateStore(sizeWritten, argMap["res_size_ptr"]);
+            b.CreateRet(b.CreateLoad(env.i8ptrType(), bufVar));
+
+            return func;
+        }
+
         SerializableValue LLVMEnvironment::i64ToString(const codegen::IRBuilder& builder, llvm::Value *value) {
             using namespace llvm;
             using namespace std;
@@ -2014,72 +2077,17 @@ namespace tuplex {
             string key = "i64ToStr";
 
             // check if already generated, else generate helper function
-            auto it = _generatedFunctionCache.find(key);
-            if (it == _generatedFunctionCache.end()) {
-                FunctionType *FT = FunctionType::get(i8ptrType(), {i64Type(), i64ptrType()}, false);
+            if(functionCacheHasKey(key)) {
+                auto func = functionCacheGet(key);
+                assert(func);
+                auto str_size = CreateFirstBlockAlloca(builder, i64Type());
+                auto str = builder.CreateCall(func, {value, str_size});
 
-#if LLVM_VERSION_MAJOR < 9
-                Function* func = cast<Function>(_module->getOrInsertFunction(key, FT));
-#else
-                Function *func = cast<Function>(_module->getOrInsertFunction(key, FT).getCallee());
-#endif
-                _generatedFunctionCache[key] = func;
-                auto argMap = mapLLVMFunctionArgs(func, {"value", "res_size_ptr"});
-
-                // Disable attributes to prevent wrong use
-                // func->addFnAttr(Attribute::NoUnwind);
-                // func->addFnAttr(Attribute::NoRecurse);
-                // func->addFnAttr(Attribute::InlineHint);
-
-                BasicBlock *bbEntry = BasicBlock::Create(_context, "entry", func);
-                IRBuilder b(bbEntry);
-
-                // use sprintf and speculate a bit on size upfront!
-                // then do logic to extend buffer if necessary
-                BasicBlock *bbCastDone = BasicBlock::Create(getContext(), "castDone_block",
-                                                            b.GetInsertBlock()->getParent());
-                BasicBlock *bbLargerBuf = BasicBlock::Create(getContext(), "strformat_realloc",
-                                                             b.GetInsertBlock()->getParent());
-
-                auto bufVar = b.CreateAlloca(i8ptrType());
-                auto fmtSize = i64Const(21); // 21 bytes for i64 should be fine as max length
-                string fmtString = "%" PRId64; // portable way to print %lld or %ld
-
-                b.CreateStore(malloc(b, fmtSize), bufVar);
-                auto snprintf_func = snprintf_prototype(getContext(), getModule().get());
-
-                //{csvRow, fmtSize, env().strConst(b, fmtString), ...}
-                auto charsRequired = b.CreateCall(snprintf_func, {b.CreateLoad(i8ptrType(), bufVar), fmtSize, strConst(b, fmtString),
-                                                                  argMap["value"]});
-                auto sizeWritten = b.CreateAdd(b.CreateZExt(charsRequired, i64Type()), i64Const(1));
-
-                // now condition, is this greater than allocSize + 1?
-                auto notEnoughSpaceCond = b.CreateICmpSGT(sizeWritten, fmtSize);
-
-                // two checks: if size is too small, alloc larger buffer!!!
-                b.CreateCondBr(notEnoughSpaceCond, bbLargerBuf, bbCastDone);
-
-                // -- block begin --
-                b.SetInsertPoint(bbLargerBuf);
-                // realloc with sizeWritten
-                // store new malloc in bufVar
-                b.CreateStore(malloc(b, sizeWritten), bufVar);
-                b.CreateCall(snprintf_func,
-                             {b.CreateLoad(i8ptrType(), bufVar), sizeWritten, strConst(b, fmtString), argMap["value"]});
-
-                b.CreateBr(bbCastDone);
-                b.SetInsertPoint(bbCastDone);
-
-                b.CreateStore(sizeWritten, argMap["res_size_ptr"]);
-                b.CreateRet(b.CreateLoad(i8ptrType(), bufVar));
+                return SerializableValue(str, builder.CreateLoad(builder.getInt64Ty(), str_size));
+            } else {
+                functionCacheSet(key, generate_i64_to_str_function(*this));
+                return i64ToString(builder, value);
             }
-
-            auto func = _generatedFunctionCache[key];
-            assert(func);
-            auto str_size = CreateFirstBlockAlloca(builder, i64Type());
-            auto str = builder.CreateCall(func, {value, str_size});
-
-            return SerializableValue(str, builder.CreateLoad(builder.getInt64Ty(), str_size));
         }
 
 

@@ -166,36 +166,45 @@ namespace codegen {
             inline void store(const codegen::IRBuilder& builder, const codegen::SerializableValue& val) {
                 assert(ptr && sizePtr);
 
-                if(val.val) {
+                auto value_to_store = val.val;
+
+                if(value_to_store) {
 
                     // new: -> simply store to pointer.
 
                     // LLVM9 pointer type check
                     if(passByValue()) {
 #ifndef NDEBUG
-                        if(val.val->getType()->getPointerTo() != ptr->getType()) {
+                        if(value_to_store->getType()->getPointerTo() != ptr->getType()) {
                             std::stringstream err;
-                            err<<"attempting to store value of LLVM type "<<env->getLLVMTypeName(val.val->getType())<<" to slot expecting LLVM type "<<env->getLLVMTypeName(ptr->getType());
+                            err<<"attempting to store value of LLVM type "<<env->getLLVMTypeName(value_to_store->getType())<<" to slot expecting LLVM type "<<env->getLLVMTypeName(ptr->getType());
                             Logger::instance().logger("codegen").error(err.str());
                         }
 #endif
-                        assert(val.val->getType()->getPointerTo() == ptr->getType());
+                        assert(value_to_store->getType()->getPointerTo() == ptr->getType());
                     } else {
 
                         // debug checks
 #ifndef NDEBUG
-                        if(val.val->getType()->getPointerTo() != ptr->getType()) {
+                        if(value_to_store->getType()->getPointerTo() != ptr->getType()) {
                             std::stringstream err;
-                            err<<"attempting to store value of LLVM type "<<env->getLLVMTypeName(val.val->getType())<<" to slot expecting LLVM type "<<env->getLLVMTypeName(ptr->getType());
+                            err<<"attempting to store value of LLVM type "<<env->getLLVMTypeName(value_to_store->getType())<<" to slot expecting LLVM type "<<env->getLLVMTypeName(ptr->getType());
                             Logger::instance().logger("codegen").error(err.str());
                         }
 #endif
 
-                        assert(val.val->getType()->isPointerTy());
-                        assert(val.val->getType()->getPointerTo() == ptr->getType());
+                        // not a pointer? alloc variable and store
+                        if(!value_to_store->getType()->isPointerTy()) {
+                            auto tmp = value_to_store;
+                            auto llvm_tmp_type = value_to_store->getType();
+                            value_to_store = env->CreateFirstBlockAlloca(builder, llvm_tmp_type);
+                        }
+
+                        assert(value_to_store->getType()->isPointerTy());
+                        assert(value_to_store->getType()->getPointerTo() == ptr->getType());
                     }
 
-                    builder.CreateStore(val.val, ptr, false);
+                    builder.CreateStore(value_to_store, ptr, false);
                 }
 
                 if(val.size) {
