@@ -41,7 +41,17 @@ namespace tuplex {
             _func._pyArgType = argType;
             _func._pyRetType = retType;
 
-            _fti.init(_func._pyArgType);
+            auto pyArgType = _func._pyArgType;
+
+            // special case: single row type -> make tuple type!
+            if(pyArgType.parameters().size() == 1 && pyArgType.parameters().front().isRowType()) {
+                if(pyArgType.parameters().front() == python::Type::EMPTYROW)
+                    pyArgType = python::Type::EMPTYTUPLE; // no columns
+                else
+                    pyArgType = python::Type::makeTupleType({pyArgType.parameters().front().get_columns_as_tuple_type()}); // convert to tuple type.
+            }
+
+            _fti.init(pyArgType);
             _fto.init(_func._pyRetType);
 
             // create function + load arguments. Necessary instructions for this are added at the start of the basic body block.
@@ -65,6 +75,8 @@ namespace tuplex {
             assert(_env->getOrCreateTupleType(_fti.flattenedTupleType()) == _fti.getLLVMType());
             auto outRowLLVMType = _fto.getLLVMType()->getPointerTo();
             auto inRowLLVMType = _fti.getLLVMType()->getPointerTo();
+
+            // special case: If
 
             FunctionType *FT = FunctionType::get(_env->i64Type(), {outRowLLVMType,
                                                                    inRowLLVMType}, false);
@@ -154,6 +166,11 @@ namespace tuplex {
 
             if (pyArgType.parameters().size() == 1) {
                 if (isFirstArgTuple && pyArgType.parameters().front() != python::Type::EMPTYTUPLE) {
+
+                    // special case: (Row[]) --> HACK
+                    if(pyArgType.parameters().front() == python::Type::EMPTYROW)
+                        pyArgType = python::Type::EMPTYTUPLE;
+
                     // create ftarg from llvm struct val (i.e. the pointer)
                     assert(args.back()->getName() == "inRow");
                     auto ftarg = FlattenedTuple::fromLLVMStructVal(_env, builder, args.back(), pyArgType);

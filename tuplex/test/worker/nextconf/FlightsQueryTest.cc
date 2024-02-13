@@ -156,7 +156,7 @@ namespace tuplex {
         using namespace std;
 
         // set input/output paths
-        auto exp_settings = localWorkerSettings(true); // lambdaSettings(true);
+        auto exp_settings = localWorkerSettings(false); // localWorkerSettings(true); // lambdaSettings(true);
         auto input_pattern = exp_settings["input_path"];
         auto output_path = exp_settings["output_path"];
         SamplingMode sm = static_cast<SamplingMode>(stoi(exp_settings["sampling_mode"]));
@@ -165,6 +165,9 @@ namespace tuplex {
             if(startsWith(kv.first, "tuplex."))
                 co.set(kv.first, kv.second);
 
+
+        // // debug:
+        // input_pattern = "/hot/data/flights_all/flights*2002*.csv";
 
         // set sampling back to regular one & use just 256KB
         // sampling Mode C

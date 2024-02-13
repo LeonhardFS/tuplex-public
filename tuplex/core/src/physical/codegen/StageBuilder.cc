@@ -182,7 +182,19 @@ namespace tuplex {
                     }
                     case LogicalOperatorType::MAP: {
                         auto udfop = dynamic_cast<UDFOperator *>(op.get()); assert(udfop);
-                        ppb.mapOperation(op->getID(), udfop->getUDF(), udfop->columns());
+
+                        // special case: select operation --> keep columns to be more compatible.
+                        // this is a hack because of issues with the integer column access thingy
+                        if(op->name() == "select") {
+                            // create new, simple UDF for this
+                            auto columns_accessed = udfop->columns();
+                            auto new_udf_code = generate_python_code_for_select_columns_udf(columns_accessed);
+                            auto new_udf = UDF(new_udf_code);
+                            ppb.mapOperation(op->getID(), new_udf, udfop->columns());
+                        } else {
+                            ppb.mapOperation(op->getID(), udfop->getUDF(), udfop->columns());
+                        }
+
                         break;
                     }
                     case LogicalOperatorType::FILTER: {
@@ -973,7 +985,10 @@ namespace tuplex {
                     case FileFormat::OUTFMT_TEXT: {
 
                         // check that generalCaseInputRowType and readSchema are compatible
-                        if(!python::canUpcastToRowType(pathContext.readSchema.getRowType(), generalCaseInputRowType)) {
+                        auto read_row_type = pathContext.readSchema.getRowType();
+                        if(read_row_type.isRowType())
+                            read_row_type = read_row_type.get_columns_as_tuple_type();
+                        if(!python::canUpcastToRowType(read_row_type, generalCaseInputRowType)) {
                             // throw std::runtime_error("incompatible normal and general case row type for parsing text data");
                             // this can happen, e.g. when normal-case is differently specialized
                             // --> forces rows onto fallback path for each row when there's not compatibility between normal/general case!

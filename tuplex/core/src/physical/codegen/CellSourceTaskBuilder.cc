@@ -637,10 +637,12 @@ namespace tuplex {
 
             auto rowType = restrictRowType(columnsToSerialize, inputRowType);
 
-            assert(columnsToSerialize.size() == inputRowType.parameters().size());
+            assert(columnsToSerialize.size() == extract_columns_from_type(inputRowType));
 
             FlattenedTuple ft(&env());
-            ft.init(rowType);
+            auto tuple_row_type = rowType.isRowType() ? rowType.get_columns_as_tuple_type() : rowType;
+            assert(tuple_row_type.isTupleType());
+            ft.init(tuple_row_type);
 
             // create flattened tuple & fill its values.
             // Note: might need to do value conversion first!!!
@@ -648,8 +650,8 @@ namespace tuplex {
             for(int i = 0; i < columnsToSerialize.size(); ++i) {
                 // should column be serialized? if so emit type logic!
                 if(columnsToSerialize[i]) {
-                    assert(rowTypePos < rowType.parameters().size());
-                    auto t = rowType.parameters()[rowTypePos];
+                    assert(rowTypePos < extract_columns_from_type(rowType));
+                    auto t = rowType.isRowType() ? rowType.get_column_type(rowTypePos) : rowType.parameters()[rowTypePos];
 
                     auto val = cachedParse(builder, t, i, cellsPtr, sizesPtr);
                     ft.setElement(builder, rowTypePos, val.val, val.size, val.is_null);

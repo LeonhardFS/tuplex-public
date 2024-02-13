@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Github query for Viton paper
+# TODO: build with cmake -G "Unix Makefiles" -DBUILD_WITH_CEREAL=ON -DSKIP_AWS_TESTS=OFF -DBUILD_WITH_ORC=OFF -DBUILD_WITH_AWS=ON -DPython3_EXECUTABLE=/home/leonhards/.pyenv/shims/python3.9 -DAWS_S3_TEST_BUCKET='tuplex-test' -DLLVM_ROOT_DIR=/opt/llvm-9 ..
 import logging
 import pathlib
 from typing import Optional
@@ -23,6 +24,7 @@ S3_DEFAULT_INPUT_PATTERN='s3://tuplex-public/data/github_daily/*.json'
 S3_DEFAULT_OUTPUT_PATH='s3://tuplex-leonhard/experiments/github'
 S3_DEFAULT_SCRATCH_DIR="s3://tuplex-leonhard/scratch/github-exp"
 
+
 def extract_repo_id(row):
     if 2012 <= row['year'] <= 2014:
 
@@ -32,9 +34,7 @@ def extract_repo_id(row):
         if row['type'] == 'GistEvent':
             return row['payload']['id']
 
-        # this here doesn't work, because no fancy typed row object yet
-        # repo = row.get('repository')
-        repo = row['repository']
+        repo = row.get('repository')
 
         if repo is None:
             return None
@@ -152,7 +152,7 @@ def run_with_python_baseline(args):
 
     job_time = time.time() - tstart
     logging.info(f'total output rows: {total_output_rows}')
-    stats = {"startup_time_in_s": startup_time, "job_time_in_s": job_time, 'mode': 'tuplex',
+    stats = {"benchmark": "flights", "startup_time_in_s": startup_time, "job_time_in_s": job_time, 'mode': 'tuplex',
              'output_path': output_path,
              'input_path': input_pattern, 'scratch_path': scratch_dir, 'total_input_paths_size_in_bytes': total_input_size,
              'total_output_rows': total_output_rows, 'total_input_rows': total_input_rows}
@@ -161,18 +161,13 @@ def run_with_python_baseline(args):
 def github_pipeline(ctx, input_pattern, s3_output_path, sm):
 
     ctx.json(input_pattern, True, True, sm) \
-        .withColumn('year', lambda x: int(x['created_at'].split('-')[0])) \
-        .selectColumns(['type', 'year']) \
+       .withColumn('year', lambda x: int(x['created_at'].split('-')[0])) \
+       .withColumn('repo_id', extract_repo_id) \
+       .filter(lambda x: x['type'] == 'ForkEvent') \
+       .withColumn('commits', lambda row: row['payload'].get('commits')) \
+       .withColumn('number_of_commits', lambda row: len(row['commits']) if row['commits'] else 0) \
+       .selectColumns(['type', 'repo_id', 'year', 'number_of_commits']) \
        .tocsv(s3_output_path)
-
-    # ctx.json(input_pattern, True, True, sm) \
-    #    .withColumn('year', lambda x: int(x['created_at'].split('-')[0])) \
-    #    .withColumn('repo_id', extract_repo_id) \
-    #    .filter(lambda x: x['type'] == 'ForkEvent') \
-    #    .withColumn('commits', lambda row: row['payload'].get('commits')) \
-    #    .withColumn('number_of_commits', lambda row: len(row['commits']) if row['commits'] else 0) \
-    #    .selectColumns(['type', 'repo_id', 'year', 'number_of_commits']) \
-    #    .tocsv(s3_output_path)
 
 # local worker version
 def run_with_tuplex(args):
@@ -237,6 +232,8 @@ def run_with_tuplex(args):
     # load data
     tstart = time.time()
 
+    num_processes = 0
+
     # configuration, make sure to give enough runtime memory to the executors!
     # run on Lambda
     conf = {"webui.enable": False,
@@ -273,7 +270,8 @@ def run_with_tuplex(args):
     #         conf = json.load(fp)
 
     conf['inputSplitSize'] = input_split_size
-    conf["experimental.opportuneCompilation"] = True  # False #True #False #True
+    # disable for now.
+    conf["experimental.opportuneCompilation"] = False #True
 
     if args.no_nvo:
         conf["optimizer.nullValueOptimization"] = False
@@ -295,8 +293,6 @@ def run_with_tuplex(args):
     github_pipeline(ctx, input_pattern, output_path, sm)
 
     ### END QUERY ###
-    run_time = time.time() - tstart
-
     job_time = time.time() - tstart
     print('Tuplex job time: {} s'.format(job_time))
     m = ctx.metrics
@@ -535,9 +531,3 @@ if __name__ == '__main__':
         json.dump(ans, f, sort_keys=True)
         f.write('\n')
     logging.info("Done.")
-
-
-
-
-
-v

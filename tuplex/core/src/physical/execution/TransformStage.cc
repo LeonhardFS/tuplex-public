@@ -1400,7 +1400,7 @@ namespace tuplex {
         optimizeIRInCodePath(opt, _slowCodePath);
     }
 
-    void TransformStage::optimizeIRInCodePath(LLVMOptimizer &opt, StageCodePath &path) {
+    void TransformStage::optimizeIRInCodePath(LLVMOptimizer &opt, StageCodePath &path) const {
         // skip non-existing path
         if(path.code.empty())
             return;
@@ -1412,8 +1412,8 @@ namespace tuplex {
         llvm::LLVMContext ctx;
         auto mod = path.codeFormat == codegen::CodeFormat::LLVM_IR_BITCODE ? codegen::bitCodeToModule(ctx, path.code) : codegen::stringToModule(ctx, path.code);
         opt.optimizeModule(*mod);
-        _fastCodePath.code = codegen::moduleToBitCodeString(*mod);
-        _fastCodePath.codeFormat = codegen::CodeFormat::LLVM_IR_BITCODE;
+        path.code = codegen::moduleToBitCodeString(*mod);
+        path.codeFormat = codegen::CodeFormat::LLVM_IR_BITCODE;
     }
 
     void TransformStage::compileToObjectCode(const std::string &target_triple, const std::string &cpu) {

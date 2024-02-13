@@ -244,18 +244,23 @@ namespace tuplex {
         return true;
     }
 
-    void *JITCompiler::getAddrOfSymbol(const std::string &Name) {
+    void* JITCompiler::getAddrOfSymbol(const std::string &Name, std::ostream *err_stream) {
         if(Name.empty())
             return nullptr;
 
-        // search for symbol in all dylibs
+        // search for symbol in all dylibs starting with most recent one.
         for(auto it = _dylibs.rbegin(); it != _dylibs.rend(); ++it) {
             auto sym = _lljit->lookup(**it, Name);
-            if(sym)
-                return sym->toPtr<void*>(); //reinterpret_cast<void*>(sym..get().getAddress());
-        }
 
-        Logger::instance().logger("LLVM").error("could not find symbol " + Name + ". ");
+            if(sym)
+                return reinterpret_cast<void*>(sym.get().getAddress());
+            else {
+                auto err = sym.takeError();
+                if(err_stream) {
+                    *err_stream<<"getAddrOfSymbol failed for dylib "<<(*it)->getName()<<", details: "<< errToString(err);
+                }
+            }
+        }
         return nullptr;
     }
 

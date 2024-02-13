@@ -65,7 +65,7 @@ IF(NOT "${LLVM_ROOT_DIR}" STREQUAL "")
     message(STATUS "Detected LLVM root dir: ${LLVM_ROOT_DIR}")
     # make cmake find in config mode the right LLVMConfig.cmake file which is located here
     set(LLVM_DIR "${LLVM_ROOT_DIR}/lib/cmake/llvm")
-    FIND_PACKAGE(LLVM 9.0 REQUIRED COMPONENTS ${LLVM_REQUIRED_COMPONENTS})
+    FIND_PACKAGE(LLVM 9.0 REQUIRED COMPONENTS ${LLVM_REQUIRED_COMPONENTS} CONFIG)
 ELSE()
     FIND_PACKAGE(LLVM 9.0 REQUIRED COMPONENTS ${LLVM_REQUIRED_COMPONENTS})
 ENDIF()
@@ -77,6 +77,11 @@ endif()
 MESSAGE(STATUS "Found LLVM include dirs at: " ${LLVM_INCLUDE_DIRS})
 MESSAGE(STATUS "LLVM library dir: ${LLVM_LIBRARY_DIRS}")
 message(STATUS "Requiring following LLVM components: ${LLVM_REQUIRED_COMPONENTS}")
+
+include_directories(${LLVM_INCLUDE_DIRS})
+separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
+add_definitions(${LLVM_DEFINITIONS_LIST})
+
 llvm_map_components_to_libnames(LLVM_LIBRARIES ${LLVM_REQUIRED_COMPONENTS})
 set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH} ${LLVM_LIBRARY_DIRS})
 

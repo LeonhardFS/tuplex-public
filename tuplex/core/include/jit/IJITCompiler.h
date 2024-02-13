@@ -33,9 +33,10 @@ namespace tuplex {
         /*!
          * return pointer address of compiled symbol
          * @param Name (un)mangled name of address.
+         * @param err_stream optional err_stream to return
          * @return address of compiled function, nullptr if not found
          */
-        virtual void* getAddrOfSymbol(const std::string& Name) = 0;
+        virtual void* getAddrOfSymbol(const std::string& Name, std::ostream* err_stream=nullptr) = 0;
 
         /*!
          * compile string based IR

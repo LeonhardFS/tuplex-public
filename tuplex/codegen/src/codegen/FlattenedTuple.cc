@@ -32,7 +32,7 @@ namespace tuplex {
 
             // init tuple
             FlattenedTuple t(env);
-            t.init(type); // original type
+            t.init(tupleType); // original type
 
             auto llvmType = ptr->getType();
 
@@ -155,6 +155,14 @@ namespace tuplex {
         }
 
         void FlattenedTuple::init(const python::Type &type) {
+
+            // special case: empty tuple
+            if(python::Type::EMPTYTUPLE == type || python::Type::EMPTYROW == type) {
+                _tree = TupleTree<codegen::SerializableValue>(); // empty tree
+                _flattenedTupleType = python::Type::EMPTYTUPLE;
+                return;
+            }
+
             _tree = TupleTree<codegen::SerializableValue>(type);
 
             // compute flattened type version
@@ -1217,7 +1225,11 @@ namespace tuplex {
             // here it is just a load
             // ==> an empty tuple can't have a bitmap!
             if(isEmptyTuple()) {
-                throw std::runtime_error("need to figure this out..."); // what needs to be stored here anyways?
+
+                // do nothing for now...
+                return;
+
+                throw std::runtime_error("need to figure this out..."); // what needs to be stored here anyways??
                 assert(1 == numElements());
                 // store size for packed empty tuple
                 builder.CreateStore(_tree.get(0).size, builder.CreateStructGEP(ptr, llvmType, numElements()));

@@ -318,6 +318,9 @@ namespace tuplex {
     }
 
     bool UDF::hintInputSchema(const Schema &schema, bool removeBranches, bool printErrors) {
+
+        auto& logger = Logger::instance().logger("type annotation");
+
         // already typed? can't use hinting. Need to perform retyping.
         if(isTyped())
             throw std::runtime_error("UDF already typed, can't hint schema. Use retype instead.");
@@ -331,17 +334,8 @@ namespace tuplex {
         if(python::Type::UNKNOWN == hintType)
             return false;
 
-        if(PARAM_USE_ROW_TYPE) {
-            // could be given as primitive
-            if(!hintType.isRowType() && !hintType.isExceptionType()) {
-                if(!hintType.isTupleType())
-                    hintType = codegenTypeToRowType(hintType);
-                assert(hintType.isTupleType());
-                // keep primitives as tuples
-                if(hintType.parameters().size() != 1)
-                    hintType = python::Type::makeRowType(hintType.parameters());
-            }
-            // assert(hintType.isRowType() || hintType.isExceptionType());
+        if(PARAM_USE_ROW_TYPE && (hintType.isRowType() || hintType.isExceptionType())) {
+            // do nothing...
         } else {
             // if it's not a tuple type, go directly to the special case...
             if(!hintType.isTupleType())
@@ -354,18 +348,39 @@ namespace tuplex {
             return true;
         }
 
-//        if(PARAM_USE_ROW_TYPE)
-//            assert(hintType.isRowType());
-//        else
-//            assert(hintType.isTupleType());
+        if(PARAM_USE_ROW_TYPE)
+            assert(hintType.isRowType() || hintType.isTupleType());
+        else
+            assert(hintType.isTupleType());
 
         // there are two cases now:
         // either the user accesses everything as a tuple or the first tuple gets unpacked (syntactical sugar)
         auto params = getInputParameters();
 
-        if(0 == params.size()) {
-            // empty tuple?
-            Logger::instance().logger("type inference").warn("no param not yet implemented");
+        if(params.empty()) {
+            logger.debug("Hinting UDF to have no parameters");
+
+            // no parameters? -> result is constant.
+            _ast.hintNoParameters();
+
+            // run type annotator visitor. Missing identifier etc. should produce exception.
+            // --> this code here works statically. However, note that there's a simpler version of this possible
+            // i.e., run over single dummy input and use result. That won't capture weird if branch behavior though.
+            // therefore resort to static annotation here with the if escape hatch if necessary.
+            if(!hintParams({}, {}, true, removeBranches)) {
+                logTypingErrors(printErrors);
+                return false;
+            }
+
+            auto input_row_type = PARAM_USE_ROW_TYPE ? python::Type::EMPTYROW : python::Type::EMPTYTUPLE;
+            auto return_type = _ast.getReturnType();
+
+            // update here
+            _inputSchema = Schema(Schema::MemoryLayout::ROW, input_row_type);
+            _outputSchema = Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(return_type));
+            _numInputColumns = 0;
+
+            return true;
         } else if(1 == params.size()) {
 
             // simpler hinting using row type, for a single param - assume it's the full row
@@ -971,8 +986,10 @@ namespace tuplex {
     std::vector<size_t> LambdaAccessedColumnVisitor::getAccessedIndices() const {
 
         std::set<size_t> idxs;
-
         assert(_multiArgs.has_value());
+
+        if(0 == _numColumns)
+            return {};
 
         // first check what type it is
         if(!_multiArgs.value()) {
@@ -1653,6 +1670,14 @@ namespace tuplex {
             return true;
         }
 
+        // special case, no input columns -> set as empty.
+        if(0 == _numInputColumns) {
+            _ast.hintNoParameters();
+
+            // should not change input/output schema.
+            return true;
+        }
+
         // special case: Row type rewrite is much easier
         if(PARAM_USE_ROW_TYPE && getInputSchema().getRowType().isRowType()) {
 
@@ -1979,7 +2004,7 @@ namespace tuplex {
         Schema inputSchema;
         if(PARAM_USE_ROW_TYPE) {
             if(inputRowType != python::Type::UNKNOWN) {
-                assert(inputRowType.isRowType() || inputRowType.isExceptionType());
+                assert(inputRowType.isRowType() || inputRowType.isExceptionType() || inputRowType.isTupleType());
                 inputSchema = Schema(Schema::MemoryLayout::ROW, inputRowType);
             } else {
                 // fetch majority type

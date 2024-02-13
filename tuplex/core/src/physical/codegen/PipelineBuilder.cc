@@ -63,9 +63,20 @@ namespace tuplex {
 #endif
             auto& context = env().getContext();
 
+            auto last_tuple_type = _lastSchemaType;
+            if(last_tuple_type.isRowType())
+                last_tuple_type = last_tuple_type.get_columns_as_tuple_type();
+
+            assert(last_tuple_type.isTupleType());
+
             // signature is basically i8* userData, ?* row
             FlattenedTuple ft(_env.get());
-            ft.init(_lastSchemaType);
+
+            // ensure type is well-defined
+            if(last_tuple_type.isIllDefined())
+                throw std::runtime_error("can not create function, last row type is ill-defined: " + last_tuple_type.desc());
+            ft.init(last_tuple_type);
+            assert(!ft.getTupleType().isIllDefined());
 
             vector<Type*> argsType{resultStructType()->getPointerTo(0),
                                    env().i8ptrType(),
