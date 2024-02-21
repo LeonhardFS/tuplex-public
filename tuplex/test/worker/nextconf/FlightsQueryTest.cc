@@ -106,6 +106,7 @@ namespace tuplex {
 
         m["tuplex.backend"] = "worker";
         m["input_path"] = "/hot/data/flights_all/flights*.csv";
+        m["tuplex.aws.scratchDir"] = "";
 
         return m;
     }
@@ -156,7 +157,8 @@ namespace tuplex {
         using namespace std;
 
         // set input/output paths
-        auto exp_settings = localWorkerSettings(false); // localWorkerSettings(true); // lambdaSettings(true);
+        bool use_hyper = false;
+        auto exp_settings = localWorkerSettings(use_hyper); // localWorkerSettings(true); // lambdaSettings(true);
         auto input_pattern = exp_settings["input_path"];
         auto output_path = exp_settings["output_path"];
         SamplingMode sm = static_cast<SamplingMode>(stoi(exp_settings["sampling_mode"]));
@@ -167,7 +169,7 @@ namespace tuplex {
 
 
         // // debug:
-        // input_pattern = "/hot/data/flights_all/flights*2002*.csv";
+        // input_pattern = "/hot/data/flights_all/flights*2002*11*.csv";
 
         // set sampling back to regular one & use just 256KB
         // sampling Mode C
