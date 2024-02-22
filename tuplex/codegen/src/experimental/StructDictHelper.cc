@@ -457,7 +457,7 @@ namespace tuplex {
 #endif
                     assert(ptr->getType() == llvm_dict_type);
 
-                    auto bitmap = builder.CreateStructLoad(llvm_dict_type, ptr, p_idx);
+                    auto bitmap = builder.CreateStructLoadOrExtract(llvm_dict_type, ptr, p_idx);
                     assert(bitmap->getType()->isArrayTy());
                     assert(bitmapPos < bitmap->getType()->getArrayNumElements());
                     return builder.CreateExtractValue(bitmap, std::vector<unsigned>(1, bitmapPos));
@@ -683,7 +683,7 @@ namespace tuplex {
                     // // load
                     // auto llvm_idx = CreateStructGEP(builder, ptr, field_idx);
                     // val.val = builder.CreateLoad(llvm_idx);
-                    val.val = builder.CreateStructLoad(llvm_struct_type, ptr, field_idx);
+                    val.val = builder.CreateStructLoadOrExtract(llvm_struct_type, ptr, field_idx);
                 }
 
                 // load only if valid size_idx
@@ -693,7 +693,7 @@ namespace tuplex {
                     // // load
                     // auto llvm_idx = CreateStructGEP(builder, ptr, size_idx);
                     // val.size = builder.CreateLoad(llvm_idx);
-                    val.size = builder.CreateStructLoad(llvm_struct_type, ptr, size_idx);
+                    val.size = builder.CreateStructLoadOrExtract(llvm_struct_type, ptr, size_idx);
                 }
 
                 // load only if valid bitmap_idx
@@ -706,7 +706,7 @@ namespace tuplex {
                     // i1 load logic
                     auto bitmapPos = bitmap_idx;
                     if(ptr->getType()->isStructTy()) {
-                        auto bitmap = builder.CreateStructLoad(llvm_struct_type, ptr, b_idx);
+                        auto bitmap = builder.CreateStructLoadOrExtract(llvm_struct_type, ptr, b_idx);
                         assert(bitmap->getType()->isArrayTy());
                         assert(bitmapPos < bitmap->getType()->getArrayNumElements());
                         val.is_null = builder.CreateExtractValue(bitmap, std::vector<unsigned>(1, bitmapPos));

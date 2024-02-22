@@ -262,7 +262,7 @@ namespace tuplex {
 
             // the same applies for emptytuple (special case)
             if (res->getType() == _env->getEmptyTupleType()) {
-                _fto.assign(0, retValue.val, retValue.size, retValue.is_null);
+                // _fto.assign(0, retValue.val, retValue.size, retValue.is_null);
                 res = _fto.getLoad(builder);
             }
 
