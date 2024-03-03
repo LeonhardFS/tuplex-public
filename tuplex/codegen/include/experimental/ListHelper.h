@@ -79,7 +79,14 @@ namespace tuplex {
          * @param is_null optional parameter, ignored if nullptr which tells whether the value is null. Then, list is decoded as option.
          * @return updated memory pointer (position after list was deserialized) and the list value as llvm value.
          */
-        extern std::tuple<llvm::Value*, SerializableValue> list_deserialize_from(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* ptr, const python::Type& list_type, llvm::Value* is_null=nullptr);
+        extern SerializableValue list_deserialize_from(LLVMEnvironment& env,
+                                                       const IRBuilder& builder,
+                                                       llvm::Value* ptr,
+                                                       const python::Type& list_type,
+                                                       llvm::Value* is_null=nullptr,
+                                                       llvm::Value** serialized_size_in_bytes=nullptr);
+
+
 
         llvm::Value* list_of_varitems_serialized_size(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr,
                                                       const python::Type& list_type,

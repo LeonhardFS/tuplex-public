@@ -321,8 +321,7 @@ namespace tuplex {
 
                         // TODO: isnull decode
                         list_value.is_null = isnull;
-
-                        std::tie(list_size_in_bytes, list_value) = list_deserialize_from(*_env, builder, ptr, type);
+                        list_value = list_deserialize_from(*_env, builder, ptr, type, nullptr, &list_size_in_bytes);
 
                         // set the deserialized list
                         _tree.set(i, list_value);

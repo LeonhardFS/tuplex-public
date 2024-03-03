@@ -59,6 +59,17 @@
 namespace tuplex {
     namespace codegen {
 
+        inline void last_inst_no_branch_guard(llvm::BasicBlock* bb) {
+            // check that the last instruction in basic block is not a br (or condbr insturction)
+#ifndef NDEBUG
+            assert(bb);
+            if(!bb->empty()) {
+                if(llvm::isa<llvm::BranchInst>(bb->back()))
+                    throw std::runtime_error("Basic Block " + bb->getName().str() + " ends with br (or cond br) instruction.");
+            }
+#endif
+        }
+
         /*!
          * helper class to build LLVM IR. Added because IRBuilder was made non-copyable in llvm source base
          */
@@ -141,6 +152,7 @@ namespace tuplex {
             inline llvm::Value *CreateICmpEQ(llvm::Value *LHS, llvm::Value *RHS, const std::string &name = "") const {
                 return CreateICmp(llvm::ICmpInst::ICMP_EQ, LHS, RHS, name);
             }
+
              inline llvm::Value *CreateICmpNE(llvm::Value *LHS, llvm::Value *RHS, const std::string &name = "") const {
                  return CreateICmp(llvm::ICmpInst::ICMP_NE, LHS, RHS, name);
              }
@@ -511,6 +523,9 @@ namespace tuplex {
             }
 
              inline llvm::LoadInst *CreateLoad(llvm::Type *Ty, llvm::Value *Ptr, const char *Name) const {
+
+                 last_inst_no_branch_guard(get_or_throw().GetInsertBlock());
+
                  assert(Ty);
 #if LLVM_VERSION_MAJOR <= 9
                  // check type compatibility
@@ -525,6 +540,9 @@ namespace tuplex {
              }
 
              inline llvm::LoadInst *CreateLoad(llvm::Type *Ty, llvm::Value *Ptr, const std::string &Name = "") const {
+
+                 last_inst_no_branch_guard(get_or_throw().GetInsertBlock());
+
                  assert(Ty);
 #if LLVM_VERSION_MAJOR <= 9
                  // check type compatibility

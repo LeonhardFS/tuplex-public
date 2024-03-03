@@ -1623,11 +1623,185 @@ namespace tuplex {
             }
         }
 
-        std::tuple<llvm::Value*, SerializableValue> list_deserialize_from(LLVMEnvironment& env,
-                                                                          const IRBuilder& builder,
-                                                                          llvm::Value* ptr,
-                                                                          const python::Type& list_type,
-                                                                          llvm::Value* is_null) {
+        static llvm::Value* list_deserialize_list_of_struct_dicts_from_memory(LLVMEnvironment& env,
+                                                                              const codegen::IRBuilder& builder,
+                                                                              llvm::Value* ptr,
+                                                                              const python::Type& list_type,
+                                                                              llvm::Value* num_elements,
+                                                                              llvm::Value* list_ptr) {
+            using namespace llvm;
+
+            // len | (offset|size) | .... | (offset|size) | item1 | .... |item_len
+
+            assert(list_type.isListType());
+            auto element_type = list_type.elementType();
+            assert(element_type.isStructuredDictionaryType());
+
+            // this var can be eliminated --> put this logic into func?
+            auto acc_size_var = env.CreateFirstBlockAlloca(builder, builder.getInt64Ty());
+            builder.CreateStore(env.i64Const(0), acc_size_var);
+
+            auto llvm_list_type = env.createOrGetListType(list_type);
+            auto llvm_list_element_type = env.getOrCreateStructuredDictType(element_type);
+            auto offset_ptr = builder.CreateBitCast(ptr, env.i64ptrType()); // get pointer to i64 serialized array of offsets
+            auto& context = env.getContext();
+
+            // need to point to each of the strings and calculate lengths
+            llvm::Function *func = builder.GetInsertBlock()->getParent();
+            assert(func);
+            BasicBlock *loopCondition = BasicBlock::Create(context, "list_loop_condition", func);
+            BasicBlock *loopBody = BasicBlock::Create(context, "list_loop_body", func);
+            BasicBlock *loopBodyEnd = BasicBlock::Create(context, "list_loop_body_end", func);
+            BasicBlock *after = BasicBlock::Create(context, "list_after", func);
+
+            // allocate the dict_ptr* array
+            auto list_arr_malloc = builder.CreatePointerCast(env.malloc(builder, builder.CreateMul(num_elements, env.i64Const(8))),
+                                                             llvm_list_type->getStructElementType(2));
+
+            // read the elements
+            auto loopCounter = builder.CreateAlloca(Type::getInt64Ty(context));
+            builder.CreateStore(env.i64Const(0), loopCounter);
+            builder.CreateBr(loopCondition);
+
+            builder.SetInsertPoint(loopCondition);
+            auto loopNotDone = builder.CreateICmpSLT(builder.CreateLoad(builder.getInt64Ty(), loopCounter),
+                                                     num_elements);
+            builder.CreateCondBr(loopNotDone, loopBody, after);
+
+            builder.SetInsertPoint(loopBody);
+            // store the pointer to the string
+            auto current_offset_ptr = builder.CreateGEP(builder.getInt64Ty(),
+                                                        offset_ptr,
+                                                        builder.CreateLoad(builder.getInt64Ty(), loopCounter));
+            auto current_offset = builder.CreateLoad(builder.getInt64Ty(),
+                                                     current_offset_ptr);
+            auto next_struct_ptr = builder.CreateGEP(llvm_list_element_type, list_arr_malloc, builder.CreateLoad(builder.getInt64Ty(), loopCounter));
+
+            llvm::Value* offset=nullptr; llvm::Value *size=nullptr;
+            std::tie(offset, size) = unpack_offset_and_size(builder, current_offset);
+            builder.CreateStore(builder.CreateAdd(size, builder.CreateLoad(builder.getInt64Ty(), acc_size_var)), acc_size_var);
+
+            auto serialized_struct_ptr = builder.MovePtrByBytes(builder.CreateBitCast(current_offset_ptr, env.i8ptrType()), offset);
+
+            // decode into rtmalloced pointer & store
+            auto dict_ptr = struct_dict_deserialize_from_memory(env, builder, serialized_struct_ptr, element_type, true);
+            auto dict = builder.CreateLoad(llvm_list_element_type, dict_ptr.val);
+            builder.CreateStore(dict, next_struct_ptr);
+
+            builder.CreateBr(loopBodyEnd);
+
+
+            builder.SetInsertPoint(loopBodyEnd);
+            // update the loop variable and return
+            builder.CreateStore(builder.CreateAdd(builder.CreateLoad(builder.getInt64Ty(), loopCounter),
+                                                  env.i64Const(1)), loopCounter);
+            builder.CreateBr(loopCondition);
+
+            builder.SetInsertPoint(after);
+
+            // store the malloc'd and populated array to the struct
+            auto list_arr = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
+            builder.CreateStore(list_arr_malloc, list_arr);
+
+            // last element in offset will have size + offset. can use that to decode total size?
+            auto total_varlen_size = builder.CreateLoad(builder.getInt64Ty(), acc_size_var);
+            auto total_offset = builder.CreateAdd(builder.CreateMul(env.i64Const(sizeof(int64_t)), num_elements), total_varlen_size);
+            return total_offset;
+        }
+
+        static llvm::Value* list_deserialize_list_of_lists_from_memory(LLVMEnvironment& env,
+                                                                              const codegen::IRBuilder& builder,
+                                                                              llvm::Value* ptr,
+                                                                              const python::Type& list_type,
+                                                                              llvm::Value* num_elements,
+                                                                              llvm::Value* list_ptr) {
+            using namespace llvm;
+
+            // len | (offset|size) | .... | (offset|size) | item1 | .... |item_len
+
+            assert(list_type.isListType());
+            auto element_type = list_type.elementType();
+            assert(element_type.isListType());
+
+            // this var can be eliminated --> put this logic into func?
+            auto acc_size_var = env.CreateFirstBlockAlloca(builder, builder.getInt64Ty());
+            builder.CreateStore(env.i64Const(0), acc_size_var);
+
+            auto llvm_list_type = env.createOrGetListType(list_type);
+            auto llvm_list_element_type = env.createOrGetListType(element_type);
+            auto offset_ptr = builder.CreateBitCast(ptr, env.i64ptrType()); // get pointer to i64 serialized array of offsets
+            auto& context = env.getContext();
+
+            // need to point to each of the strings and calculate lengths
+            llvm::Function *func = builder.GetInsertBlock()->getParent();
+            assert(func);
+            BasicBlock *loopCondition = BasicBlock::Create(context, "list_loop_condition", func);
+            BasicBlock *loopBody = BasicBlock::Create(context, "list_loop_body", func);
+            BasicBlock *loopBodyEnd = BasicBlock::Create(context, "list_loop_body_end", func);
+            BasicBlock *after = BasicBlock::Create(context, "list_after", func);
+
+            // allocate the dict_ptr* array
+            auto list_arr_malloc = builder.CreatePointerCast(env.malloc(builder, builder.CreateMul(num_elements, env.i64Const(8))),
+                                                             llvm_list_type->getStructElementType(2));
+
+            // read the elements
+            auto loopCounter = builder.CreateAlloca(Type::getInt64Ty(context));
+            builder.CreateStore(env.i64Const(0), loopCounter);
+            builder.CreateBr(loopCondition);
+
+            builder.SetInsertPoint(loopCondition);
+            auto loopNotDone = builder.CreateICmpSLT(builder.CreateLoad(builder.getInt64Ty(), loopCounter),
+                                                     num_elements);
+            builder.CreateCondBr(loopNotDone, loopBody, after);
+
+            builder.SetInsertPoint(loopBody);
+            // store the pointer to the string
+            auto current_offset_ptr = builder.CreateGEP(builder.getInt64Ty(),
+                                                        offset_ptr,
+                                                        builder.CreateLoad(builder.getInt64Ty(), loopCounter));
+            auto current_offset = builder.CreateLoad(builder.getInt64Ty(),
+                                                     current_offset_ptr);
+            auto next_struct_ptr = builder.CreateGEP(llvm_list_element_type, list_arr_malloc, builder.CreateLoad(builder.getInt64Ty(), loopCounter));
+
+            llvm::Value* offset=nullptr; llvm::Value *size=nullptr;
+            std::tie(offset, size) = unpack_offset_and_size(builder, current_offset);
+            builder.CreateStore(builder.CreateAdd(size, builder.CreateLoad(builder.getInt64Ty(), acc_size_var)), acc_size_var);
+
+            auto serialized_list_element_ptr = builder.MovePtrByBytes(builder.CreateBitCast(current_offset_ptr, env.i8ptrType()), offset);
+
+            // decode into rtmalloced pointer & store
+            llvm::Value* element_size_in_bytes=nullptr;
+            auto element_list_ptr = list_deserialize_from(env, builder, serialized_list_element_ptr, element_type, nullptr, &element_size_in_bytes);
+            auto element_list = builder.CreateLoad(llvm_list_element_type, element_list_ptr.val);
+            builder.CreateStore(element_list, next_struct_ptr);
+
+            builder.CreateBr(loopBodyEnd);
+
+
+            builder.SetInsertPoint(loopBodyEnd);
+            // update the loop variable and return
+            builder.CreateStore(builder.CreateAdd(builder.CreateLoad(builder.getInt64Ty(), loopCounter),
+                                                  env.i64Const(1)), loopCounter);
+            builder.CreateBr(loopCondition);
+
+            builder.SetInsertPoint(after);
+
+            // store the malloc'd and populated array to the struct
+            auto list_arr = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
+            builder.CreateStore(list_arr_malloc, list_arr);
+
+            // last element in offset will have size + offset. can use that to decode total size?
+            auto total_varlen_size = builder.CreateLoad(builder.getInt64Ty(), acc_size_var);
+            auto total_offset = builder.CreateAdd(builder.CreateMul(env.i64Const(sizeof(int64_t)), num_elements), total_varlen_size);
+            return total_offset;
+        }
+
+        SerializableValue list_deserialize_from(LLVMEnvironment& env,
+                                                const IRBuilder& builder,
+                                                llvm::Value* ptr,
+                                                const python::Type& list_type,
+                                                llvm::Value* is_null,
+                                                llvm::Value** serialized_size_in_bytes) {
             using namespace std;
             using namespace llvm;
 
@@ -1653,7 +1827,7 @@ namespace tuplex {
             list_init_empty(env, builder, list_val.val, list_type);
 
             if(python::Type::EMPTYLIST == list_type)
-                return make_tuple(ptr, list_val);
+                return list_val;
 
             auto original_ptr = ptr;
 
@@ -1746,8 +1920,6 @@ namespace tuplex {
                 builder.CreateStore(list_arr_malloc, list_arr);
                 auto list_sizearr = builder.CreateStructGEP(list_ptr, llvm_list_type, 3);
                 builder.CreateStore(list_sizearr_malloc, list_sizearr);
-
-                env.debugPrint(builder, "store done.");
             } else if(python::Type::I64 == elementType || python::Type::F64 == elementType) {
                 // can just directly point to the serialized data
                 auto list_arr = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
@@ -1755,6 +1927,12 @@ namespace tuplex {
                 auto data_ptr = builder.CreateBitCast(ptr, llvm_target_cast_type);
                 builder.CreateStore(data_ptr, list_arr);
                 auto size_in_bytes = builder.CreateMul(num_elements, env.i64Const(8));
+                ptr = builder.MovePtrByBytes(ptr, size_in_bytes);
+            } else if(elementType.isStructuredDictionaryType()) {
+                auto size_in_bytes = list_deserialize_list_of_struct_dicts_from_memory(env, builder, ptr, list_type, num_elements, list_ptr);
+                ptr = builder.MovePtrByBytes(ptr, size_in_bytes);
+            } else if(elementType.isListType()) {
+                auto size_in_bytes = list_deserialize_list_of_lists_from_memory(env, builder, ptr, list_type, num_elements, list_ptr);
                 ptr = builder.MovePtrByBytes(ptr, size_in_bytes);
             } else {
                 throw std::runtime_error("list of type " + list_type.desc() + " deserialize not yet supported.");
@@ -1952,7 +2130,11 @@ namespace tuplex {
 
             // debug print
 
-            return make_tuple(ptr, list_val);
+            if(serialized_size_in_bytes) {
+                *serialized_size_in_bytes = builder.CreatePtrDiff(builder.getInt8Ty(), ptr, original_ptr);
+            }
+
+            return list_val;
         }
 
         static llvm::Function* list_create_upcast_func(LLVMEnvironment& env, const python::Type& list_type, const python::Type& target_list_type) {

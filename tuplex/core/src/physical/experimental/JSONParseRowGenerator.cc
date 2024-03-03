@@ -1846,7 +1846,7 @@ namespace tuplex {
 
         llvm::BasicBlock *JSONParseRowGenerator::generateFreeAllVars(llvm::BasicBlock *freeStart) {
             assert(freeStart);
-            llvm::IRBuilder<> builder(freeStart);
+            IRBuilder builder(freeStart);
 
             // got through all vars
 #ifdef JSON_PARSER_TRACE_MEMORY

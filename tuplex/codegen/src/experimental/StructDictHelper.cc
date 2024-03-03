@@ -1057,7 +1057,7 @@ namespace tuplex {
         }
 
         // deserializastion code...
-        SerializableValue struct_dict_deserialize_from_memory(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* ptr, const python::Type& dict_type) {
+        SerializableValue struct_dict_deserialize_from_memory(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* ptr, const python::Type& dict_type, bool heap_alloc) {
             auto& logger = Logger::instance().logger("codegen");
             assert(dict_type.isStructuredDictionaryType());
 
@@ -1066,7 +1066,14 @@ namespace tuplex {
 
             SerializableValue v;
             auto stype = env.getOrCreateStructuredDictType(dict_type);
-            v.val = env.CreateFirstBlockAlloca(builder, stype);
+            if(heap_alloc) {
+                const auto& DL = env.getModule()->getDataLayout();
+                auto alloc_size = DL.getTypeAllocSize(stype);
+                v.val = env.malloc(builder, alloc_size);
+                v.val = builder.CreatePointerCast(v.val, stype->getPointerTo());
+            } else {
+                v.val = env.CreateFirstBlockAlloca(builder, stype);
+            }
             struct_dict_mem_zero(env, builder, v.val, dict_type);
             auto dict_ptr = v.val;
             auto original_mem_start_ptr = ptr; // save pointer for memory distance
@@ -1129,9 +1136,7 @@ namespace tuplex {
                     ptr = builder.MovePtrByBytes(ptr, sizeof(int64_t));
 
                     // call list decode and store result in struct!
-                    llvm::Value* end_ptr= nullptr;
-                    SerializableValue list_val;
-                    std::tie(end_ptr, list_val) = list_deserialize_from(env, builder, data_ptr, value_type);
+                    auto list_val = list_deserialize_from(env, builder, data_ptr, value_type);
 
                     // store value in struct (pointer should be sufficient)
                     struct_dict_store_value(env, builder, list_val, dict_ptr, dict_type, access_path);
