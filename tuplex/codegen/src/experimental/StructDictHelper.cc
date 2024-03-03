@@ -741,7 +741,7 @@ namespace tuplex {
                 // i1 store logic
                 auto bitmapPos = present_idx;
                 auto structBitmapIdx = builder.CreateStructGEP(ptr, llvm_struct_type, (size_t)p_idx); // bitmap comes first!
-                auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, llvm_struct_type->getStructElementType(0), 0ull, bitmapPos);
+                auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, llvm_struct_type->getStructElementType(p_idx), 0ull, bitmapPos);
                 builder.CreateStore(is_present, bitmapIdx);
             }
         }

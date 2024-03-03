@@ -700,13 +700,16 @@ namespace tuplex {
                 auto llvm_element_type = env.getOrCreateStructuredDictType(elementType);
                 auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
 
-                // store pointer
+                // store struct to pointer
                 assert(value.val);
                 auto llvm_value_type = env.pythonToLLVMType(elementType);
                 auto ptr = builder.CreateLoad(llvm_list_type->getStructElementType(2), idx_values);
                 auto idx_value = builder.CreateGEP(llvm_value_type, ptr, idx);
 
-                builder.CreateStore(value.val, idx_value);
+                auto dict = value.val;
+                if(dict->getType()->isPointerTy())
+                    dict = builder.CreateLoad(llvm_value_type, dict);
+                builder.CreateStore(dict, idx_value);
             } else if(elementType.isListType()) {
                 // pointers to the list type!
                 // similar to above - yet, keep it here extra for more control...

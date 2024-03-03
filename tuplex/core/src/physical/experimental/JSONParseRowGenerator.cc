@@ -378,7 +378,7 @@ namespace tuplex {
             builder.SetInsertPoint(bbDecodeDone); // continue from here...
             llvm::Value* rc = builder.CreateLoad(_env.i64Type(), rc_var); // <-- error
             SerializableValue v;
-            v.val = builder.CreateLoad(llvm_dict_type->getPointerTo(), dict_ptr);
+            v.val = dict_ptr; //builder.CreateLoad(llvm_dict_type->getPointerTo(), dict_ptr);
             return make_tuple(rc, v);
         }
 

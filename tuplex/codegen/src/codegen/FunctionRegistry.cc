@@ -3286,7 +3286,6 @@ namespace tuplex {
                         if(require_deoptimization && pair.valueType != retType) {
                             lfb.setLastBlock(builder.GetInsertBlock());
                             lfb.exitWithException(ExceptionCode::NORMALCASEVIOLATION);
-                            builder.SetInsertPoint(lfb.getLastBlock());
                         } else {
                             // regular processing, no early deopt failure
                             //_env.printValue(builder, key.val, "key match for key=" + pair.key);
@@ -3350,7 +3349,6 @@ namespace tuplex {
                                 } else {
                                     lfb.setLastBlock(builder.GetInsertBlock());
                                     lfb.exitWithException(ExceptionCode::NORMALCASEVIOLATION);
-                                    builder.SetInsertPoint(lfb.getLastBlock());
 
                                     // continue execution only on present path!
                                     builder.SetInsertPoint(bbIsPresent);
