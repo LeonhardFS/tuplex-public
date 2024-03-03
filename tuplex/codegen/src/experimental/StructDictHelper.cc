@@ -594,6 +594,8 @@ namespace tuplex {
                 throw std::runtime_error("Could not retrieve element type for access path " + access_path_to_str(path));
             }
 
+            auto llvm_dict_type = env.getOrCreateStructuredDictType(dict_type);
+
             // is it not a struct dict? -> trivial, simple lookup.
             bool is_struct_dict = element_type.isStructuredDictionaryType() || (element_type.isOptionType() && element_type.getReturnType().isStructuredDictionaryType());
             if(is_struct_dict) {
@@ -615,14 +617,16 @@ namespace tuplex {
 
                     assert(bitmap_idx >= 0);
 
+                    auto name_wo_option = env.getLLVMTypeName(llvm_element_type);
+
                     // load is_null from original ptr
                     // make sure type has presence map index
                     auto b_idx = bitmap_field_idx(dict_type);
                     assert(b_idx >= 0);
                     // i1 store logic
                     auto bitmapPos = bitmap_idx;
-                    auto structBitmapIdx = builder.CreateStructGEP(ptr, llvm_element_type, (size_t)b_idx); // bitmap comes first!
-                    auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, llvm_element_type->getStructElementType(0), 0ull, bitmapPos);
+                    auto structBitmapIdx = builder.CreateStructGEP(ptr, llvm_dict_type, (size_t)b_idx); // bitmap comes first!
+                    auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, llvm_dict_type->getStructElementType(b_idx), 0ull, bitmapPos);
                     is_null = builder.CreateLoad(builder.getInt1Ty(), bitmapIdx);
 
                     // TODO: now load elements...
