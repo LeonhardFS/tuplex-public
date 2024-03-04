@@ -198,7 +198,7 @@ namespace tuplex {
 
 
         // create 64bit bitmap from 1bit vector (ceil!)
-        std::vector<llvm::Value*> create_bitmap(LLVMEnvironment& env, llvm::IRBuilder<>& builder, const std::vector<llvm::Value*>& v) {
+        std::vector<llvm::Value*> create_bitmap(LLVMEnvironment& env, const IRBuilder& builder, const std::vector<llvm::Value*>& v) {
             using namespace std;
 
             auto numBitmapElements = core::ceilToMultiple(v.size(), 64ul) / 64ul; // make 64bit bitmaps
@@ -223,7 +223,7 @@ namespace tuplex {
         }
 
         // load entries to structure
-        SerializableValue struct_dict_load_from_values(LLVMEnvironment& env, llvm::IRBuilder<>& builder, const python::Type& dict_type, flattened_struct_dict_decoded_entry_list_t entries, llvm::Value* ptr) {
+        SerializableValue struct_dict_load_from_values(LLVMEnvironment& env, const IRBuilder& builder, const python::Type& dict_type, flattened_struct_dict_decoded_entry_list_t entries, llvm::Value* ptr) {
             using namespace llvm;
 
             auto& ctx = env.getContext();
@@ -298,13 +298,13 @@ namespace tuplex {
                 if(field_idx >= 0) {
                     assert(el.val);
                     auto llvm_type = env.pythonToLLVMType(value_type);
-                    auto llvm_idx = builder.CreateStructGEP(llvm_type, ptr, field_idx);
+                    auto llvm_idx = builder.CreateStructGEP(ptr, llvm_type, field_idx);
                     builder.CreateStore(el.val, llvm_idx);
                 }
 
                 if(size_idx >= 0) {
                     assert(el.size);
-                    auto llvm_idx = builder.CreateStructGEP(builder.getInt64Ty(), ptr, size_idx);
+                    auto llvm_idx = builder.CreateStructGEP(ptr, builder.getInt64Ty(), size_idx);
                     builder.CreateStore(el.size, llvm_idx);
                 }
 
@@ -336,12 +336,14 @@ namespace tuplex {
             //                auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, 0ull, bitmapPos);
             //                builder.CreateStore(value.is_null, bitmapIdx);
 
+            auto llvm_dict_type = env.getOrCreateStructuredDictType(dict_type);
+
             // first comes bitmap, then presence map
             if(has_bitmap) {
                 for(unsigned i = 0; i < bitmap_entries.size(); ++i) {
                     auto bitmapPos = bitmap_entries[i].first;
-                    auto structBitmapIdx = builder.CreateStructGEP(env.i8ptrType(), ptr, 0ull); // bitmap comes first!
-                    auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, 0ull, bitmapPos);
+                    auto structBitmapIdx = builder.CreateStructGEP(ptr, env.i8ptrType(), 0ull); // bitmap comes first!
+                    auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, llvm_dict_type->getStructElementType(0), 0ull, bitmapPos);
                     builder.CreateStore(bitmap_entries[i].second, bitmapIdx);
                 }
             }
@@ -349,8 +351,8 @@ namespace tuplex {
             if(has_bitmap) {
                 for(unsigned i = 0; i < presence_entries.size(); ++i) {
                     auto bitmapPos = presence_entries[i].first;
-                    auto structBitmapIdx = builder.CreateStructGEP(env.i8ptrType(), ptr, 1ull); // bitmap comes first!
-                    auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, 0ull, bitmapPos);
+                    auto structBitmapIdx = builder.CreateStructGEP(ptr, env.i8ptrType(), 1ull); // bitmap comes first!
+                    auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, llvm_dict_type->getStructElementType(1), 0ull, bitmapPos);
                     builder.CreateStore(presence_entries[i].second, bitmapIdx);
                 }
             }

@@ -50,6 +50,11 @@ namespace tuplex {
             auto is_null = builder.CreateICmpEQ(builder.CreateLoad(env.i8ptrType(), obj_var), env.i8nullptr());
             BasicBlock* bFree = BasicBlock::Create(env.getContext(), "free_object", builder.GetInsertBlock()->getParent());
             BasicBlock* bContinue = BasicBlock::Create(env.getContext(), "null_object", builder.GetInsertBlock()->getParent());
+
+            if(bContinue->getName().str() == "null_object") {
+                std::cout<<"first block created"<<std::endl;
+            }
+
             builder.CreateCondBr(is_null, bContinue, bFree);
             builder.SetInsertPoint(bFree);
 
@@ -283,7 +288,7 @@ namespace tuplex {
 
             inline void lazyGenFreeAll() {
                 assert(_badParseBlock && _badParseTargetBlock);
-                llvm::IRBuilder<> builder(_badParseBlock);
+                IRBuilder builder(_badParseBlock);
                 auto lastBlock = generateFreeAllVars(_badParseBlock);
                 builder.SetInsertPoint(lastBlock);
                 builder.CreateBr(_badParseTargetBlock);

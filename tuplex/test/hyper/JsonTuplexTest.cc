@@ -747,7 +747,7 @@ TEST_F(JsonTuplexTest, StructAndFT) {
     auto F = getOrInsertFunction(env.getModule().get(), "test_func", ctypeToLLVM<int64_t>(ctx), ft.getLLVMType());
     auto bEntry = BasicBlock::Create(ctx, "entry", F);
 
-    llvm::IRBuilder<> builder(bEntry);
+    IRBuilder builder(bEntry);
     builder.CreateRet(env.i64Const(0));
     auto ir = moduleToString(*env.getModule().get());
 

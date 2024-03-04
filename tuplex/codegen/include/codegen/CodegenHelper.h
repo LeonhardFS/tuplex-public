@@ -1116,7 +1116,7 @@ namespace tuplex {
          * @param underlyingType pointer, if not null will output the deoptmizedType to that var. Same as if deoptimizedType was called on optType.
          * @return codegen value representing deoptimized value, i.e. having type underlyingType.
          */
-        extern SerializableValue deoptimizeValue(llvm::IRBuilder<>& builder,
+        extern SerializableValue deoptimizeValue(const IRBuilder& builder,
                                                  const SerializableValue& value,
                                                  const python::Type& optType,
                                                  python::Type* underlyingType=nullptr);
@@ -1594,7 +1594,7 @@ namespace tuplex {
 
         // helper to enable llvm6 and llvm9 compatibility // --> force onto llvm9+ for now.
         inline llvm::CallInst *createCallHelper(llvm::Function *Callee, llvm::ArrayRef<llvm::Value*> Ops,
-                                          llvm::IRBuilder<>& builder,
+                                          const IRBuilder& builder,
                                           const llvm::Twine &Name = "",
                                                 llvm::Instruction *FMFSource = nullptr) {
             llvm::CallInst *CI = llvm::CallInst::Create(Callee, Ops, Name);

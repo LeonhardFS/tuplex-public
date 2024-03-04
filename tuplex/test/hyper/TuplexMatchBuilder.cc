@@ -240,8 +240,7 @@ namespace tuplex {
 
 #ifndef NDEBUG
             {
-                // debug: create an info statement for free block
-                llvm::IRBuilder<> b(_freeStart);
+                // debug: create an info statement for free blockIRBuilder b(_freeStart);
                 // _env.printValue(b, rowNumber(b), "enter free row objects for row no=");
             }
 #endif

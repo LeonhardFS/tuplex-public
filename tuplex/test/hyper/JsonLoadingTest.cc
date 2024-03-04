@@ -77,7 +77,7 @@ namespace tuplex {
         }
 
 
-        SerializableValue struct_dict_type_to_memory(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* value, const python::Type& dict_type);
+        SerializableValue struct_dict_type_to_memory(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* value, const python::Type& dict_type);
 
 
 

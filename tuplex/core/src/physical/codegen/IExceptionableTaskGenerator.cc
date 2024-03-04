@@ -135,7 +135,7 @@ namespace tuplex {
 
             // Setup FAILURE Block:
             // success loop block, return number of bytes written
-            llvm::IRBuilder<> builder(_taskFailureBlock);
+            IRBuilder builder(_taskFailureBlock);
             // negative numbers for failure!
             builder.CreateRet(_env->i64Const(-1));
         }

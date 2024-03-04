@@ -2347,7 +2347,7 @@ namespace tuplex {
             auto func = llvm::Function::Create(FT, Function::InternalLinkage, "list_index", env.getModule().get());
             {
                 auto bbEntry = BasicBlock::Create(env.getContext(), "entry", func);
-                llvm::IRBuilder<> builder(bbEntry);
+                IRBuilder builder(bbEntry);
                 auto args = mapLLVMFunctionArgs(func, {"list_ptr", "val", "size", "is_null"});
                 auto list_ptr = args["list_ptr"];
                 auto needle = SerializableValue(args["val"], args["size"], args["is_null"]);
@@ -2387,7 +2387,7 @@ namespace tuplex {
                     // --- header ---
                     builder.SetInsertPoint(bLoopHeader);
                     // if i < len:
-                    auto loop_i_val = builder.CreateLoad(loop_i);
+                    auto loop_i_val = builder.CreateLoad(builder.getInt64Ty(), loop_i);
                     auto loop_cond = builder.CreateICmpULT(loop_i_val, num_list_elements);
                     builder.CreateCondBr(loop_cond, bLoopBody, bLoopExit);
                 }
@@ -2396,7 +2396,7 @@ namespace tuplex {
                 {
                     // --- body ---
                     builder.SetInsertPoint(bLoopBody);
-                    auto loop_i_val = builder.CreateLoad(loop_i);
+                    auto loop_i_val = builder.CreateLoad(builder.getInt64Ty(), loop_i);
 
                     // fetch element, compare return if good... i
                     auto el = list_load_value(env, builder, list_ptr, list_type, loop_i_val);
@@ -3444,6 +3444,11 @@ namespace tuplex {
                     builder.SetInsertPoint(bbDecodeItem);
                     lfb.setLastBlock(bbDecodeItem);
                     auto v = decode_cjson_item(_env, lfb, builder, retType, item);
+
+                    // for list/dict load
+                    if((retType.isListType() || retType.isStructuredDictionaryType()) && v.val->getType()->isPointerTy()) {
+                        v.val = builder.CreateLoad(llvm_val_type, v.val);
+                    }
 
                     if(v.val)
                         builder.CreateStore(v.val, var.val);

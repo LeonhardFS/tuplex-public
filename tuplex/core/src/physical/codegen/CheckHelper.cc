@@ -7,7 +7,7 @@
 namespace tuplex {
     namespace codegen {
 //        llvm::Value* generate_cell_based_checks(LLVMEnvironment& env,
-//                                                llvm::IRBuilder<>& builder,
+//                                                const IRBuilder& builder,
 //                                                llvm::Value* cellsPtr,
 //                                                llvm::Value* sizesPtr,
 //                                                const std::vector<NormalCaseCheck>& checks) {

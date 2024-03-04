@@ -1903,7 +1903,7 @@ namespace tuplex {
 
             // add storing to init block
             assert(_initBlock);
-            llvm::IRBuilder<> b(_initBlock);
+            IRBuilder b(_initBlock);
             b.CreateStore(initial_value, var);
             _initBlock = b.GetInsertBlock(); // update if there was complex storing.
             return var;

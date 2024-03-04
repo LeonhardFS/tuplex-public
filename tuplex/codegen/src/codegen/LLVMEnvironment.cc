@@ -1653,7 +1653,7 @@ namespace tuplex {
                 builder.CreateCall(printf_F, {fmt, casted_val, casted_val});
         }
 
-        void LLVMEnvironment::printHexValue(llvm::IRBuilder<> &builder, llvm::Value *val, std::string msg) {
+        void LLVMEnvironment::printHexValue(const IRBuilder &builder, llvm::Value *val, std::string msg) {
             using namespace llvm;
 
             auto printf_F = printf_prototype(_context, _module.get());

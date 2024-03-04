@@ -37,7 +37,7 @@ namespace tuplex {
             using namespace llvm;
             BasicBlock *bbSerializationFailure = BasicBlock::Create(args.getEnv()->getContext(), "fallbackSerializationFailure", builder.GetInsertBlock()->getParent());
 
-            llvm::IRBuilder<> b(bbSerializationFailure);
+            IRBuilder b(bbSerializationFailure);
             b.CreateStore(args.getEnv()->i64Const(ecToI32(ExceptionCode::PYTHONFALLBACK_SERIALIZATION)), exceptionCode);
             b.CreateBr(handler);
 

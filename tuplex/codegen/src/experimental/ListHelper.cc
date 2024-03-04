@@ -712,7 +712,7 @@ namespace tuplex {
                 auto idx_value = builder.CreateGEP(llvm_value_type, ptr, idx);
 
                 auto dict = value.val;
-                if(dict->getType()->isPointerTy())
+                if(dict->getType()->isPointerTy() && elementType != python::Type::GENERICDICT)
                     dict = builder.CreateLoad(llvm_value_type, dict);
                 builder.CreateStore(dict, idx_value);
             } else if(elementType.isListType()) {

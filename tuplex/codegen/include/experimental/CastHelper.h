@@ -11,7 +11,7 @@
 
 namespace tuplex {
     namespace codegen {
-        SerializableValue upcast_value(LLVMEnvironment& env, llvm::IRBuilder<>& builder, const SerializableValue& from, const python::Type& from_type, const python::Type& to_type);
+        SerializableValue upcast_value(LLVMEnvironment& env, const IRBuilder& builder, const SerializableValue& from, const python::Type& from_type, const python::Type& to_type);
 
 
         // if(from_type != to_type) {

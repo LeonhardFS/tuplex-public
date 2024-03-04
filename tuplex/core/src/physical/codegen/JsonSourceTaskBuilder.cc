@@ -87,6 +87,9 @@ namespace tuplex {
 
             builder.CreateRet(parsed_bytes);
 
+            // make sure freeEnd is terminated.
+            assert(!blockOpen(_freeEnd));
+
             return func;
         }
 
@@ -467,7 +470,7 @@ namespace tuplex {
 
             {
                 // create here free obj block.
-                llvm::IRBuilder<> b(_freeStart);
+                IRBuilder b(_freeStart);
 
                 // _env->printValue(b, rowNumber(b), "entered free row objects for row no=");
 
@@ -537,7 +540,7 @@ namespace tuplex {
             if(!checks().empty()) {
                 BasicBlock* bbSkipRow = BasicBlock::Create(_env->getContext(), "normal_row_skip", builder.GetInsertBlock()->getParent());
                 {
-                    llvm::IRBuilder<> builder(bbSkipRow);
+                    IRBuilder builder(bbSkipRow);
 
                     // env().debugPrint(builder, "skip row b.c. of promoted filter");
 
@@ -850,6 +853,9 @@ namespace tuplex {
             // free obj_var...
             json_release_object(env, builder, obj_var);
         #ifndef NDEBUG
+            if(builder.GetInsertBlock()->getName().str() == "null_object") {
+                std::cout<<"found";
+            }
             builder.CreateStore(env.i8nullptr(), obj_var);
         #endif
 #ifdef JSON_PARSER_TRACE_MEMORY

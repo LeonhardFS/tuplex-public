@@ -98,7 +98,7 @@ namespace tuplex {
             void assignToVariable(const IRBuilder &builder, const std::string name, llvm::Value *newValue);
 
 //            inline llvm::Value *
-//            vec3_i64(llvm::IRBuilder<> &builder, llvm::Value *a0, llvm::Value *a1, llvm::Value *a2) {
+//            vec3_i64(const IRBuilder &builder, llvm::Value *a0, llvm::Value *a1, llvm::Value *a2) {
 //                using namespace llvm;
 //                assert(a0->getType() == env().i64Type()
 //                       && a1->getType() == env().i64Type()
