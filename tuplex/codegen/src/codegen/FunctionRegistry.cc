@@ -2334,17 +2334,17 @@ namespace tuplex {
             return builder.CreateLoad(llvm_ret_var_type, ret_var);
         }
 
-        llvm::Function* generate_list_index_function(LLVMEnvironment& env, const python::Type& list_type, const python::Type& value_type) {
+        llvm::Function* generate_list_index_function(LLVMEnvironment& env, const std::string& name, const python::Type& list_type, const python::Type& value_type) {
 
             using namespace llvm;
 
             // create a function which performs the search on top of the list via linear search and comparison.
             // Cache this function for reuse -> need to make sure there's an individual key associated.
-            auto llvm_value_type = env.pythonToLLVMType(value_type);
+            auto llvm_value_type = env.pythonToLLVMType(value_type.withoutOption());
             auto llvm_list_type = env.createOrGetListType(list_type);
             auto FT = FunctionType::get(env.i64Type(), {llvm_list_type->getPointerTo(), llvm_value_type,
                                                          env.i64Type(), env.i1Type()}, false);
-            auto func = llvm::Function::Create(FT, Function::InternalLinkage, "list_index", env.getModule().get());
+            auto func = llvm::Function::Create(FT, Function::InternalLinkage, name, env.getModule().get());
             {
                 auto bbEntry = BasicBlock::Create(env.getContext(), "entry", func);
                 IRBuilder builder(bbEntry);
@@ -2451,7 +2451,7 @@ namespace tuplex {
             // generate lazily function and cache in environment. This lowers burden on optimizer and size of code.
             auto key = "list_index_" + list_type.desc() + "_" + needle_type.desc();
             if(!_env.functionCacheHasKey(key)) {
-                _env.functionCacheSet(key, generate_list_index_function(_env, list_type, needle_type));
+                _env.functionCacheSet(key, generate_list_index_function(_env, key, list_type, needle_type));
             }
             auto func = _env.functionCacheGet(key);
             if(!func) {
