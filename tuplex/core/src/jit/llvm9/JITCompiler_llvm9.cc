@@ -31,6 +31,7 @@
 #include <int_hashmap.h>
 #include <third_party/i64toa_sse2.h>
 #include <third_party/ryu/ryu.h>
+#include "physical/experimental/JsonHelper.h"
 
 
 namespace tuplex {
@@ -324,9 +325,20 @@ namespace tuplex {
         registerSymbol("cJSON_CreateNumber", cJSON_CreateNumber);
         registerSymbol("cJSON_CreateBool", cJSON_CreateBool);
         registerSymbol("cJSON_IsTrue", cJSON_IsTrue);
+        registerSymbol("cJSON_IsArray", cJSON_IsArray);
+        registerSymbol("cJSON_IsNull", cJSON_IsNull);
+        registerSymbol("cJSON_IsNumber", cJSON_IsNumber);
+        registerSymbol("cJSON_GetNumberValue", cJSON_GetNumberValue);
+        registerSymbol("cJSON_GetArrayItem", cJSON_GetArrayItem);
         registerSymbol("cJSON_Parse", cJSON_Parse);
         registerSymbol("cJSON_CreateString", cJSON_CreateString);
 #endif
+
+        registerSymbol("cJSON_IsArrayOfObjects", cJSON_IsArrayOfObjects);
+        registerSymbol("debug_printf", debug_printf);
+
+        // register JSON parsing symbols
+        codegen::addJsonSymbolsToJIT(*this);
 
     }
 
