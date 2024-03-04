@@ -86,12 +86,15 @@ namespace tuplex {
         if(scratchDir.empty())
             scratchDir = _options.SCRATCH_DIR().toPath();
         auto spillURI = scratchDir + "/spill_folder";
-        // perhaps also use:  - 64 * numThreads ==> smarter buffer scaling necessary.
-        size_t buf_spill_size = (_options.AWS_LAMBDA_MEMORY() - 256) / numThreads * 1000 * 1024;
+//        // perhaps also use:  - 64 * numThreads ==> smarter buffer scaling necessary.
+//        size_t buf_spill_size = (_options.AWS_LAMBDA_MEMORY() - 256) / numThreads * 1000 * 1024;
+//
+//        // limit to 128mb each
+//        if (buf_spill_size > 128 * 1000 * 1024)
+//            buf_spill_size = 128 * 1000 * 1024;
 
-        // limit to 128mb each
-        if (buf_spill_size > 128 * 1000 * 1024)
-            buf_spill_size = 128 * 1000 * 1024;
+        // each buffer should have this size, above is for AWS Lambda only.
+        size_t buf_spill_size = _options.EXPERIMENTAL_WORKER_BUFFER_SIZE();
 
         logger().info("Setting buffer size for each thread to " + sizeToMemString(buf_spill_size));
 
@@ -188,6 +191,7 @@ namespace tuplex {
             }
 
             auto j_stats = nlohmann::json::parse(stats);
+            j_stats["request_total_time"] = timer.time();
             nlohmann::json j;
             auto j_req = nlohmann::json::parse(json_buf);
             j["request"] = req.inputuris();
@@ -479,9 +483,10 @@ namespace tuplex {
 
                     // parse stats as answer out
                     auto stats = nlohmann::json::parse(fileToString(stats_path));
+                    auto worker_invocation_duration = timer.time();
+                    stats["request_total_time"] = worker_invocation_duration;
                     responses.push_back(stats);
                     atomic_request_counter++;
-                    auto worker_invocation_duration = timer.time();
                     {
                         std::stringstream ss;
                         ss<<prefix<<"Process "<<process_id<<" request "<<request_no<<"/"<<requests.size()<<" took "<<worker_invocation_duration<<"s";

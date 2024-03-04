@@ -1068,5 +1068,212 @@ namespace tuplex {
 
             return j;
         }
+
+        llvm::Value* call_cjson_getitem(const IRBuilder& builder, llvm::Value* cjson_obj, llvm::Value* key) {
+            assert(cjson_obj);
+            assert(key);
+            assert(builder.GetInsertBlock());
+            assert(builder.GetInsertBlock()->getParent());
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+
+            auto& ctx = mod->getContext();
+            auto func = getOrInsertFunction(mod, "cJSON_GetObjectItemCaseSensitive", llvm::Type::getInt8PtrTy(ctx, 0),
+                                            llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt8PtrTy(ctx, 0));
+
+            return builder.CreateCall(func, {cjson_obj, key});
+        }
+
+        llvm::Value* call_cjson_isnumber(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            assert(cjson_obj);
+            assert(builder.GetInsertBlock());
+            assert(builder.GetInsertBlock()->getParent());
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+
+            auto& ctx = mod->getContext();
+            auto func = getOrInsertFunction(mod, "cJSON_IsNumber", ctypeToLLVM<cJSON_AS4CPP_bool>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_obj}), llvm::Type::getInt1Ty(ctx));
+        }
+
+        llvm::Value* call_cjson_isnull(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            assert(cjson_obj);
+            assert(builder.GetInsertBlock());
+            assert(builder.GetInsertBlock()->getParent());
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+
+            auto& ctx = mod->getContext();
+            auto func = getOrInsertFunction(mod, "cJSON_IsNull", ctypeToLLVM<cJSON_AS4CPP_bool>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_obj}), llvm::Type::getInt1Ty(ctx));
+        }
+
+        llvm::Value* call_cjson_isobject(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            assert(cjson_obj);
+            assert(builder.GetInsertBlock());
+            assert(builder.GetInsertBlock()->getParent());
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+
+            auto& ctx = mod->getContext();
+            auto func = getOrInsertFunction(mod, "cJSON_IsObject", ctypeToLLVM<cJSON_AS4CPP_bool>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_obj}), llvm::Type::getInt1Ty(ctx));
+        }
+
+        llvm::Value* call_cjson_isarray(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            assert(cjson_obj);
+            assert(builder.GetInsertBlock());
+            assert(builder.GetInsertBlock()->getParent());
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+
+            auto& ctx = mod->getContext();
+            auto func = getOrInsertFunction(mod, "cJSON_IsArray", ctypeToLLVM<cJSON_AS4CPP_bool>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_obj}), llvm::Type::getInt1Ty(ctx));
+        }
+
+        llvm::Value* call_cjson_getarraysize(const IRBuilder& builder, llvm::Value* cjson_array) {
+            assert(cjson_array);
+            assert(builder.GetInsertBlock());
+            assert(builder.GetInsertBlock()->getParent());
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+
+            auto& ctx = mod->getContext();
+            auto func = getOrInsertFunction(mod, "cJSON_GetArraySize", ctypeToLLVM<int>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_array}), llvm::Type::getInt64Ty(ctx));
+        }
+
+        SerializableValue get_cjson_array_item(const IRBuilder& builder, llvm::Value* cjson_array, llvm::Value* idx) {
+
+            assert(cjson_array);
+            assert(builder.GetInsertBlock());
+            assert(builder.GetInsertBlock()->getParent());
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+
+            auto& ctx = mod->getContext();
+            auto func = getOrInsertFunction(mod, "cJSON_GetArrayItem", llvm::Type::getInt8PtrTy(ctx, 0),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0), ctypeToLLVM<int>(ctx));
+
+            auto item = builder.CreateCall(func, {cjson_array, builder.CreateZExtOrTrunc(idx,
+                                                                                                              ctypeToLLVM<int>(ctx))});
+            return {item, nullptr, nullptr};
+        }
+
+        llvm::Value* call_cjson_isstring(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            assert(cjson_obj);
+            assert(builder.GetInsertBlock());
+            assert(builder.GetInsertBlock()->getParent());
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+
+            auto& ctx = mod->getContext();
+            auto func = getOrInsertFunction(mod, "cJSON_IsString", ctypeToLLVM<cJSON_AS4CPP_bool>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_obj}), llvm::Type::getInt1Ty(ctx));
+        }
+
+        [[maybe_unused]] llvm::Value* call_cjson_is_list_of_generic_dicts(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            // this calls a runtime function (linked in JITCompiler)
+            assert(cjson_obj);
+            assert(builder.GetInsertBlock());
+            assert(builder.GetInsertBlock()->getParent());
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+
+            auto& ctx = mod->getContext();
+            auto func = getOrInsertFunction(mod, "cJSON_IsArrayOfObjects", ctypeToLLVM<cJSON_AS4CPP_bool>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_obj}), llvm::Type::getInt1Ty(ctx));
+        }
+
+        llvm::Value* get_cjson_as_integer(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            auto float_val = get_cjson_as_float(builder, cjson_obj);
+            return builder.CreateFPToSI(float_val, llvm::Type::getInt64Ty(builder.getContext()));
+        }
+
+        llvm::Value* get_cjson_as_float(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            assert(cjson_obj);
+            assert(builder.GetInsertBlock());
+            assert(builder.GetInsertBlock()->getParent());
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+
+            auto& ctx = mod->getContext();
+            auto func = getOrInsertFunction(mod, "cJSON_GetNumberValue", llvm::Type::getDoubleTy(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            return builder.CreateCall(func, {cjson_obj});
+        }
+
+        SerializableValue get_cjson_as_string_value(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            assert(cjson_obj);
+            assert(builder.GetInsertBlock());
+            assert(builder.GetInsertBlock()->getParent());
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+
+            auto& ctx = mod->getContext();
+            auto func = getOrInsertFunction(mod, "cJSON_GetStringValue", llvm::Type::getInt8PtrTy(ctx, 0),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            auto str_pointer = builder.CreateCall(func, {cjson_obj});
+
+            auto str_len = builder.CreateCall(strlen_prototype(ctx, mod), {str_pointer});
+            auto str_size = builder.CreateAdd(str_len, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, 1)));
+            return {str_pointer, str_size};
+        }
+
+        [[maybe_unused]] SerializableValue serialize_cjson_as_runtime_str(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            assert(cjson_obj);
+            assert(builder.GetInsertBlock());
+            assert(builder.GetInsertBlock()->getParent());
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+
+            auto& ctx = mod->getContext();
+            auto func = getOrInsertFunction(mod, "cJSON_PrintUnformatted", llvm::Type::getInt8PtrTy(ctx, 0),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            auto str_pointer = builder.CreateCall(func, {cjson_obj});
+
+            auto str_len = builder.CreateCall(strlen_prototype(ctx, mod), {str_pointer});
+            auto str_size = builder.CreateAdd(str_len, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, 1)));
+            return {str_pointer, str_size};
+        }
+
+        llvm::Value* call_cjson_create_empty(const IRBuilder& builder) {
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+
+            auto& ctx = mod->getContext();
+            auto func = getOrInsertFunction(mod, "cJSON_CreateObject", llvm::Type::getInt8PtrTy(ctx, 0));
+
+            return builder.CreateCall(func, {});
+        }
+
+        extern llvm::Value* call_simdjson_to_cjson_object(const IRBuilder& builder, llvm::Value* json_item) {
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+
+            auto& ctx = mod->getContext();
+            auto func = getOrInsertFunction(mod, "JsonItem_to_cJSON", llvm::Type::getInt8PtrTy(ctx, 0),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            return builder.CreateCall(func, {json_item});
+        }
     }
 }

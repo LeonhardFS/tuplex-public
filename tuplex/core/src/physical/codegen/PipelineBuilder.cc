@@ -683,11 +683,17 @@ namespace tuplex {
             BasicBlock *keepBlock = BasicBlock::Create(env().getContext(),
                                                        "filter_keep", builder.GetInsertBlock()->getParent());
 
+
+            _env->printValue(builder, filterCond, "filter condition for ForkEvent: ");
+
             // if tuple is filtered away, simply go to destructor block
             builder.CreateCondBr(filterCond, keepBlock, leaveBlock());
             _lastBlock = keepBlock; // update this
 
             builder.SetInsertPoint(_lastBlock);
+
+            _env->debugPrint(builder, "in keep block");
+
             _lastOperatorType = LogicalOperatorType::FILTER;
             _lastOperatorColumnIndex = -1;
 
@@ -1690,6 +1696,8 @@ namespace tuplex {
             string trueValue = "true";
             string falseValue = "false";
 
+            env.debugPrint(builder, "calling fast_csvwriter");
+
             // optimized & fast writer using Ryu + branchlut for itoa
             auto num_columns = row.numElements();
             auto types = row.getFieldTypes();
@@ -1780,6 +1788,11 @@ namespace tuplex {
                 } else if(t == python::Type::EMPTYTUPLE) {
                     Logger::instance().logger("codegen").warn("unsupported CSV type ()");
                     space_needed += 3;
+                } else if(t == python::Type::GENERICDICT) {
+                    // object is given as cJSON. --> print as string & retrieve length!
+                    // -- this is slow b.c. need to invoke twice.
+                    auto serialized_json_str = serialize_cjson_as_runtime_str(builder, row.get(i));
+                    varSizeRequired = builder.CreateAdd(varSizeRequired, builder.CreateSub(serialized_json_str.size, env.i64Const(1)));
                 } else {
                     throw std::runtime_error("unsupported type " + t.desc() + " in fast CSV writer");
                 }
@@ -1934,6 +1947,11 @@ namespace tuplex {
                     auto emptyTupleConst = env.strConst(builder, "()");
                     builder.CreateMemCpy(buf_ptr, 0, emptyTupleConst, 0, env.i64Const(2));
                     buf_ptr = builder.MovePtrByBytes(buf_ptr, env.i32Const(2));
+                } else if(t.withoutOption() == python::Type::GENERICDICT) {
+                    auto json_str = serialize_cjson_as_runtime_str(builder, val);
+                    auto json_str_size = builder.CreateSub(json_str.size, env.i64Const(1));
+                    builder.CreateMemCpy(buf_ptr, 0, json_str.val, 0, json_str_size);
+                    buf_ptr = builder.MovePtrByBytes(buf_ptr, json_str_size);
                 }
 
                 if(t.isOptionType()) {
@@ -2004,7 +2022,7 @@ namespace tuplex {
             // new: codegen writer with fast itoa, dtoa functions
             auto csv_row = fast_csvwriter(builder, env(), row, null_value, newLineDelimited, delimiter, quotechar);
 
-            // _env->printValue(builder, csv_row.size, "Writing csv row of size=");
+            _env->printValue(builder, csv_row.size, "Writing csv row of size=");
 
             // typedef int64_t(*write_row_f)(void*, uint8_t*, int64_t);
             auto& ctx = env().getContext();

@@ -835,6 +835,7 @@ namespace tuplex {
             jit.registerSymbol("JsonArray_getEmptyArray", JsonArray_getEmptyArray);
             jit.registerSymbol("Json_is_whitespace", Json_is_whitespace);
             jit.registerSymbol("JsonParser_TruncatedBytes", JsonParser_TruncatedBytes);
+            jit.registerSymbol("JsonItem_to_cJSON", JsonItem_to_cJSON);
         }
 
         bool JsonContainsAtLeastOneDocument(const char* buf, size_t buf_size) {
@@ -907,6 +908,62 @@ namespace tuplex {
                 pos++;
             }
             return 0 == brace_counter && 0 == bracket_counter;
+        }
+
+
+        // void print_json(dom::element element) {
+        //  switch (element.type()) {
+        //    case dom::element_type::ARRAY:
+        //      cout << "[";
+        //      for (dom::element child : dom::array(element)) {
+        //        print_json(child);
+        //        cout << ",";
+        //      }
+        //      cout << "]";
+        //      break;
+        //    case dom::element_type::OBJECT:
+        //      cout << "{";
+        //      for (dom::key_value_pair field : dom::object(element)) {
+        //        cout << "\"" << field.key << "\": ";
+        //        print_json(field.value);
+        //      }
+        //      cout << "}";
+        //      break;
+        //    case dom::element_type::INT64:
+        //      cout << int64_t(element) << endl;
+        //      break;
+        //    case dom::element_type::UINT64:
+        //      cout << uint64_t(element) << endl;
+        //      break;
+        //    case dom::element_type::DOUBLE:
+        //      cout << double(element) << endl;
+        //      break;
+        //    case dom::element_type::STRING:
+        //      cout << std::string_view(element) << endl;
+        //      break;
+        //    case dom::element_type::BOOL:
+        //      cout << bool(element) << endl;
+        //      break;
+        //    case dom::element_type::NULL_VALUE:
+        //      cout << "null" << endl;
+        //      break;
+        //  }
+        //}
+
+        // Note: according to https://github.com/simdjson/simdjson/blob/master/doc/dom.md#using-the-parsed-json
+        // convert to C structs / trees etc.
+
+        cJSON* JsonItem_to_cJSON(JsonItem* item) {
+            // this basically stores the simdjson as cJSON tree (later, we'll modify the cJSON tree to actually hold the dict)
+            std::stringstream ss;
+            ss<<item->o;
+            auto json_str = ss.str();
+
+            // invoke cJSON parse
+            auto cjson = cJSON_Parse(json_str.c_str());
+            return cjson;
+
+            // return cJSON_CreateObject();
         }
     }
 }

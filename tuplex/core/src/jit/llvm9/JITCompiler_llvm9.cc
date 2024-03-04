@@ -35,6 +35,35 @@
 
 namespace tuplex {
 
+    extern "C" cJSON_bool cJSON_IsArrayOfObjects(cJSON* obj) {
+        if(!obj)
+            return false;
+
+        if(!cJSON_IsArray(obj))
+            return false;
+
+        auto arr_size = cJSON_GetArraySize(obj);
+        for(unsigned i = 0; i < arr_size; ++i) {
+            if(!cJSON_IsObject(cJSON_GetArrayItem(obj, i)))
+                return false;
+        }
+        return true;
+    }
+
+    extern "C" char* cJSON_PrintUnformattedEx(cJSON* obj) {
+
+        auto ret = cJSON_PrintUnformatted(obj);
+
+        if(!ret) {
+            obj = cJSON_CreateString("nullptr");
+            ret = cJSON_PrintUnformatted(obj);
+
+            assert(ret);
+        }
+
+        return ret;
+    }
+
 #if LLVM_VERSION_MAJOR > 8
     inline llvm::Expected<llvm::orc::ThreadSafeModule> parseToModule(const std::string& llvmIR) {
         using namespace llvm;

@@ -89,7 +89,7 @@ namespace tuplex {
                     auto idx_opt_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 4);
                     builder.CreateStore(env.nullConstant(env.i8ptrType()), idx_opt_values);
                 }
-            } else if(elementType.isStructuredDictionaryType()) {
+            } else if(elementType.isStructuredDictionaryType() || elementType == python::Type::GENERICDICT) {
                 // pointer to the structured dict type!
 
                 // pointers to the list type!
@@ -100,10 +100,16 @@ namespace tuplex {
                 auto idx_size = builder.CreateStructGEP(list_ptr, llvm_list_type, 1); assert(idx_size->getType() == env.i64ptrType());
                 builder.CreateStore(env.i64Const(0), idx_size);
 
-                auto llvm_element_type = env.getOrCreateStructuredDictType(elementType);
+
 
                 auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
-                builder.CreateStore(env.nullConstant(llvm_element_type->getPointerTo()), idx_values);
+
+                if(elementType.isStructuredDictionaryType()) {
+                    auto llvm_element_type = env.getOrCreateStructuredDictType(elementType);
+                    builder.CreateStore(env.nullConstant(llvm_element_type->getPointerTo()), idx_values);
+                } else {
+                    builder.CreateStore(env.nullConstant(env.i8ptrType()), idx_values);
+                }
 
                 if(elements_optional) {
                     auto idx_opt_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 3);
@@ -241,7 +247,7 @@ namespace tuplex {
                 list_init_array(env, builder, list_ptr, list_type, capacity, 3, initialize);
                 if(elements_optional)
                     list_init_array(env, builder, list_ptr, list_type, capacity, 4, initialize);
-            } else if(elementType.isStructuredDictionaryType()) {
+            } else if(elementType.isStructuredDictionaryType() || elementType == python::Type::GENERICDICT) {
 
                 // pointer to the structured dict type!
                 // similar to above - yet, keep it here extra for more control...
@@ -690,14 +696,13 @@ namespace tuplex {
 
                 builder.CreateStore(value.val, idx_value);
                 builder.CreateStore(value.size, idx_size);
-            } else if(elementType.isStructuredDictionaryType()) {
+            } else if(elementType.isStructuredDictionaryType() || elementType == python::Type::GENERICDICT) {
                 // pointer to the structured dict type!
 
                 // this is quite simple, store a HEAP allocated pointer.
                 auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
                 builder.CreateStore(env.i64Const(0), idx_capacity);
 
-                auto llvm_element_type = env.getOrCreateStructuredDictType(elementType);
                 auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
 
                 // store struct to pointer
@@ -831,7 +836,7 @@ namespace tuplex {
                       || elementType == python::Type::PYOBJECT) {
                 auto idx_size = builder.CreateStructGEP(list_ptr, llvm_list_type, 1); assert(idx_size->getType() == env.i64ptrType());
                 builder.CreateStore(size, idx_size);
-            } else if(elementType.isStructuredDictionaryType()) {
+            } else if(elementType.isStructuredDictionaryType() || elementType == python::Type::GENERICDICT) {
                 auto idx_size = builder.CreateStructGEP(list_ptr, llvm_list_type, 1); assert(idx_size->getType() == env.i64ptrType());
                 builder.CreateStore(size, idx_size);
             } else if(elementType.isListType()) {
@@ -870,6 +875,7 @@ namespace tuplex {
                       || elementType == python::Type::BOOLEAN
                       || elementType == python::Type::STRING
                       || elementType == python::Type::PYOBJECT
+                      || elementType == python::Type::GENERICDICT
                       || elementType.isStructuredDictionaryType()
                       || elementType.isListType()
                       || elementType.isTupleType())) {

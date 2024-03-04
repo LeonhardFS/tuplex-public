@@ -115,6 +115,35 @@
 //        return rc;
 //    }
 //
+//    extern "C" cJSON_bool cJSON_IsArrayOfObjects(cJSON* obj) {
+//        if(!obj)
+//            return false;
+//
+//        if(!cJSON_IsArray(obj))
+//            return false;
+//
+//        auto arr_size = cJSON_GetArraySize(obj);
+//        for(unsigned i = 0; i < arr_size; ++i) {
+//            if(!cJSON_IsObject(cJSON_GetArrayItem(obj, i)))
+//                return false;
+//        }
+//        return true;
+//    }
+//
+//    extern "C" char* cJSON_PrintUnformattedEx(cJSON* obj) {
+//
+//        auto ret = cJSON_PrintUnformatted(obj);
+//
+//        if(!ret) {
+//            obj = cJSON_CreateString("nullptr");
+//            ret = cJSON_PrintUnformatted(obj);
+//
+//            assert(ret);
+//        }
+//
+//        return ret;
+//    }
+//
 //    JITCompiler::JITCompiler(const llvm::CodeGenOpt::Level& codegen_opt_level) {
 //        codegen::initLLVM(); // lazy initialization of LLVM backend.
 //
@@ -267,7 +296,7 @@
 //        // AWS SDK cJSON
 //#ifdef BUILD_WITH_AWS
 //        // cJSON_PrintUnformatted, cJSON_AddItemToObject, cJSON_CreateObject, cJSON_DetachItemViaPointer, cJSON_CreateString
-//        registerSymbol("cJSON_PrintUnformatted", cJSON_PrintUnformatted);
+//        registerSymbol("cJSON_PrintUnformatted", cJSON_PrintUnformattedEx);
 //        registerSymbol("cJSON_AddItemToObject", cJSON_AddItemToObject);
 //        registerSymbol("cJSON_CreateObject", cJSON_CreateObject);
 //        registerSymbol("cJSON_DetachItemViaPointer", cJSON_DetachItemViaPointer);
@@ -280,6 +309,9 @@
 //        registerSymbol("cJSON_Parse", cJSON_Parse);
 //        registerSymbol("cJSON_CreateString", cJSON_CreateString);
 //#endif
+//
+//        // extended functions
+//        registerSymbol("cJSON_IsArrayOfObjects", cJSON_IsArrayOfObjects);
 //
 //        registerSymbol("debug_printf", debug_printf);
 //
@@ -497,11 +529,11 @@
 //        return true;
 //    }
 //
-//    void* JITCompiler::getAddrOfSymbol(const std::string &Name) {
+//    void* JITCompiler::getAddrOfSymbol(const std::string &Name, std::ostream *err_stream) {
 //        if(Name.empty())
 //            return nullptr;
 //
-//        // search for symbol in all dylibs
+//        // search for symbol in all dylibs starting with most recent one.
 //        for(auto it = _dylibs.rbegin(); it != _dylibs.rend(); ++it) {
 //            auto sym = _lljit->lookup(**it, Name);
 //
@@ -509,11 +541,11 @@
 //                return reinterpret_cast<void*>(sym.get().getAddress());
 //            else {
 //                auto err = sym.takeError();
-//                Logger::instance().logger("LLVM").error(errToString(err));
+//                if(err_stream) {
+//                    *err_stream<<"getAddrOfSymbol failed for dylib "<<(*it)->getName()<<", details: "<< errToString(err);
+//                }
 //            }
 //        }
-//
-//        Logger::instance().logger("LLVM").error("could not find symbol " + Name + ". ");
 //        return nullptr;
 //    }
 //#else

@@ -651,8 +651,8 @@ namespace tuplex {
                     memberTypes.push_back(i8ptrType()); // bool-array
                 llvm::ArrayRef<llvm::Type *> members(memberTypes);
                 retType = llvm::StructType::create(_context, members, "struct." + twine, false);
-            } else if(elementType.isStructuredDictionaryType()) {
-                auto llvm_element_type = getOrCreateStructuredDictType(elementType);
+            } else if(elementType.isStructuredDictionaryType() || elementType == python::Type::GENERICDICT) {
+                auto llvm_element_type = elementType.isStructuredDictionaryType() ? getOrCreateStructuredDictType(elementType) : i8ptrType();
 
                 // pointer to the structured dict type!
                 std::vector<llvm::Type*> memberTypes;
@@ -1696,7 +1696,7 @@ namespace tuplex {
                 return Type::getInt8PtrTy(_context);
 
             // string type is a primitive, hence we can return it
-            if (t == python::Type::STRING || t == python::Type::GENERICDICT ||
+            if (t == python::Type::STRING ||
                 t == python::Type::PYOBJECT)
                 return Type::getInt8PtrTy(_context);
 
@@ -2993,6 +2993,8 @@ namespace tuplex {
                 }
             } else if(python::Type::NULLVALUE == type) {
                 retVal.is_null = env.i1Const(true);
+            } else if(type.isConstantValued()) {
+                return CreateDummyValue(env, builder, type.underlying());
             } else {
                 throw std::runtime_error("no support to create dummy value for " + type.desc() + " yet.");
             }

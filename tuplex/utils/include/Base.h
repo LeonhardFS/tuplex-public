@@ -149,6 +149,8 @@ typedef int32_t* ptr_t;
 // version must be >= 1.9.134
 #if (AWS_SDK_VERSION_MAJOR == 1 && AWS_SDK_VERSION_MINOR == 9 && AWS_SDK_VERSION_PATCH >= 134) || (AWS_SDK_VERSION_MAJOR == 1 && AWS_SDK_VERSION_MINOR > 9) || (AWS_SDK_VERSION_MAJOR > 1)
 
+#define cJSON_bool cJSON_AS4CPP_bool
+
 #define cJSON_Hooks cJSON_AS4CPP_Hooks
 
 #define cJSON_AddArrayToObject cJSON_AS4CPP_AddArrayToObject

@@ -43,7 +43,7 @@ namespace tuplex {
 
                     // trick for row type, if not row type but columns exist -> rewrite!
                     auto parent_schema = this->parent()->getOutputSchema();
-                    if(PARAM_USE_ROW_TYPE && !parent->columns().empty() && !parent_schema.getRowType().isRowType()) {
+                    if(PARAM_USE_ROW_TYPE && !parent->columns().empty() && !parent_schema.getRowType().isRowType() && parent_schema != Schema::UNKNOWN) {
                         parent_schema = Schema(parent_schema.getMemoryLayout(), python::Type::makeRowType(parent_schema.getRowType().parameters(), parent->columns()));
                     }
 

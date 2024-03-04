@@ -734,7 +734,7 @@ namespace tuplex {
             logger.debug("ft type: " + _env.getLLVMTypeName(ft));
             logger.debug("iterator type: " + _env.getLLVMTypeName(iterator->getType()));
 
-            auto nextFunc_value = llvm::getOrInsertCallable(*_env.getModule(), funcName, ft);
+            auto nextFunc_value = getOrInsertCallable(*_env.getModule(), funcName, ft);
             llvm::FunctionCallee nextFunc_callee(ft, nextFunc_value);
             auto exhausted = builder.CreateCall(nextFunc_callee, iterator);
 
@@ -809,7 +809,7 @@ namespace tuplex {
             logger.debug("ft type: " + _env.getLLVMTypeName(ft));
             logger.debug("iterator type: " + _env.getLLVMTypeName(iterator->getType()));
 
-            auto nextFunc_value = llvm::getOrInsertCallable(*_env.getModule(), funcName, ft);
+            auto nextFunc_value = getOrInsertCallable(*_env.getModule(), funcName, ft);
             llvm::FunctionCallee nextFunc_callee(ft, nextFunc_value);
             auto exhausted = builder.CreateCall(nextFunc_callee, iterator);
             assert(exhausted);

@@ -882,6 +882,26 @@ namespace tuplex {
                 return _constantType;
             }
 
+            inline std::string to_string() const {
+                // format string nicely
+                std::stringstream ss;
+
+                switch(type) {
+                    case CheckType::CHECK_CONSTANT: {
+                        ss<<"constant check";
+                        break;
+                    }
+                    case CheckType::CHECK_FILTER: {
+                        ss<<"filter check";
+                        break;
+                    }
+                    default:
+                        ss<<"unknown check ("<<static_cast<int>(type)<<")";
+                }
+
+                return ss.str();
+            }
+
 #ifdef BUILD_WITH_CEREAL
             template<class Archive> void serialize(Archive & ar) {
                     ar(colNos, type, _constantType, _iMin, _iMax, _serializedCheck);
@@ -920,6 +940,23 @@ namespace tuplex {
 
             std::string _serializedCheck;
         };
+
+        inline  std::tuple<python::Type, std::string> extract_type_and_value_from_constant_check(const NormalCaseCheck &check) {
+            assert(check.type == CheckType::CHECK_CONSTANT);
+            auto const_type = check.constant_type();
+            assert(const_type.isConstantValued());
+            auto elementType= const_type.underlying();
+            auto value = const_type.constant();// performing check against string constant
+            if(elementType.isOptionType()) {
+                // is the constant null? None?
+                if(value == "None" || value == "null")  {
+                    elementType = python::Type::NULLVALUE;
+                } else
+                    elementType = elementType.elementType();
+            }
+
+            return std::make_tuple(elementType, value);
+        }
 
         // helper function to determine number of predecessors
         inline size_t successorCount(llvm::BasicBlock* block) {
@@ -1554,6 +1591,93 @@ namespace tuplex {
          * return information about compiling for a target machine as JSON.
          */
         extern std::string compileEnvironmentAsJsonString();
+
+        // helper to enable llvm6 and llvm9 compatibility // --> force onto llvm9+ for now.
+        inline llvm::CallInst *createCallHelper(llvm::Function *Callee, llvm::ArrayRef<llvm::Value*> Ops,
+                                          llvm::IRBuilder<>& builder,
+                                          const llvm::Twine &Name = "",
+                                                llvm::Instruction *FMFSource = nullptr) {
+            llvm::CallInst *CI = llvm::CallInst::Create(Callee, Ops, Name);
+            if (FMFSource)
+                CI->copyFastMathFlags(FMFSource);
+#if (LLVM_VERSION_MAJOR <= 15)
+            builder.GetInsertBlock()->getInstList().insert(builder.GetInsertPoint(), CI);
+#else
+            CI->insertInto(builder.GetInsertBlock(), builder.GetInsertBlock()->begin());
+#endif
+            builder.SetInstDebugLocation(CI);
+            return CI;
+        }
+
+        inline llvm::Value* getOrInsertCallable(llvm::Module& mod, const std::string& name, llvm::FunctionType* FT) {
+#if LLVM_VERSION_MAJOR < 9
+            return mod.getOrInsertFunction(name, FT);
+#else
+            return mod.getOrInsertFunction(name, FT).getCallee();
+#endif
+        }
+
+        inline llvm::Value* getOrInsertCallable(llvm::Module* mod, const std::string& name, llvm::FunctionType* FT) {
+            assert(mod);
+            if(!mod)
+                return nullptr;
+            return getOrInsertCallable(*mod, name, FT);
+        }
+
+
+        inline llvm::Function* getOrInsertFunction(llvm::Module& mod, const std::string& name, llvm::FunctionType* FT) {
+#if LLVM_VERSION_MAJOR < 9
+            llvm::Function* func = cast<Function>(mod.getOrInsertFunction(name, FT));
+#else
+            llvm::Function *func = llvm::cast<llvm::Function>(mod.getOrInsertFunction(name, FT).getCallee());
+#endif
+            return func;
+        }
+
+        inline llvm::Function* getOrInsertFunction(llvm::Module* mod, const std::string& name, llvm::FunctionType* FT) {
+            if(!mod)
+                return nullptr;
+
+#if LLVM_VERSION_MAJOR < 9
+            llvm::Function* func = cast<Function>(mod->getOrInsertFunction(name, FT));
+#else
+            llvm::Function *func = llvm::cast<llvm::Function>(mod->getOrInsertFunction(name, FT).getCallee());
+#endif
+            return func;
+        }
+
+        template <typename... ArgsTy>
+        llvm::Function* getOrInsertFunction(llvm::Module* mod, const std::string& Name, llvm::Type *RetTy,
+                                      ArgsTy... Args) {
+            if(!mod)
+                return nullptr;
+            llvm::SmallVector<llvm::Type*, sizeof...(ArgsTy)> ArgTys{Args...};
+            return getOrInsertFunction(mod, Name, llvm::FunctionType::get(RetTy, ArgTys, false));
+        }
+
+        // cJSON helper functions (for easier access)
+        extern llvm::Value* call_cjson_getitem(const IRBuilder& builder, llvm::Value* cjson_obj, llvm::Value* key);
+        extern llvm::Value* call_cjson_isnumber(const IRBuilder& builder, llvm::Value* cjson_obj);
+        extern llvm::Value* call_cjson_isnull(const IRBuilder& builder, llvm::Value* cjson_obj);
+        extern llvm::Value* call_cjson_isstring(const IRBuilder& builder, llvm::Value* cjson_obj);
+        extern llvm::Value* call_cjson_isobject(const IRBuilder& builder, llvm::Value* cjson_obj);
+        extern llvm::Value* call_cjson_isarray(const IRBuilder& builder, llvm::Value* cjson_obj);
+        extern llvm::Value* get_cjson_as_integer(const IRBuilder& builder, llvm::Value* cjson_obj);
+        extern llvm::Value* get_cjson_as_float(const IRBuilder& builder, llvm::Value* cjson_obj);
+        extern SerializableValue get_cjson_as_string_value(const IRBuilder& builder, llvm::Value* cjson_obj);
+
+        extern llvm::Value* call_cjson_create_empty(const IRBuilder& builder);
+
+        extern llvm::Value* call_simdjson_to_cjson_object(const IRBuilder& builder, llvm::Value* json_item);
+
+        [[maybe_unused]] extern SerializableValue serialize_cjson_as_runtime_str(const IRBuilder& builder, llvm::Value* cjson_obj);
+
+
+        extern llvm::Value* call_cjson_getarraysize(const IRBuilder& builder, llvm::Value* cjson_array);
+        extern SerializableValue get_cjson_array_item(const IRBuilder& builder, llvm::Value* cjson_array, llvm::Value* idx);
+
+        // extended cjson function to check homogeneity of list
+        [[maybe_unused]] extern llvm::Value* call_cjson_is_list_of_generic_dicts(const IRBuilder& builder, llvm::Value* cjson_obj);
     }
 }
 

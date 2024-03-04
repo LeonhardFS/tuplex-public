@@ -1958,10 +1958,10 @@ namespace tuplex {
                 v = parseRowsFromJSONStratified(sample.c_str() + start_offset, sample_length,
                                       outNames, outNames, _json_treat_heterogenous_lists_as_tuples, limit,
                                       sampling_params.strata_size, sampling_params.samples_per_strata,
-                                      sampling_params.random_seed, skip_rows);
+                                      sampling_params.random_seed, skip_rows, PARAM_USE_GENERIC_DICT);
             } else {
                 v = parseRowsFromJSON(sample.c_str() + start_offset, sample_length,
-                                      outNames, outNames, _json_treat_heterogenous_lists_as_tuples, limit);
+                                      outNames, outNames, _json_treat_heterogenous_lists_as_tuples, limit, PARAM_USE_GENERIC_DICT);
             }
             sample_limit -= std::min(v.size(), limit);
         }
@@ -1993,11 +1993,11 @@ namespace tuplex {
                     rows = parseRowsFromJSONStratified(sample.c_str() + offset + start_offset, sample_length,
                                              outNames, outNames, _json_treat_heterogenous_lists_as_tuples,
                                              limit, sampling_params.strata_size, sampling_params.samples_per_strata,
-                                                       sampling_params.random_seed, skip_rows);
+                                                       sampling_params.random_seed, skip_rows, PARAM_USE_GENERIC_DICT);
                 } else {
                     rows = parseRowsFromJSON(sample.c_str() + offset + start_offset, sample_length,
                                              outNames, outNames, _json_treat_heterogenous_lists_as_tuples,
-                                             limit);
+                                             limit, PARAM_USE_GENERIC_DICT);
                 }
                 sample_limit -= std::min(rows.size(), limit);
                 std::copy(rows.begin(), rows.end(), std::back_inserter(v));
@@ -2015,11 +2015,11 @@ namespace tuplex {
                     v = parseRowsFromJSONStratified(sample.c_str() + start_offset, sample_length,
                                           outNames, outNames, _json_treat_heterogenous_lists_as_tuples,
                                           limit, sampling_params.strata_size, sampling_params.samples_per_strata,
-                                                    sampling_params.random_seed, skip_rows);
+                                                    sampling_params.random_seed, skip_rows, PARAM_USE_GENERIC_DICT);
                 } else {
                     v = parseRowsFromJSON(sample.c_str() + start_offset, sample_length,
                                           outNames, outNames, _json_treat_heterogenous_lists_as_tuples,
-                                          limit);
+                                          limit, PARAM_USE_GENERIC_DICT);
                 }
 
                 sample_limit -= std::min(v.size(), limit);
@@ -2045,11 +2045,11 @@ namespace tuplex {
                 rows = parseRowsFromJSONStratified(sample.c_str() + start_offset, sample_length,
                                          outNames, outNames, _json_treat_heterogenous_lists_as_tuples,
                                          limit, sampling_params.strata_size, sampling_params.samples_per_strata,
-                                         sampling_params.random_seed, skip_rows);
+                                         sampling_params.random_seed, skip_rows, PARAM_USE_GENERIC_DICT);
             } else {
                 rows = parseRowsFromJSON(sample.c_str() + start_offset, sample_length,
                                          outNames, outNames, _json_treat_heterogenous_lists_as_tuples,
-                                         limit);
+                                         limit, PARAM_USE_GENERIC_DICT);
             }
 
             sample_limit -= std::min(rows.size(), limit);
