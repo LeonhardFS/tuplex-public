@@ -3000,5 +3000,50 @@ namespace tuplex {
             }
             return retVal;
         }
+
+
+        // helper functions:
+
+        // a function is constructed in the following standard way in Tuplex:
+        // i64 func(rettype* ptr, arg1, arg2, ..., argn, arg1_size, ..., argn_size)
+        // this allows for failures as well.
+        // that general model is basically required for true exception handling...
+        // maybe give details in implementation...
+
+        // @Todo: this sucks. Should be different. Should be, create call for functions & then directly code stuff...
+
+        llvm::Function* createStringLenFunction(LLVMEnvironment& env) {
+            using namespace llvm;
+
+            // simple function:
+            // Taking i8* as input and i64 for size of i8*
+
+            FunctionType *ft = FunctionType::get(env.i64Type(), {env.i8ptrType(), env.i64Type()}, false);
+
+            Function *func = Function::Create(ft, Function::InternalLinkage, "strLen", env.getModule().get());
+            // set inline attributes
+            AttrBuilder ab;
+            ab.addAttribute(Attribute::AlwaysInline);
+            func->addAttributes(llvm::AttributeList::FunctionIndex, ab);
+
+
+            std::vector<llvm::Argument*> args;
+            for(auto& arg : func->args())
+                args.push_back(&arg);
+            assert(args.size() == 2);
+
+            args[0]->setName("ptr");
+            args[1]->setName("ptr_size");
+
+            // create basic block & simple return
+            BasicBlock* bb = BasicBlock::Create(env.getContext(), "body", func);
+            IRBuilder builder(bb);
+
+            // simple return: just size - 1
+            llvm::Value* size = args[1];
+            builder.CreateRet(builder.CreateSub(size, env.i64Const(1)));
+
+            return func;
+        }
     }
 }

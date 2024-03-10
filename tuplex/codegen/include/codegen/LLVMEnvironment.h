@@ -2221,6 +2221,8 @@ namespace tuplex {
         extern SerializableValue homogenous_tuple_dynamic_get_element(LLVMEnvironment& env, const codegen::IRBuilder& builder,
                                                                       const python::Type& tuple_type, llvm::Value* tuple, llvm::Value* index);
 
+        extern llvm::Function* createStringLenFunction(LLVMEnvironment& env);
+
     }
 }
 

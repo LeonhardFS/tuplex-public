@@ -22,6 +22,8 @@
 namespace tuplex {
     namespace codegen {
 
+
+
         llvm::Function* createStringUpperFunction(LLVMEnvironment& env) {
             using namespace llvm;
 
@@ -3256,6 +3258,9 @@ namespace tuplex {
             builder.SetInsertPoint(bbLoopDone);
             lfb.setLastBlock(builder.GetInsertBlock());
 
+            // HACK?
+            list_ptr = builder.CreateLoad(llvm_list_type, list_ptr);
+
             return {list_ptr, n_elements, nullptr};
         }
 
@@ -3265,7 +3270,7 @@ namespace tuplex {
                                             const IRBuilder &builder,
                                             const python::Type &retType,
                                             llvm::Value* item) {
-            env.debugPrint(builder, "performing dict.get() call on general dict with expected ret type " + retType.desc());
+            // env.debugPrint(builder, "performing dict.get() call on general dict with expected ret type " + retType.desc());
 
             // check for all the possible JSON types and then map to python types
             // Json string
@@ -3288,7 +3293,7 @@ namespace tuplex {
             if(python::Type::I64 == retType) {
                 auto is_not_number = env.i1neg(builder, call_cjson_isnumber(builder, item));
 
-                env.printValue(builder, is_not_number, "is i64 retrieval invalid: ");
+                // env.printValue(builder, is_not_number, "is i64 retrieval invalid: ");
 
 #ifndef NDEBUG
                 //debug code
@@ -3298,11 +3303,11 @@ namespace tuplex {
                 builder.CreateCondBr(is_not_number, bb_is_not, bb_done);
                 builder.SetInsertPoint(bb_is_not);
 
-                env.debugPrint(builder, "is not valid, printing actual value");
+                // env.debugPrint(builder, "is not valid, printing actual value");
 
                 // debug print if not number
                 auto json_str = serialize_cjson_as_runtime_str(builder, item);
-                env.printValue(builder, json_str.val, " expected i64, but got JSON: ");
+                // env.printValue(builder, json_str.val, " expected i64, but got JSON: ");
 
                 builder.CreateBr(bb_done);
                 builder.SetInsertPoint(bb_done);
@@ -3313,7 +3318,7 @@ namespace tuplex {
                 lfb.addException(builder, ExceptionCode::NORMALCASEVIOLATION, is_not_number, "dict.get() expected i64");
                 auto value = get_cjson_as_integer(builder, item);
 
-                env.printValue(builder, value, "retrieved i64 from cJSON: ");
+                // env.printValue(builder, value, "retrieved i64 from cJSON: ");
 
                 return SerializableValue(value, env.i64Const(sizeof(int64_t)), nullptr);
             }
@@ -3422,7 +3427,7 @@ namespace tuplex {
                 // default value is None here. Create vars and decode then using if.
                 // use variable for result and store default value (here null!)
                 SerializableValue var;
-                auto llvm_val_type = _env.pythonToLLVMType(retType);
+                auto llvm_val_type = _env.pythonToLLVMType(retType.withoutOption());
                 var.val = _env.CreateFirstBlockAlloca(builder, llvm_val_type);
                 var.size = _env.CreateFirstBlockAlloca(builder, _env.i64Type());
                 var.is_null = _env.CreateFirstBlockAlloca(builder, _env.i1Type());
@@ -3438,12 +3443,13 @@ namespace tuplex {
 
 
                 // if item found -> decode!
+                auto lastBlock = builder.GetInsertBlock();
                 builder.CreateCondBr(item_not_found, bbDecodeDone, bbDecodeItem);
 
                 {
                     builder.SetInsertPoint(bbDecodeItem);
                     lfb.setLastBlock(bbDecodeItem);
-                    auto v = decode_cjson_item(_env, lfb, builder, retType, item);
+                    auto v = decode_cjson_item(_env, lfb, builder, retType.withoutOption(), item);
 
                     // for list/dict load
                     if((retType.isListType() || retType.isStructuredDictionaryType()) && v.val->getType()->isPointerTy()) {
@@ -3453,8 +3459,8 @@ namespace tuplex {
                     if(v.val)
                         builder.CreateStore(v.val, var.val);
                     if(v.size)
-                    builder.CreateStore(v.size, var.size);
-                    if(v.is_null)
+                        builder.CreateStore(v.size, var.size);
+                    if(v.is_null) // <-- this is true for NULL.
                         builder.CreateStore(v.is_null, var.is_null);
                     else
                         builder.CreateStore(_env.i1Const(false), var.is_null);
@@ -3465,10 +3471,11 @@ namespace tuplex {
 
                 builder.SetInsertPoint(bbDecodeDone);
 
-                // load variable!
+                // load variable! (could use PHI node instead as well here)
                 auto ret_val = SerializableValue(builder.CreateLoad(llvm_val_type, var.val),
-                                                 builder.CreateLoad(builder.getInt64Ty(), var.size),
-                                                 builder.CreateLoad(builder.getInt1Ty(), var.is_null));
+                                            builder.CreateLoad(builder.getInt64Ty(), var.size),
+                                            builder.CreateLoad(builder.getInt1Ty(), var.is_null));
+
                 lfb.setLastBlock(builder.GetInsertBlock());
                 // _env.printValue(builder, ret_val.val, "value: ");
                 return ret_val; // test...

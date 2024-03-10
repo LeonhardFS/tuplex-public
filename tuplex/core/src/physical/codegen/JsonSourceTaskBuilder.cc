@@ -386,7 +386,7 @@ namespace tuplex {
 
                     builder.SetInsertPoint(bbCheckPassed);
 
-                    _env->debugPrint(builder, "constant check passed.");
+                    // _env->debugPrint(builder, "constant check passed.");
                 } else {
                     throw std::runtime_error("Check " + check.to_string() + " not supported for JsonSourceTaskBuilder");
                 }
@@ -616,7 +616,7 @@ namespace tuplex {
                         throw std::runtime_error("invalid function from pipeline builder in JsonSourceTaskBuilder");
                     auto row_no = rowNumber(builder);
                     auto intermediate = initIntermediate(builder);
-                     _env->debugPrint(builder, "Calling pipeline on rowno: ", row_no);
+                    // _env->debugPrint(builder, "Calling pipeline on rowno: ", row_no);
                     auto pip_res = PipelineBuilder::call(builder, processRowFunc, normal_case_row, userData, row_no, intermediate);
 
 #ifdef JSON_PARSER_TRACE_MEMORY
@@ -628,7 +628,7 @@ namespace tuplex {
                     auto ecOpID = builder.CreateZExtOrTrunc(pip_res.exceptionOperatorID, env().i64Type());
                     auto numRowsCreated = builder.CreateZExtOrTrunc(pip_res.numProducedRows, env().i64Type());
 
-                     env().printValue(builder, ecCode, "pip ecCode= ");
+                    // env().printValue(builder, ecCode, "pip ecCode= ");
 
                     // if ecCode != success -> inc bad normal count.
                     // do this here branchless
@@ -641,18 +641,63 @@ namespace tuplex {
                     if(terminateEarlyOnLimitCode)
                         generateTerminateEarlyOnCode(builder, ecCode, ExceptionCode::OUTPUT_LIMIT_REACHED);
 
-#ifndef NDEBUG
-                    // does pipeline have exception handler or not?
-                    // if not, then task needs to emit exception to process further down the line...
-                    // -> could short circuit and save "true" exception first here.
-                    BasicBlock *bNotOK = BasicBlock::Create(ctx, "pipeline_not_ok", builder.GetInsertBlock()->getParent());
-                    BasicBlock *bNext = BasicBlock::Create(ctx, "pipeline_next", builder.GetInsertBlock()->getParent());
-                    builder.CreateCondBr(bad_row_cond, bNotOK, bNext);
-                    builder.SetInsertPoint(bNotOK);
-                    // env().printValue(builder, ecCode, "pipeline returned ecCode: ");
-                    builder.CreateBr(bNext);
-                    builder.SetInsertPoint(bNext);
-#endif
+                    // if there's an exception handler, serialize
+                    if(hasExceptionHandler()) {
+
+
+                        // does pipeline have exception handler or not?
+                        // if not, then task needs to emit exception to process further down the line...
+                        // -> could short circuit and save "true" exception first here.
+                        BasicBlock *bNotOK = BasicBlock::Create(ctx, "pipeline_not_ok", builder.GetInsertBlock()->getParent());
+                        BasicBlock *bNext = BasicBlock::Create(ctx, "pipeline_next", builder.GetInsertBlock()->getParent());
+                        builder.CreateCondBr(bad_row_cond, bNotOK, bNext);
+                        builder.SetInsertPoint(bNotOK);
+
+                        // _env->debugPrint(builder, "found row to serialize as exception in normal-case handler");
+
+                        // normal case row is parsed - can it be converted to general case row?
+                        // if so emit directly, if not emit fallback row.
+                        auto normal_case_row_type = _normalCaseRowType;
+                        auto general_case_row_type = _generalCaseRowType;
+
+
+//                        // following code snippet casts it up as general_case_row exception with general_case row type.
+//                        // Yet in decodeFallbackRow, the decode is done using normal-case schema?
+//                        serializeAsNormalCaseException(builder, userData, _inputOperatorID, rowNumber(builder), normal_case_row);
+
+
+                        if(python::canUpcastType(normal_case_row_type, general_case_row_type)) {
+                            logger().debug("found exception handler in JSON source task builder, serializing exceptions in general case format.");
+
+                            FlattenedTuple upcasted_row(_env.get());
+
+                            // if both are row type, check names are the same. Then because normal_case_row is given as
+                            // tuple type, convert general case to tuple type.
+                            if(normal_case_row_type.isRowType() && general_case_row_type.isRowType()) {
+                                if(!vec_equal(normal_case_row_type.get_column_names(), general_case_row_type.get_column_names())) {
+                                    upcasted_row = upcast_row_and_reorder(builder, normal_case_row, normal_case_row_type, general_case_row_type);
+                                }
+                                general_case_row_type = general_case_row_type.get_columns_as_tuple_type();
+                            } else {
+                                upcasted_row = normal_case_row.upcastTo(builder, general_case_row_type);
+                            }
+
+                            // serialize as exception --> this connects already to freeStart.
+                            serializeAsNormalCaseException(builder, userData, _inputOperatorID, rowNumber(builder), upcasted_row);
+
+                            // connect to next row processing.
+                            builder.CreateBr(_freeStart);
+                        } else {
+                            logger().warn("normal case row and general case row not compatible, emitting exceptions as fallback rows.");
+
+                            // bbFallback
+                            builder.CreateBr(bbParseAsGeneralCaseRow);
+                            //throw std::runtime_error("need to implement exception handling here");
+                        }
+
+                        // pipeline ok, continue with normal processing
+                        builder.SetInsertPoint(bNext);
+                    }
                 }
 
                 // serialized size (as is)

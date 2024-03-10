@@ -142,7 +142,7 @@ namespace tuplex {
 
         // @TODO: non-hyper mode doesn't work yet ??
         // hyper-moder returns empty files ??
-        auto use_hyper = false; // should work for both true/false.
+        auto use_hyper = true; // should work for both true/false.
 
         // set input/output paths
         // auto exp_settings = lambdaSettings(true);
@@ -150,7 +150,7 @@ namespace tuplex {
         auto input_pattern = exp_settings["input_path"];
 
         // local test files
-        input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
+        // input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
 
         auto output_path = exp_settings["output_path"];
         SamplingMode sm = static_cast<SamplingMode>(stoi(exp_settings["sampling_mode"]));
