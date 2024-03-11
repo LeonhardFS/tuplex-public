@@ -894,7 +894,7 @@ TEST_F(HyperTest, SimdJSONFailure) {
         if (JsonParser_getDocType(j) != JsonParser_objectDocType()) {
             // BADPARSE_STRINGINPUT
             auto line = JsonParser_getMallocedRow(j);
-            std::cerr<<"got line "<<line<<" with error "<<JsonParser_getDocType(j)<<std::endl;
+            std::cerr<<"got line "<<line<<" with error "<<JsonParser_getDocType(j)<<"."<<std::endl;
             free(line);
             break;
         }
