@@ -867,17 +867,42 @@ TEST_F(HyperTest, SimdJSONFailure) {
     auto j = JsonParser_init();
     if (!j)
         throw std::runtime_error("failed to initialize parser");
-    JsonParser_open(j, buf, buf_size);
+
+    // create new, padded buffer extra for simdjson.
+    auto required_padding = simdjson::SIMDJSON_PADDING;
+    auto padded_buf = new char[buf_size + required_padding];
+    memset(padded_buf, 0, buf_size + required_padding);
+    memcpy(padded_buf, buf, buf_size);
+
+//    // on-demand parser failing?
+//    simdjson::ondemand::parser parser;
+//    simdjson::ondemand::document_stream stream;
+//    auto SIMDJSON_BATCH_SIZE = simdjson::dom::DEFAULT_BATCH_SIZE;
+//    auto batch_size = std::min(buf_size, SIMDJSON_BATCH_SIZE);
+//    stream = parser.iterate_many(buf, buf_size, batch_size).take_value();
+//    auto it = stream.begin();
+//    while(stream.end() != it) {
+//        auto doc = *it;
+//        auto t = doc.type().value();
+//        std::cout<<"type is: "<<t<<std::endl;
+//        ++it;
+//        row_number++;
+//    }
+
+    JsonParser_open(j, padded_buf, buf_size);
     while (JsonParser_hasNextRow(j)) {
         if (JsonParser_getDocType(j) != JsonParser_objectDocType()) {
             // BADPARSE_STRINGINPUT
             auto line = JsonParser_getMallocedRow(j);
+            std::cerr<<"got line "<<line<<" with error "<<JsonParser_getDocType(j)<<std::endl;
             free(line);
+            break;
         }
 
         // line ok, now extract something from the object!
         // => basically need to traverse...
-        auto doc = *j->it;
+        auto it = j->it;
+        auto doc = *it;
 
         row_number++;
         JsonParser_moveToNextRow(j);

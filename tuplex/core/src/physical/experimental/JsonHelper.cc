@@ -158,8 +158,8 @@ namespace tuplex {
                 if(simdjson::error_code::TAPE_ERROR == error) {
                     // can line be retrieved?
                     // -> do so.
-                    // make sure 0 is not used...
-                    return 0;
+                    // make sure this value is not used...
+                    return 0xFFFFFFFF;
                 }
 
                 if(simdjson::error_code::UTF8_ERROR == error) {
@@ -180,7 +180,7 @@ namespace tuplex {
 #ifndef NDEBUG
                 throw std::runtime_error(ss.str());
 #endif
-                return 0;
+                return 0xFFFFFFFF;
             }
 
             return static_cast<uint64_t>(line_type);
