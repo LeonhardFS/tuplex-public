@@ -9,6 +9,8 @@
 //--------------------------------------------------------------------------------------------------------------------//
 #include "TestUtils.h"
 
+#include <simdjson.h>
+
 // fetch github data via:
 // aws s3 cp s3://tuplex-public/data/github_daily ./github_daily --recursive
 
@@ -138,6 +140,18 @@ namespace tuplex {
         // -> this could be faster...
 
         using namespace std;
+
+
+        {
+            using namespace simdjson;
+            // check simdjson details, want to avoid fallback.
+            // cf. for details on how runtime version can be selected
+            // https://github.com/simdjson/simdjson/blob/master/doc/implementation-selection.md
+            cout << "simdjson v" << SIMDJSON_VERSION << endl;
+            cout << "Detected the best implementation for your machine: " << simdjson::get_active_implementation()->name();
+            cout << "(" << simdjson::get_active_implementation()->description() << ")" << endl;
+        }
+
 
 
         // @TODO: non-hyper mode doesn't work yet ??

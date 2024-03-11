@@ -801,8 +801,7 @@ TEST_F(HyperTest, SimdJSONFailure) {
     using namespace tuplex;
     using namespace tuplex::codegen;
     using namespace std;
-    auto path = "/home/leonhard/Downloads/testsingle.json";
-    path = "../resources/ndjson/example1_with_empty_lines.json";
+    auto path = "../resources/ndjson/example1_with_empty_lines.json";
     auto test = tuplex::fileToString(URI(path));
 
 //    simdjson::ondemand::parser parser;
