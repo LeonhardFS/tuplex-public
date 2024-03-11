@@ -889,12 +889,13 @@ namespace tuplex {
         // use simdjson as parser b.c. cJSON has issues with integers/floats.
         // https://simdjson.org/api/2.0.0/md_doc_iterate_many.html
         simdjson::ondemand::parser parser;
-        simdjson::ondemand::document_stream stream;
-        auto error = parser.iterate_many(buf, buf_size, std::min(buf_size, SIMDJSON_BATCH_SIZE)).get(stream);
-        if(error) {
-            stringstream err_stream; err_stream<<error;
-            throw std::runtime_error(err_stream.str());
-        }
+        simdjson::ondemand::document_stream stream = parser.iterate_many(buf, buf_size, std::min(buf_size, SIMDJSON_BATCH_SIZE));
+        //if(parse_result)
+//        auto error = parser.iterate_many(buf, buf_size, std::min(buf_size, SIMDJSON_BATCH_SIZE)).get(stream);
+//        if(error) {
+//            stringstream err_stream; err_stream<<error;
+//            throw std::runtime_error(err_stream.str());
+//        }
 
         // break up into Rows and detect things along the way.
         std::vector<Row> rows;
@@ -954,6 +955,7 @@ namespace tuplex {
 
                 // error? stop parse, return partial results
                 simdjson::ondemand::json_type doc_type;
+                simdjson::error_code error;
                 doc.type().tie(doc_type, error);
                 if(error)
                     break;

@@ -137,8 +137,8 @@ endif()
 ExternalProject_Add(simdjson_repo
         GIT_REPOSITORY    https://github.com/simdjson/simdjson.git
         GIT_SHALLOW       TRUE
-        GIT_TAG tags/v3.6.3
-        CMAKE_ARGS -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}
+        GIT_TAG tags/v3.8.0
+        CMAKE_ARGS -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS} -DSIMDJSON_DEVELOPER_MODE=ON
         PREFIX "${EXTERNAL_INSTALL_LOCATION}"
         INSTALL_COMMAND "" # Disable install step
 )
