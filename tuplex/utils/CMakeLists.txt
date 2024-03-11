@@ -134,12 +134,17 @@ endif()
 # Use external project here because simdjson contains a file <base.h> which
 # clashes with Tuplex's Base.h when imported.
 
+
+# in debug mode, should add
+# SIMDJSON_DEVELOPMENT_CHECKS
+
 ExternalProject_Add(simdjson_repo
         GIT_REPOSITORY    https://github.com/simdjson/simdjson.git
         GIT_SHALLOW       TRUE
         GIT_TAG tags/v3.8.0
-        CMAKE_ARGS -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS} -DSIMDJSON_DEVELOPER_MODE=ON
+        CMAKE_ARGS -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DSIMDJSON_ENABLE_THREADS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON
         PREFIX "${EXTERNAL_INSTALL_LOCATION}"
+        BUILD_COMMAND ${CMAKE_COMMAND} --build . --config Release
         INSTALL_COMMAND "" # Disable install step
 )
 

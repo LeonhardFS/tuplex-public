@@ -142,7 +142,7 @@ namespace tuplex {
 
         // @TODO: non-hyper mode doesn't work yet ??
         // hyper-moder returns empty files ??
-        auto use_hyper = true; // should work for both true/false.
+        auto use_hyper = false;//true; // should work for both true/false.
 
         // set input/output paths
         // auto exp_settings = lambdaSettings(true);
@@ -154,11 +154,11 @@ namespace tuplex {
 
         auto output_path = exp_settings["output_path"];
         SamplingMode sm = static_cast<SamplingMode>(stoi(exp_settings["sampling_mode"]));
+        sm = sm | SamplingMode::SINGLETHREADED;
         ContextOptions co = ContextOptions::defaults();
         for(const auto& kv : exp_settings)
             if(startsWith(kv.first, "tuplex."))
                 co.set(kv.first, kv.second);
-
 
         // test: focus on single file
         // input_pattern = "/hot/data/github_daily/2011-10-15.json";

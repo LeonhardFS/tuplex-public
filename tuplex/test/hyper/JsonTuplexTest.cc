@@ -736,7 +736,6 @@ TEST_F(JsonTuplexTest, StructAndFT) {
     using namespace tuplex;
     using namespace std;
     using namespace tuplex::codegen;
-    using namespace llvm;
 
     LLVMEnvironment env;
 
@@ -745,7 +744,7 @@ TEST_F(JsonTuplexTest, StructAndFT) {
     FlattenedTuple ft(&env);
     ft.init(t);
     auto F = getOrInsertFunction(env.getModule().get(), "test_func", ctypeToLLVM<int64_t>(ctx), ft.getLLVMType());
-    auto bEntry = BasicBlock::Create(ctx, "entry", F);
+    auto bEntry = llvm::BasicBlock::Create(ctx, "entry", F);
 
     IRBuilder builder(bEntry);
     builder.CreateRet(env.i64Const(0));

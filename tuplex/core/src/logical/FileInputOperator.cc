@@ -63,10 +63,13 @@ namespace tuplex {
 
 
     FileInputOperator::FileInputOperator() : _fmt(FileFormat::OUTFMT_UNKNOWN), _json_unwrap_first_level(false),
-                                             _json_treat_heterogenous_lists_as_tuples(true), _header(false),
+                                             _json_treat_heterogeneous_lists_as_tuples(true), _header(false),
                                              _sampling_time_s(0.0), _quotechar('\0'),
                                              _delimiter('\0'), _samplingMode(SamplingMode::UNKNOWN),
-                                             _isRowSampleProjected(false) {}
+                                             _isRowSampleProjected(false),
+                                             _cachePopulated(false),
+                                             _estimatedRowCount(0),
+                                             _samplingSize(0) {}
 
     void FileInputOperator::detectFiles(const std::string& pattern) {
         auto &logger = Logger::instance().logger("fileinputoperator");
@@ -228,7 +231,7 @@ namespace tuplex {
         size_t accLineLength = 0;
         for(auto line : lines)
             accLineLength += line.length();
-        double avgLineLength = lines.empty() ? 1.0 : accLineLength / (double)lines.size();
+        double avgLineLength = lines.empty() ? 1.0 : (double)accLineLength / (double)lines.size();
         double estimatedRowCount = 0.0;
         for(auto s : _sizes)
             estimatedRowCount += (double)s / (double)avgLineLength;
@@ -303,7 +306,7 @@ namespace tuplex {
         auto f = new FileInputOperator();
         f->_fmt = FileFormat::OUTFMT_JSON;
         f->_json_unwrap_first_level = unwrap_first_level; //! set here for detect to work.
-        f->_json_treat_heterogenous_lists_as_tuples = treat_heterogenous_lists_as_tuples;
+        f->_json_treat_heterogeneous_lists_as_tuples = treat_heterogenous_lists_as_tuples;
         f->_samplingMode = sampling_mode;
         f->_samplingSize = co.SAMPLE_SIZE();
 
@@ -347,12 +350,18 @@ namespace tuplex {
             f->_estimatedRowCount = f->estimateSampleBasedRowCount();
 
             if(PARAM_USE_ROW_TYPE) {
-                assert(!f->_columnNames.empty() && f->_columnNames.size() == normalcasetype.parameters().size());
-                assert(!f->_columnNames.empty() && f->_columnNames.size() == generalcasetype.parameters().size());
-                assert(normalcasetype.isTupleType());
-                assert(generalcasetype.isTupleType());
-                f->_normalCaseRowType = python::Type::makeRowType(normalcasetype.parameters(), f->_columnNames);
-                f->_generalCaseRowType = python::Type::makeRowType(generalcasetype.parameters(), f->_columnNames);
+                if(nameCollection.empty()) {
+                    logger.info("no samples given, setting type to empty row.");
+                    f->_normalCaseRowType = python::Type::EMPTYROW;
+                    f->_generalCaseRowType = python::Type::EMPTYROW;
+                } else {
+                    assert(!f->_columnNames.empty() && f->_columnNames.size() == normalcasetype.parameters().size());
+                    assert(!f->_columnNames.empty() && f->_columnNames.size() == generalcasetype.parameters().size());
+                    assert(normalcasetype.isTupleType());
+                    assert(generalcasetype.isTupleType());
+                    f->_normalCaseRowType = python::Type::makeRowType(normalcasetype.parameters(), f->_columnNames);
+                    f->_generalCaseRowType = python::Type::makeRowType(generalcasetype.parameters(), f->_columnNames);
+                }
                 f->setOutputSchema(Schema(Schema::MemoryLayout::ROW, f->_generalCaseRowType));
             } else {
                 // get type & assign schema
@@ -654,7 +663,7 @@ namespace tuplex {
                                          const std::unordered_map<size_t, python::Type>& index_based_type_hints,
                                          const std::unordered_map<std::string, python::Type>& column_based_type_hints,
                                          const SamplingMode& sampling_mode) :
-                                                                            _null_values(null_values), _sampling_time_s(0.0), _samplingMode(sampling_mode), _samplingSize(co.SAMPLE_SIZE()), _cachePopulated(false), _estimatedRowCount(0) {
+            _null_values(null_values), _sampling_time_s(0.0), _samplingMode(sampling_mode), _samplingSize(co.SAMPLE_SIZE()), _cachePopulated(false), _estimatedRowCount(0), _json_unwrap_first_level(false), _json_treat_heterogeneous_lists_as_tuples(false) {
         auto &logger = Logger::instance().logger("fileinputoperator");
         _fmt = FileFormat::OUTFMT_CSV;
 
@@ -885,7 +894,7 @@ namespace tuplex {
         return new FileInputOperator(pattern, co, sampling_mode);
     }
 
-    FileInputOperator::FileInputOperator(const std::string &pattern, const ContextOptions &co, const SamplingMode& sampling_mode): _sampling_time_s(0.0), _samplingMode(sampling_mode), _samplingSize(co.SAMPLE_SIZE()), _cachePopulated(false) {
+    FileInputOperator::FileInputOperator(const std::string &pattern, const ContextOptions &co, const SamplingMode& sampling_mode): _sampling_time_s(0.0), _samplingMode(sampling_mode), _samplingSize(co.SAMPLE_SIZE()), _cachePopulated(false), _estimatedRowCount(0) {
 
 #ifdef BUILD_WITH_ORC
         auto &logger = Logger::instance().logger("fileinputoperator");
@@ -1177,26 +1186,26 @@ namespace tuplex {
     }
 
     FileInputOperator::FileInputOperator(const tuplex::FileInputOperator &other) : _fileURIs(other._fileURIs),
-                                                                             _sizes(other._sizes),
-                                                                             _estimatedRowCount(other._estimatedRowCount),
-                                                                             _fmt(other._fmt),
-                                                                             _quotechar(other._quotechar),
-                                                                             _delimiter(other._delimiter),
-                                                                             _header(other._header),
-                                                                             _null_values(other._null_values),
-                                                                             _columnsToSerialize(other._columnsToSerialize),
-                                                                             _columnNames(other._columnNames),
-                                                                             _normalCaseRowType(other._normalCaseRowType),
-                                                                             _generalCaseRowType(other._generalCaseRowType),
-                                                                             _indexBasedHints(other._indexBasedHints),
-                                                                             _rowsSample(other._rowsSample),
-                                                                             _isRowSampleProjected(other._isRowSampleProjected),
-                                                                             _cachePopulated(other._cachePopulated),
-                                                                             _samplingMode(other._samplingMode),
-                                                                             _sampling_time_s(other._sampling_time_s),
-                                                                             _samplingSize(other._samplingSize),
-                                                                             _json_unwrap_first_level(other._json_unwrap_first_level),
-                                                                             _json_treat_heterogenous_lists_as_tuples(other._json_treat_heterogenous_lists_as_tuples) {
+                                                                                   _sizes(other._sizes),
+                                                                                   _estimatedRowCount(other._estimatedRowCount),
+                                                                                   _fmt(other._fmt),
+                                                                                   _quotechar(other._quotechar),
+                                                                                   _delimiter(other._delimiter),
+                                                                                   _header(other._header),
+                                                                                   _null_values(other._null_values),
+                                                                                   _columnsToSerialize(other._columnsToSerialize),
+                                                                                   _columnNames(other._columnNames),
+                                                                                   _normalCaseRowType(other._normalCaseRowType),
+                                                                                   _generalCaseRowType(other._generalCaseRowType),
+                                                                                   _indexBasedHints(other._indexBasedHints),
+                                                                                   _rowsSample(other._rowsSample),
+                                                                                   _isRowSampleProjected(other._isRowSampleProjected),
+                                                                                   _cachePopulated(other._cachePopulated),
+                                                                                   _samplingMode(other._samplingMode),
+                                                                                   _sampling_time_s(other._sampling_time_s),
+                                                                                   _samplingSize(other._samplingSize),
+                                                                                   _json_unwrap_first_level(other._json_unwrap_first_level),
+                                                                                   _json_treat_heterogeneous_lists_as_tuples(other._json_treat_heterogeneous_lists_as_tuples) {
         // copy members for logical operator
         LogicalOperator::copyMembers(&other);
         LogicalOperator::setDataSet(other.getDataSet());
@@ -1955,13 +1964,14 @@ namespace tuplex {
 
             if(sampling_params.use_stratified_sampling()) {
                 std::set<unsigned> skip_rows;
+                assert(sample.size() >= start_offset + sample_length);
                 v = parseRowsFromJSONStratified(sample.c_str() + start_offset, sample_length,
-                                      outNames, outNames, _json_treat_heterogenous_lists_as_tuples, limit,
-                                      sampling_params.strata_size, sampling_params.samples_per_strata,
-                                      sampling_params.random_seed, skip_rows, PARAM_USE_GENERIC_DICT);
+                                                outNames, outNames, _json_treat_heterogeneous_lists_as_tuples, limit,
+                                                sampling_params.strata_size, sampling_params.samples_per_strata,
+                                                sampling_params.random_seed, skip_rows, PARAM_USE_GENERIC_DICT);
             } else {
                 v = parseRowsFromJSON(sample.c_str() + start_offset, sample_length,
-                                      outNames, outNames, _json_treat_heterogenous_lists_as_tuples, limit, PARAM_USE_GENERIC_DICT);
+                                      outNames, outNames, _json_treat_heterogeneous_lists_as_tuples, limit, PARAM_USE_GENERIC_DICT);
             }
             sample_limit -= std::min(v.size(), limit);
         }
@@ -1991,12 +2001,12 @@ namespace tuplex {
                 if(sampling_params.use_stratified_sampling()) {
                     std::set<unsigned> skip_rows;
                     rows = parseRowsFromJSONStratified(sample.c_str() + offset + start_offset, sample_length,
-                                             outNames, outNames, _json_treat_heterogenous_lists_as_tuples,
-                                             limit, sampling_params.strata_size, sampling_params.samples_per_strata,
+                                                       outNames, outNames, _json_treat_heterogeneous_lists_as_tuples,
+                                                       limit, sampling_params.strata_size, sampling_params.samples_per_strata,
                                                        sampling_params.random_seed, skip_rows, PARAM_USE_GENERIC_DICT);
                 } else {
                     rows = parseRowsFromJSON(sample.c_str() + offset + start_offset, sample_length,
-                                             outNames, outNames, _json_treat_heterogenous_lists_as_tuples,
+                                             outNames, outNames, _json_treat_heterogeneous_lists_as_tuples,
                                              limit, PARAM_USE_GENERIC_DICT);
                 }
                 sample_limit -= std::min(rows.size(), limit);
@@ -2013,12 +2023,12 @@ namespace tuplex {
                 if(sampling_params.use_stratified_sampling()) {
                     std::set<unsigned> skip_rows;
                     v = parseRowsFromJSONStratified(sample.c_str() + start_offset, sample_length,
-                                          outNames, outNames, _json_treat_heterogenous_lists_as_tuples,
-                                          limit, sampling_params.strata_size, sampling_params.samples_per_strata,
+                                                    outNames, outNames, _json_treat_heterogeneous_lists_as_tuples,
+                                                    limit, sampling_params.strata_size, sampling_params.samples_per_strata,
                                                     sampling_params.random_seed, skip_rows, PARAM_USE_GENERIC_DICT);
                 } else {
                     v = parseRowsFromJSON(sample.c_str() + start_offset, sample_length,
-                                          outNames, outNames, _json_treat_heterogenous_lists_as_tuples,
+                                          outNames, outNames, _json_treat_heterogeneous_lists_as_tuples,
                                           limit, PARAM_USE_GENERIC_DICT);
                 }
 
@@ -2043,12 +2053,12 @@ namespace tuplex {
             if(sampling_params.use_stratified_sampling()) {
                 std::set<unsigned> skip_rows;
                 rows = parseRowsFromJSONStratified(sample.c_str() + start_offset, sample_length,
-                                         outNames, outNames, _json_treat_heterogenous_lists_as_tuples,
-                                         limit, sampling_params.strata_size, sampling_params.samples_per_strata,
-                                         sampling_params.random_seed, skip_rows, PARAM_USE_GENERIC_DICT);
+                                                   outNames, outNames, _json_treat_heterogeneous_lists_as_tuples,
+                                                   limit, sampling_params.strata_size, sampling_params.samples_per_strata,
+                                                   sampling_params.random_seed, skip_rows, PARAM_USE_GENERIC_DICT);
             } else {
                 rows = parseRowsFromJSON(sample.c_str() + start_offset, sample_length,
-                                         outNames, outNames, _json_treat_heterogenous_lists_as_tuples,
+                                         outNames, outNames, _json_treat_heterogeneous_lists_as_tuples,
                                          limit, PARAM_USE_GENERIC_DICT);
             }
 

@@ -40,7 +40,7 @@ namespace tuplex {
 
         // JSON fields
         bool _json_unwrap_first_level;
-        bool _json_treat_heterogenous_lists_as_tuples;
+        bool _json_treat_heterogeneous_lists_as_tuples;
 
         // general fields for managing both cases & projections
         std::vector<std::string> _null_values;
@@ -53,7 +53,7 @@ namespace tuplex {
         std::unordered_map<size_t, python::Type> _indexBasedHints;
 
         // *** members NOT to serialize ***
-        // Variables that wont' get serialized.
+        // Variables that won't get serialized.
         double _sampling_time_s;
         SamplingMode _samplingMode;
         size_t _samplingSize;
@@ -629,7 +629,7 @@ namespace tuplex {
             obj["fmt"] = (int)_fmt;
 
             obj["jsonUnwrap"] = _json_unwrap_first_level;
-            obj["jsonTuples"] = _json_treat_heterogenous_lists_as_tuples;
+            obj["jsonTuples"] = _json_treat_heterogeneous_lists_as_tuples;
 
             obj["samplingMode"] = (int)_samplingMode;
             obj["samplingSize"] = _samplingSize;
@@ -664,7 +664,7 @@ namespace tuplex {
             fop->_header = obj["hasHeader"].get<bool>();
 
             fop->_json_unwrap_first_level = obj["jsonUnwrap"].get<bool>();
-            fop->_json_treat_heterogenous_lists_as_tuples = obj["jsonTuples"].get<bool>();
+            fop->_json_treat_heterogeneous_lists_as_tuples = obj["jsonTuples"].get<bool>();
             for(const auto& uri : obj["uris"])
                 fop->_fileURIs.push_back(uri.get<std::string>());
             fop->_sizes = obj["sizes"].get<std::vector<size_t>>();
@@ -699,7 +699,7 @@ namespace tuplex {
                     _header,
                     _null_values,
                     _json_unwrap_first_level,
-                    _json_treat_heterogenous_lists_as_tuples,
+                    _json_treat_heterogeneous_lists_as_tuples,
                     _columnNames,
                     _columnsToSerialize,
                     _indexBasedHints,
@@ -720,7 +720,7 @@ namespace tuplex {
                 _header,
                 _null_values,
                 _json_unwrap_first_level,
-                _json_treat_heterogenous_lists_as_tuples,
+                _json_treat_heterogeneous_lists_as_tuples,
                 _columnNames,
                 _columnsToSerialize,
                 _indexBasedHints,

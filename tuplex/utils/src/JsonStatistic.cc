@@ -888,111 +888,116 @@ namespace tuplex {
 
         // use simdjson as parser b.c. cJSON has issues with integers/floats.
         // https://simdjson.org/api/2.0.0/md_doc_iterate_many.html
-        simdjson::ondemand::parser parser;
-        simdjson::ondemand::document_stream stream = parser.iterate_many(buf, buf_size, std::min(buf_size, SIMDJSON_BATCH_SIZE));
-        //if(parse_result)
-//        auto error = parser.iterate_many(buf, buf_size, std::min(buf_size, SIMDJSON_BATCH_SIZE)).get(stream);
-//        if(error) {
-//            stringstream err_stream; err_stream<<error;
-//            throw std::runtime_error(err_stream.str());
-//        }
 
+        auto batch_size = std::min(buf_size, SIMDJSON_BATCH_SIZE);
         // break up into Rows and detect things along the way.
         std::vector<Row> rows;
-
-        // pass I: detect column names
-        // first: detect column names (ordered? as they are?)
-        std::vector<std::string> column_names;
-        std::unordered_map<std::string, size_t> column_index_lookup_table;
-        std::set<std::string> column_names_set;
-
-        // @TODO: test with corrupted files & make sure this doesn't fail...
-        std::unordered_map<simdjson::ondemand::json_type, size_t> line_types;
-
-        // counting tables for types
-        std::unordered_map<std::tuple<size_t, python::Type>, size_t> type_counts;
-
-        // adjustments for stratified sampling
-        if(strata_size < 1)
-            strata_size = 1;
-        if(samples_per_strata > strata_size)
-            samples_per_strata = strata_size;
-
         int64_t pos = 0;
-        int64_t last_strata_start = 0;
-        auto strata_indices = sample_without_replacement(strata_size, samples_per_strata, random_seed);
-        std::sort(strata_indices.begin(), strata_indices.end());
-        unsigned strata_pos = 0;
+        bool err_occurred = false;
+        try {
+            simdjson::ondemand::parser parser;
+            simdjson::ondemand::document_stream stream;
+            auto error = parser.iterate_many(buf, buf_size, batch_size).get(stream);
+            if(error) {
+                stringstream err_stream; err_stream<<error;
+                throw std::runtime_error(err_stream.str());
+            }
 
+            // pass I: detect column names
+            // first: detect column names (ordered? as they are?)
+            std::vector<std::string> column_names;
+            std::unordered_map<std::string, size_t> column_index_lookup_table;
+            std::set<std::string> column_names_set;
 
-        // cf. Tree Walking and JSON Element Types in https://github.com/simdjson/simdjson/blob/master/doc/basics.md
-        // use scalar() => for simple numbers etc.
+            // @TODO: test with corrupted files & make sure this doesn't fail...
+            std::unordered_map<simdjson::ondemand::json_type, size_t> line_types;
 
-        // anonymous row? I.e., simple value?
-        for(auto it = stream.begin(); it != stream.end() && rows.size() <= max_rows; ++it) {
+            // counting tables for types
+            std::unordered_map<std::tuple<size_t, python::Type>, size_t> type_counts;
 
-            // row to skip?
-            if(!skip_rows.empty() && skip_rows.find(pos) != skip_rows.end()) {
+            // adjustments for stratified sampling
+            if(strata_size < 1)
+                strata_size = 1;
+            if(samples_per_strata > strata_size)
+                samples_per_strata = strata_size;
+
+            int64_t last_strata_start = 0;
+            auto strata_indices = sample_without_replacement(strata_size, samples_per_strata, random_seed);
+            std::sort(strata_indices.begin(), strata_indices.end());
+            unsigned strata_pos = 0;
+
+            // cf. Tree Walking and JSON Element Types in https://github.com/simdjson/simdjson/blob/master/doc/basics.md
+            // use scalar() => for simple numbers etc.
+
+            // anonymous row? I.e., simple value?
+            for(auto it = stream.begin(); it != stream.end() && rows.size() <= max_rows; ++it) {
+
+                // row to skip?
+                if(!skip_rows.empty() && skip_rows.find(pos) != skip_rows.end()) {
+                    pos++;
+                    continue;
+                }
+
+                // was the right strata pos found?
+                if(pos >= last_strata_start + strata_indices[strata_pos]) {
+                    strata_pos++;
+
+                    // was it the last strata?
+                    if(strata_pos == strata_indices.size()) {
+                        // generate next random strata indices!
+                        strata_indices = sample_without_replacement(strata_size, samples_per_strata, random_seed);
+                        std::sort(strata_indices.begin(), strata_indices.end());
+                        last_strata_start += strata_size;
+                        strata_pos = 0;
+                    }
+
+                    // fetch the row (i.e. execute full JSON parsing logic)
+                    auto doc = (*it);
+
+                    // error? stop parse, return partial results
+                    simdjson::ondemand::json_type doc_type;
+                    simdjson::error_code error;
+                    doc.type().tie(doc_type, error);
+                    if(error)
+                        break;
+
+                    // the full json string of a row can be obtained via
+                    // std::cout << it.source() << std::endl;
+                    string full_row;
+                    {
+                        stringstream ss;
+                        ss<<it.source()<<std::endl;
+                        full_row = ss.str();
+                    }
+                    auto first_row = 0 == pos;
+                    auto t = json_parseRowAndNames(doc,
+                                                   full_row,
+                                                   interpret_heterogenous_lists_as_tuples,
+                                                   unwrap_rows,
+                                                   column_names,
+                                                   column_index_lookup_table,
+                                                   column_names_set,
+                                                   line_types,
+                                                   type_counts,
+                                                   first_row,
+                                                   use_generic_dictionaries);
+                    if(outColumnNames)
+                        outColumnNames->push_back(std::get<1>(t));
+                    rows.push_back(std::get<0>(t));
+
+                    // limit reached?
+                    if(rows.size() == max_rows)
+                        return rows;
+                }
                 pos++;
-                continue;
             }
-
-            // was the right strata pos found?
-            if(pos >= last_strata_start + strata_indices[strata_pos]) {
-                strata_pos++;
-
-                // was it the last strata?
-                if(strata_pos == strata_indices.size()) {
-                    // generate next random strata indices!
-                    strata_indices = sample_without_replacement(strata_size, samples_per_strata, random_seed);
-                    std::sort(strata_indices.begin(), strata_indices.end());
-                    last_strata_start += strata_size;
-                    strata_pos = 0;
-                }
-
-                // fetch the row (i.e. execute full JSON parsing logic)
-                auto doc = (*it);
-
-                // error? stop parse, return partial results
-                simdjson::ondemand::json_type doc_type;
-                simdjson::error_code error;
-                doc.type().tie(doc_type, error);
-                if(error)
-                    break;
-
-                // the full json string of a row can be obtained via
-                // std::cout << it.source() << std::endl;
-                string full_row;
-                {
-                    stringstream ss;
-                    ss<<it.source()<<std::endl;
-                    full_row = ss.str();
-                }
-                auto first_row = 0 == pos;
-                auto t = json_parseRowAndNames(doc,
-                                               full_row,
-                                               interpret_heterogenous_lists_as_tuples,
-                                               unwrap_rows,
-                                               column_names,
-                                               column_index_lookup_table,
-                                               column_names_set,
-                                               line_types,
-                                               type_counts,
-                                               first_row,
-                                               use_generic_dictionaries);
-                if(outColumnNames)
-                    outColumnNames->push_back(std::get<1>(t));
-                rows.push_back(std::get<0>(t));
-
-                // limit reached?
-                if(rows.size() == max_rows)
-                    return rows;
-            }
-            pos++;
+        } catch (const simdjson::simdjson_error& e) {
+            cerr << e.what() << endl;
+            err_occurred = true;
         }
 
         // sanity check: is file < than strata? parse up to samples_per_strata rows from start then!
-        if(pos < strata_size && rows.empty()) {
+        if(pos < strata_size && rows.empty() && !err_occurred) {
             return parseRowsFromJSON(buf, buf_size, outColumnNames, unwrap_rows, interpret_heterogenous_lists_as_tuples, std::min(max_rows, samples_per_strata), use_generic_dictionaries);
         }
 
