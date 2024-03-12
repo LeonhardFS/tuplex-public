@@ -1189,36 +1189,40 @@ namespace tuplex {
                         assert(llvm_val_to_store->getType() == builder.getInt64Ty());
                         builder.CreateStore(llvm_val_to_store, structValIdx);
                     } else {
+
+                        // same as llvm_val_to_store->getType()->getPointerElementType().
+                        auto llvm_val_to_store_llvm_type = pythonToLLVMType(elementType.withoutOption());
+
                         if(llvm_val_to_store->getType() != structValIdx->getType()) {
-                            if(llvm_val_to_store->getType() == structValIdx->getType()->getPointerElementType()) {
-                                // load (special treatment for nested structures...)
-                                auto ptr = CreateFirstBlockAlloca(builder, llvm_val_to_store->getType());
+//                            if(llvm_val_to_store->getType() == structValIdx->getType()->getPointerElementType()) {
+                            // load (special treatment for nested structures...)
+                            auto ptr = CreateFirstBlockAlloca(builder, llvm_val_to_store->getType());
 
-                                // store -> direct load?
-                                auto llvm_struct_type = llvm_val_to_store->getType();
-                                for(unsigned i = 0; i < llvm_struct_type->getStructNumElements(); ++i) {
-                                    // note: list value is either i64 or list struct.
-                                    // never just a pointer, therefore load value from pointer if llvm_val_to_store is a pointer.
-                                    // else, use as item as is
-                                    auto item = builder.CreateStructLoadOrExtract(llvm_struct_type, llvm_val_to_store, i);
-                                    // what is the type?
-                                    auto item_type = getLLVMTypeName(item->getType());
-                                    auto target_idx = builder.CreateStructGEP(ptr, llvm_struct_type, i);
-                                    builder.CreateStore(item, target_idx, is_volatile);
-                                }
-
-                                llvm_val_to_store = ptr;
-
-                            } else {
-                                throw std::runtime_error("incompatible type " + getLLVMTypeName(llvm_val_to_store->getType()) + " found for storing data.");
+                            // store -> direct load?
+                            auto llvm_struct_type = llvm_val_to_store->getType();
+                            for(unsigned i = 0; i < llvm_struct_type->getStructNumElements(); ++i) {
+                                // note: list value is either i64 or list struct.
+                                // never just a pointer, therefore load value from pointer if llvm_val_to_store is a pointer.
+                                // else, use as item as is
+                                auto item = builder.CreateStructLoadOrExtract(llvm_struct_type, llvm_val_to_store, i);
+                                // what is the type?
+                                auto item_type = getLLVMTypeName(item->getType());
+                                auto target_idx = builder.CreateStructGEP(ptr, llvm_struct_type, i);
+                                builder.CreateStore(item, target_idx, is_volatile);
                             }
+
+                            llvm_val_to_store = ptr;
+
+//                            } else {
+//                                throw std::runtime_error("incompatible type " + getLLVMTypeName(llvm_val_to_store->getType()) + " found for storing data.");
+//                            }
                         }
 
                         // however, nested structs/aggs should be memcopied
                         auto i8_src = builder.CreatePointerCast(llvm_val_to_store, i8ptrType());
                         auto i8_dest = builder.CreatePointerCast(structValIdx, i8ptrType());
                         auto& DL = _module->getDataLayout();
-                        auto struct_size = DL.getTypeAllocSize(llvm_val_to_store->getType()->getPointerElementType());
+                        auto struct_size = DL.getTypeAllocSize(llvm_val_to_store_llvm_type);
                         builder.CreateMemCpy(i8_dest, 0, i8_src, 0, i64Const(struct_size));
                     }
                 } else {
@@ -3021,11 +3025,13 @@ namespace tuplex {
             FunctionType *ft = FunctionType::get(env.i64Type(), {env.i8ptrType(), env.i64Type()}, false);
 
             Function *func = Function::Create(ft, Function::InternalLinkage, "strLen", env.getModule().get());
+
+#if LLVM_VERSION_MAJOR == 9
             // set inline attributes
             AttrBuilder ab;
             ab.addAttribute(Attribute::AlwaysInline);
             func->addAttributes(llvm::AttributeList::FunctionIndex, ab);
-
+#endif
 
             std::vector<llvm::Argument*> args;
             for(auto& arg : func->args())

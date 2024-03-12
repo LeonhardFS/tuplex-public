@@ -3981,18 +3981,19 @@ namespace tuplex {
                 // add serializedValue
                 addInstruction(newstr, _env->i64Const(2));
 
-            } else if (value.val->getType() == llvm::Type::getInt8PtrTy(_env->getContext(), 0) &&
-                       value_type == python::Type::GENERICDICT) {
+            } else if (value_type == python::Type::GENERICDICT) {
+
                 // throw error for genericdict
                 std::stringstream ss;
-                ss << "Can't subscript generic dictionaries (can't type).";
-                ss << "\nindex type: " << sub->_expression->getInferredType().desc();
-                ss << "\nvalue type: " << sub->_value->getInferredType().desc();
-                ss << "\nindex llvm type: " << _env->getLLVMTypeName(index.val->getType());
-                ss << "\nvalue llvm type: " << _env->getLLVMTypeName(value.val->getType());
-                error(ss.str());
-            } else if (value.val->getType() == llvm::Type::getInt8PtrTy(_env->getContext(), 0) &&
-                       value_type.isDictionaryType()) {
+                ss << "subscript generic dictionary with::";
+                ss << "\n  index type: " << sub->_expression->getInferredType().desc();
+                ss << "\n  value type: " << sub->_value->getInferredType().desc();
+                ss << "\n  index llvm type: " << _env->getLLVMTypeName(index.val->getType());
+                ss << "\n  value llvm type: " << _env->getLLVMTypeName(value.val->getType());
+                //error(ss.str());
+
+                _logger.debug(ss.str());
+
                 auto subval = subscriptCJSONDictionary(sub, index, index_type, value);
                 addInstruction(subval.val, subval.size);
             } else if(value_type.isListType()) {

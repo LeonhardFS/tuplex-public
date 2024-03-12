@@ -212,13 +212,27 @@ namespace tuplex {
     }
 
     void LLVMOptimizer::attachHostMachineLayout(llvm::Module &mod) {
+
+        // ensure LLVM targets have been initialized
+        assert(codegen::is_llvm_initialized());
+
         // set data layout and triple of module to this machine (unless disabled)
         // else terrible bugs happen:
         // https://bugs.llvm.org/show_bug.cgi?id=45188
         auto target_machine = tuplex::codegen::getOrCreateTargetMachine();
         assert(target_machine);
         auto DL = target_machine->createDataLayout();
-        _logger.info("LLVM optimizing for triple " + llvm::sys::getDefaultTargetTriple() + " and data layout: " + DL.getStringRepresentation());
+        std::stringstream ss;
+        ss<<"LLVM optimizing for triple "
+          <<llvm::sys::getDefaultTargetTriple()
+          <<", CPU="<<target_machine->getTargetCPU().str()
+          <<" and data layout: "
+          <<DL.getStringRepresentation();
+
+        _logger.info(ss.str());
+
+        auto process_triple = llvm::sys::getProcessTriple();
+
         mod.setDataLayout(DL.getStringRepresentation());
         mod.setTargetTriple(llvm::sys::getDefaultTargetTriple());
     }

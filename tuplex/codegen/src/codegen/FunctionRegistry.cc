@@ -2708,10 +2708,23 @@ namespace tuplex {
             auto cond = builder.CreateICmpEQ(delimiter.size, _env.i64Const(1)); // empty string
             lfb.addException(builder, ExceptionCode::VALUEERROR, cond, "str.split ValueError, delimiter empty"); // error if the delimiter is an empty string
 
-            auto lenArray = builder.CreateAlloca(_env.i64ptrType(), 0, nullptr);
+            auto lenArray = _env.CreateFirstBlockAlloca(builder, _env.i64ptrType());
             auto llvm_i8ptrptr_type = llvm::PointerType::get(_env.i8ptrType(), 0);
-            auto strArray = builder.CreateAlloca(llvm_i8ptrptr_type, 0, nullptr);
-            auto listLen = builder.CreateAlloca(_env.i64Type());
+            auto strArray = _env.CreateFirstBlockAlloca(builder,llvm_i8ptrptr_type);
+            auto listLen = _env.CreateFirstBlockAlloca(builder,_env.i64Type());
+
+            _env.debugPrint(builder, "Calling strSplit::");
+            if(caller.is_null)
+                _env.printValue(builder, caller.size, "Calling strSplit with val/is_null=");
+            if(caller.val)
+                _env.printValue(builder, caller.val, "Calling strSplit with val=");
+            if(caller.size)
+                _env.printValue(builder, caller.size, "Calling strSplit with val/size=");
+            if(delimiter.val)
+                _env.printValue(builder, delimiter.val, "Calling strSplit with delimiter=");
+            if(delimiter.size)
+                _env.printValue(builder, caller.size, "Calling strSplit with delimiter/size=");
+
             auto listSerializedSize = builder.CreateCall(strSplit_prototype(_env.getContext(), _env.getModule().get()),
                                                 {caller.val, caller.size, delimiter.val, delimiter.size,
                                                  strArray, lenArray, listLen});
@@ -3433,7 +3446,7 @@ namespace tuplex {
                 var.is_null = _env.CreateFirstBlockAlloca(builder, _env.i1Type());
 
                 // null variable and set to default (here anyways null)
-                builder.CreateStore(_env.nullConstant(var.val->getType()->getPointerElementType()), var.val);
+                builder.CreateStore(_env.nullConstant(llvm_val_type), var.val);
                 builder.CreateStore(_env.i64Const(0), var.size);
                 builder.CreateStore(_env.i1Const(true), var.is_null); // indicate None!
 

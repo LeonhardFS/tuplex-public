@@ -1050,12 +1050,14 @@ namespace tuplex {
             }
             SerializableValue(llvm::Value *v, llvm::Value* s, llvm::Value* n) : val(v), size(s), is_null(n) {
 #ifndef NDEBUG
+#if LLVM_VERSION_MAJOR < 16
                 if(s) {
                     auto stype = s->getType();
                     if(stype->isPointerTy())
                         stype = stype->getPointerElementType();
                     assert(stype == llvm::Type::getInt64Ty(s->getContext()));
                 }
+#endif
 #endif
             }
 
@@ -1184,6 +1186,8 @@ namespace tuplex {
          * shutdown llvm
          */
         extern void shutdownLLVM();
+
+        extern bool is_llvm_initialized();
 
         /*
          * cast val to destType (i.e. integer expansion or int to float conversion)

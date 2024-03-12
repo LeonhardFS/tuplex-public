@@ -49,36 +49,9 @@
 #include <third_party/i64toa_sse2.h>
 #include <third_party/ryu/ryu.h>
 
+#include <physical/experimental/JsonHelper.h>
+
 namespace tuplex {
-
-     extern "C" cJSON_bool cJSON_IsArrayOfObjects(cJSON* obj) {
-        if(!obj)
-            return false;
-
-        if(!cJSON_IsArray(obj))
-            return false;
-
-        auto arr_size = cJSON_GetArraySize(obj);
-        for(unsigned i = 0; i < arr_size; ++i) {
-            if(!cJSON_IsObject(cJSON_GetArrayItem(obj, i)))
-                return false;
-        }
-        return true;
-    }
-
-    extern "C" char* cJSON_PrintUnformattedEx(cJSON* obj) {
-
-        auto ret = cJSON_PrintUnformatted(obj);
-
-        if(!ret) {
-            obj = cJSON_CreateString("nullptr");
-            ret = cJSON_PrintUnformatted(obj);
-
-            assert(ret);
-        }
-
-        return ret;
-    }
 
     // llvm10+ compatible (designed for llvm13+) compiler class using ORC
 
@@ -221,6 +194,10 @@ namespace tuplex {
         registerSymbol("cJSON_CreateString", cJSON_CreateString);
 #endif
 
+        registerSymbol("debug_printf", debug_printf);
+
+        // register JSON parsing symbols
+        codegen::addJsonSymbolsToJIT(*this);
     }
 
     JITCompiler::~JITCompiler() {
@@ -248,7 +225,7 @@ namespace tuplex {
         if(dylib_name.empty())
             dylib_name = "object";
 
-        auto& jitlib = ES.createJITDylib(dylib_name);
+        auto& jitlib = ES.createJITDylib(dylib_name).get();
         const auto& DL = _lljit->getDataLayout();
         MangleAndInterner Mangle(ES, DL);
 
@@ -260,7 +237,7 @@ namespace tuplex {
         // check whether successful
         if(!ProcessSymbolsGenerator)
             throw std::runtime_error("failed to create linker to host process " + errToString(ProcessSymbolsGenerator.takeError()));
-        jitlib.setGenerator(std::move(*ProcessSymbolsGenerator));
+        jitlib.addGenerator(std::move(*ProcessSymbolsGenerator));
 
         // define symbols from custom symbols for this jitlib
         for(auto keyval: _customSymbols)
@@ -274,7 +251,7 @@ namespace tuplex {
         return true;
     }
 
-    void* JITCompiler::getAddrOfSymbol(const std::string &Name, std::ostream *err_stream) {
+    void* JITCompiler::getAddrOfSymbol(const std::string &Name) {
         if(Name.empty())
             return nullptr;
 
@@ -283,14 +260,10 @@ namespace tuplex {
             auto sym = _lljit->lookup(**it, Name);
 
             if(sym)
-                return reinterpret_cast<void*>(sym.get().getAddress());
-            else {
-                auto err = sym.takeError();
-                if(err_stream) {
-                    *err_stream<<"getAddrOfSymbol failed for dylib "<<(*it)->getName()<<", details: "<< errToString(err);
-                }
-            }
+                return sym->toPtr<void*>(); //reinterpret_cast<void*>(sym..get().getAddress());
         }
+
+        Logger::instance().logger("LLVM").error("could not find symbol " + Name + ". ");
         return nullptr;
     }
 

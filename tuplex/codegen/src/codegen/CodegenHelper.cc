@@ -65,8 +65,19 @@ namespace tuplex {
                 llvm::InitializeNativeTarget();
                 llvm::InitializeNativeTargetAsmPrinter();
                 llvm::InitializeNativeTargetAsmParser();
+
+//                llvm::InitializeAllTargetInfos();
+//                llvm::InitializeAllTargets();
+//                llvm::InitializeAllTargetMCs();
+//                llvm::InitializeAllAsmParsers();
+//                llvm::InitializeAllAsmPrinters();
+
                 llvmInitialized = true;
             }
+        }
+
+        bool is_llvm_initialized() {
+            return llvmInitialized;
         }
 
         void shutdownLLVM() {
@@ -992,8 +1003,11 @@ namespace tuplex {
             }
 
             llvm::TargetOptions opt;
+#if LLVM_VERSION_MAJOR == 9
             auto RM = llvm::Optional<llvm::Reloc::Model>();
-
+#else
+            auto RM = std::optional<llvm::Reloc::Model>(llvm::Reloc::Model());
+#endif
             // use position independent code
             RM = llvm::Reloc::PIC_;
             auto TargetMachine = target->createTargetMachine(target_triple, CPU, Features, opt, RM);
@@ -1006,7 +1020,11 @@ namespace tuplex {
             mod.setTargetTriple(target_triple);
 
             llvm::legacy::PassManager pass;
+#if LLVM_VERSION_MAJOR == 9
             auto FileType = llvm::LLVMTargetMachine::CGFT_ObjectFile;
+#else
+            auto FileType = llvm::CGFT_ObjectFile;
+#endif
             llvm::SmallVector<char, 0> buffer;
             llvm::raw_svector_ostream dest(buffer);
             if (TargetMachine->addPassesToEmitFile(pass, dest, nullptr, FileType)) {
@@ -1036,19 +1054,26 @@ namespace tuplex {
             if(target_triple.find("unknown") != std::string::npos)
                 target_triple = llvm::sys::getDefaultTargetTriple();
 
-            std::string cpu = llvm::sys::getHostCPUName();
+            std::string cpu = llvm::sys::getHostCPUName().str();
             std::string features = getLLVMFeatureStr();
 
             j["llvmVersion"] = LLVM_VERSION_STRING;
             j["targetTriple"] = target_triple;
             j["cpu"] = cpu;
+#if LLVM_VERSION_MAJOR == 9
             j["cpuCores"] = llvm::sys::getHostNumPhysicalCores();
+#else
+            j["cpuCores"] = llvm::get_physical_cores();
+#endif
             j["cpuFeatures"] = features;
 
             // get data layout
             llvm::TargetOptions opt;
+#if LLVM_VERSION_MAJOR == 9
             auto RM = llvm::Optional<llvm::Reloc::Model>();
-
+#else
+            auto RM = std::optional<llvm::Reloc::Model>(llvm::Reloc::Model());
+#endif
             // use position independent code
             RM = llvm::Reloc::PIC_;
             std::string error;
@@ -1276,7 +1301,7 @@ namespace tuplex {
             return builder.CreateCall(func, {json_item});
         }
 
-        extern llvm::Value* call_cjson_type_as_str(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj) {
+        extern llvm::Value* call_cjson_type_as_str(const IRBuilder& builder, llvm::Value* cjson_obj) {
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
 

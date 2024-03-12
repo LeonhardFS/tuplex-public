@@ -135,30 +135,45 @@ endif()
 # clashes with Tuplex's Base.h when imported.
 
 
-# in debug mode, should add
-# SIMDJSON_DEVELOPMENT_CHECKS
-#-DSIMDJSON_DEVELOPMENT_CHECKS=ON
-ExternalProject_Add(simdjson_repo
-        GIT_REPOSITORY    https://github.com/simdjson/simdjson.git
-        GIT_SHALLOW       TRUE
-        GIT_TAG tags/v3.8.0
-        # this is the tag used on lambda-exp
-        #GIT_TAG tags/v2.0.4
-        # no need for threads, junking is done within Tuplex.
-        CMAKE_ARGS -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DSIMDJSON_ENABLE_THREADS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_CXX_STANDARD=17
-        PREFIX "${EXTERNAL_INSTALL_LOCATION}"
-        BUILD_COMMAND ${CMAKE_COMMAND} --build . --config Release
-        #BUILD_COMMAND ${CMAKE_COMMAND} --build . --config Debug
-        INSTALL_COMMAND "" # Disable install step
-)
+## in debug mode, should add
+## SIMDJSON_DEVELOPMENT_CHECKS
+##-DSIMDJSON_DEVELOPMENT_CHECKS=ON
+#ExternalProject_Add(simdjson_repo
+#        GIT_REPOSITORY    https://github.com/simdjson/simdjson.git
+#        GIT_SHALLOW       TRUE
+#        GIT_TAG tags/v3.8.0
+#        # this is the tag used on lambda-exp
+#        #GIT_TAG tags/v2.0.4
+#        # no need for threads, junking is done within Tuplex.
+#        CMAKE_ARGS -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DSIMDJSON_ENABLE_THREADS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_CXX_STANDARD=17
+#        PREFIX "${EXTERNAL_INSTALL_LOCATION}"
+#        BUILD_COMMAND ${CMAKE_COMMAND} --build . --config Release
+#        #BUILD_COMMAND ${CMAKE_COMMAND} --build . --config Debug
+#        INSTALL_COMMAND "" # Disable install step
+#)
+#
+#add_library(simdjson STATIC IMPORTED)
+#ExternalProject_Get_Property(simdjson_repo binary_dir)
+#set_target_properties(simdjson PROPERTIES IMPORTED_LOCATION "${binary_dir}/libsimdjson.a")
+#ExternalProject_Get_Property(simdjson_repo source_dir)
+#set(simdjson_INCLUDE_DIR ${source_dir}/include)
+#set(simdjson_LIBRARY "${binary_dir}/libsimdjson.a")
+#add_dependencies(simdjson simdjson_repo)
 
-add_library(simdjson STATIC IMPORTED)
-ExternalProject_Get_Property(simdjson_repo binary_dir)
-set_target_properties(simdjson PROPERTIES IMPORTED_LOCATION "${binary_dir}/libsimdjson.a")
-ExternalProject_Get_Property(simdjson_repo source_dir)
-set(simdjson_INCLUDE_DIR ${source_dir}/include)
-set(simdjson_LIBRARY "${binary_dir}/libsimdjson.a")
-add_dependencies(simdjson simdjson_repo)
+
+# Using fetchcontent
+# include simdjson, tutorial here https://github.com/simdjson/cmake_demo_single_file/blob/master/CMakeLists.txt
+include(FetchContent)
+FetchContent_Declare(
+        simdjson
+        GIT_REPOSITORY https://github.com/simdjson/simdjson.git
+        GIT_SHALLOW TRUE
+        GIT_TAG tags/v3.8.0
+)
+FetchContent_MakeAvailable(simdjson)
+
+
+
 # ------
 # dependencies
 

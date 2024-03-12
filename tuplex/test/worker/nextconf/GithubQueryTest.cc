@@ -150,9 +150,11 @@ namespace tuplex {
             cout << "simdjson v" << SIMDJSON_VERSION << endl;
             cout << "Detected the best implementation for your machine: " << simdjson::get_active_implementation()->name();
             cout << "(" << simdjson::get_active_implementation()->description() << ")" << endl;
+
+
+            // // Use the fallback implementation, even though my machine is fast enough for anything
+            // simdjson::get_active_implementation() = simdjson::get_available_implementations()["fallback"];
         }
-
-
 
         // @TODO: non-hyper mode doesn't work yet ??
         // hyper-moder returns empty files ??
@@ -173,6 +175,9 @@ namespace tuplex {
         for(const auto& kv : exp_settings)
             if(startsWith(kv.first, "tuplex."))
                 co.set(kv.first, kv.second);
+
+        // disable optimizer
+        co.set("tuplex.useLLVMOptimizer", "false");
 
         // test: focus on single file
         // input_pattern = "/hot/data/github_daily/2011-10-15.json";

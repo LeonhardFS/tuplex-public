@@ -464,15 +464,16 @@ namespace tuplex {
                     assert(bitmapPos < bitmap->getType()->getArrayNumElements());
                     return builder.CreateExtractValue(bitmap, std::vector<unsigned>(1, bitmapPos));
                 } else {
-                    assert(ptr->getType()->isPointerTy() && ptr->getType()->getPointerElementType()->isStructTy());
+                    assert(ptr->getType()->isPointerTy());
+#if LLVM_VERSION_MAJOR < 16
+                    assert(ptr->getType()->getPointerElementType()->isStructTy());
+#endif
+                    auto llvm_dict_type = env.pythonToLLVMType(dict_type.withoutOption()); //ptr->getType()->getPointerElementType();
 
-                    auto llvm_dict_type = ptr->getType()->getPointerElementType();
 
-                    assert(llvm_dict_type == env.getOrCreateStructuredDictType(dict_type));
-
-                     auto structBitmapIdx = builder.CreateStructGEP(ptr, llvm_dict_type, (size_t)p_idx); // bitmap comes first!
-                     auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, llvm_dict_type->getStructElementType(p_idx), (uint64_t)0ull, (uint64_t)bitmapPos);
-                     return builder.CreateLoad(builder.getInt1Ty(), bitmapIdx);
+                    auto structBitmapIdx = builder.CreateStructGEP(ptr, llvm_dict_type, (size_t)p_idx); // bitmap comes first!
+                    auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, llvm_dict_type->getStructElementType(p_idx), (uint64_t)0ull, (uint64_t)bitmapPos);
+                    return builder.CreateLoad(builder.getInt1Ty(), bitmapIdx);
                 }
             } else {
                 // always present

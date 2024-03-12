@@ -784,7 +784,9 @@ char* strJoin(const char *base_str, int64_t base_str_size, int64_t num_words, co
     return ret;
 }
 
-int64_t strSplit(const char *base_str, int64_t base_str_length, const char *delim, int64_t delim_length, char*** res_str_array, int64_t** res_len_array, int64_t* res_list_size) {
+[[maybe_unused]] int64_t strSplit(const char *base_str, int64_t base_str_length, const char *delim, int64_t delim_length, char*** res_str_array, int64_t** res_len_array, int64_t* res_list_size) {
+
+
     delim_length--; base_str_length--; // remove null terminator from length
 
     int64_t serialized_size = sizeof(int64_t); // number of elements

@@ -801,6 +801,35 @@ namespace tuplex {
             return true;
         }
 
+        extern "C" cJSON_bool cJSON_IsArrayOfObjects(cJSON* obj) {
+            if(!obj)
+                return false;
+
+            if(!cJSON_IsArray(obj))
+                return false;
+
+            auto arr_size = cJSON_GetArraySize(obj);
+            for(unsigned i = 0; i < arr_size; ++i) {
+                if(!cJSON_IsObject(cJSON_GetArrayItem(obj, i)))
+                    return false;
+            }
+            return true;
+        }
+
+        extern "C" char* cJSON_PrintUnformattedEx(cJSON* obj) {
+
+            auto ret = cJSON_PrintUnformatted(obj);
+
+            if(!ret) {
+                obj = cJSON_CreateString("nullptr");
+                ret = cJSON_PrintUnformatted(obj);
+
+                assert(ret);
+            }
+
+            return ret;
+        }
+
         void addJsonSymbolsToJIT(JITCompiler& jit) {
             // register symbols
             jit.registerSymbol("JsonParser_Init", JsonParser_init);
@@ -836,6 +865,30 @@ namespace tuplex {
             jit.registerSymbol("Json_is_whitespace", Json_is_whitespace);
             jit.registerSymbol("JsonParser_TruncatedBytes", JsonParser_TruncatedBytes);
             jit.registerSymbol("JsonItem_to_cJSON", JsonItem_to_cJSON);
+
+            // AWS SDK cJSON
+#ifdef BUILD_WITH_AWS
+            // cJSON_PrintUnformatted, cJSON_AddItemToObject, cJSON_CreateObject, cJSON_DetachItemViaPointer, cJSON_CreateString
+            jit.registerSymbol("cJSON_PrintUnformatted", cJSON_PrintUnformatted);
+            jit.registerSymbol("cJSON_AddItemToObject", cJSON_AddItemToObject);
+            jit.registerSymbol("cJSON_CreateObject", cJSON_CreateObject);
+            jit.registerSymbol("cJSON_DetachItemViaPointer", cJSON_DetachItemViaPointer);
+            jit.registerSymbol("cJSON_CreateString", cJSON_CreateString);
+            jit.registerSymbol("cJSON_GetObjectItemCaseSensitive", cJSON_GetObjectItemCaseSensitive);
+            jit.registerSymbol("cJSON_GetArraySize", cJSON_GetArraySize);
+            jit.registerSymbol("cJSON_CreateNumber", cJSON_CreateNumber);
+            jit.registerSymbol("cJSON_CreateBool", cJSON_CreateBool);
+            jit.registerSymbol("cJSON_IsTrue", cJSON_IsTrue);
+            jit.registerSymbol("cJSON_IsArray", cJSON_IsArray);
+            jit.registerSymbol("cJSON_IsNull", cJSON_IsNull);
+            jit.registerSymbol("cJSON_IsNumber", cJSON_IsNumber);
+            jit.registerSymbol("cJSON_GetNumberValue", cJSON_GetNumberValue);
+            jit.registerSymbol("cJSON_GetArrayItem", cJSON_GetArrayItem);
+            jit.registerSymbol("cJSON_Parse", cJSON_Parse);
+            jit.registerSymbol("cJSON_CreateString", cJSON_CreateString);
+#endif
+
+            jit.registerSymbol("cJSON_IsArrayOfObjects", cJSON_IsArrayOfObjects);
         }
 
         bool JsonContainsAtLeastOneDocument(const char* buf, size_t buf_size) {

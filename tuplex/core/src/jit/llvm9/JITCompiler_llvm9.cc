@@ -36,35 +36,6 @@
 
 namespace tuplex {
 
-    extern "C" cJSON_bool cJSON_IsArrayOfObjects(cJSON* obj) {
-        if(!obj)
-            return false;
-
-        if(!cJSON_IsArray(obj))
-            return false;
-
-        auto arr_size = cJSON_GetArraySize(obj);
-        for(unsigned i = 0; i < arr_size; ++i) {
-            if(!cJSON_IsObject(cJSON_GetArrayItem(obj, i)))
-                return false;
-        }
-        return true;
-    }
-
-    extern "C" char* cJSON_PrintUnformattedEx(cJSON* obj) {
-
-        auto ret = cJSON_PrintUnformatted(obj);
-
-        if(!ret) {
-            obj = cJSON_CreateString("nullptr");
-            ret = cJSON_PrintUnformatted(obj);
-
-            assert(ret);
-        }
-
-        return ret;
-    }
-
 #if LLVM_VERSION_MAJOR > 8
     inline llvm::Expected<llvm::orc::ThreadSafeModule> parseToModule(const std::string& llvmIR) {
         using namespace llvm;
@@ -311,30 +282,6 @@ namespace tuplex {
         registerSymbol("i64toa_sse2", i64toa_sse2);
         registerSymbol("d2fixed_buffered_n", d2fixed_buffered_n);
 
-
-        // AWS SDK cJSON
-#ifdef BUILD_WITH_AWS
-        // cJSON_PrintUnformatted, cJSON_AddItemToObject, cJSON_CreateObject, cJSON_DetachItemViaPointer, cJSON_CreateString
-        registerSymbol("cJSON_PrintUnformatted", cJSON_PrintUnformatted);
-        registerSymbol("cJSON_AddItemToObject", cJSON_AddItemToObject);
-        registerSymbol("cJSON_CreateObject", cJSON_CreateObject);
-        registerSymbol("cJSON_DetachItemViaPointer", cJSON_DetachItemViaPointer);
-        registerSymbol("cJSON_CreateString", cJSON_CreateString);
-        registerSymbol("cJSON_GetObjectItemCaseSensitive", cJSON_GetObjectItemCaseSensitive);
-        registerSymbol("cJSON_GetArraySize", cJSON_GetArraySize);
-        registerSymbol("cJSON_CreateNumber", cJSON_CreateNumber);
-        registerSymbol("cJSON_CreateBool", cJSON_CreateBool);
-        registerSymbol("cJSON_IsTrue", cJSON_IsTrue);
-        registerSymbol("cJSON_IsArray", cJSON_IsArray);
-        registerSymbol("cJSON_IsNull", cJSON_IsNull);
-        registerSymbol("cJSON_IsNumber", cJSON_IsNumber);
-        registerSymbol("cJSON_GetNumberValue", cJSON_GetNumberValue);
-        registerSymbol("cJSON_GetArrayItem", cJSON_GetArrayItem);
-        registerSymbol("cJSON_Parse", cJSON_Parse);
-        registerSymbol("cJSON_CreateString", cJSON_CreateString);
-#endif
-
-        registerSymbol("cJSON_IsArrayOfObjects", cJSON_IsArrayOfObjects);
         registerSymbol("debug_printf", debug_printf);
 
         // register JSON parsing symbols
@@ -484,7 +431,7 @@ namespace tuplex {
         return true;
     }
 
-    void* JITCompiler::getAddrOfSymbol(const std::string &Name, std::ostream *err_stream) {
+    void* JITCompiler::getAddrOfSymbol(const std::string &Name) {
         if(Name.empty())
             return nullptr;
 
@@ -495,10 +442,10 @@ namespace tuplex {
             if(sym)
                 return reinterpret_cast<void*>(sym.get().getAddress());
             else {
-                auto err = sym.takeError();
-                if(err_stream) {
-                    *err_stream<<"getAddrOfSymbol failed for dylib "<<(*it)->getName()<<", details: "<< errToString(err);
-                }
+//                auto err = sym.takeError();
+//                if(err_stream) {
+//                    *err_stream<<"getAddrOfSymbol failed for dylib "<<(*it)->getName()<<", details: "<< errToString(err);
+//                }
             }
         }
         return nullptr;

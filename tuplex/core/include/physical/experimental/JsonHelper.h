@@ -117,6 +117,9 @@ namespace tuplex {
         extern std::string JsonMalloc_Report();
 
         extern "C" cJSON* JsonItem_to_cJSON(JsonItem* item);
+
+        extern "C" cJSON_bool cJSON_IsArrayOfObjects(cJSON* obj);
+        extern "C" char* cJSON_PrintUnformattedEx(cJSON* obj);
     }
 }
 

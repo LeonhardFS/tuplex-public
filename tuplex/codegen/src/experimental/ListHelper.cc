@@ -168,10 +168,9 @@ namespace tuplex {
             auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, struct_index);
             assert(idx_values && idx_values->getType()->isPointerTy());
 
-            auto struct_type = list_ptr->getType()->getPointerElementType();
-            assert(struct_type->isStructTy());
-            assert(struct_index < struct_type->getStructNumElements());
-            llvm::Type* llvm_element_type = struct_type->getStructElementType(struct_index)->getPointerElementType();
+            assert(llvm_list_type->isStructTy());
+            assert(struct_index < llvm_list_type->getStructNumElements());
+            llvm::Type* llvm_element_type = env.pythonToLLVMType(list_type.elementType().withoutOption()); //llvm_list_type->getStructElementType(struct_index)->getPointerElementType();
 
             const auto& DL = env.getModule()->getDataLayout();
             // debug

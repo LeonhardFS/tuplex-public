@@ -320,6 +320,7 @@ namespace tuplex {
         Logger::instance().defaultLogger().info(ss.str());
 #endif
         int64_t num_normal_rows = 0, num_bad_rows = 0;
+        assert(_functor);
         auto bytesParsed = _functor(_userData, _inputBuffer, buf_length, &num_normal_rows, &num_bad_rows, !eof);
 
         // restore

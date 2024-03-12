@@ -108,7 +108,7 @@ EXPORT_SYMBOL extern int8_t strIsAlpha(const char* str);
 EXPORT_SYMBOL extern int8_t strIsAlNum(const char* str);
 
 EXPORT_SYMBOL extern char* strJoin(const char *base_str, int64_t base_str_size, int64_t num_words, const char** str_array, const int64_t* len_array, int64_t* res_size);
-EXPORT_SYMBOL extern int64_t strSplit(const char *base_str, int64_t base_str_length, const char *delim, int64_t delim_length, char*** res_str_array, int64_t** res_len_array, int64_t *res_list_size);
+[[maybe_unused]] EXPORT_SYMBOL extern int64_t strSplit(const char *base_str, int64_t base_str_length, const char *delim, int64_t delim_length, char*** res_str_array, int64_t** res_len_array, int64_t *res_list_size);
 
 // string.capwords
 EXPORT_SYMBOL extern char* stringCapwords(const char* str, int64_t size, int64_t *res_size);
