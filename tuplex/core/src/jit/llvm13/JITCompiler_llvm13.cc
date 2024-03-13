@@ -177,23 +177,6 @@ namespace tuplex {
         registerSymbol("i64toa_sse2", i64toa_sse2);
         registerSymbol("d2fixed_buffered_n", d2fixed_buffered_n);
 
-        // AWS SDK cJSON
-#ifdef BUILD_WITH_AWS
-        // cJSON_PrintUnformatted, cJSON_AddItemToObject, cJSON_CreateObject, cJSON_DetachItemViaPointer, cJSON_CreateString
-        registerSymbol("cJSON_PrintUnformatted", cJSON_PrintUnformatted);
-        registerSymbol("cJSON_AddItemToObject", cJSON_AddItemToObject);
-        registerSymbol("cJSON_CreateObject", cJSON_CreateObject);
-        registerSymbol("cJSON_DetachItemViaPointer", cJSON_DetachItemViaPointer);
-        registerSymbol("cJSON_CreateString", cJSON_CreateString);
-        registerSymbol("cJSON_GetObjectItemCaseSensitive", cJSON_GetObjectItemCaseSensitive);
-        registerSymbol("cJSON_GetArraySize", cJSON_GetArraySize);
-        registerSymbol("cJSON_CreateNumber", cJSON_CreateNumber);
-        registerSymbol("cJSON_CreateBool", cJSON_CreateBool);
-        registerSymbol("cJSON_IsTrue", cJSON_IsTrue);
-        registerSymbol("cJSON_Parse", cJSON_Parse);
-        registerSymbol("cJSON_CreateString", cJSON_CreateString);
-#endif
-
         registerSymbol("debug_printf", debug_printf);
 
         // register JSON parsing symbols

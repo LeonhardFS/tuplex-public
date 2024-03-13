@@ -217,10 +217,18 @@ extern "C" void releasePythonFunction(uint8_t* pyobj) {
 }
 
 extern "C" int debug_printf(const char* format, ...) {
+
+    char buffer[8192];
+    memset(buffer, 0, 8192);
     va_list args;
     va_start(args, format);
-    auto rc = vprintf(format, args);
+    auto rc = vsprintf(buffer, format, args);
     va_end(args);
-    std::cout.flush();
+    auto s = strlen(buffer);
+
+    // trim
+    if(s > 1 && buffer[s-1] == '\n')
+        buffer[s-1] = '\0';
+    Logger::instance().defaultLogger().debug(buffer);
     return rc;
 }

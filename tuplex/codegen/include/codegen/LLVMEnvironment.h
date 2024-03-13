@@ -1173,12 +1173,16 @@ namespace tuplex {
 
             FunctionType *printf_type = FunctionType::get(ctypeToLLVM<int>(ctx), {ctypeToLLVM<char*>(ctx)}, true);
 
+            std::string printf_name = "debug_printf";
+
+            // printf_name = "printf";
+
 #if LLVM_VERSION_MAJOR < 9
             Function *func = cast<Function>(mod->getOrInsertFunction(
-            "debug_printf", printf_type));
+            printf_name, printf_type));
 #else
             Function *func = cast<Function>(mod->getOrInsertFunction(
-                    "debug_printf", printf_type).getCallee());
+                    printf_name, printf_type).getCallee());
 #endif
             return func;
         }

@@ -231,6 +231,106 @@ namespace tuplex {
                 .tocsv(output_path);
     }
 
+    TEST_F(GithubQuery, ForkEventsExtendedLLVM16Debug) {
+
+        // Notes: slow path compilation seems to be a problem, fix by using
+        // https://en.cppreference.com/w/cpp/thread/future
+        // and https://en.cppreference.com/w/cpp/thread/future to wait for compile-thread for slow code to finish?
+        // if it doesn't finish in time, use interpreter only?
+        // or is there a way to reduce complexity of slow code? E.g., cJSON dict instead of struct dict?
+        // -> this could be faster...
+
+        using namespace std;
+
+
+        {
+            using namespace simdjson;
+            // check simdjson details, want to avoid fallback.
+            // cf. for details on how runtime version can be selected
+            // https://github.com/simdjson/simdjson/blob/master/doc/implementation-selection.md
+            cout << "simdjson v" << SIMDJSON_VERSION << endl;
+            cout << "Detected the best implementation for your machine: " << simdjson::get_active_implementation()->name();
+            cout << "(" << simdjson::get_active_implementation()->description() << ")" << endl;
+
+
+            // // Use the fallback implementation, even though my machine is fast enough for anything
+            // simdjson::get_active_implementation() = simdjson::get_available_implementations()["fallback"];
+        }
+
+        // @TODO: non-hyper mode doesn't work yet ??
+        // hyper-moder returns empty files ??
+        auto use_hyper = false;//true; // should work for both true/false.
+
+        // set input/output paths
+        // auto exp_settings = lambdaSettings(true);
+        auto exp_settings = localWorkerSettings(use_hyper); //
+        auto input_pattern = exp_settings["input_path"];
+
+        // local test files
+        // input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
+
+        auto output_path = exp_settings["output_path"];
+        SamplingMode sm = static_cast<SamplingMode>(stoi(exp_settings["sampling_mode"]));
+        sm = sm | SamplingMode::SINGLETHREADED;
+        ContextOptions co = ContextOptions::defaults();
+        for(const auto& kv : exp_settings)
+            if(startsWith(kv.first, "tuplex."))
+                co.set(kv.first, kv.second);
+
+        // disable optimizer
+        co.set("tuplex.useLLVMOptimizer", "false");
+
+        // test: focus on single file
+        // input_pattern = "/hot/data/github_daily/2011-10-15.json";
+        // correct data should be:
+        // "num_input_rows": 48899, "num_output_rows": 1418
+
+        // --> slow path is SUPER SLOW to compile. need to improve, use this here to make testing faster.
+        // make testing faster...
+        // co.set("tuplex.resolveWithInterpreterOnly", "true");
+
+        // let's iterate over a few split sizes
+        // co.set("tuplex.inputSplitSize", "32M");
+
+        co.set("tuplex.inputSplitSize", "20G");
+        co.set("tuplex.experimental.worker.workerBufferSize", "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
+
+        // bug in opportune compilation, when same compiler is used??
+        co.set("tuplex.experimental.opportuneCompilation", "false");
+
+
+        // creater context according to settings
+        Context ctx(co);
+
+        runtime::init(co.RUNTIME_LIBRARY().toPath());
+
+        // dump settings
+        stringToFile("context_settings.json", ctx.getOptions().toString());
+
+
+        // start pipeline incl. output
+        auto repo_id_code = "def extract_repo_id(row):\n"
+                            "    if 2012 <= row['year'] <= 2014:\n"
+                            "        \n"
+                            "        if row['type'] == 'FollowEvent':\n"
+                            "            return row['payload']['target']['id']\n"
+                            "        \n"
+                            "        if row['type'] == 'GistEvent':\n"
+                            "            return row['payload']['id']\n"
+                            "        \n"
+                            "        repo = row.get('repository')\n"
+                            "        \n"
+                            "        if repo is None:\n"
+                            "            return None\n"
+                            "        return repo.get('id')\n"
+                            "    else:\n"
+                            "        return row['repo'].get('id')";
+        ctx.json(input_pattern, true, true, sm)
+                .withColumn("year", UDF("lambda x: x['created_at']"))
+                .selectColumns(vector<string>{"year"})
+                .tocsv(output_path);
+    }
+
     TEST_F(GithubQuery, ForkEventsFilterPromoForEachFile) {
         using namespace std;
 

@@ -168,6 +168,7 @@ namespace tuplex {
             strataSize = 1;
             samplesPerStrata = 1;
             samplingSize = opt.AWS_LAMBDA_SAMPLE_MAX_DETECTION_MEMORY();
+            useOptimizer = opt.USE_LLVM_OPTIMIZER();
         }
 
         WorkerSettings(const WorkerSettings& other) : numThreads(other.numThreads),
