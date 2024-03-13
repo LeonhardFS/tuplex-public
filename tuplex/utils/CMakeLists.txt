@@ -122,66 +122,14 @@ ExternalProject_Get_Property(cereal source_dir)
 set(cereal_INCLUDE_DIR ${source_dir}/include)
 endif()
 
-## include simdjson, tutorial here https://github.com/simdjson/cmake_demo_single_file/blob/master/CMakeLists.txt
-#include(FetchContent)
-#FetchContent_Declare(
-#        simdjson
-#        GIT_REPOSITORY https://github.com/simdjson/simdjson.git
-#        GIT_SHALLOW TRUE
-#        GIT_TAG tags/v3.6.3
-#)
-#FetchContent_MakeAvailable(simdjson)
-
-# Use external project here because simdjson contains a file <base.h> which
-# clashes with Tuplex's Base.h when imported.
-
-
-## in debug mode, should add
-## SIMDJSON_DEVELOPMENT_CHECKS
-##-DSIMDJSON_DEVELOPMENT_CHECKS=ON
-#ExternalProject_Add(simdjson_repo
-#        GIT_REPOSITORY    https://github.com/simdjson/simdjson.git
-#        GIT_SHALLOW       TRUE
-#        GIT_TAG tags/v3.8.0
-#        # this is the tag used on lambda-exp
-#        #GIT_TAG tags/v2.0.4
-#        # no need for threads, junking is done within Tuplex.
-#        CMAKE_ARGS -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DSIMDJSON_ENABLE_THREADS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_CXX_STANDARD=17
-#        PREFIX "${EXTERNAL_INSTALL_LOCATION}"
-#        BUILD_COMMAND ${CMAKE_COMMAND} --build . --config Release
-#        #BUILD_COMMAND ${CMAKE_COMMAND} --build . --config Debug
-#        INSTALL_COMMAND "" # Disable install step
-#)
-#
-#add_library(simdjson STATIC IMPORTED)
-#ExternalProject_Get_Property(simdjson_repo binary_dir)
-#set_target_properties(simdjson PROPERTIES IMPORTED_LOCATION "${binary_dir}/libsimdjson.a")
-#ExternalProject_Get_Property(simdjson_repo source_dir)
-#set(simdjson_INCLUDE_DIR ${source_dir}/include)
-#set(simdjson_LIBRARY "${binary_dir}/libsimdjson.a")
-#add_dependencies(simdjson simdjson_repo)
-
-
-# Using fetchcontent
-# include simdjson, tutorial here https://github.com/simdjson/cmake_demo_single_file/blob/master/CMakeLists.txt
-FetchContent_Declare(
-        simdjson
-        GIT_REPOSITORY https://github.com/simdjson/simdjson.git
-        GIT_SHALLOW TRUE
-        GIT_TAG tags/v3.8.0
-)
-FetchContent_MakeAvailable(simdjson)
-
-
-
 # ------
 # dependencies
 
 # set here dependencies, include_targets, link_targets
 if(BUILD_WITH_CEREAL)
-    set(UTILS_DEPENDENCIES fmt spdlog json cereal simdjson)
+    set(UTILS_DEPENDENCIES fmt spdlog json cereal)
 else()
-    set(UTILS_DEPENDENCIES fmt spdlog json simdjson)
+    set(UTILS_DEPENDENCIES fmt spdlog json)
 endif()
 
 set(UTILS_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -194,11 +142,11 @@ set(UTILS_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${Boost_INCLUDE_DIR}
         ${AWSSDK_INCLUDE_DIR}
         ${ZLIB_INCLUDE_DIRS}
-        ${simdjson_INCLUDE_DIR})
+        ${simdjson_INCLUDE_DIRS})
 set(UTILS_LIBRARIES Boost::filesystem Boost::thread Boost::system
-        Boost::system Boost::iostreams ${ZLIB_LIBRARIES} ${AWSSDK_LINK_LIBRARIES} simdjson)
+        Boost::system Boost::iostreams ${ZLIB_LIBRARIES} ${AWSSDK_LINK_LIBRARIES} simdjson::simdjson)
 
 # object library
 add_dependencies(libutils ${UTILS_DEPENDENCIES})
 target_include_directories(libutils PUBLIC ${UTILS_INCLUDE_DIRS})
-target_link_libraries(libutils ${UTILS_LIBRARIES})
+target_link_libraries(libutils INTERFACE ${UTILS_LIBRARIES})

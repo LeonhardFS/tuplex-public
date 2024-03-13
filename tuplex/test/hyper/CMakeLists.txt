@@ -11,13 +11,15 @@ include(GoogleTest)
 
 add_executable(testhyper ${SRCS})
 target_link_libraries(testhyper
-        libutils
+        #libutils
         libio
         libcodegen
         libcore
         libcpythonadapter
         ${GTest_LIBRARIES}
         ${AWSSDK_LINK_LIBRARIES}
-        ${Python3_LIBRARIES})
+        ${Python3_LIBRARIES}
+        simdjson::simdjson
+)
 
 gtest_add_tests(TARGET testhyper TEST_PREFIX "")

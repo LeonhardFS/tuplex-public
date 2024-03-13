@@ -1136,10 +1136,20 @@ endif()
 # ncurses/curses lib for terminal manipulation
 find_package(Curses REQUIRED)
 
+# include simdjson, tutorial here https://github.com/simdjson/cmake_demo_single_file/blob/master/CMakeLists.txt
+FetchContent_Declare(
+        simdjson
+        GIT_REPOSITORY https://github.com/simdjson/simdjson.git
+        GIT_SHALLOW TRUE
+        GIT_TAG tags/v3.8.0
+        OVERRIDE_FIND_PACKAGE
+)
+find_package(simdjson REQUIRED)
+get_target_property(simdjson_INCLUDE_DIRS simdjson::simdjson INCLUDE_DIRECTORIES)
+
 # For debug tracing, actually link & include symbols (for macos right now only)
 if(APPLE)
     # Use explicit stracktrace to produce errors
-    include(FetchContent)
 
     # for this also requires libdwarf
     find_package(LibElf REQUIRED)

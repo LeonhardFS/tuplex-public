@@ -6,10 +6,10 @@
 #define TUPLEX_JSONSTATISTIC_H
 
 #include "CSVUtils.h"
+#include <simdjson.h>
 #include <vector>
 #include <TypeSystem.h>
 
-#include <simdjson.h>
 #include <TypeHelper.h>
 
 namespace tuplex {
