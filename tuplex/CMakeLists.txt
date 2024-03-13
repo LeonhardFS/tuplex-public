@@ -1148,6 +1148,13 @@ FetchContent_Declare(
 )
 find_package(simdjson REQUIRED)
 get_target_property(simdjson_INCLUDE_DIRS simdjson::simdjson INCLUDE_DIRECTORIES)
+# can delete
+#FetchContent_GetProperties(simdjson)
+#if(NOT simdjson_POPULATED)
+#    FetchContent_Populate(simdjson)
+#    add_subdirectory(${simdjson_SOURCE_DIR} ${simdjson_BINARY_DIR})
+#endif()
+
 
 # For debug tracing, actually link & include symbols (for macos right now only)
 if(APPLE)
