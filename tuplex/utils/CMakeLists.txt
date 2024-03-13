@@ -146,4 +146,4 @@ set(UTILS_LIBRARIES Boost::filesystem Boost::thread Boost::system
 # object library
 add_dependencies(libutils ${UTILS_DEPENDENCIES})
 target_include_directories(libutils PUBLIC ${UTILS_INCLUDE_DIRS})
-target_link_libraries(libutils INTERFACE ${UTILS_LIBRARIES})
+target_link_libraries(libutils PUBLIC ${UTILS_LIBRARIES})

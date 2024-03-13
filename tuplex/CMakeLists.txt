@@ -1146,8 +1146,11 @@ FetchContent_Declare(
         GIT_TAG tags/v3.8.0
         OVERRIDE_FIND_PACKAGE
 )
+set(SIMDJSON_JUST_LIBRARY ON CACHE INTERNAL "")
+set(SIMDJSON_BUILD_STATIC ON CACHE INTERNAL "")
 find_package(simdjson REQUIRED)
 get_target_property(simdjson_INCLUDE_DIRS simdjson::simdjson INCLUDE_DIRECTORIES)
+
 # can delete
 #FetchContent_GetProperties(simdjson)
 #if(NOT simdjson_POPULATED)

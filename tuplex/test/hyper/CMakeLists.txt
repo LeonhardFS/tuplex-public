@@ -6,10 +6,9 @@ CMAKE_MINIMUM_REQUIRED(VERSION 3.12 FATAL_ERROR)
 set(CMAKE_CXX_STANDARD 17)
 
 file(GLOB SRCS *.cc)
-
 include(GoogleTest)
 
-add_executable(testhyper ${SRCS})
+add_executable(testhyper ${SRCS} ${SIMDJSON_SRCS})
 target_link_libraries(testhyper
         #libutils
         libio
