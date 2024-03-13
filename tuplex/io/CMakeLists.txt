@@ -13,8 +13,8 @@ endif ()
 find_package(LibMagic REQUIRED)
 message(STATUS "Found LibMagic ${LibMagic_INCLUDE_DIR}, ${LibMagic_LIBRARIES}")
 
-include_directories("include")
-include_directories(${Boost_INCLUDE_DIR})
+#include_directories("include")
+#include_directories(${Boost_INCLUDE_DIR})
 
 
 # Install and build ORC C++ APIs when BUILD_WITH_ORC is active
@@ -218,7 +218,7 @@ if(BUILD_WITH_ORC)
     set_target_properties(liborc PROPERTIES IMPORTED_LOCATION ${orc_LIBRARY})
 
     add_dependencies(liborc orc)
-    include_directories(${orc_INCLUDE_DIR})
+    #include_directories(${orc_INCLUDE_DIR})
     set(ORC_LIBRARIES
             ${SNAPPY_LIBRARIES}
             ${LZ4_LIBRARIES}

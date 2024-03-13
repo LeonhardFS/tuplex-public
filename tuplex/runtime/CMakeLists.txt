@@ -4,7 +4,7 @@
 file(GLOB_RECURSE SOURCES src/*.cc)
 file(GLOB_RECURSE INCLUDES include/*.h)
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+#include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 add_library(runtime SHARED
         ${CMAKE_CURRENT_BINARY_DIR} ${SOURCES} ${INCLUDES})

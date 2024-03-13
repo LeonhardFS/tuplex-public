@@ -7,7 +7,7 @@ cmake_policy(SET CMP0097 NEW)
 file(GLOB_RECURSE SOURCES src/*.cc src/*.c)
 file(GLOB_RECURSE INCLUDES include/*.h)
 
-include_directories("include")
+#include_directories("include")
 
 # find zlib
 find_package(ZLIB REQUIRED)
@@ -49,11 +49,12 @@ ExternalProject_Add(spdlog
 ExternalProject_Get_Property(spdlog source_dir)
 set(spdlog_INCLUDE_DIR ${source_dir}/include)
 
+include(FetchContent)
+set(FETCHCONTENT_BASE_DIR ${CMAKE_BINARY_DIR}/third_party/src)
+
 # Add cJSON ==> newer AWS SDKs ship it, so exclude it then...
 # AWS SDK defined cjson since v1.5
 if(NOT BUILD_WITH_AWS)
-    include(FetchContent)
-    set(FETCHCONTENT_BASE_DIR ${CMAKE_BINARY_DIR}/third_party/src)
     FetchContent_Declare(cJSON
         GIT_REPOSITORY https://github.com/DaveGamble/cJSON.git
         GIT_TAG        v1.7.15
@@ -103,7 +104,7 @@ ExternalProject_Add(json
         )
 ExternalProject_Get_Property(json source_dir)
 set(json_INCLUDE_DIR ${source_dir}/include)
-include_directories(${json_INCLUDE_DIR})
+#include_directories(${json_INCLUDE_DIR})
 
 if(BUILD_WITH_CEREAL)
 ExternalProject_Add(cereal
@@ -163,7 +164,6 @@ endif()
 
 # Using fetchcontent
 # include simdjson, tutorial here https://github.com/simdjson/cmake_demo_single_file/blob/master/CMakeLists.txt
-include(FetchContent)
 FetchContent_Declare(
         simdjson
         GIT_REPOSITORY https://github.com/simdjson/simdjson.git

@@ -78,14 +78,14 @@ MESSAGE(STATUS "Found LLVM include dirs at: " ${LLVM_INCLUDE_DIRS})
 MESSAGE(STATUS "LLVM library dir: ${LLVM_LIBRARY_DIRS}")
 message(STATUS "Requiring following LLVM components: ${LLVM_REQUIRED_COMPONENTS}")
 
-include_directories(${LLVM_INCLUDE_DIRS})
+#include_directories(${LLVM_INCLUDE_DIRS})
 separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
 add_definitions(${LLVM_DEFINITIONS_LIST})
 
 llvm_map_components_to_libnames(LLVM_LIBRARIES ${LLVM_REQUIRED_COMPONENTS})
 set(CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH} ${LLVM_LIBRARY_DIRS})
 
-include_directories(${LLVM_INCLUDE_DIRS})
+#include_directories(${LLVM_INCLUDE_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
 
 # special case on Unix, make use rtti gets the right flag for the build
@@ -96,7 +96,7 @@ if (NOT LLVM_ENABLE_RTTI)
 endif()
 
 # BOOST libs
-include_directories(${Boost_INCLUDE_DIR})
+#include_directories(${Boost_INCLUDE_DIR})
 
 # ANTLR4 Runtime (installed e.g. via brew install antlr4-cpp-runtime)
 find_package(ANTLR4Runtime REQUIRED)
@@ -108,7 +108,7 @@ file(GLOB_RECURSE SOURCES src/*.cc)
 add_definitions(-DANTLR4CPP_STATIC)
 set(ANTLR4_WITH_STATIC_CRT OFF)
 include(ExternalAntlr4Cpp)
-include_directories(${ANTLR4_INCLUDE_DIRS})
+#include_directories(${ANTLR4_INCLUDE_DIRS})
 set(ANTLR_EXECUTABLE ${CMAKE_CURRENT_SOURCE_DIR}/tools/antlr-4.13.1-complete.jar)
 find_package(ANTLR ${ANTLR4Runtime_VERSION})
 

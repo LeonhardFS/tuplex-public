@@ -109,7 +109,7 @@ if(UNIX AND NOT APPLE)
     # ldd -v /usr/lib64/libcurl.so.4 | grep '(NSS'
 endif()
 
-include_directories("include")
+#include_directories("include")
 include_directories(${Boost_INCLUDE_DIR})
 
 # Source code & linking
