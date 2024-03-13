@@ -12,7 +12,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 SET(MODULE_NAME tuplex)
 
 # deprecated
-include(FetchContent)
 #set(PYBIND11_NOPYTHON ON CACHE INTERNAL "") 
 message(STATUS "Pybind11 uses python version ${Python3_VERSION}")
 set(PYBIND11_FINDPYTHON OFF CACHE INTERNAL "") 

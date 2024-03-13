@@ -49,9 +49,6 @@ ExternalProject_Add(spdlog
 ExternalProject_Get_Property(spdlog source_dir)
 set(spdlog_INCLUDE_DIR ${source_dir}/include)
 
-include(FetchContent)
-set(FETCHCONTENT_BASE_DIR ${CMAKE_BINARY_DIR}/third_party/src)
-
 # Add cJSON ==> newer AWS SDKs ship it, so exclude it then...
 # AWS SDK defined cjson since v1.5
 if(NOT BUILD_WITH_AWS)

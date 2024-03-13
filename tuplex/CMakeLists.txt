@@ -667,6 +667,8 @@ add_compile_definitions(SPDLOG_FMT_EXTERNAL)
 add_compile_definitions(FMT_HEADER_ONLY=1)
 add_compile_definitions(PCRE2_CODE_UNIT_WIDTH=8)
 
+include(FetchContent)
+set(FETCHCONTENT_BASE_DIR ${CMAKE_BINARY_DIR}/third_party/src)
 
 # add boost & boost python ==> globally added because of its quirks
 # this solution should work across versions...
