@@ -869,7 +869,8 @@ namespace tuplex {
             // AWS SDK cJSON
 #ifdef BUILD_WITH_AWS
             // cJSON_PrintUnformatted, cJSON_AddItemToObject, cJSON_CreateObject, cJSON_DetachItemViaPointer, cJSON_CreateString
-            jit.registerSymbol("cJSON_PrintUnformatted", cJSON_PrintUnformatted);
+            // jit.registerSymbol("cJSON_PrintUnformatted", cJSON_PrintUnformatted);
+            jit.registerSymbol("cJSON_PrintUnformatted", cJSON_PrintUnformattedEx); // <-- use here ex version to deal with nullptr.
             jit.registerSymbol("cJSON_AddItemToObject", cJSON_AddItemToObject);
             jit.registerSymbol("cJSON_CreateObject", cJSON_CreateObject);
             jit.registerSymbol("cJSON_DetachItemViaPointer", cJSON_DetachItemViaPointer);
