@@ -1176,9 +1176,6 @@ namespace tuplex {
             auto successful_decode_cond = builder.CreateICmpEQ(rcA, _env.i64Const(ecToI64(ExceptionCode::SUCCESS)));
             auto is_null_cond = builder.CreateAnd(successful_decode_cond, value.is_null);
 
-            _env.printValue(builder, value.is_null, "is value for " + entry.key + " null: ");
-            _env.printValue(builder, successful_decode_cond, "successful decode");
-
             // branch: if null -> got to bbDecodeIsNull, else decode value.
             BasicBlock* bbValueIsNull = nullptr, *bbValueIsNotNull = nullptr;
 

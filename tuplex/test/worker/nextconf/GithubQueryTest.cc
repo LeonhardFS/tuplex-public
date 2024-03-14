@@ -326,8 +326,13 @@ namespace tuplex {
                             "    else:\n"
                             "        return row['repo'].get('id')";
         ctx.json(input_pattern, true, true, sm)
-                .withColumn("year", UDF("lambda x: x['created_at']"))
-                .selectColumns(vector<string>{"year"})
+                        // .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // workaround for filter promo.
+                .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
+                .withColumn("repo_id", UDF(repo_id_code))
+                .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
+                .withColumn("commits", UDF("lambda row: row['payload'].get('commits')"))
+                .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
+                .selectColumns(vector<string>{"type", "repo_id", "year", "number_of_commits"})
                 .tocsv(output_path);
     }
 

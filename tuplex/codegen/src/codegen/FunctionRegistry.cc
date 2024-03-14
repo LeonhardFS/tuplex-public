@@ -2713,17 +2713,16 @@ namespace tuplex {
             auto strArray = _env.CreateFirstBlockAlloca(builder,llvm_i8ptrptr_type);
             auto listLen = _env.CreateFirstBlockAlloca(builder,_env.i64Type());
 
-            _env.debugPrint(builder, "Calling strSplit::");
-            if(caller.is_null)
-                _env.printValue(builder, caller.size, "Calling strSplit with val/is_null=");
-            if(caller.val)
-                _env.printValue(builder, caller.val, "Calling strSplit with val=");
-            if(caller.size)
-                _env.printValue(builder, caller.size, "Calling strSplit with val/size=");
-            if(delimiter.val)
-                _env.printValue(builder, delimiter.val, "Calling strSplit with delimiter=");
-            if(delimiter.size)
-                _env.printValue(builder, caller.size, "Calling strSplit with delimiter/size=");
+//            if(caller.is_null)
+//                _env.printValue(builder, caller.size, "Calling strSplit with val/is_null=");
+//            if(caller.val)
+//                _env.printValue(builder, caller.val, "Calling strSplit with val=");
+//            if(caller.size)
+//                _env.printValue(builder, caller.size, "Calling strSplit with val/size=");
+//            if(delimiter.val)
+//                _env.printValue(builder, delimiter.val, "Calling strSplit with delimiter=");
+//            if(delimiter.size)
+//                _env.printValue(builder, caller.size, "Calling strSplit with delimiter/size=");
 
             auto listSerializedSize = builder.CreateCall(strSplit_prototype(_env.getContext(), _env.getModule().get()),
                                                 {caller.val, caller.size, delimiter.val, delimiter.size,
