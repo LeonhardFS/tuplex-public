@@ -556,16 +556,13 @@ namespace tuplex {
 #ifdef JSON_PARSER_TRACE_MEMORY
             _env->debugPrint(builder, "try parsing as normal row...");
 #endif
-            _env->debugPrint(builder, "parse normal case row");
+            // _env->debugPrint(builder, "parse normal case row");
 
             // new: within its own LLVM function
             // parse here as normal row
             auto normal_case_row = generateAndCallParseRowFunction(builder, "parse_normal_row_internal",
                                                                    _normalCaseRowType, normal_case_columns,
                                                                    unwrap_first_level, parser, bbParseAsGeneralCaseRow);
-
-            _env->debugPrint(builder, "parsed normal row is: ");
-            normal_case_row.print(builder);
 
 #ifdef JSON_PARSER_TRACE_MEMORY
             _env->printValue(builder, rc, "normal row parsed.");
@@ -622,7 +619,7 @@ namespace tuplex {
                         throw std::runtime_error("invalid function from pipeline builder in JsonSourceTaskBuilder");
                     auto row_no = rowNumber(builder);
                     auto intermediate = initIntermediate(builder);
-                    _env->debugPrint(builder, "Calling pipeline on rowno: ", row_no);
+                    // _env->debugPrint(builder, "Calling pipeline on rowno: ", row_no);
                     auto pip_res = PipelineBuilder::call(builder, processRowFunc, normal_case_row, userData, row_no, intermediate);
 
 #ifdef JSON_PARSER_TRACE_MEMORY
@@ -1121,14 +1118,8 @@ namespace tuplex {
             assert(row_type_compatible_with_columns(tuple_row_type, columns));
             assert(tuple_row_type.isTupleType());
 
-            env.debugPrint(builder, "Parsing JSON in function " + F->getName().str());
-
             auto ft_parsed = json_parseRow(env, builder, tuple_row_type, columns,
                                            unwrap_first_level, true, parser, bMismatch);
-
-            // prining tuple
-            env.debugPrint(builder, "ft_parse is (after json_parseRow)");
-            ft_parsed.print(builder);
 
             ft_parsed.storeTo(builder, args["out_tuple"]);
 #ifdef JSON_PARSER_TRACE_MEMORY

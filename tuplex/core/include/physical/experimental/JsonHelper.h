@@ -14,8 +14,8 @@
 
 #include <jit/JITCompiler.h>
 
-// use this to trace memory
-#define JSON_PARSER_TRACE_MEMORY
+// // use this to trace memory
+// #define JSON_PARSER_TRACE_MEMORY
 
 namespace tuplex {
     namespace codegen {
@@ -26,7 +26,7 @@ namespace tuplex {
         // helper C-struct holding simdjson parser
         struct JsonParser {
 
-            // this will have issues with out of order access (happening when arrays are present...) -> more complex to implement.
+            // this will have issues with out-of-order access (happening when arrays are present...) -> more complex to implement.
             //// use simdjson as parser b.c. cJSON has issues with integers/floats.
             //// https://simdjson.org/api/2.0.0/md_doc_iterate_many.html
             //simdjson::ondemand::parser parser;

@@ -27,8 +27,6 @@ namespace tuplex {
             v.size = builder.CreateLoad(_env.i64Type(), str_size_var);
             v.is_null = _env.i1Const(false);
 
-            _env.printValue(builder, v.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " got string from Json: ");
-
             return make_tuple(rc, v);
         }
 
@@ -1183,7 +1181,6 @@ namespace tuplex {
 
             // branch: if null -> got to bbDecodeIsNull, else decode value.
             BasicBlock* bbValueIsNull = nullptr, *bbValueIsNotNull = nullptr;
-            _env.printValue(builder, is_null_cond, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " is null for entry " +  entry.key + ": ");
 
             builder.CreateCondBr(is_null_cond, bbDecodeIsNull, bbDecodeNonNull);
 
@@ -1205,13 +1202,10 @@ namespace tuplex {
             // two cases: primitive field -> i.e., not a struct type
             if(!entryB.valueType.isStructuredDictionaryType()) {
                 std::tie(rcB, presentB, valueB) = decodePrimitiveFieldFromObject(builder, obj, key, entryB, bbSchemaMismatch);
-
-                _env.printValue(builder, valueB.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " valueB is: ");
             } else {
                 // or struct type
                 std::tie(rcB, presentB, valueB) = decodeStructDictFieldFromObject(builder, obj, key, entryB, bbSchemaMismatch);
             }
-
 
             bbValueIsNotNull = builder.GetInsertBlock(); // <-- this is the block from where to jump to bbDecoded (phi entry block)
             builder.CreateBr(bbDecoded);
@@ -1327,8 +1321,6 @@ namespace tuplex {
                 auto is_not_ok = builder.CreateICmpNE(rc, _env.i64Const(ecToI64(ExceptionCode::SUCCESS)));
                 BasicBlock* bbOK = BasicBlock::Create(ctx, "extract_ok", builder.GetInsertBlock()->getParent());
 
-                _env.printValue(builder, is_not_ok, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " is not ok: ");
-
                 builder.CreateCondBr(is_not_ok, bbSchemaMismatch, bbOK);
                 builder.SetInsertPoint(bbOK);
                 is_present = _env.i1Const(true); // it's present, else there'd have been an error reported.
@@ -1349,9 +1341,6 @@ namespace tuplex {
             // return value => valid if rc == success AND is_present is true
             assert(rc->getType() == _env.i64Type());
             assert(is_present->getType() == _env.i1Type());
-
-            _env.printValue(builder, value.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " value is: ");
-            _env.printValue(builder, rc, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " rc is: ");
 
             return make_tuple(rc, is_present, value);
         }
@@ -1523,26 +1512,14 @@ namespace tuplex {
                     std::tie(rc, value_is_present, decoded_value) = decodePrimitiveFieldFromObject(builder, object, key, kv_pair, bbSchemaMismatch);
 
 
-                    _env.printValue(builder, decoded_value.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " decoded value is: ");
-
-
                     // // comment this, in order to invoke the list decoding (not completed yet...) -> requires serialization!
                     // if(kv_pair.valueType.isListType()) {
                     //     std::cerr<<"skipping array store in final struct with type="<<kv_pair.valueType.desc()<<" for now."<<std::endl;
                     //     continue;
                     // }
 
-                    _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " storing value now to pointer: ");
-
                     // store!
                     struct_dict_store_value(_env, builder, dict_ptr, dict_ptr_type, access_path, decoded_value.val);
-
-                    // test:
-#ifndef NDEBUG
-                    auto ret = struct_dict_load_value(_env, builder, dict_ptr, dict_ptr_type, access_path);
-                    _env.printValue(builder, ret.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " retrieved from struct: ");
-#endif
-
                     struct_dict_store_size(_env, builder, dict_ptr, dict_ptr_type, access_path, decoded_value.size);
                     struct_dict_store_isnull(_env, builder, dict_ptr, dict_ptr_type, access_path, decoded_value.is_null);
                     struct_dict_store_present(_env, builder, dict_ptr, dict_ptr_type, access_path, value_is_present);
@@ -1614,9 +1591,6 @@ namespace tuplex {
                 v.val = builder.CreateLoad(_env.i8ptrType(), str_var);
                 v.size = builder.CreateLoad(builder.getInt64Ty(), str_size_var);
                 v.is_null = _env.i1Const(false);
-
-                _env.printValue(builder, v.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " got string from Json: ");
-
             } else if (v_type == python::Type::BOOLEAN) {
                 auto F = getOrInsertFunction(mod, "JsonItem_getBoolean", _env.i64Type(), _env.i8ptrType(),
                                              _env.i8ptrType(),

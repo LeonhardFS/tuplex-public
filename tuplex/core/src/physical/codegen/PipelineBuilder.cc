@@ -829,14 +829,6 @@ namespace tuplex {
 
             IRBuilder builder(_lastBlock);
 
-#ifndef NDEBUG
-            // compile test:
-            _env->debugPrint(builder, "Calling withColumn on UDF:\n" + udf.getCode());
-            _env->debugPrint(builder, "last row result is: ");
-            _lastRowResult.print(builder);
-            _env->debugPrint(builder, "transforming this now via UDF...");
-#endif
-
             // store in what operator called here (needed for exception handler)
             assignToVariable(builder, "exceptionOperatorID", env().i64Const(operatorID));
             // as stated in the map operation, the result type needs to be allocated within the entry block
