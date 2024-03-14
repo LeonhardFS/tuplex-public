@@ -4714,6 +4714,7 @@ namespace tuplex {
                     } else {
                         // regular call to an instance of an object, i.e. builtin objects like int, bool, float, ...
                         // assert(!caller.is_null);
+                        _lfb->setLastBlock(builder.GetInsertBlock());
                         ret = _functionRegistry->createAttributeCall(*_lfb, builder, attrName, callerType, argsType,
                                                                      retType, caller, args);
                     }
