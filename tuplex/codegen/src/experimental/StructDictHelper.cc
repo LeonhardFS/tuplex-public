@@ -761,17 +761,18 @@ namespace tuplex {
 
             // store only if valid field_idx
             if(field_idx >= 0) {
-                // env.printValue(builder, value, "storing away value at index " + std::to_string(field_idx));
+                 env.printValue(builder, value, "storing away value at index " + std::to_string(field_idx));
 
                 auto llvm_struct_type = env.pythonToLLVMType(dict_type);
 
                 // store
                 auto llvm_idx = builder.CreateStructGEP(ptr, llvm_struct_type, field_idx);
 
-                // special case: sometimes storing element type dict or list will be based upon pointer -> load first!
-                if(value->getType() == llvm_idx->getType()) {
-                    value = builder.CreateLoad(llvm_struct_type->getStructElementType(field_idx), value);
-                }
+                // this is buggy, DO NOT USE it. Fix in other code.
+                // // special case: sometimes storing element type dict or list will be based upon pointer -> load first!
+                // if(value->getType() == llvm_idx->getType()) {
+                //     value = builder.CreateLoad(llvm_struct_type->getStructElementType(field_idx), value);
+                // }
 
                 builder.CreateStore(value, llvm_idx);
             }

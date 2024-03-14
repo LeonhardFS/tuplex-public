@@ -51,10 +51,6 @@ namespace tuplex {
             BasicBlock* bFree = BasicBlock::Create(env.getContext(), "free_object", builder.GetInsertBlock()->getParent());
             BasicBlock* bContinue = BasicBlock::Create(env.getContext(), "null_object", builder.GetInsertBlock()->getParent());
 
-            if(bContinue->getName().str() == "null_object") {
-                std::cout<<"first block created"<<std::endl;
-            }
-
             builder.CreateCondBr(is_null, bContinue, bFree);
             builder.SetInsertPoint(bFree);
 

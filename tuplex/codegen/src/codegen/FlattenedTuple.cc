@@ -156,6 +156,10 @@ namespace tuplex {
 
         void FlattenedTuple::init(const python::Type &type) {
 
+            // for now: do not support row type
+            if((type.isRowType()) || (type.isTupleType() && type.parameters().size() == 1 && type.parameters().front().isRowType()))
+                throw std::runtime_error("row type not yet supported");
+
             // special case: empty tuple
             if(python::Type::EMPTYTUPLE == type || python::Type::EMPTYROW == type) {
                 _tree = TupleTree<codegen::SerializableValue>(); // empty tree

@@ -556,11 +556,17 @@ namespace tuplex {
 #ifdef JSON_PARSER_TRACE_MEMORY
             _env->debugPrint(builder, "try parsing as normal row...");
 #endif
+            _env->debugPrint(builder, "parse normal case row");
+
             // new: within its own LLVM function
             // parse here as normal row
             auto normal_case_row = generateAndCallParseRowFunction(builder, "parse_normal_row_internal",
                                                                    _normalCaseRowType, normal_case_columns,
                                                                    unwrap_first_level, parser, bbParseAsGeneralCaseRow);
+
+            _env->debugPrint(builder, "parsed normal row is: ");
+            normal_case_row.print(builder);
+
 #ifdef JSON_PARSER_TRACE_MEMORY
             _env->printValue(builder, rc, "normal row parsed.");
 #endif
@@ -616,7 +622,7 @@ namespace tuplex {
                         throw std::runtime_error("invalid function from pipeline builder in JsonSourceTaskBuilder");
                     auto row_no = rowNumber(builder);
                     auto intermediate = initIntermediate(builder);
-                    // _env->debugPrint(builder, "Calling pipeline on rowno: ", row_no);
+                    _env->debugPrint(builder, "Calling pipeline on rowno: ", row_no);
                     auto pip_res = PipelineBuilder::call(builder, processRowFunc, normal_case_row, userData, row_no, intermediate);
 
 #ifdef JSON_PARSER_TRACE_MEMORY
@@ -973,6 +979,10 @@ namespace tuplex {
                         access_path.push_back(std::make_pair(escape_to_python_str(columns[i]), python::Type::STRING));
                         auto is_present = struct_dict_load_present(env, builder, dict, dict_type, access_path);
 
+#ifdef JSON_PARSER_TRACE_MEMORY
+                        env.printValue(builder, is_present, columns[i] + " is_present: ");
+#endif
+
                         llvm::BasicBlock* bColumnPresent = llvm::BasicBlock::Create(env.getContext(), "column" + std::to_string(i) + "_present", builder.GetInsertBlock()->getParent());
                         llvm::BasicBlock* bColumnDone = llvm::BasicBlock::Create(env.getContext(), "column" + std::to_string(i) + "_done", builder.GetInsertBlock()->getParent());
 
@@ -982,6 +992,9 @@ namespace tuplex {
                         // fetch value from dict!
                         value = struct_dict_get_or_except(env, builder, dict_type, escape_to_python_str(columns[i]),
                                                           python::Type::STRING, dict, bbSchemaMismatch);
+
+
+
                         auto bLastColumnDone = builder.GetInsertBlock();
                         builder.CreateBr(bColumnDone);
 
@@ -1032,8 +1045,13 @@ namespace tuplex {
                         value = struct_dict_get_or_except(env, builder, dict_type, escape_to_python_str(columns[i]),
                                                           python::Type::STRING, dict, bbSchemaMismatch);
 #ifdef JSON_PARSER_TRACE_MEMORY
+                        if(value.is_null)
+                            env.printValue(builder, value.is_null, "got entry " + std::to_string(i + 1) + " with is_null: ");
+                        // this here causes issue...!
+                        if(value.val)
+                            env.printValue(builder, value.val, "got entry " + std::to_string(i + 1) + " with value: ");
                         if(value.size)
-                        env.printValue(builder, value.size, "got entry " + std::to_string(i + 1) + " with size: ");
+                            env.printValue(builder, value.size, "got entry " + std::to_string(i + 1) + " with size: ");
 #endif
                         ft.set(builder, {i}, value.val, value.size, value.is_null);
                     }
@@ -1071,6 +1089,7 @@ namespace tuplex {
             auto& logger = Logger::instance().logger("codegen");
 
             FlattenedTuple ft(&env);
+            assert(row_type.isTupleType());
             ft.init(row_type);
             auto tuple_llvm_type = ft.getLLVMType();
 
@@ -1100,10 +1119,20 @@ namespace tuplex {
 
             auto tuple_row_type = row_type.isRowType() ? row_type.get_columns_as_tuple_type() : row_type;
             assert(row_type_compatible_with_columns(tuple_row_type, columns));
-            auto ft_parsed = json_parseRow(env, builder, tuple_row_type, columns, unwrap_first_level, true, parser, bMismatch);
+            assert(tuple_row_type.isTupleType());
+
+            env.debugPrint(builder, "Parsing JSON in function " + F->getName().str());
+
+            auto ft_parsed = json_parseRow(env, builder, tuple_row_type, columns,
+                                           unwrap_first_level, true, parser, bMismatch);
+
+            // prining tuple
+            env.debugPrint(builder, "ft_parse is (after json_parseRow)");
+            ft_parsed.print(builder);
+
             ft_parsed.storeTo(builder, args["out_tuple"]);
 #ifdef JSON_PARSER_TRACE_MEMORY
-            _env->debugPrint(builder, "tuple store to output ptr done.");
+            env.debugPrint(builder, "tuple store to output ptr done.");
 #endif
 
             // free temp objects here...
@@ -1162,7 +1191,9 @@ namespace tuplex {
 
             using namespace llvm;
 
-            FlattenedTuple ft(&env); ft.init(row_type);
+            auto tuple_row_type = row_type.isRowType() ? row_type.get_columns_as_tuple_type() : row_type;
+
+            FlattenedTuple ft(&env); ft.init(tuple_row_type);
             auto llvm_tuple_type = ft.getLLVMType();
 
             // create new func
@@ -1184,7 +1215,7 @@ namespace tuplex {
             auto parser = json_retrieveParser(env, builder, input_str, input_str_size, bError);
 
             // now check that it is doc & row present
-            auto F_parse = json_generateParseRowFunction(env, name + "_parse_row", row_type, columns, true);
+            auto F_parse = json_generateParseRowFunction(env, name + "_parse_row", tuple_row_type, columns, true);
 
             // call and check error code
             auto rc = builder.CreateCall(F_parse, {parser, args["tuple_out"]});
@@ -1225,9 +1256,14 @@ namespace tuplex {
             }
 #endif
 
-            auto F = generateParseRowFunction(name, row_type, columns, unwrap_first_level);
+            // convert to tuple type
+            auto tuple_row_type = row_type;
+            if(tuple_row_type.isRowType())
+                tuple_row_type = row_type.get_columns_as_tuple_type();
+
+            auto F = generateParseRowFunction(name, tuple_row_type, columns, unwrap_first_level);
             FlattenedTuple ft(_env.get());
-            ft.init(row_type);
+            ft.init(tuple_row_type);
 
             BasicBlock *bbOK = BasicBlock::Create(_env->getContext(), "parse_row_ok", parent_builder.GetInsertBlock()->getParent());
 
@@ -1247,7 +1283,7 @@ namespace tuplex {
             _env->printValue(parent_builder, rc, "parse ok, loading flattened tuple from struct val...");
 #endif
 
-            return FlattenedTuple::fromLLVMStructVal(_env.get(), parent_builder, res_ptr, row_type);
+            return FlattenedTuple::fromLLVMStructVal(_env.get(), parent_builder, res_ptr, tuple_row_type);
         }
 
         llvm::Value *

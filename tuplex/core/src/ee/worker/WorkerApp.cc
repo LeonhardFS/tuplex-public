@@ -2069,10 +2069,10 @@ namespace tuplex {
 
             // in debug mode, validate module.
 #ifndef NDEBUG
-            if(!stage.fastPathCode().empty() && stage.fastPathCodeFormat() == codegen::CodeFormat::LLVM_IR_BITCODE)
-                validateBitCode(stage.fastPathCode());
             if(!stage.slowPathCode().empty() && stage.slowPathCodeFormat() == codegen::CodeFormat::LLVM_IR_BITCODE)
                 validateBitCode(stage.slowPathCode());
+            if(!stage.fastPathCode().empty() && stage.fastPathCodeFormat() == codegen::CodeFormat::LLVM_IR_BITCODE)
+                validateBitCode(stage.fastPathCode());
 #endif
             // perform actual compilation
             // -> do not compile slow path for now.

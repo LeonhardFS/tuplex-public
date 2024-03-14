@@ -171,6 +171,10 @@ namespace tuplex {
                     if(pyArgType.parameters().front() == python::Type::EMPTYROW)
                         pyArgType = python::Type::EMPTYTUPLE;
 
+                    // transform row to tuple type (physical representation)
+                    if(pyArgType.parameters().front().isRowType())
+                        pyArgType = pyArgType.parameters().front().get_columns_as_tuple_type();
+
                     // create ftarg from llvm struct val (i.e. the pointer)
                     assert(args.back()->getName() == "inRow");
                     auto ftarg = FlattenedTuple::fromLLVMStructVal(_env, builder, args.back(), pyArgType);

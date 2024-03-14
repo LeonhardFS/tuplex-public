@@ -267,7 +267,7 @@ namespace tuplex {
         auto input_pattern = exp_settings["input_path"];
 
         // local test files
-        // input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
+        input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
 
         auto output_path = exp_settings["output_path"];
         SamplingMode sm = static_cast<SamplingMode>(stoi(exp_settings["sampling_mode"]));
