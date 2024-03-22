@@ -3424,7 +3424,7 @@ namespace tuplex {
 
 
             // handle cases of deoptimization (i.e., ret-type not considered option type)
-            if(argsTypes.size() == 1) {
+            if(argsTypes.size() == 1) { // <-- this means default value is None!!!
 
                 // if retType is not given as option -> deoptimize.
                 auto require_deoptimization = !retType.isOptionType();
@@ -3433,8 +3433,16 @@ namespace tuplex {
                 auto item_not_found = builder.CreateICmpEQ(_env.i8nullptr(), item);
 
                 if(require_deoptimization) {
-// #error "check here for 2012 file..."
-                    lfb.addException(builder, ExceptionCode::NORMALCASEVIOLATION, item_not_found, "item not found, need to deoptimize because not typed as Option[" + retType.desc() + "] return type in dict.get call.");
+                    if(retType != python::Type::NULLVALUE) {
+                        lfb.addException(builder, ExceptionCode::NORMALCASEVIOLATION, item_not_found, "item not found, need to deoptimize because not typed as Option[" + retType.desc() + "] return type in dict.get call.");
+                    } else {
+                        auto item_found = _env.i1neg(builder, item_not_found);
+                        auto item_isnull = call_cjson_isnull(builder, item);
+                        auto item_not_null = _env.i1neg(builder, item_isnull);
+                        auto item_found_but_not_null = builder.CreateAnd(item_found, item_not_null);
+                        lfb.addException(builder, ExceptionCode::NORMALCASEVIOLATION, item_found_but_not_null, "item found which is not None, but expected None.");
+                        return SerializableValue(nullptr, nullptr, _env.i1Const(true)); // <-- return None.
+                    }
                 }
 
                 // default value is None here. Create vars and decode then using if.

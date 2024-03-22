@@ -76,6 +76,13 @@ namespace tuplex {
      * @return vector of identifiers
      */
     extern std::vector<ASTNode *> getForLoopMultiTarget(ASTNode* target);
+
+    /*!
+     * incomplete AST -> string processing function, helpful for debugging.
+     * @param node AST root node
+     * @return Python string.
+     */
+    extern std::string astToString(ASTNode* node);
 }
 
 #endif //TUPLEX_ASTHELPERS_H

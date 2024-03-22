@@ -1832,7 +1832,7 @@ namespace tuplex {
         }
     }
 
-    void TypeAnnotatorVisitor::resolveNamesForIfStatement(std::unordered_map<std::string, python::Type> &if_table,
+    bool TypeAnnotatorVisitor::resolveNamesForIfStatement(std::unordered_map<std::string, python::Type> &if_table,
                                                           std::unordered_map<std::string, python::Type> &else_table) {
         using namespace std;
 
@@ -1861,6 +1861,7 @@ namespace tuplex {
                         error("need to speculate, because can't unify variable " + name +
                               " type " + if_type.desc() + " in if branch with its type " +
                               else_type.desc() + " in else branch.");
+                        return false;
                     }
                 } else {
                     // same type, simply assign!
@@ -1872,6 +1873,8 @@ namespace tuplex {
         // resolve conflicts from if/else with before table
         resolveNameConflicts(if_table);
         resolveNameConflicts(else_table);
+
+        return true;
     }
 
     void TypeAnnotatorVisitor::visit(NIfElse* ifelse) {
@@ -1936,6 +1939,25 @@ namespace tuplex {
                 auto numTimesIfVisited = ifelse->_then->annotation().numTimesVisited;
                 // for else, if else branch exists, take that annotation number. Else, simply check how often if is not visited.
                 auto numTimesElseVisited = ifelse->_else ? ifelse->_else->annotation().numTimesVisited : ifelse->annotation().numTimesVisited - numTimesIfVisited;
+
+//                // new: if both branches are visited -> if mode for not simplifying branches is true/normal-case threshold, try to visit both and see whether tables can be unified. If not, need to forcefully speculate.
+//                if(ifelse->_else && numTimesIfVisited > 0 && numTimesElseVisited > 0) {
+//                    auto& logger = Logger::instance().logger("type annotator");
+//                    logger.debug("Visiting ifelse statement with " + pluralize(numTimesIfVisited, "sample") + " taking if branch, " +
+//                                         pluralize(numTimesElseVisited, "sample") + " taking else branch. Check if types can be unified.");
+//
+//                    // attempt type unification
+//                    if(!resolveNamesForIfStatement(if_table, else_table)) {
+//                        logger.debug("resolution of names in if table failed.");
+//                    } else {
+//                        logger.debug("ifelse resolution worked.");
+//                    }
+//
+//                    // result:
+//                }
+
+
+
 
                 if(numTimesIfVisited >= numTimesElseVisited) {
                     visit_if = true;

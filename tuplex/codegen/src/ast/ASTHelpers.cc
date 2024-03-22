@@ -281,4 +281,69 @@ namespace tuplex {
         }
         return idTuple;
     }
+
+    class ASTToStringVisitor : public IPrePostVisitor {
+    private:
+        std::stack<std::string> _stack;
+    public:
+        void preOrder(ASTNode* node) override {}
+
+        void postOrder(ASTNode *node) override {
+            switch(node->type()) {
+                case ASTNodeType::String: {
+                    _stack.push(static_cast<NString*>(node)->raw_value());
+                    return;
+                }
+                case ASTNodeType::Number: {
+                    _stack.push(static_cast<NNumber*>(node)->_value);
+                    return;
+                }
+                case ASTNodeType::None: {
+                    _stack.push("None");
+                    return;
+                }
+                case ASTNodeType::Boolean: {
+                    _stack.push(static_cast<NBoolean*>(node)->_value ? "True" : "False");
+                    return;
+                }
+                case ASTNodeType::Compare: {
+                    std::vector<std::string> args;
+                    auto cmp = static_cast<NCompare*>(node);
+                    for(unsigned i = 0; i < cmp->_ops.size() + 1; ++i) {
+                        args.push_back(_stack.top());
+                        _stack.pop();
+                    }
+                    std::stringstream ss;
+                    ss<<args.front();
+                    for(unsigned i = 0; i < cmp->_ops.size(); ++i) {
+                        ss<<" "<<opToString(cmp->_ops[i])<<" "<<args[i+1];
+                    }
+                    _stack.push(ss.str());
+                    return;
+                }
+                case ASTNodeType::Identifier: {
+                    _stack.push(static_cast<NIdentifier*>(node)->_name);
+                    return;
+                }
+                case ASTNodeType::Subscription: {
+                    auto k = _stack.top(); _stack.pop();
+                    auto v = _stack.top(); _stack.pop();
+                    _stack.push(v + "[" + k + "]");
+                    return;
+                }
+                default:
+                    _stack.push("<node>");
+            }
+        }
+
+        std::string ret() const {
+            return _stack.top();
+        }
+    };
+
+    std::string astToString(ASTNode* node) {
+        ASTToStringVisitor v;
+        node->accept(v);
+        return v.ret();
+    }
 }

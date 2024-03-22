@@ -2442,13 +2442,19 @@ namespace tuplex {
                     // if (cond)
                     //      throw non-normal-case
                     // ... # continue with other code
-                    _lfb->addException(builder, ExceptionCode::NORMALCASEVIOLATION, ifcond, "normal-case error, if-branch not taken, continue execution");
+
+                    auto dbg_cond = astToString(ifelse->_expression.get());
+
+                    _lfb->addException(builder, ExceptionCode::NORMALCASEVIOLATION, ifcond, "normal-case error, if-branch not taken for " + dbg_cond + ", continue execution");
                 }
 
             } else if(exceptOnElse) {
                 // check with negated ifcond for exception, then continue generation
                 auto neg_ifcond = _env->i1neg(builder, ifcond);
-                _lfb->addException(builder, ExceptionCode::NORMALCASEVIOLATION, neg_ifcond, "normal-case error, else-branch not taken");
+
+                auto dbg_cond = astToString(ifelse->_expression.get());
+
+                _lfb->addException(builder, ExceptionCode::NORMALCASEVIOLATION, neg_ifcond, "normal-case error, else-branch not taken for " + dbg_cond);
                 builder.SetInsertPoint(_lfb->getLastBlock());
 
                 // generate if block code (regular)
