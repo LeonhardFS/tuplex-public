@@ -2764,6 +2764,8 @@ namespace tuplex {
                     // for else, if else branch exists, take that annotation number. Else, simply check how often if is not visited.
                     auto numTimesElseVisited = ifelse->annotation().numTimesVisited - numTimesIfVisited;
 
+#warning "TODO: in general-case mode, unify the if blocks if possible."
+
                     if(numTimesIfVisited < numTimesElseVisited) {
                         // always throw exception to force interpreter path!
                         generateIfElse(ifelse, true);
@@ -4633,7 +4635,7 @@ namespace tuplex {
                     }
                 } else if(!python::canUpcastType(type, argType)) { // if option select doesn't work and neither upcasting, error.
                     // @TODO: what about downcasting? I.e. when function needs bool but i64 is given? try downcast option!
-                    _lfb->exitWithException(ExceptionCode::TYPEERROR);
+                    _lfb->exitWithException(ExceptionCode::TYPEERROR, "exiting with exception in NCall, can't upcast type " + type.desc() + " to type " + argType.desc());
 //                    _lfb->addException(builder, ExceptionCode::TYPEERROR, _env->i1Const(true));
 //
 //                    // => could quit generation now basically. For this, need mechanism to stop generation in expressions

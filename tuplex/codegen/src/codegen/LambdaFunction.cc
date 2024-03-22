@@ -208,9 +208,14 @@ namespace tuplex {
             setLastBlock(builder.GetInsertBlock());
         }
 
-        LambdaFunction LambdaFunctionBuilder::exitWithException(const ExceptionCode &ec) {
+        LambdaFunction LambdaFunctionBuilder::exitWithException(const ExceptionCode &ec, const std::string& message) {
             auto builder = getIRBuilder();
             auto ecCode = _env->i64Const(ecToI64(ec));
+
+#ifndef NDEBUG
+            _env->printValue(builder, ecCode, message);
+#endif
+
             builder.CreateRet(ecCode);
             _body = nullptr;
             return _func;

@@ -143,9 +143,10 @@ namespace tuplex {
             /*!
              * finishes current basicblock and exits it with exception.
              * @param ec which code to exit with
+             * @param message optional message to displau when exiting for debugging purposes.
              * @return the function itself
              */
-            LambdaFunction exitWithException(const ExceptionCode& ec);
+            LambdaFunction exitWithException(const ExceptionCode& ec, const std::string& message="");
 
             inline codegen::IRBuilder setLastBlock(llvm::BasicBlock* bb) {
                 assert(bb);

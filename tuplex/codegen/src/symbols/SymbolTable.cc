@@ -551,7 +551,7 @@ namespace tuplex {
                 // if parameter type is not compatible with callerType.elementType(), this should result automatically
                 // in a ValueError
 
-                return python::Type::makeFunctionType(callerType.elementType(), python::Type::I64);
+                return python::Type::makeFunctionType(parameterType, python::Type::I64);
             }, SymbolType::FUNCTION);
         }
 
@@ -567,7 +567,7 @@ namespace tuplex {
                 // dict_view is always based on dictionary type
                 auto view_type = python::Type::makeDictKeysViewType(callerType);
 
-                return python::Type::makeFunctionType(callerType, view_type);
+                return python::Type::makeFunctionType(parameterType, view_type);
             }, SymbolType::FUNCTION);
 
             addBuiltinTypeAttribute(python::Type::GENERICDICT, "values", [](const python::Type& callerType,
@@ -577,16 +577,18 @@ namespace tuplex {
                 // dict_view is always based on dictionary type
                 auto values_type = python::Type::makeDictValuesViewType(callerType);
 
-                return python::Type::makeFunctionType(callerType, values_type);
+                return python::Type::makeFunctionType(parameterType, values_type);
             }, SymbolType::FUNCTION);
 
             addBuiltinTypeAttribute(python::Type::GENERICDICT, "get", [](const python::Type& callerType,
                     const python::Type& parameterType) {
 
+                // for attribute, use
+
                 // handle generic dict type, requires always tracing.
                 if(python::Type::GENERICDICT == callerType)
-                    return python::Type::makeFunctionType(callerType, python::Type::UNKNOWN); // <-- unknown forces tracing.
-//                    return python::Type::makeFunctionType(callerType, python::Type::PYOBJECT);
+                    return python::Type::makeFunctionType(parameterType, python::Type::UNKNOWN); // <-- unknown forces tracing.
+//                    return python::Type::makeFunctionType(parameterType, python::Type::PYOBJECT);
 
                 assert(callerType.isDictionaryType() && callerType != python::Type::GENERICDICT);
 
@@ -622,7 +624,7 @@ namespace tuplex {
                 }
 
                 auto ret_type = value_type; // unknown if anything fails...
-                return python::Type::makeFunctionType(callerType, ret_type);
+                return python::Type::makeFunctionType(parameterType, ret_type);
             });
         }
 
@@ -645,7 +647,7 @@ namespace tuplex {
 
             // check if empty row, then always default type if available
             if(callerType == python::Type::EMPTYROW && parameterType.parameters().size() == 2)
-                return python::Type::makeFunctionType(callerType, parameterType.parameters()[1]);
+                return python::Type::makeFunctionType(parameterType, parameterType.parameters()[1]);
 
             // check if return type can be determined if key_type is a constant.
             if(key_type.isConstantValued()) {
@@ -655,27 +657,27 @@ namespace tuplex {
                     if(idx < 0)
                         idx += callerType.get_column_count();
                     if(idx < 0 || idx >= callerType.get_column_count())
-                        return python::Type::makeFunctionType(callerType, /*python::TypeFactory::instance().getByName("IndexError")*/value_type); // <-- builtin exception
-                    return python::Type::makeFunctionType(callerType, callerType.get_column_type(idx));
+                        return python::Type::makeFunctionType(parameterType, /*python::TypeFactory::instance().getByName("IndexError")*/value_type); // <-- builtin exception
+                    return python::Type::makeFunctionType(parameterType, callerType.get_column_type(idx));
                 }
 
                 // string?
                 if(key_type.underlying() == python::Type::STRING) {
                     auto idx = indexInVector(key_type.constant(), callerType.get_column_names());
                     if(idx < 0)
-                        return python::Type::makeFunctionType(callerType, /*python::TypeFactory::instance().getByName("KeyError")*/value_type);
+                        return python::Type::makeFunctionType(parameterType, /*python::TypeFactory::instance().getByName("KeyError")*/value_type);
                     else
-                        return python::Type::makeFunctionType(callerType, callerType.get_column_type(idx));
+                        return python::Type::makeFunctionType(parameterType, callerType.get_column_type(idx));
                 }
 
                 // always KeyError
-                return python::Type::makeFunctionType(callerType, /*python::TypeFactory::instance().getByName("KeyError")*/value_type);
+                return python::Type::makeFunctionType(parameterType, /*python::TypeFactory::instance().getByName("KeyError")*/value_type);
             }
 
             // if not int or string type (or options thereof) always return key error
             if(key_type.withoutOption() != python::Type::STRING && key_type.withoutOption() != python::Type::I64)
                 // always KeyError
-                return python::Type::makeFunctionType(callerType, /*python::TypeFactory::instance().getByName("KeyError")*/value_type);
+                return python::Type::makeFunctionType(parameterType, /*python::TypeFactory::instance().getByName("KeyError")*/value_type);
 
             // Note: for special case of all columns being the same type, the return type could be determined!
             // @TODO

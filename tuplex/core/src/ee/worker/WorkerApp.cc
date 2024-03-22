@@ -2696,7 +2696,7 @@ namespace tuplex {
 
 
                 // for hyper, force onto general case format.
-                 rc = compiledResolver(env, ecRowNumber, ecCode, ecBuf, ecBufSize);
+                rc = compiledResolver(env, ecRowNumber, ecCode, ecBuf, ecBufSize);
                 if(rc != ecToI32(ExceptionCode::SUCCESS)) {
                     // fallback is only required if normalcaseviolation or badparsestringinput, else it's considered a true exception
                     // to force reprocessing always onto fallback path, use rc = -1 here

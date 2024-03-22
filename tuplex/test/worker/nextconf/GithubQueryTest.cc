@@ -269,6 +269,9 @@ namespace tuplex {
         // // local test files
         // input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
 
+        // test single file, and check why it's processing via fallback (?)
+        input_pattern = "/hot/data/github_daily/2012-10-15.json";
+
         auto output_path = exp_settings["output_path"];
         SamplingMode sm = static_cast<SamplingMode>(stoi(exp_settings["sampling_mode"]));
         sm = sm | SamplingMode::SINGLETHREADED;

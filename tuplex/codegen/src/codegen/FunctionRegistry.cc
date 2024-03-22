@@ -3433,6 +3433,7 @@ namespace tuplex {
                 auto item_not_found = builder.CreateICmpEQ(_env.i8nullptr(), item);
 
                 if(require_deoptimization) {
+// #error "check here for 2012 file..."
                     lfb.addException(builder, ExceptionCode::NORMALCASEVIOLATION, item_not_found, "item not found, need to deoptimize because not typed as Option[" + retType.desc() + "] return type in dict.get call.");
                 }
 

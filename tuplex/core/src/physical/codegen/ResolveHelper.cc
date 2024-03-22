@@ -177,6 +177,12 @@ namespace tuplex {
 
                     builder.SetInsertPoint(bParseFailed);
                     env.freeAll(builder);
+
+                    env.debugPrint(builder, "parsing badparsestringinput exception failed, returning error code " + std::to_string(
+                            ecToI64(return_code_on_parse_error)));
+                    env.printValue(builder, str, "data: ");
+                    env.printValue(builder, str_size, "data size: ");
+
                     builder.CreateRet(env.i64Const(ecToI64(return_code_on_parse_error)));
 
                     builder.SetInsertPoint(bParseOK);
@@ -272,6 +278,8 @@ namespace tuplex {
 
             auto& ctx = builder.getContext();
 
+            env.debugPrint(builder, "handling general case exception from memory");
+
             // make sure pipeline func and row type are compatible
             // @TODO
 
@@ -282,6 +290,8 @@ namespace tuplex {
             ft.init(general_case_input_row_type);
             ft.deserializationCode(builder, buf);
 
+            env.printValue(builder, ecCode, "got in resolve path ec: ");
+
             auto pip_res = PipelineBuilder::call(builder, pipeline_func, ft, userData, rowNumber); // no intermediate support right now.
 
             // create if based on resCode to go into exception block
@@ -289,13 +299,15 @@ namespace tuplex {
             auto ecOpID = builder.CreateZExtOrTrunc(pip_res.exceptionOperatorID, env.i64Type());
             auto numRowsCreated = builder.CreateZExtOrTrunc(pip_res.numProducedRows, env.i64Type());
 
+            env.printValue(builder, ecCode, "pipeline call in slow path resulted in ec code: ");
+
             // if ecCode is not 0 (success), set to GENERALCASEVIOLATION so interpreter can decode correctly with general case schema
             auto success_code = env.i64Const(ecToI64(ExceptionCode::SUCCESS));
             ecCode = builder.CreateSelect(builder.CreateICmpEQ(ecCode, success_code),
                                           success_code, env.i64Const(ecToI64(ExceptionCode::GENERALCASEVIOLATION)));
 
 
-            // env.printValue(builder, ecCode, "slow pip ec= ");
+            env.printValue(builder, ecCode, "promoted ec code is going to result in: slow pip ec= ");
 
             // use provided return code.
             env.freeAll(builder);

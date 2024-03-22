@@ -138,6 +138,7 @@ namespace tuplex {
                                     "general-case violation. Hence, resolve code or fallback code must "
                                     "restore correcy exception code for display.");
                         auto original_ecCode = ecCode;
+                        _env->printValue(builder, original_ecCode, "forcing exception code to become GENERALCASEVIOLATION, original code is: ");
                         ecCode = _env->i64Const(ecToI64(ExceptionCode::GENERALCASEVIOLATION)); // <-- hack
 
                         // _env->debugPrint(builder, "exception rows serialized to buffer.");
