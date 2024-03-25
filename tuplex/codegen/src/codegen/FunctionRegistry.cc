@@ -3726,5 +3726,50 @@ namespace tuplex {
             return {};
         }
 
+        SerializableValue subscript_generic_dict(LLVMEnvironment& env,
+                                                 LambdaFunctionBuilder& lfb,
+                                                 const IRBuilder& builder,
+                                                 const SerializableValue& value,
+                                                 const SerializableValue& key,
+                                                 const python::Type& key_type,
+                                                 const python::Type& expected_return_type) {
+
+            if(expected_return_type == python::Type::PYOBJECT)
+                throw std::runtime_error("dict subscript [] returning arbitary PyObject not yet implemented.");
+
+            if(key_type == python::Type::STRING) {
+                // only string key so far supported.
+                auto item = call_cjson_getitem(builder, value.val, key.val);
+
+                auto item_not_found = builder.CreateICmpEQ(item, env.i8nullptr());
+                lfb.addException(builder, ExceptionCode::KEYERROR, item_not_found, "KeyError for generic dict []");
+
+                if(python::Type::GENERICDICT == expected_return_type) {
+                    auto is_object = call_cjson_isobject(builder, item);
+                    auto is_not_object = env.i1neg(builder, is_object);
+                    lfb.addException(builder, ExceptionCode::NORMALCASEVIOLATION, is_not_object, "expected return type " + expected_return_type.desc() + " but item is not object");
+                    return SerializableValue(item, nullptr, nullptr);
+                } else if(python::Type::I64 == expected_return_type) {
+                    auto is_number = call_cjson_isnumber(builder, item);
+                    auto is_not_number = env.i1neg(builder, is_number);
+                    lfb.addException(builder, ExceptionCode::NORMALCASEVIOLATION, is_not_number, "expected return type " + expected_return_type.desc() + " but item is not number");
+
+                    auto i_value = get_cjson_as_integer(builder, item);
+                    return SerializableValue(i_value, env.i64Const(sizeof(int64_t)), nullptr);
+                } else if(python::Type::STRING == expected_return_type) {
+                    auto is_string = call_cjson_isstring(builder, item);
+                    auto is_not_string = env.i1neg(builder, is_string);
+                    lfb.addException(builder, ExceptionCode::NORMALCASEVIOLATION, is_not_string, "expected return type " + expected_return_type.desc() + " but item is not string");
+
+                    return get_cjson_as_string_value(builder, item);
+                } else if(python::Type::NULLVALUE == expected_return_type) {
+
+                }
+
+            }
+
+            throw std::runtime_error("generic dict [] subscript for key_type=" + key_type.desc() + " and return_type=" + expected_return_type.desc() + " not implemented");
+        }
+
     }
 }

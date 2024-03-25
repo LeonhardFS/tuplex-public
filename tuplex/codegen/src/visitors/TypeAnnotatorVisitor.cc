@@ -1457,6 +1457,11 @@ namespace tuplex {
         } else if(python::Type::GENERICDICT == type) {
             // TODO: GENERICDICT TO ALLOW DICT OUTPUT
             sub->setInferredType(python::Type::PYOBJECT);
+
+            // is there an annotation? -> use that then.
+            if(sub->hasAnnotation() && sub->annotation().numTimesVisited > 0)
+                sub->setInferredType(sub->annotation().majorityType());
+
         } else if(python::Type::EMPTYDICT == type) {
             // subscripting an empty dict will always yield a KeyError. I.e. warn and set generic object
             // error("subscripting an empty dictionary will always yield a KeyError. Please fix code");
@@ -1836,6 +1841,12 @@ namespace tuplex {
                                                           std::unordered_map<std::string, python::Type> &else_table) {
         using namespace std;
 
+
+        // backup tables
+        auto if_table_backup = if_table;
+        auto else_table_backup = else_table;
+        auto name_table_backup = _nameTable;
+
         // resolve conflicts between if and else table!
         set<std::string> ifelse_names;
         for(const auto &kv : if_table)ifelse_names.insert(kv.first);
@@ -1861,6 +1872,13 @@ namespace tuplex {
                         error("need to speculate, because can't unify variable " + name +
                               " type " + if_type.desc() + " in if branch with its type " +
                               else_type.desc() + " in else branch.");
+
+                        // restore tables, and abort
+                        _nameTable = name_table_backup;
+                        if_table = if_table_backup;
+                        else_table = else_table_backup;
+
+                        // return false.
                         return false;
                     }
                 } else {
@@ -1885,16 +1903,34 @@ namespace tuplex {
         auto visit_if = std::get<1>(visit_t);
         auto visit_else = std::get<2>(visit_t);
 
+
+        auto dbg_cond = astToString(ifelse->_expression.get());
+
         // in speculation mode?
         bool speculate = ifelse->annotation().numTimesVisited > 0 || (ifelse->_else && ifelse->_else->annotation().numTimesVisited > 0);
+
+        if("'FollowEvent' == row['type']" == dbg_cond && speculate) {
+            std::cout<<"test found"<<std::endl;
+        }
 
         // backup name table, this is required to then deduce type conflicts:
         auto nameTable_before = _nameTable;
         unordered_map<string, python::Type> if_table;
         unordered_map<string, python::Type> else_table;
 
+        auto current_return_types = _funcReturnTypes;
+        auto curremt_return_type_counts = _returnTypeCounts;
+        std::vector<std::pair<python::Type, int>> if_return_types;
+        std::vector<std::pair<python::Type, int>> else_return_types;
+
+//#error "deal here also with unifying return types to determine whether speculation ACTUALLY is required or not. E.g., for 'FollowEvent' == row['type']"
+
         // manually visit (from ApatheticVisitor but accounting for annotations)
         if(visit_ifelse) {
+
+            // reset counts
+            _funcReturnTypes.clear();
+            _returnTypeCounts.clear();
 
             // first expression
             ifelse->_expression->accept(*this); // this wont' create a new scope b.c. := not yet supported!
@@ -1903,16 +1939,50 @@ namespace tuplex {
             if(visit_if) {
                 ifelse->_then->accept(*this);
                 if_table = _nameTable;
+
+                // update returns
+                assert(_funcReturnTypes.size() == _returnTypeCounts.size());
+                for(unsigned i = 0; i < _funcReturnTypes.size(); ++i) {
+                    if_return_types.push_back(make_pair(_funcReturnTypes[i], _returnTypeCounts[i]));
+                }
             }
 
             // reset name table
             _nameTable = nameTable_before;
 
+            // reset counts
+            _funcReturnTypes.clear();
+            _returnTypeCounts.clear();
+
             if(visit_else) {
                 ifelse->_else->accept(*this);
                 else_table = _nameTable;
+
+                // update returns
+                assert(_funcReturnTypes.size() == _returnTypeCounts.size());
+                for(unsigned i = 0; i < _funcReturnTypes.size(); ++i) {
+                    else_return_types.push_back(make_pair(_funcReturnTypes[i], _returnTypeCounts[i]));
+                }
             }
+
+            // reset counts
+            _funcReturnTypes = current_return_types;
+            _returnTypeCounts = curremt_return_type_counts;
+
+            // add from saved ones
+            for(auto p : if_return_types) {
+                _funcReturnTypes.push_back(p.first);
+                _returnTypeCounts.push_back(p.second);
+            }
+            for(auto p : else_return_types) {
+                _funcReturnTypes.push_back(p.first);
+                _returnTypeCounts.push_back(p.second);
+            }
+
         } else return;
+
+
+        // TODO: add counts...
 
         // update scopes, i.e. unifying or exception check via annotation!
         // only if?
@@ -1957,47 +2027,62 @@ namespace tuplex {
 //                }
 
 
+                // store table
+                auto name_table_backup = _nameTable;
+                bool can_resolve_name_conflicts = resolveNamesForIfStatement(if_table, else_table); // <-- this modifies iftable, elsetable and name table.
 
+                // does resolution fail?
+                if(!can_resolve_name_conflicts) {
+                    if(numTimesIfVisited >= numTimesElseVisited) {
+                        visit_if = true;
+                        visit_else = false;
+                        // every sample that takes else branch is now a normal case violation
+                        if(_normalCaseViolationSampleIndices.size() < _totalSampleCount && ifelse->_else) {
+                            auto currNormalCaseViolationSampleIndices = ifelse->_else->annotation().branchTakenSampleIndices;
+                            std::copy(currNormalCaseViolationSampleIndices.begin(), currNormalCaseViolationSampleIndices.end(),
+                                      std::inserter(_normalCaseViolationSampleIndices, _normalCaseViolationSampleIndices.end()));
+                            if(_normalCaseViolationSampleIndices.size() == _totalSampleCount) {
+                                // every sample will end up raising normal case violation, no point to compile the udf
+                                addCompileError(CompileError::COMPILE_ERROR_ALL_SAMPLES_PRODUCE_NORMALCASEVIOLATION);
+                            }
+                        }
+                    } else {
+                        visit_if = false;
+                        visit_else = ifelse->_else != nullptr; // can be also it's a single if statement!
+                        // every sample that takes then branch is now a normal case violation
+                        if(_normalCaseViolationSampleIndices.size() < _totalSampleCount) {
+                            auto currNormalCaseViolationSampleIndices = ifelse->_then->annotation().branchTakenSampleIndices;
+                            std::copy(currNormalCaseViolationSampleIndices.begin(), currNormalCaseViolationSampleIndices.end(),
+                                      std::inserter(_normalCaseViolationSampleIndices, _normalCaseViolationSampleIndices.end()));
+                            if(_normalCaseViolationSampleIndices.size() == _totalSampleCount) {
+                                // every sample will end up raising normal case violation, no point to compile the udf
+                                addCompileError(CompileError::COMPILE_ERROR_ALL_SAMPLES_PRODUCE_NORMALCASEVIOLATION);
+                            }
+                        }
+                    }
 
-                if(numTimesIfVisited >= numTimesElseVisited) {
-                    visit_if = true;
-                    visit_else = false;
-                    // every sample that takes else branch is now a normal case violation
-                    if(_normalCaseViolationSampleIndices.size() < _totalSampleCount && ifelse->_else) {
-                        auto currNormalCaseViolationSampleIndices = ifelse->_else->annotation().branchTakenSampleIndices;
-                        std::copy(currNormalCaseViolationSampleIndices.begin(), currNormalCaseViolationSampleIndices.end(),
-                                  std::inserter(_normalCaseViolationSampleIndices, _normalCaseViolationSampleIndices.end()));
-                        if(_normalCaseViolationSampleIndices.size() == _totalSampleCount) {
-                            // every sample will end up raising normal case violation, no point to compile the udf
-                            addCompileError(CompileError::COMPILE_ERROR_ALL_SAMPLES_PRODUCE_NORMALCASEVIOLATION);
+                    // Note: also both can be false in the case of a single if!
+
+                    // => just take the updates from the branch that gets executed
+                    if(visit_if) {
+                        _nameTable = name_table_backup;
+                        for(const auto& kv : if_table) {
+                            _nameTable[kv.first] = kv.second;
+                        }
+                    }
+
+                    if(visit_else) {
+                        _nameTable = name_table_backup;
+                        for(const auto& kv : else_table) {
+                            _nameTable[kv.first] = kv.second;
                         }
                     }
                 } else {
-                    visit_if = false;
-                    visit_else = ifelse->_else != nullptr; // can be also it's a single if statement!
-                    // every sample that takes then branch is now a normal case violation
-                    if(_normalCaseViolationSampleIndices.size() < _totalSampleCount) {
-                        auto currNormalCaseViolationSampleIndices = ifelse->_then->annotation().branchTakenSampleIndices;
-                        std::copy(currNormalCaseViolationSampleIndices.begin(), currNormalCaseViolationSampleIndices.end(),
-                                  std::inserter(_normalCaseViolationSampleIndices, _normalCaseViolationSampleIndices.end()));
-                        if(_normalCaseViolationSampleIndices.size() == _totalSampleCount) {
-                            // every sample will end up raising normal case violation, no point to compile the udf
-                            addCompileError(CompileError::COMPILE_ERROR_ALL_SAMPLES_PRODUCE_NORMALCASEVIOLATION);
-                        }
-                    }
+                    // all good, generate code for both!
+                    // --> adjust counts.
+                    visit_if = true;
+                    visit_else = true;
                 }
-
-                // Note: also both can be false in the case of a single if!
-
-                // => just take the updates from the branch that gets executed
-                if(visit_if)
-                    for(const auto& kv : if_table) {
-                        _nameTable[kv.first] = kv.second;
-                    }
-                if(visit_else)
-                    for(const auto& kv : else_table) {
-                        _nameTable[kv.first] = kv.second;
-                    }
             } else {
                 // attempt type unification
                 resolveNamesForIfStatement(if_table, else_table);
@@ -2006,6 +2091,17 @@ namespace tuplex {
 
         assert(ifelse->_then && ifelse->_expression);
         // @Todo: make this work using the normal/exception case model.
+
+        // update annotation
+        if(ifelse->hasAnnotation()) {
+            FollowBranch follow_branch =  FollowBranch::NONE;
+            if(visit_if)
+                follow_branch = follow_branch | FollowBranch::IF;
+            if(visit_else)
+                follow_branch = follow_branch | FollowBranch::ELSE;
+            ifelse->annotation().follow_branch = follow_branch;
+        }
+
 
         // both branches visited?
         if(visit_if && visit_else) {

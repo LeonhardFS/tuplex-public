@@ -272,6 +272,25 @@ namespace tuplex {
                 }
             }
         };
+
+        /*!
+         * subscript [] a generic dict.
+         * @param env the LLVM environment to check
+         * @param lfb Function builder where to generate exceptions to
+         * @param builder IRBuilder
+         * @param value which value to index, i.e. result is value[key]. Assumed to be an llvm i8* (generic dict)
+         * @param key key to index value with.
+         * @param key_type python key type
+         * @param expected_return_type what type is expeted to be returned from dictionary, check will be carried out.
+         * @return value[key] result.
+         */
+        extern SerializableValue subscript_generic_dict(LLVMEnvironment& env,
+                                                        LambdaFunctionBuilder& lfb,
+                                                        const IRBuilder& builder,
+                                                        const SerializableValue& value,
+                                                        const SerializableValue& key,
+                                                        const python::Type& key_type,
+                                                        const python::Type& expected_return_type);
     }
 }
 
