@@ -137,6 +137,7 @@ namespace tuplex {
             f._isNull = true;
             f._type = python::Type::NULLVALUE;
             f._iValue = 0;
+            f._ptrValue = nullptr;
             return f;
         }
 

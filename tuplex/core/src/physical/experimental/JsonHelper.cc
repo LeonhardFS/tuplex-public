@@ -60,7 +60,7 @@ namespace tuplex {
             // j->parser.iterate_many(buf, buf_size, std::min(buf_size, SIMDJSON_BATCH_SIZE)).tie(j->stream, error);
 
             // dom
-            j->parser.parse_many(buf, buf_size, std::min(buf_size, SIMDJSON_BATCH_SIZE)).tie(j->stream, error);
+            j->parser.parse_many(buf, buf_size, std::max(simdjson::SIMDJSON_PADDING, std::min(buf_size, SIMDJSON_BATCH_SIZE))).tie(j->stream, error);
 
             if (error) {
                 std::stringstream err_stream;

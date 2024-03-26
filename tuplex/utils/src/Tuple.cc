@@ -21,9 +21,11 @@ namespace tuplex {
             _elements = nullptr;
         } else {
             _numElements = elements.size();
-            _elements = new Field[_numElements];
-            for(int i = 0; i < _numElements; ++i)
-                _elements[i] = elements[i];
+            if(_numElements > 0) {
+                _elements = new Field[_numElements];
+                for(int i = 0; i < _numElements; ++i)
+                    _elements[i] = elements[i];
+            }
         }
     }
 
@@ -135,9 +137,12 @@ namespace tuplex {
         Tuple *t = new Tuple();
         assert(t->_elements == nullptr);
         t->_numElements = _numElements;
-        t->_elements = new Field[t->_numElements];
-        for(unsigned i = 0; i < _numElements; ++i) {
-            t->_elements[i] = _elements[i];
+
+        if(_numElements > 0) {
+            t->_elements = new Field[t->_numElements];
+            for(unsigned i = 0; i < _numElements; ++i) {
+                t->_elements[i] = _elements[i];
+            }
         }
         return t;
     }

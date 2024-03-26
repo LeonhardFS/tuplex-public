@@ -283,6 +283,8 @@ namespace tuplex {
         // disable optimizer
         co.set("tuplex.useLLVMOptimizer", "false");
 
+        co.set("tuplex.executorCount", "0"); // <-- uncomment if there are any multi-threading issues
+
         // test: focus on single file
         // input_pattern = "/hot/data/github_daily/2011-10-15.json";
         // correct data should be:
@@ -300,6 +302,9 @@ namespace tuplex {
 
         // bug in opportune compilation, when same compiler is used??
         co.set("tuplex.experimental.opportuneCompilation", "false");
+
+        // do not use compiled resolver...
+        // co.set("tuplex.resolveWithInterpreterOnly", "true");
 
 
         // creater context according to settings
@@ -337,6 +342,8 @@ namespace tuplex {
                 .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
                 .selectColumns(vector<string>{"type", "repo_id", "year", "number_of_commits"})
                 .tocsv(output_path);
+
+        std::cout<<"TEST DONE."<<std::endl;
     }
 
     TEST_F(GithubQuery, ForkEventsFilterPromoForEachFile) {

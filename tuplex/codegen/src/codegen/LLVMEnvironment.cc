@@ -180,6 +180,7 @@ namespace tuplex {
                                                       i64Const(0)), _initGlobalRetBlock, _initGlobalRetBlock);
 
             builder.SetInsertPoint(_releaseGlobalEntryBlock);
+            debugPrint(builder, "enter release globals");
             _releaseGlobalRetValue = builder.CreateAlloca(i64Type());
             builder.CreateStore(i64Const(0), _releaseGlobalRetValue);
             builder.CreateCondBr(builder.CreateICmpNE(builder.CreateLoad(i64Type(), _releaseGlobalRetValue),

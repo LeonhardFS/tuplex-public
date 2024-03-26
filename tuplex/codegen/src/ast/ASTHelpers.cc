@@ -313,6 +313,7 @@ namespace tuplex {
                         args.push_back(_stack.top());
                         _stack.pop();
                     }
+                    std::reverse(args.begin(), args.end());
                     std::stringstream ss;
                     ss<<args.front();
                     for(unsigned i = 0; i < cmp->_ops.size(); ++i) {

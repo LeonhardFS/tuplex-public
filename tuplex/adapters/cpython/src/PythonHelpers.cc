@@ -778,7 +778,11 @@ namespace python {
             for(unsigned i = 0; i < t.numElements(); ++i)
                 fields.push_back(t.getField(i));
             return Row::from_vector(fields);
-        } else return Row(f);
+        } else {
+            if(f.getType() == python::Type::EMPTYTUPLE) {
+            }
+            return {f};
+        }
     }
 
     tuplex::Row pythonToRowWithDictUnwrap(PyObject* obj, const std::vector<std::string>& columns) {

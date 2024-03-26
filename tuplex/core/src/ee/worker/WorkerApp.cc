@@ -294,13 +294,17 @@ namespace tuplex {
     }
 
     int64_t WorkerApp::releaseTransformStage(const std::shared_ptr<TransformStage::JITSymbols>& syms) {
+
+        if(!syms)
+            return WORKER_OK;
+
         if(!syms->_fastCodePath.initStageFunctor || !syms->_fastCodePath.releaseStageFunctor) {
             logger().info("skip release trafo stage, b.c. symbols not found");
             return 0;
         }
 
         // call release func for stage globals
-        if(syms->_fastCodePath.releaseStageFunctor() != 0) {
+        if(syms->_fastCodePath.releaseStageFunctor && syms->_fastCodePath.releaseStageFunctor() != 0) {
             logger().error("releaseStage() failed for stage ");
             return WORKER_ERROR_STAGE_CLEANUP;
         }
@@ -2445,7 +2449,7 @@ namespace tuplex {
 
         // perform actual compilation.
         Timer timer;
-        auto syms = stage->compileSlowPath(*compiler_to_use, nullptr, false); // symbols should be known already...
+        auto syms = stage->compileSlowPath(*compiler_to_use, nullptr, false, true); // symbols should be known already...
 
         // store syms internally (lock)
         {
@@ -2697,6 +2701,10 @@ namespace tuplex {
 
                 // for hyper, force onto general case format.
                 rc = compiledResolver(env, ecRowNumber, ecCode, ecBuf, ecBufSize);
+
+                // test:
+                compiledResolver = nullptr;
+
                 if(rc != ecToI32(ExceptionCode::SUCCESS)) {
                     // fallback is only required if normalcaseviolation or badparsestringinput, else it's considered a true exception
                     // to force reprocessing always onto fallback path, use rc = -1 here

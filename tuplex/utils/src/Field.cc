@@ -182,11 +182,26 @@ namespace tuplex {
     void Field::releaseMemory() {
         if(hasPtrData()) {
             if(_ptrValue) {
+
                 // select correct deletion method!
-                if(_type.withoutOption().isListType() || _type.withoutOption().isTupleType())
-                    delete _ptrValue;
-                else
+                if(_type.withoutOption().isListType() || (_type.withoutOption().isTupleType() && !_type.withoutOption().parameters().empty())) {
+                    assert(!_isNull);
+
+                    // need to cast to invoke correct destructor.
+
+                    if(_type.withoutOption().isListType())
+                        delete (List*)_ptrValue;
+                    else if(_type.withoutOption().isTupleType())
+                        delete (Tuple*)_ptrValue;
+                    else {
+#ifndef NDEBUG
+                        std::cerr<<"wrong Field::~Field()"<<std::endl;
+#endif
+                    }
+                    _ptrValue = nullptr;
+                } else {
                     delete [] _ptrValue;
+                }
             }
         }
         _ptrValue = nullptr;
@@ -442,7 +457,7 @@ namespace tuplex {
         f._isNull = false;
         f._type = python::Type::PYOBJECT;
         f._size = buf_size;
-        f._ptrValue =  new uint8_t[buf_size];
+        f._ptrValue = new uint8_t[buf_size];
         memcpy(f._ptrValue, buf, buf_size);
 
         return f;
