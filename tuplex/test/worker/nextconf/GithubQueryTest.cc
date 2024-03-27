@@ -310,10 +310,10 @@ namespace tuplex {
 
         // test single file, and check why it's processing via fallback (?)
 //        input_pattern = "/home/leonhards/projects/playground/test-data/test2012.json";
-        input_pattern = "/home/leonhards/projects/playground/test-data/test2012-small.json";
-        co.set("tuplex.inputSplitSize", "128MB");
-        co.set("tuplex.experimental.worker.workerBufferSize", "128MB");
-        // input_pattern = "/hot/data/github_daily/2012-10-15.json";
+////        input_pattern = "/home/leonhards/projects/playground/test-data/test2012-small.json";
+//        co.set("tuplex.inputSplitSize", "128MB");
+//        co.set("tuplex.experimental.worker.workerBufferSize", "128MB");
+         input_pattern = "/hot/data/github_daily/2012-10-15.json";
 
 
 
