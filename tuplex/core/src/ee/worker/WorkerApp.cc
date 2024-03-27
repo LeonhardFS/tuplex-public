@@ -2086,7 +2086,7 @@ namespace tuplex {
             LLVMOptimizer opt;
 
             // for debugging, set this to true to enable tracing for the 2nd invocation!
-            bool traceExecution = true; // false; // true;
+            bool traceExecution = false; // true; // false; // true;
 
             // uncomment to trace errors on 2nd invocation
             // if(numProcessedMessages() > 1 && _statistics.size() >= 1)
@@ -2449,7 +2449,7 @@ namespace tuplex {
 
         // perform actual compilation.
         Timer timer;
-        auto syms = stage->compileSlowPath(*compiler_to_use, nullptr, false, true); // symbols should be known already...
+        auto syms = stage->compileSlowPath(*compiler_to_use, nullptr, false); // symbols should be known already...
 
         // store syms internally (lock)
         {

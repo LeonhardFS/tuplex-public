@@ -1158,9 +1158,6 @@ namespace tuplex {
             llvm::Value* rc = nullptr;
             SerializableValue value;
 
-            // debug:
-            _env.debugPrint(builder, "decoding type: " + option_type.desc());
-
             BasicBlock* bbCurrent = builder.GetInsertBlock();
             BasicBlock* bbDecodeIsNull = BasicBlock::Create(ctx, "decode_option_null", bbCurrent->getParent());
             BasicBlock* bbDecodeNonNull = BasicBlock::Create(ctx, "decode_option_non_null", bbCurrent->getParent());
@@ -1184,9 +1181,6 @@ namespace tuplex {
             auto successful_decode_cond = builder.CreateICmpEQ(rcA, _env.i64Const(ecToI64(ExceptionCode::SUCCESS)));
             auto is_null_cond = builder.CreateAnd(successful_decode_cond, value.is_null);
 
-            if(element_type == python::Type::STRING)
-                _env.printValue(builder, is_null_cond, "is value null: ");
-
             // branch: if null -> got to bbDecodeIsNull, else decode value.
             BasicBlock* bbValueIsNull = nullptr, *bbValueIsNotNull = nullptr;
 
@@ -1200,7 +1194,7 @@ namespace tuplex {
 
             // --- decode value ---
             builder.SetInsertPoint(bbDecodeNonNull);
-             _env.debugPrint(builder, "found " + entry.valueType.getReturnType().desc() + " value for key=" + entry.key);
+            // _env.debugPrint(builder, "found " + entry.valueType.getReturnType().desc() + " value for key=" + entry.key);
             llvm::Value* rcB = nullptr;
             llvm::Value* presentB = nullptr;
             SerializableValue valueB;
