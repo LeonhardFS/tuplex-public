@@ -127,6 +127,10 @@ namespace tuplex {
                 return get_or_throw().CreateStore(Val, Ptr, isVolatile);
             }
 
+            inline llvm::Value* CreateAlignedStore(llvm::Value* Val, llvm::Value* Ptr, uint alignment=8) const {
+                return get_or_throw().CreateAlignedStore(Val, Ptr, llvm::MaybeAlign(alignment));
+            }
+
             inline llvm::BasicBlock* GetInsertBlock() const {
                 return get_or_throw().GetInsertBlock();
             }

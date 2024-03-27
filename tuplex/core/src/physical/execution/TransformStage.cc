@@ -957,6 +957,11 @@ namespace tuplex {
 
         // IR formats require compilation
         if(slow_path_mod) {
+
+            // change name to slow path
+            slow_path_mod->setModuleIdentifier("slow_path"); // <-- this is used within JITCompiler to identify same modules.
+            slow_path_mod->setSourceFileName("generated_slow_path"); // <-- could use original python file here.
+
             // annotate module if desired to trace execution flow!
             if(traceExecution)
                 codegen::annotateModuleWithInstructionPrint(*slow_path_mod, true);
@@ -1056,6 +1061,10 @@ namespace tuplex {
 
         // IR formats require compilation
         if(fast_path_mod) {
+            // change name to fast path
+            fast_path_mod->setModuleIdentifier("fast_path"); // <-- this is used within JITCompiler to identify same modules.
+            fast_path_mod->setSourceFileName("generated_fast_path"); // <-- could use original python file here.
+
 #ifndef NDEBUG
             auto func_names = codegen::extractFunctionNames(fast_path_mod.get());
             {

@@ -281,7 +281,7 @@ namespace tuplex {
             assert(key);
             assert(out);
 
-            simdjson::error_code error;
+            simdjson::error_code error = simdjson::SUCCESS;
             std::string_view sv_value;
             item->o[key].get_string().tie(sv_value, error);
             if (error)
@@ -291,9 +291,13 @@ namespace tuplex {
             char *buf = (char *) runtime::rtmalloc(str_size);
             for (unsigned i = 0; i < sv_value.size(); ++i)
                 buf[i] = sv_value.at(i);
-            buf[sv_value.size()] = '\0';
+            buf[str_size - 1] = '\0';
+
+            assert(out);
+            assert(size);
+
             *out = buf;
-            *size = sv_value.size() + 1;
+            *size = static_cast<int64_t>(str_size);
             return ecToI64(ExceptionCode::SUCCESS);
         }
 

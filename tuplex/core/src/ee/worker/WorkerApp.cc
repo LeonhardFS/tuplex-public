@@ -692,6 +692,7 @@ namespace tuplex {
                     size_t inputRowCount = 0;
                     processCodes[0] = processSource(0, tstage->fileInputOperatorID(), fp, tstage, syms, &inputRowCount);
                     logger().info("processed file " + std::to_string(i + 1) + "/" + std::to_string(input_parts.size()));
+
                     if(processCodes[0] != WORKER_OK)
                         break;
                     numInputRowsProcessed += inputRowCount;
@@ -2085,7 +2086,7 @@ namespace tuplex {
             LLVMOptimizer opt;
 
             // for debugging, set this to true to enable tracing for the 2nd invocation!
-            bool traceExecution = false; // true;
+            bool traceExecution = true; // false; // true;
 
             // uncomment to trace errors on 2nd invocation
             // if(numProcessedMessages() > 1 && _statistics.size() >= 1)
@@ -2114,7 +2115,6 @@ namespace tuplex {
     }
 
     int64_t WorkerApp::writeRow(size_t threadNo, const uint8_t *buf, int64_t bufSize) {
-
         assert(_threadEnvs);
         assert(threadNo < _numThreads);
         // check if enough space is available
@@ -2646,8 +2646,11 @@ namespace tuplex {
                 std::lock_guard<std::mutex> lock(_symsMutex);
                 compiledResolver = _syms->resolveFunctor;
             }
-            if(!compiledResolver)
+
+            if(!compiledResolver) {
+                logger().debug("no compiled slow path, retrieving via LLVM");
                 compiledResolver = getCompiledResolver(stage); // syms->resolveFunctor;
+            }
 
             {
                 std::lock_guard<std::mutex> lock(_symsMutex);
@@ -2701,9 +2704,6 @@ namespace tuplex {
 
                 // for hyper, force onto general case format.
                 rc = compiledResolver(env, ecRowNumber, ecCode, ecBuf, ecBufSize);
-
-                // test:
-                compiledResolver = nullptr;
 
                 if(rc != ecToI32(ExceptionCode::SUCCESS)) {
                     // fallback is only required if normalcaseviolation or badparsestringinput, else it's considered a true exception

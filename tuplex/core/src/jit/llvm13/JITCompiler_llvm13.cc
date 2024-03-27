@@ -361,8 +361,13 @@ namespace tuplex {
         });
 
         auto module_name = tsm->withModuleDo([](llvm::Module& mod) {
-            return mod.getName();
+            return mod.getName().str();
         });
+
+        // do not allow default <module> identifier
+        if(module_name == "<module>") {
+            throw std::runtime_error("please set module identifier.");
+        }
 
         // look into https://github.com/llvm/llvm-project/blob/master/llvm/examples/ModuleMaker/ModuleMaker.cpp on how to ouput bitcode
 
@@ -370,15 +375,19 @@ namespace tuplex {
         auto& ES = _lljit->getExecutionSession();
 
         // if lib with name already exists, remove
+        // NOTE: this will render pointers invalid. MAKE SURE THAT BOTH slow path and fast path module have different names!!!
         llvm::orc::JITDylib *jitlib_ptr = nullptr;
-        if((jitlib_ptr = ES.getJITDylibByName(module_name.str()))) {
+        if((jitlib_ptr = ES.getJITDylibByName(module_name))) {
+#ifndef NDEBUG
+            std::cout<<"Removing jitlib for module "<<module_name<<std::endl;
+#endif
             auto err = ES.removeJITDylib(*jitlib_ptr);
             if(err)
-                throw std::runtime_error("failed to remove JITDylib " + module_name.str() + " from execution session.");
+                throw std::runtime_error("failed to remove JITDylib " + module_name + " from execution session.");
             jitlib_ptr = nullptr;
         }
 
-        auto& jitlib = ES.createJITDylib(module_name.str()).get();
+        auto& jitlib = ES.createJITDylib(module_name).get();
         const auto& DL = _lljit->getDataLayout();
         llvm::orc::MangleAndInterner Mangle(ES, DL);
 

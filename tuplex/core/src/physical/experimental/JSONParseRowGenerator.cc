@@ -21,6 +21,11 @@ namespace tuplex {
                                          _env.i8ptrType(), _env.i8ptrType()->getPointerTo(0), _env.i64ptrType());
             auto str_var = _env.CreateFirstBlockAlloca(builder, _env.i8ptrType(), "s");
             auto str_size_var = _env.CreateFirstBlockAlloca(builder, _env.i64Type(), "s_size");
+
+            // init as 0.
+            builder.CreateStore(_env.i8nullptr(), str_var);
+            builder.CreateStore(_env.i64Const(0), str_size_var);
+
             llvm::Value* rc = builder.CreateCall(F, {obj, key, str_var, str_size_var});
             SerializableValue v;
             v.val = builder.CreateLoad(_env.i8ptrType(), str_var);
@@ -1153,6 +1158,9 @@ namespace tuplex {
             llvm::Value* rc = nullptr;
             SerializableValue value;
 
+            // debug:
+            _env.debugPrint(builder, "decoding type: " + option_type.desc());
+
             BasicBlock* bbCurrent = builder.GetInsertBlock();
             BasicBlock* bbDecodeIsNull = BasicBlock::Create(ctx, "decode_option_null", bbCurrent->getParent());
             BasicBlock* bbDecodeNonNull = BasicBlock::Create(ctx, "decode_option_non_null", bbCurrent->getParent());
@@ -1176,6 +1184,9 @@ namespace tuplex {
             auto successful_decode_cond = builder.CreateICmpEQ(rcA, _env.i64Const(ecToI64(ExceptionCode::SUCCESS)));
             auto is_null_cond = builder.CreateAnd(successful_decode_cond, value.is_null);
 
+            if(element_type == python::Type::STRING)
+                _env.printValue(builder, is_null_cond, "is value null: ");
+
             // branch: if null -> got to bbDecodeIsNull, else decode value.
             BasicBlock* bbValueIsNull = nullptr, *bbValueIsNotNull = nullptr;
 
@@ -1189,7 +1200,7 @@ namespace tuplex {
 
             // --- decode value ---
             builder.SetInsertPoint(bbDecodeNonNull);
-            // _env.debugPrint(builder, "found " + entry.valueType.getReturnType().desc() + " value for key=" + entry.key);
+             _env.debugPrint(builder, "found " + entry.valueType.getReturnType().desc() + " value for key=" + entry.key);
             llvm::Value* rcB = nullptr;
             llvm::Value* presentB = nullptr;
             SerializableValue valueB;

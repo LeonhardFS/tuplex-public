@@ -1161,6 +1161,12 @@ namespace tuplex {
             // now open buffer (i.e., parse)
             auto F_parse = getOrInsertFunction(env.getModule().get(), "JsonParser_open", env.i64Type(), env.i8ptrType(),
                                          env.i8ptrType(), env.i64Type());
+
+            // debug:
+            env.printValue(builder, str_size, "Parsing JSON str of size=");
+            auto c_str_len = builder.CreateCall(strlen_prototype(builder.getContext(), builder.GetInsertBlock()->getModule()), {str});
+            env.printValue(builder, c_str_len, "C string length=");
+
             auto parse_code =  builder.CreateCall(F_parse, {parser, str, str_size});
 
             // check if ok

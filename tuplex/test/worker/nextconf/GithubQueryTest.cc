@@ -269,8 +269,6 @@ namespace tuplex {
         // // local test files
         // input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
 
-        // test single file, and check why it's processing via fallback (?)
-        input_pattern = "/hot/data/github_daily/2012-10-15.json";
 
         auto output_path = exp_settings["output_path"];
         SamplingMode sm = static_cast<SamplingMode>(stoi(exp_settings["sampling_mode"]));
@@ -305,6 +303,18 @@ namespace tuplex {
 
         // do not use compiled resolver...
         // co.set("tuplex.resolveWithInterpreterOnly", "true");
+
+        // ASAN options:
+        // ASAN_OPTIONS=verbosity=1:malloc_context_size=20:strict_string_checks=true:halt_on_error=false
+
+
+        // test single file, and check why it's processing via fallback (?)
+//        input_pattern = "/home/leonhards/projects/playground/test-data/test2012.json";
+        input_pattern = "/home/leonhards/projects/playground/test-data/test2012-small.json";
+        co.set("tuplex.inputSplitSize", "128MB");
+        co.set("tuplex.experimental.worker.workerBufferSize", "128MB");
+        // input_pattern = "/hot/data/github_daily/2012-10-15.json";
+
 
 
         // creater context according to settings
