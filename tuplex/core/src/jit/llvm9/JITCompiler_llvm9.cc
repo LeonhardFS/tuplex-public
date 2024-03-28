@@ -196,7 +196,7 @@ namespace tuplex {
         //tmb.addFeatures(codegen::getLLVMFeatureStr()); //<-- should add here probably SSE4.2.??
 
 
-        Logger::instance().logger("LLVM").info("compiling code for " + CPUStr);
+        Logger::instance().logger("LLVM").debug("compiling code for " + CPUStr);
         auto featureStr = tmBuilder.get().getFeatures().getString();
 
         // cf. https://github.com/tensorflow/mlir/blob/master/lib/ExecutionEngine/ExecutionEngine.cpp

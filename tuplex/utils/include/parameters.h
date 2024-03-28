@@ -10,6 +10,6 @@ namespace tuplex {
     static const bool PARAM_USE_ROW_TYPE=true;
 
     // check to use generic dict instead of struct dict type to execute
-    static const bool PARAM_USE_GENERIC_DICT=true;
+    static const bool PARAM_USE_GENERIC_DICT=false;//true;
 }
 #endif //TUPLEX_PARAMETERS_H

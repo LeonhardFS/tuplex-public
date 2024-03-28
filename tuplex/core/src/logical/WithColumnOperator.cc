@@ -345,7 +345,6 @@ namespace tuplex {
     }
 
     bool WithColumnOperator::retype(const RetypeConfiguration& conf) {
-
         auto input_row_type = conf.row_type;
 
         assert(good());

@@ -887,12 +887,12 @@ namespace tuplex {
             jit.registerSymbol("cJSON_IsArray", cJSON_IsArray);
             jit.registerSymbol("cJSON_IsNull", cJSON_IsNull);
             jit.registerSymbol("cJSON_IsNumber", cJSON_IsNumber);
+            jit.registerSymbol("cJSON_IsObject",cJSON_IsObject);
+            jit.registerSymbol("cJSON_IsString", cJSON_IsString);
             jit.registerSymbol("cJSON_GetNumberValue", cJSON_GetNumberValue);
             jit.registerSymbol("cJSON_GetArrayItem", cJSON_GetArrayItem);
             jit.registerSymbol("cJSON_Parse", cJSON_Parse);
             jit.registerSymbol("cJSON_CreateString", cJSON_CreateString);
-            jit.registerSymbol("cJSON_IsNumber",cJSON_IsNumber);
-            jit.registerSymbol("cJSON_IsArray", cJSON_IsArray);
             jit.registerSymbol("cJSON_GetNumberValue", cJSON_GetNumberValue);
             jit.registerSymbol("cJSON_GetArrayItem", cJSON_GetArrayItem);
 #endif

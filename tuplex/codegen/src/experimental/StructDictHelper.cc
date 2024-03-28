@@ -765,6 +765,16 @@ namespace tuplex {
 
                 auto llvm_struct_type = env.pythonToLLVMType(dict_type);
                 auto llvm_idx = builder.CreateStructGEP(ptr, llvm_struct_type, field_idx);
+
+                // special treatment for list & struct dict: Their values could be passed as pointers, load the value here to enable storing it.
+                auto value_type = struct_dict_type_get_element_type(dict_type, path);
+                if(value_type.withoutOption().isStructuredDictionaryType() || value_type.withoutOption().isListType()) {
+                    if(value->getType()->isPointerTy()) {
+                        auto llvm_value_type = env.pythonToLLVMType(value_type.withoutOption());
+                        value = builder.CreateLoad(llvm_value_type, value);
+                    }
+                }
+
                 builder.CreateStore(value, llvm_idx);
             }
         }
@@ -863,12 +873,10 @@ namespace tuplex {
 
                 if(python::Type::EMPTYLIST != value_type && value_type.isListType()) {
 
-
-
                     // call list specific function to determine length.
                     auto value_idx = std::get<2>(t_indices);
                     assert(value_idx >= 0);
-                    auto list_ptr = builder.CreateStructLoad(llvm_struct_type, ptr, value_idx);
+                    auto list_ptr = builder.CreateStructLoadOrExtract(llvm_struct_type, ptr, value_idx);
 
                     // is list_ptr a pointer?
                     if(!list_ptr->getType()->isPointerTy()) {
@@ -899,7 +907,7 @@ namespace tuplex {
                     size = builder.CreateAdd(size, bytes8, "dict_el_" + std::to_string(pos));
                     if(size_idx >= 0) { // <-- size_idx >= 0 indicates a variable length field!
                         // add size field + data
-                        auto value_size = builder.CreateStructLoad(llvm_struct_type, ptr, size_idx);
+                        auto value_size = builder.CreateStructLoadOrExtract(llvm_struct_type, ptr, size_idx);
                         assert(value_size->getType() == env.i64Type());
 
 #ifdef TRACE_STRUCT_SERIALIZATION
@@ -927,6 +935,9 @@ namespace tuplex {
 
             assert(bitmap && dest_ptr);
             assert(bitmap->getType()->isArrayTy());
+            auto llvm_array_type = bitmap->getType();
+            if(!llvm_array_type->isArrayTy())
+                throw std::runtime_error("expected array type in serializeBitmap, but got instead " + env.getLLVMTypeName(llvm_array_type));
             auto element_type = bitmap->getType()->getArrayElementType();
             assert(element_type == env.i1Type());
             assert(dest_ptr->getType() == env.i8ptrType());
@@ -948,8 +959,15 @@ namespace tuplex {
                     builder.CreateStore(bitmap, bitmap_tmp);
                     bitmap = bitmap_tmp;
                 }
-                bitmapIdx = builder.CreateConstInBoundsGEP2_64(bitmap, bitmap->getType(), 0ull, i);
-                auto bit = builder.CreateLoad(bitmap->getType(), bitmapIdx);
+
+                // PointeeType ==
+                //          cast<PointerType>(Ptr->getType()->getScalarType())->getElementType());
+                auto llvm_element_type = env.i1Type();
+                // std::cout<<"PointeeType: "<<env.getLLVMTypeName(llvm_array_type)<<std::endl;
+                // std::cout<<"other: "<<env.getLLVMTypeName(llvm::cast<llvm::PointerType>(bitmap->getType()->getScalarType())->getElementType())<<std::endl;
+
+                bitmapIdx = builder.CreateConstInBoundsGEP2_64(bitmap, llvm_array_type, 0ull, i);
+                auto bit = builder.CreateLoad(llvm_element_type, bitmapIdx);
                 auto bit_ext = builder.CreateShl(builder.CreateZExt(bit, env.i64Type()), env.i64Const(i % 64ul));
                 bitmap_array[i / 64ul] = builder.CreateOr(bitmap_array[i / 64ul], bit_ext);
             }

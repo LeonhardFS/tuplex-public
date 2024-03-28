@@ -748,18 +748,18 @@ namespace tuplex {
                         // _env->printValue(builder, s_info.size, "actually serialized size: ");
 
 #ifndef NDEBUG
-                         // print info
-                         auto bitmap_pos_idx = 0;
-                         if(struct_dict_has_bitmap(dict_type)) {
-                             auto bitmap_val = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(builder.CreateGEP(builder.getInt64Ty(), s_info.val, _env->i64Const(bitmap_pos_idx)), _env->i64ptrType()));
-                             // _env->printValue(builder, bitmap_val, "bitmap:      ");
-                             bitmap_pos_idx += 8;
-                         }
-                        if(struct_dict_has_presence_map(dict_type)) {
-                            auto bitmap_val = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(builder.CreateGEP(builder.getInt64Ty(), s_info.val, _env->i64Const(bitmap_pos_idx)), _env->i64ptrType()));
-                            // _env->printValue(builder, bitmap_val, "presence map: ");
-                            bitmap_pos_idx += 8;
-                        }
+//                         // print info
+//                         auto bitmap_pos_idx = 0;
+//                         if(struct_dict_has_bitmap(dict_type)) {
+//                             auto bitmap_val = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(builder.CreateGEP(builder.getInt64Ty(), s_info.val, _env->i64Const(bitmap_pos_idx)), _env->i64ptrType()));
+//                             // _env->printValue(builder, bitmap_val, "bitmap:      ");
+//                             bitmap_pos_idx += 8;
+//                         }
+//                        if(struct_dict_has_presence_map(dict_type)) {
+//                            auto bitmap_val = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(builder.CreateGEP(builder.getInt64Ty(), s_info.val, _env->i64Const(bitmap_pos_idx)), _env->i64ptrType()));
+//                            // _env->printValue(builder, bitmap_val, "presence map: ");
+//                            bitmap_pos_idx += 8;
+//                        }
 #endif
                         // also varlensize needs to be output separately, so add
                         varlenSize = builder.CreateAdd(varlenSize, size);

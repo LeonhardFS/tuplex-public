@@ -128,7 +128,12 @@ namespace tuplex {
             }
 
             inline llvm::Value* CreateAlignedStore(llvm::Value* Val, llvm::Value* Ptr, uint alignment=8) const {
+
+#if LLVM_VERSION_MAJOR < 10
+                return get_or_throw().CreateAlignedStore(Val, Ptr, alignment);
+#else
                 return get_or_throw().CreateAlignedStore(Val, Ptr, llvm::MaybeAlign(alignment));
+#endif
             }
 
             inline llvm::BasicBlock* GetInsertBlock() const {

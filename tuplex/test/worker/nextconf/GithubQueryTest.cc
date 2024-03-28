@@ -259,7 +259,7 @@ namespace tuplex {
 
         // @TODO: non-hyper mode doesn't work yet ??
         // hyper-moder returns empty files ??
-        auto use_hyper = false;//true; // should work for both true/false.
+        auto use_hyper = true; // false;//true; // should work for both true/false.
 
         // set input/output paths
         // auto exp_settings = lambdaSettings(true);
@@ -278,7 +278,7 @@ namespace tuplex {
             if(startsWith(kv.first, "tuplex."))
                 co.set(kv.first, kv.second);
 
-        // disable optimizer
+        // enable/disable optimizer
         co.set("tuplex.useLLVMOptimizer", "false");
 
         co.set("tuplex.executorCount", "0"); // <-- uncomment if there are any multi-threading issues
@@ -313,7 +313,7 @@ namespace tuplex {
 ////        input_pattern = "/home/leonhards/projects/playground/test-data/test2012-small.json";
 //        co.set("tuplex.inputSplitSize", "128MB");
 //        co.set("tuplex.experimental.worker.workerBufferSize", "128MB");
-         input_pattern = "/hot/data/github_daily/2012-10-15.json";
+         // input_pattern = "/hot/data/github_daily/2012-10-15.json";
 
 
 

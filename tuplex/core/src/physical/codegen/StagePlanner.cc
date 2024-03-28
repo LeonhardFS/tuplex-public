@@ -705,6 +705,12 @@ namespace tuplex {
                     lastRowType = rop->getNormalParent()->getInputSchema().getRowType();
                 }
 
+                if(lastRowType == python::Type::UNKNOWN) {
+                    logger.error("operator " + op->name() + " has unknown schema.");
+                    validation_ok = false;
+                    return validation_ok;
+                }
+
                 if(!are_in_and_out_schemas_compatible(lastRowType, op->getInputSchema().getRowType())) {
                     logger.error("(" + op->name() + "): input schema "
                                      + op->getInputSchema().getRowType().desc()

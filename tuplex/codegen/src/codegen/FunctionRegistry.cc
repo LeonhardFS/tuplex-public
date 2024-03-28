@@ -3590,7 +3590,7 @@ namespace tuplex {
 
                     // use variable for result and store default value (here null!)
                     SerializableValue var;
-                    auto llvm_val_type = _env.pythonToLLVMType(retType);
+                    auto llvm_val_type = _env.pythonToLLVMType(retType.withoutOption());
                     var.val = _env.CreateFirstBlockAlloca(builder, llvm_val_type);
                     var.size = _env.CreateFirstBlockAlloca(builder, _env.i64Type());
                     var.is_null = _env.CreateFirstBlockAlloca(builder, _env.i1Type());
@@ -3616,9 +3616,9 @@ namespace tuplex {
                         // special case deopt?
                         // do we need to deoptimize?
                         // this means pair.value_type must match return type, else it's directly a normal case failure
-                        if(require_deoptimization && pair.valueType != retType) {
+                        if(pair.valueType != retType) {
                             lfb.setLastBlock(builder.GetInsertBlock());
-                            lfb.exitWithException(ExceptionCode::NORMALCASEVIOLATION);
+                            lfb.exitWithException(ExceptionCode::NORMALCASEVIOLATION, "value_type " + pair.valueType.desc() + " must match expected return type " + retType.desc() + " for structdict.get() for key=" + pair.key);
                         } else {
                             // regular processing, no early deopt failure
                             //_env.printValue(builder, key.val, "key match for key=" + pair.key);
@@ -3653,6 +3653,16 @@ namespace tuplex {
                                 builder.SetInsertPoint(bbIsPresent);
                                 _env.debugPrint(builder, "access path " + access_path_to_str(access_path) + " present.");
                                 auto val = struct_dict_load_value(_env, builder, caller.val, callerType, access_path);
+
+                                // special case: struct dict will be returned as pointer, do load struct to store.
+                                auto element_type = struct_dict_type_get_element_type(callerType, access_path);
+                                if(element_type.isStructuredDictionaryType()) {
+                                    assert(val.val->getType()->isPointerTy());
+                                    auto llvm_element_type = _env.getOrCreateStructuredDictType(element_type);
+                                    val.val = builder.CreateLoad(llvm_element_type, val.val);
+                                }
+
+
                                 if(val.val)
                                     builder.CreateStore(val.val, var.val);
                                 if(val.size)
@@ -3668,7 +3678,7 @@ namespace tuplex {
                                 if(retType.isOptionType()) {
                                     _env.debugPrint(builder, "access path " + access_path_to_str(access_path) + " NOT present.");
 
-                                    builder.CreateStore(val.is_null, _env.i1Const(true));
+                                    builder.CreateStore(_env.i1Const(true), var.is_null);
                                     bbNotPresent = builder.GetInsertBlock();
 
                                     // connect both to new block
