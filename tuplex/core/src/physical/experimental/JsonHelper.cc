@@ -264,9 +264,10 @@ namespace tuplex {
             simdjson::error_code error;
             std::string_view sv_value;
             item->o[key].get_string().tie(sv_value, error);
-            if (error)
+            if (error) {
+                *out = nullptr;
                 return translate_simdjson_error(error);
-
+            }
             auto str_size = 1 + sv_value.size();
             char *buf = (char *) runtime::rtmalloc(str_size);
             for (unsigned i = 0; i < sv_value.size(); ++i)
@@ -477,7 +478,7 @@ namespace tuplex {
                 buf[pos] = sv_value.at(pos);
             buf[sv_value.size()] = '\0';
             *out = buf;
-            *size = str_size;
+            *size = static_cast<int64_t>(str_size);
 
             assert(*size >= 1);
 

@@ -631,7 +631,7 @@ namespace tuplex {
                     auto ecOpID = builder.CreateZExtOrTrunc(pip_res.exceptionOperatorID, env().i64Type());
                     auto numRowsCreated = builder.CreateZExtOrTrunc(pip_res.numProducedRows, env().i64Type());
 
-                    // env().printValue(builder, ecCode, "pip ecCode= ");
+                     env().printValue(builder, ecCode, "pip ecCode= ");
 
                     // if ecCode != success -> inc bad normal count.
                     // do this here branchless
@@ -656,7 +656,12 @@ namespace tuplex {
                         builder.CreateCondBr(bad_row_cond, bNotOK, bNext);
                         builder.SetInsertPoint(bNotOK);
 
-                        // _env->debugPrint(builder, "found row to serialize as exception in normal-case handler");
+                         _env->debugPrint(builder, "found row to serialize as exception in normal-case handler");
+
+                         // print out original row:
+                         //_env->debugPrint(builder, "original normal-case row is: ");
+                         //normal_case_row.print(builder);
+                         _env->printValue(builder, normal_case_row.getSize(builder), "SERIALIZED SIZE OF ROW:: ");
 
                         // normal case row is parsed - can it be converted to general case row?
                         // if so emit directly, if not emit fallback row.
@@ -667,7 +672,6 @@ namespace tuplex {
 //                        // following code snippet casts it up as general_case_row exception with general_case row type.
 //                        // Yet in decodeFallbackRow, the decode is done using normal-case schema?
 //                        serializeAsNormalCaseException(builder, userData, _inputOperatorID, rowNumber(builder), normal_case_row);
-
 
                         if(python::canUpcastType(normal_case_row_type, general_case_row_type)) {
                             logger().debug("found exception handler in JSON source task builder, serializing exceptions in general case format.");
@@ -687,6 +691,10 @@ namespace tuplex {
                             } else {
                                 upcasted_row = normal_case_row.upcastTo(builder, general_case_row_type);
                             }
+
+
+                            auto upcasted_row_serialized_size = upcasted_row.getSize(builder);
+                            _env->printValue(builder, upcasted_row_serialized_size, "serialized size of row AFTER UPCAST AND REORDER::");
 
                             // serialize as exception --> this connects already to freeStart.
                             serializeAsNormalCaseException(builder, userData, _inputOperatorID, rowNumber(builder), upcasted_row);

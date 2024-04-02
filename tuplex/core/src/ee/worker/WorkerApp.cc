@@ -2086,7 +2086,7 @@ namespace tuplex {
             LLVMOptimizer opt;
 
             // for debugging, set this to true to enable tracing for the 2nd invocation!
-            bool traceExecution = false; // true; // false; // true;
+            bool traceExecution = false; //true; // false; // true;
 
             // uncomment to trace errors on 2nd invocation
             // if(numProcessedMessages() > 1 && _statistics.size() >= 1)

@@ -972,6 +972,17 @@ namespace tuplex {
                 return CreateFirstBlockAlloca(builder, llvmType, nullptr, name);
             }
 
+            /*!
+             * create runtime heap allocated memory for llvm type.
+             * @param builder
+             * @param llvmType
+             * @param memset_to_zero
+             * @return pointer holding memory with space according to data layout of module.
+             */
+            llvm::Value* CreateHeapAlloca(const codegen::IRBuilder& builder,
+                                          llvm::Type* llvm_type,
+                                          bool memset_to_zero=false);
+
             inline llvm::Constant* defaultEpsilon() {
                 return f64Const(DBL_EPSILON);
             }

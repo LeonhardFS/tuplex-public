@@ -366,6 +366,10 @@ namespace tuplex {
             v.val = builder.CreateLoad(_env.i8ptrType(), str_var);
             v.size = builder.CreateLoad(builder.getInt64Ty(), str_size_var);
             v.is_null = _env.i1Const(false);
+
+            _env.printValue(builder, v.val, "decoded str from array, value=");
+            _env.printValue(builder, v.size, "decoded str from array, size=");
+
             return make_tuple(rc, v);
         }
 
@@ -512,6 +516,12 @@ namespace tuplex {
                 {
                     // fail block:
                     builder.SetInsertPoint(bDecodeFail);
+
+                    // store list as empty!
+                    auto loop_i_val = builder.CreateLoad(builder.getInt64Ty(), loop_i);
+                    _env.printValue(builder, loop_i_val, "decode of " + list_type.desc() + " failed after i=");
+                    list_init_empty(_env, builder, list_ptr, list_type);
+
                     builder.CreateStore(item_rc, rcVar);
                     builder.CreateBr(bLoopDone);
                 }
@@ -522,6 +532,10 @@ namespace tuplex {
 
                     // // next: store in list
                     // _env.printValue(builder, item.val, "decoded value: ");
+                    if(element_type.isListType()) {
+                        _env.debugPrint(builder, "decode of " + element_type.desc() + " successful.");
+                        list_print(_env, builder, item.val, element_type);
+                    }
 
                     auto loop_i_val = builder.CreateLoad(builder.getInt64Ty(), loop_i);
                     list_store_value(_env, builder, list_ptr, list_type, loop_i_val, item);
@@ -690,9 +704,13 @@ namespace tuplex {
 
             // create list ptr (in any case!)
             auto list_llvm_type = _env.createOrGetListType(list_type);
-            auto list_ptr = _env.CreateFirstBlockAlloca(builder, list_llvm_type);
-            list_init_empty(_env, builder, list_ptr, list_type);
 
+            // NOTE: need to to heap alloc for nested lists!
+
+            //auto list_ptr = _env.CreateFirstBlockAlloca(builder, list_llvm_type);
+            auto list_ptr = _env.CreateHeapAlloca(builder, list_llvm_type);
+
+            //list_init_empty(_env, builder, list_ptr, list_type);
 
             auto rc_var = _env.CreateFirstBlockAlloca(builder, _env.i64Type());
             builder.CreateStore(_env.i64Const(ecToI64(ExceptionCode::SUCCESS)), rc_var);
@@ -1000,7 +1018,16 @@ namespace tuplex {
 
             // create list ptr (in any case!)
             auto list_llvm_type = _env.createOrGetListType(listType);
-            auto list_ptr = _env.CreateFirstBlockAlloca(builder, list_llvm_type);
+
+            bool is_relevant_dbg = listType.elementType().isListType();
+
+            if(is_relevant_dbg) {
+                _env.debugPrint(builder, "found troublesome " + listType.desc());
+            }
+
+            // auto list_ptr = _env.CreateFirstBlockAlloca(builder, list_llvm_type);
+            auto list_ptr = _env.CreateHeapAlloca(builder, list_llvm_type);
+
             list_init_empty(_env, builder, list_ptr, listType);
 
 
@@ -1031,7 +1058,8 @@ namespace tuplex {
             auto num_elements = arraySize(builder, array);
 
             // debug print here number of elements...
-            // _env.printValue(builder, num_elements, "found for type " + listType.desc() + " elements: ");
+            if(is_relevant_dbg)
+                _env.printValue(builder, num_elements, "found for type " + listType.desc() + " elements: ");
 
             // reserve capacity for elements
             bool initialize_elements_as_null = true; //false;
@@ -1061,6 +1089,15 @@ namespace tuplex {
             llvm::Value* rc = builder.CreateLoad(builder.getInt64Ty(), rc_var);
             SerializableValue value;
             value.val = builder.CreateLoad(list_llvm_type, list_ptr); // retrieve the ptr representing the list
+
+
+            // debug:
+            if(listType.elementType().isListType()) {
+                _env.printValue(builder, rc, "decoded " + listType.desc() + " with rc=");
+                list_print(_env, builder, list_ptr, listType);
+            }
+
+
             return make_tuple(rc, value);
         }
 

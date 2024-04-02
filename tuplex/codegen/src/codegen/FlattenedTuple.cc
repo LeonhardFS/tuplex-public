@@ -1397,6 +1397,56 @@ namespace tuplex {
             return bitmapArray;
         }
 
+        void struct_dict_print(LLVMEnvironment& env, const codegen::IRBuilder& builder, llvm::Value* dict_ptr, const python::Type& dict_type) {
+            auto indices = struct_dict_load_indices(dict_type);
+            flattened_struct_dict_entry_list_t entries;
+            flatten_recursive_helper(entries, dict_type);
+
+            env.debugPrint(builder, "Printing struct_dict of type " + dict_type.desc() + "::");
+
+            for(const auto& entry : entries) {
+                access_path_t access_path = std::get<0>(entry);
+                python::Type value_type = std::get<1>(entry);
+                bool always_present = std::get<2>(entry);
+                auto key = json_access_path_to_string(access_path, value_type, always_present);
+
+                // fetch indices
+                // 1. null bitmap index 2. maybe bitmap index 3. field index 4. size index
+                int bitmap_idx = 0, present_idx =0, field_idx=0, size_idx=0;
+                std::tie(bitmap_idx, present_idx, field_idx, size_idx) = indices.at(access_path);
+
+                // check if element is
+                if(!always_present) {
+                    throw std::runtime_error("presence not yet supported in struct_dict_print");
+                } else {
+                    // always present.
+                    // can load value directly
+                    auto element_value = struct_dict_load_value(env, builder, dict_ptr, dict_type, access_path);
+                    env.printValue(builder, element_value.val, "\t -- value of " + key + " (" + value_type.desc() + "): ");
+                    if(element_value.size)
+                        env.printValue(builder, element_value.size, "\t -- size of " + key + " (" + value_type.desc() + "): ");
+                    if(element_value.is_null) {
+                        assert(element_value.is_null->getType() == env.i1Type());
+                        env.printValue(builder, element_value.val, "\t -- is_null of " + key + " (" + value_type.desc() + "): ");
+                    }
+                }
+
+//
+//                // generate new line
+//                std::stringstream ss;
+//                ss<<key<<" :: ";
+//                if(bitmap_idx >= 0)
+//                    ss<<" bitmap: "<<bitmap_idx;
+//                if(present_idx >= 0)
+//                    ss<<" presence: "<<present_idx;
+//                if(field_idx >= 0)
+//                    ss<<" value: "<<field_idx<<" "<<struct_dict_lookup_llvm(env, stype, field_idx);
+//                if(size_idx >= 0)
+//                    ss<<" size: "<<size_idx<<" "<<struct_dict_lookup_llvm(env, stype, size_idx);
+//                os<<ss.str()<<std::endl;
+            }
+        }
+
 
         void FlattenedTuple::print(const codegen::IRBuilder& builder) const {
             // print tuple out for debug purposes
@@ -1411,7 +1461,15 @@ namespace tuplex {
                 auto isnull = getIsNull(i);
                 auto cellStr = "element("+to_string(i)+") ";
                 _env->debugPrint(builder, "- " + cellStr + "type: " + t.desc());
-                if(val)_env->debugPrint(builder, "  " + cellStr + "value: ", val);
+                if(val) {
+
+                    // special type printing:
+                    if(t.withoutOption().isStructuredDictionaryType()) {
+                        struct_dict_print(*_env, builder, val, t.withoutOption());
+                    } else {
+                        _env->debugPrint(builder, "  " + cellStr + "value: ", val);
+                    }
+                }
                 if(size)_env->debugPrint(builder, "  " + cellStr + "size: ", size);
                 if(isnull)_env->debugPrint(builder, "  " + cellStr + "is_null: ", isnull);
             }
@@ -1647,15 +1705,12 @@ namespace tuplex {
         llvm::Value *FlattenedTuple::loadToHeapPtr(const IRBuilder& builder) const {
             auto llvm_type = getLLVMType(); assert(llvm_type);
 
-            const auto& DL = _env->getModule()->getDataLayout();
-            auto tuple_size = DL.getTypeAllocSize(llvm_type);
-
-            auto ptr = builder.CreatePointerCast(_env->malloc(builder, tuple_size), llvm_type->getPointerTo());
-
 #ifndef NDEBUG
-            // memset to zero
-            builder.CreateMemSet(ptr, _env->i8Const(0), tuple_size, 0);
+            bool memset_to_zero = true;
+#else
+            bool memset_to_zero = false;
 #endif
+            auto ptr = _env->CreateHeapAlloca(builder, llvm_type, memset_to_zero);
 
             // // alloc and then memcpy (can't directly store, not even using volatile mode).
             // auto tmp_ptr = _env->CreateFirstBlockAlloca(builder, getLLVMType());

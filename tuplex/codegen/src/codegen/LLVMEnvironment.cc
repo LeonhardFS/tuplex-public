@@ -669,7 +669,10 @@ namespace tuplex {
                 std::vector<llvm::Type*> memberTypes;
                 memberTypes.push_back(i64Type()); // array capacity
                 memberTypes.push_back(i64Type()); // size
-                memberTypes.push_back(llvm::PointerType::get(createOrGetListType(elementType), 0));
+
+                // member must be list of list pointers. Why? because pointers can get modified...
+                auto llvm_list_element_type = createOrGetListType(elementType);
+                memberTypes.push_back(llvm_list_element_type->getPointerTo()->getPointerTo());
                 if(elements_optional)
                     memberTypes.push_back(i8ptrType()); // bool-array
                 llvm::ArrayRef<llvm::Type *> members(memberTypes);
@@ -3051,6 +3054,21 @@ namespace tuplex {
             builder.CreateRet(builder.CreateSub(size, env.i64Const(1)));
 
             return func;
+        }
+
+        llvm::Value *LLVMEnvironment::CreateHeapAlloca(const codegen::IRBuilder &builder,
+                                                       llvm::Type* llvm_type,
+                                                       bool memset_to_zero) {
+            const auto& DL = getModule()->getDataLayout();
+            auto tuple_size = DL.getTypeAllocSize(llvm_type);
+
+            auto ptr = builder.CreatePointerCast(malloc(builder, tuple_size), llvm_type->getPointerTo());
+
+            if(memset_to_zero)
+                // memset to zero
+                builder.CreateMemSet(ptr, i8Const(0), tuple_size, 0);
+
+            return ptr;
         }
     }
 }

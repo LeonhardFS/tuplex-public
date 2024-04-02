@@ -95,6 +95,9 @@ namespace tuplex {
         extern llvm::Value* list_upcast(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr,
                                         const python::Type& list_type, const python::Type& target_list_type);
 
+        extern void list_print(LLVMEnvironment& env, const IRBuilder& builder,  llvm::Value* list_ptr,
+        const python::Type& list_type);
+
     }
 }
 

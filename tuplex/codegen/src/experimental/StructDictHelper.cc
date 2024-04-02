@@ -839,12 +839,16 @@ namespace tuplex {
             //if(ptr->getType() != stype->getPointerTo())
             //    throw std::runtime_error("ptr has not correct type, must be pointer to " + stype->getStructName().str());
 
+//#define TRACE_STRUCT_SERIALIZATION
+
             // get flattened structure!
             flattened_struct_dict_entry_list_t entries;
             flatten_recursive_helper(entries, dict_type);
 
             // check bitmap size (i.e. multiples of 64bit)
             auto bitmap_size = struct_dict_bitmap_size_in_bytes(dict_type);
+
+            env.printValue(builder, env.i64Const(bitmap_size), std::string(__FILE__) + ":" + std::to_string(__LINE__) + " bitmap size is");
 
             llvm::Value* size = env.i64Const(bitmap_size);
 
@@ -909,11 +913,19 @@ namespace tuplex {
                         // add size field + data
                         auto value_size = builder.CreateStructLoadOrExtract(llvm_struct_type, ptr, size_idx);
                         assert(value_size->getType() == env.i64Type());
-
-#ifdef TRACE_STRUCT_SERIALIZATION
                         // only serialize if parents are present
                         auto parent_present = struct_dict_load_path_presence(env, builder, ptr, dict_type, access_path);
+
+                        if(!always_present)
+                            value_size = builder.CreateSelect(parent_present, value_size, env.i64Const(0));
+
+#ifdef TRACE_STRUCT_SERIALIZATION
                         env.printValue(builder, parent_present, "path " + path_desc + " present: ");
+                        env.printValue(builder, value_size, "path " + path_desc + " value size: ");
+//                        llvm::Value* t_offset, *t_size;
+//                        std::tie(t_offset, t_size) = unpack_offset_and_size(builder, value_size);
+//                        env.printValue(builder, t_offset, "path " + path_desc + " unpacked offset: ");
+//                        env.printValue(builder, t_size, "path " + path_desc + " unpacked value size: ");
 #endif
 
                         size = builder.CreateAdd(size, value_size);
@@ -926,6 +938,8 @@ namespace tuplex {
                 env.printValue(builder, size, "size after serializing " + path_desc + ": ");
 #endif
             }
+
+            env.printValue(builder, size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " total size is");
 
             return SerializableValue(size, bytes8, nullptr);
         }
@@ -1427,8 +1441,8 @@ namespace tuplex {
 
 #ifdef TRACE_STRUCT_SERIALIZATION
             // print debug info
-            env.printValue(builder, builder.CreatePtrDiff(varFieldsStartPtr, original_dest_ptr), "var fields begin at byte: ");
-            env.printValue(builder, builder.CreatePtrDiff(dest_ptr, original_dest_ptr), "current dest_ptr position at byte: ");
+            env.printValue(builder, builder.CreatePtrDiff(env.i8Type(), varFieldsStartPtr, original_dest_ptr), "var fields begin at byte: ");
+            env.printValue(builder, builder.CreatePtrDiff(env.i8Type(), dest_ptr, original_dest_ptr), "current dest_ptr position at byte: ");
             env.printValue(builder, varLengthOffset, "var length so far in bytes: ");
 #endif
 
@@ -1621,7 +1635,6 @@ namespace tuplex {
             // make sure scenario is supported
             assert((src_type == python::Type::EMPTYDICT || src_type.isStructuredDictionaryType()) && dest_type.isStructuredDictionaryType());
 
-
             // special case empty dict -> struct dict
             if(src_type == python::Type::EMPTYDICT) {
                 // make sure dest ptr is compatible
@@ -1656,6 +1669,9 @@ namespace tuplex {
             auto dest_ptr = env.CreateFirstBlockAlloca(builder, llvm_type);
             struct_dict_mem_zero(env, builder, dest_ptr, dest_type);
 
+            auto empty_size_dbg = struct_dict_serialized_memory_size(env, builder, dest_ptr, dest_type);
+            env.printValue(builder, empty_size_dbg.val, "initialized empty dict in struct_dict_upcast, serialization size is: ");
+
             // more complex case: Basically insert all the data from the other dict while upcasting values.
             // for this, access paths are required of both types.
             flattened_struct_dict_entry_list_t src_paths;
@@ -1688,35 +1704,84 @@ namespace tuplex {
                     auto src_value_type = std::get<0>(it->second);
                     auto src_always_present = std::get<1>(it->second);
 
-                    BasicBlock* bNext = nullptr;
-                    // load and store value iff present
-                    if(!src_always_present) {
-                        // need to create basic blocks: I.e., store only if present...
-                        auto& ctx = env.getContext();
-                        BasicBlock* bStore = BasicBlock::Create(ctx, "store_from_src", builder.GetInsertBlock()->getParent());
-                        bNext = BasicBlock::Create(ctx, "next_element", builder.GetInsertBlock()->getParent());
 
-                        auto is_present = struct_dict_load_present(env, builder, src.val, src_type, dst_access_path);
-                        builder.CreateCondBr(is_present, bStore, bNext);
-                        builder.SetInsertPoint(bStore);
-                        // store (same code as below)
+                    // skip lists for now? --> looks like list upcast is the issue!!!
+                    if(src_value_type.isListType() && src_value_type != dst_value_type)
+                        continue;
+
+                    if(src_always_present) {
+                        if(src_value_type.isListType()) {
+                            std::cout<<"found problematic item to store"<<std::endl;
+                        }
+
+                        auto src_element = struct_dict_load_value(env, builder, src.val, src_type, dst_access_path);
+
+                        if(src_value_type.isListType()) {
+//                            auto llvm_list_type = env.pythonToLLVMType(src_value_type);
+//                            auto list_ptr = env.CreateFirstBlockAlloca(builder, llvm_list_type);
+//                            builder.CreateStore(src_element.val, list_ptr);
+//                            src_element.val = list_ptr;
+
+
+                            auto len = list_length(env, builder, src_element.val, src_value_type);
+                            env.printValue(builder, len, "loaded list " + src_value_type.desc() + " with n elements=");
+                            auto l_serialized = list_serialized_size(env, builder, src_element.val, src_value_type);
+                            env.printValue(builder, l_serialized, "serialized size of list " + src_value_type.desc() + " is: ");
+                            if(src_value_type.elementType().isListType()) {
+                                // extract first element
+                                auto first_element = list_load_value(env, builder, src_element.val, src_value_type, env.i64Const(0));
+
+                                auto f_len = list_length(env, builder, first_element.val, src_value_type.elementType());
+                                env.printValue(builder, f_len, "loaded list " + src_value_type.elementType().desc() + " with n elements=");
+                                auto f_serialized = list_serialized_size(env, builder, first_element.val, src_value_type.elementType());
+                                env.printValue(builder, f_serialized, "serialized size of list " + src_value_type.elementType().desc() + " is: ");
+                            }
+
+                        }
+
+                        // type upcast necessary?
+                        if(src_value_type != dst_value_type)
+                            src_element = env.upcastValue(builder, src_element, src_value_type, dst_value_type);
+
+                        struct_dict_store_value(env, builder, src_element, dest_ptr, dest_type, dst_access_path);
+                        struct_dict_store_present(env, builder, dest_ptr, dest_type, dst_access_path, env.i1Const(true));
+                    } else {
+                        throw std::runtime_error("not yet implemented");
                     }
 
-                    // Store & upcast
-                    // always present, no check necessary.
-                    auto src_element = struct_dict_load_value(env, builder, src.val, src_type, dst_access_path);
-                    // type upcast necessary?
-                    if(src_value_type != dst_value_type)
-                        src_element = env.upcastValue(builder, src_element, src_value_type, dst_value_type);
-                    struct_dict_store_value(env, builder, src_element, dest_ptr, dest_type, dst_access_path);
-                    struct_dict_store_present(env, builder, dest_ptr, dest_type, dst_access_path, env.i1Const(true));
-
-                    // connect blocks from presence test
-                    if(!src_always_present) {
-                        assert(bNext);
-                        builder.CreateBr(bNext);
-                        builder.SetInsertPoint(bNext);
-                    }
+                    // old
+//                    auto src_value_type = std::get<0>(it->second);
+//                    auto src_always_present = std::get<1>(it->second);
+//
+//                    BasicBlock* bNext = nullptr;
+//                    // load and store value iff present
+//                    if(!src_always_present) {
+//                        // need to create basic blocks: I.e., store only if present...
+//                        auto& ctx = env.getContext();
+//                        BasicBlock* bStore = BasicBlock::Create(ctx, "store_from_src", builder.GetInsertBlock()->getParent());
+//                        bNext = BasicBlock::Create(ctx, "next_element", builder.GetInsertBlock()->getParent());
+//
+//                        auto is_present = struct_dict_load_present(env, builder, src.val, src_type, dst_access_path);
+//                        builder.CreateCondBr(is_present, bStore, bNext);
+//                        builder.SetInsertPoint(bStore);
+//                        // store (same code as below)
+//                    }
+//
+//                    // Store & upcast
+//                    // always present, no check necessary.
+//                    auto src_element = struct_dict_load_value(env, builder, src.val, src_type, dst_access_path);
+//                    // type upcast necessary?
+//                    if(src_value_type != dst_value_type)
+//                        src_element = env.upcastValue(builder, src_element, src_value_type, dst_value_type);
+//                    struct_dict_store_value(env, builder, src_element, dest_ptr, dest_type, dst_access_path);
+//                    struct_dict_store_present(env, builder, dest_ptr, dest_type, dst_access_path, env.i1Const(true));
+//
+//                    // connect blocks from presence test
+//                    if(!src_always_present) {
+//                        assert(bNext);
+//                        builder.CreateBr(bNext);
+//                        builder.SetInsertPoint(bNext);
+//                    }
                 } else {
                     // should be maybe... -> else warn?
                     if(dst_always_present) {
@@ -1725,6 +1790,10 @@ namespace tuplex {
                     }
                 }
             }
+
+            auto after_size_dbg = struct_dict_serialized_memory_size(env, builder, dest_ptr, dest_type);
+            env.printValue(builder, after_size_dbg.val, "after upcast for dict in struct_dict_upcast, serialization size is: ");
+
 
             return SerializableValue(dest_ptr, nullptr, nullptr);
         }
