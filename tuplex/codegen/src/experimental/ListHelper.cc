@@ -1007,7 +1007,7 @@ namespace tuplex {
             };
 
             auto size_in_bytes = list_of_varitems_serialized_size(env, builder, list_ptr, list_type, list_get_list_item_size);
-            env.printValue(builder, size_in_bytes, "total serialized size of list " + list_type.desc() + " is: ");
+            // env.printValue(builder, size_in_bytes, "total serialized size of list " + list_type.desc() + " is: ");
             return size_in_bytes;
         }
 
@@ -1103,7 +1103,7 @@ namespace tuplex {
             builder.CreateStore(len, casted_dest_ptr);
             dest_ptr = builder.MovePtrByBytes(dest_ptr, sizeof(int64_t));
 
-            env.debugPrint(builder, "serializing list of size: ", len);
+            // env.debugPrint(builder, "serializing list of size: ", len);
 
             // memcpy data_ptr
             auto ptr_values = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, 2);
@@ -1111,7 +1111,7 @@ namespace tuplex {
             auto data_size = builder.CreateMul(env.i64Const(8), len); // size in bytes!
             builder.CreateMemCpy(dest_ptr, 0, ptr_values, 0, data_size);
             auto size = builder.CreateAdd(env.i64Const(8), data_size);
-            env.debugPrint(builder, "total serialized list size are bytes: ", size);
+            // env.debugPrint(builder, "total serialized list size are bytes: ", size);
             return size;
         }
 
@@ -1136,7 +1136,7 @@ namespace tuplex {
                 auto item = builder.CreateGEP(llvm_list_element_type, ptr_values, index);
                 auto item_size = struct_dict_serialized_memory_size(env, builder, item, element_type).val;
 
-                env.printValue(builder, item_size, "list of element (" + element_type.desc() + ") to serialize is: ");
+                // env.printValue(builder, item_size, "list of element (" + element_type.desc() + ") to serialize is: ");
 
                 return item_size;
             };
@@ -1255,7 +1255,7 @@ namespace tuplex {
             BasicBlock *bLoopExit = BasicBlock::Create(ctx, "list_of_var_items_serialize_loop_done", F);
 
 
-            env.printValue(builder, len, "serializing list of var items (" + list_type.desc() +") to memory of length=");
+            // env.printValue(builder, len, "serializing list of var items (" + list_type.desc() +") to memory of length=");
 
             auto varlen_bytes_var = env.CreateFirstBlockAlloca(builder, env.i64Type());
             builder.CreateStore(env.i64Const(0), varlen_bytes_var);
@@ -1276,26 +1276,26 @@ namespace tuplex {
                 builder.SetInsertPoint(bLoopBody);
                 auto loop_i_val = builder.CreateLoad(env.i64Type(), loop_i);
 
-                 env.printValue(builder, loop_i_val, "serializing item no: ");
+                // env.printValue(builder, loop_i_val, "serializing item no: ");
 
                 // get item's serialized size
                 auto item_size = f_item_size(env, builder, list_ptr, loop_i_val);
 
-                 env.printValue(builder, item_size, "item size to serialize is: ");
+                // env.printValue(builder, item_size, "item size to serialize is: ");
 
                 auto varlen_bytes = builder.CreateLoad(builder.getInt64Ty(), varlen_bytes_var);
                 assert(varlen_bytes->getType() == env.i64Type());
-                 env.printValue(builder, varlen_bytes, "so far serialized (bytes): ");
+                // env.printValue(builder, varlen_bytes, "so far serialized (bytes): ");
                 auto item_dest_ptr = builder.MovePtrByBytes(var_ptr, varlen_bytes);
-                 env.debugPrint(builder, "calling item func");
+                // env.debugPrint(builder, "calling item func");
                 auto actual_size = f_item_serialize_to(env, builder, list_ptr, loop_i_val, item_dest_ptr);
-                env.printValue(builder, actual_size, "actually realized item size is: ");
-                 env.debugPrint(builder, "item func called.");
+                // env.printValue(builder, actual_size, "actually realized item size is: ");
+                // env.debugPrint(builder, "item func called.");
                 // offset is (numSerialized - serialized_idx) * sizeof(int64_t) + varsofar.
                 // i.e. here (len - loop_i_val) * 8 + var
                 auto offset = builder.CreateAdd(varlen_bytes, builder.CreateMul(env.i64Const(8), builder.CreateSub(len, loop_i_val)));
 
-                 env.printValue(builder, offset, "field offset:  ");
+                // env.printValue(builder, offset, "field offset:  ");
 
                 // save offset and item size.
                 // where to write this? -> current
@@ -1340,7 +1340,7 @@ namespace tuplex {
             // fetch length of list
             auto len = list_length(env, builder, list_ptr, list_type);
 
-            env.printValue(builder, len, "---\ncomputing serialized size of list " + list_type.desc() + " with #elements = ");
+            // env.printValue(builder, len, "---\ncomputing serialized size of list " + list_type.desc() + " with #elements = ");
 
 
             // generate loop to go over items.
@@ -1372,18 +1372,18 @@ namespace tuplex {
                 builder.SetInsertPoint(bLoopBody);
                 auto loop_i_val = builder.CreateLoad(env.i64Type(), loop_i);
 
-                env.printValue(builder, loop_i_val, "Computing size of element " + list_type.elementType().desc() + " of list " + list_type.desc() + " for i=");
+                // env.printValue(builder, loop_i_val, "Computing size of element " + list_type.elementType().desc() + " of list " + list_type.desc() + " for i=");
 
 
                 // get item's serialized size
                 auto item_size = f_item_size(env, builder, list_ptr, loop_i_val);
                 auto varlen_bytes = builder.CreateLoad(builder.getInt64Ty(), varlen_bytes_var);
 
-                env.printValue(builder, item_size, "-> item size is: ");
+                // env.printValue(builder, item_size, "-> item size is: ");
 
                 // inc. variable length bytes serialized so far
                 builder.CreateStore(builder.CreateAdd(varlen_bytes, item_size), varlen_bytes_var);
-                env.printValue(builder, builder.CreateLoad(builder.getInt64Ty(), varlen_bytes_var), "cum bytes so far: ");
+                // env.printValue(builder, builder.CreateLoad(builder.getInt64Ty(), varlen_bytes_var), "cum bytes so far: ");
 
 
                 // inc. loop counter
@@ -1397,7 +1397,7 @@ namespace tuplex {
             auto varlen_bytes = builder.CreateLoad(builder.getInt64Ty(), varlen_bytes_var);
             auto size = builder.CreateAdd(env.i64Const(8), builder.CreateAdd(builder.CreateMul(env.i64Const(8), len), varlen_bytes));
             assert(size->getType() == env.i64Type());
-            env.printValue(builder, size, "===\ncomputed serialized size of list " + list_type.desc() + " as: ");
+            // env.printValue(builder, size, "===\ncomputed serialized size of list " + list_type.desc() + " as: ");
             return size;
         }
 
@@ -1472,8 +1472,8 @@ namespace tuplex {
                 auto idx_size = builder.CreateGEP(env.i64Type(), ptr_sizes, index);
                 auto item_size = builder.CreateLoad(env.i64Type(), idx_size);
 
-                env.printValue(builder, index, "computed size of str in " + list_type.desc() + " at position: ");
-                env.printValue(builder, item_size, "size of str in " + list_type.desc() + " is: ");
+                // env.printValue(builder, index, "computed size of str in " + list_type.desc() + " at position: ");
+                // env.printValue(builder, item_size, "size of str in " + list_type.desc() + " is: ");
 
                 return item_size;
             };
@@ -1933,7 +1933,7 @@ namespace tuplex {
             list_reserve_capacity(env, builder, list_ptr, list_type, num_elements, false);
             list_store_size(env, builder, list_ptr, list_type, num_elements);
 
-            env.debugPrint(builder, "decoding list with num_elements=", num_elements);
+            env.debugPrint(builder, "decoding list " + list_type.desc() + " with num_elements=", num_elements);
 
             // decode now depending on element type
             // first check if list has optional elements, if so the next values will have the bitmap for the options

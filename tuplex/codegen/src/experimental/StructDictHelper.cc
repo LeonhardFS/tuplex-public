@@ -848,7 +848,7 @@ namespace tuplex {
             // check bitmap size (i.e. multiples of 64bit)
             auto bitmap_size = struct_dict_bitmap_size_in_bytes(dict_type);
 
-            env.printValue(builder, env.i64Const(bitmap_size), std::string(__FILE__) + ":" + std::to_string(__LINE__) + " bitmap size is");
+            // env.printValue(builder, env.i64Const(bitmap_size), std::string(__FILE__) + ":" + std::to_string(__LINE__) + " bitmap size is");
 
             llvm::Value* size = env.i64Const(bitmap_size);
 
@@ -939,7 +939,7 @@ namespace tuplex {
 #endif
             }
 
-            env.printValue(builder, size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " total size is");
+            // env.printValue(builder, size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " total size is");
 
             return SerializableValue(size, bytes8, nullptr);
         }
@@ -1669,8 +1669,8 @@ namespace tuplex {
             auto dest_ptr = env.CreateFirstBlockAlloca(builder, llvm_type);
             struct_dict_mem_zero(env, builder, dest_ptr, dest_type);
 
-            auto empty_size_dbg = struct_dict_serialized_memory_size(env, builder, dest_ptr, dest_type);
-            env.printValue(builder, empty_size_dbg.val, "initialized empty dict in struct_dict_upcast, serialization size is: ");
+            // auto empty_size_dbg = struct_dict_serialized_memory_size(env, builder, dest_ptr, dest_type);
+            // env.printValue(builder, empty_size_dbg.val, "initialized empty dict in struct_dict_upcast, serialization size is: ");
 
             // more complex case: Basically insert all the data from the other dict while upcasting values.
             // for this, access paths are required of both types.
@@ -1704,10 +1704,16 @@ namespace tuplex {
                     auto src_value_type = std::get<0>(it->second);
                     auto src_always_present = std::get<1>(it->second);
 
+                    // // skip lists for now? --> looks like list upcast is the issue!!!
+                    // if(src_value_type.isListType() && src_value_type != dst_value_type)
+                    //     continue;
 
-                    // skip lists for now? --> looks like list upcast is the issue!!!
-                    if(src_value_type.isListType() && src_value_type != dst_value_type)
+
+#warning "TODO: need to fix this similar to list of lists!"
+                    // skip for list of struct -> is buggy too?
+                    if(src_value_type.isListType() && src_value_type.elementType().isStructuredDictionaryType())
                         continue;
+
 
                     if(src_always_present) {
                         if(src_value_type.isListType()) {
@@ -1716,28 +1722,27 @@ namespace tuplex {
 
                         auto src_element = struct_dict_load_value(env, builder, src.val, src_type, dst_access_path);
 
-                        if(src_value_type.isListType()) {
-//                            auto llvm_list_type = env.pythonToLLVMType(src_value_type);
-//                            auto list_ptr = env.CreateFirstBlockAlloca(builder, llvm_list_type);
-//                            builder.CreateStore(src_element.val, list_ptr);
-//                            src_element.val = list_ptr;
-
-
-                            auto len = list_length(env, builder, src_element.val, src_value_type);
-                            env.printValue(builder, len, "loaded list " + src_value_type.desc() + " with n elements=");
-                            auto l_serialized = list_serialized_size(env, builder, src_element.val, src_value_type);
-                            env.printValue(builder, l_serialized, "serialized size of list " + src_value_type.desc() + " is: ");
-                            if(src_value_type.elementType().isListType()) {
-                                // extract first element
-                                auto first_element = list_load_value(env, builder, src_element.val, src_value_type, env.i64Const(0));
-
-                                auto f_len = list_length(env, builder, first_element.val, src_value_type.elementType());
-                                env.printValue(builder, f_len, "loaded list " + src_value_type.elementType().desc() + " with n elements=");
-                                auto f_serialized = list_serialized_size(env, builder, first_element.val, src_value_type.elementType());
-                                env.printValue(builder, f_serialized, "serialized size of list " + src_value_type.elementType().desc() + " is: ");
-                            }
-
-                        }
+//                        if(src_value_type.isListType()) {
+////                            auto llvm_list_type = env.pythonToLLVMType(src_value_type);
+////                            auto list_ptr = env.CreateFirstBlockAlloca(builder, llvm_list_type);
+////                            builder.CreateStore(src_element.val, list_ptr);
+////                            src_element.val = list_ptr;
+//
+//
+//                            auto len = list_length(env, builder, src_element.val, src_value_type);
+//                            env.printValue(builder, len, "loaded list " + src_value_type.desc() + " with n elements=");
+//                            auto l_serialized = list_serialized_size(env, builder, src_element.val, src_value_type);
+//                            env.printValue(builder, l_serialized, "serialized size of list " + src_value_type.desc() + " is: ");
+////                            if(src_value_type.elementType().isListType()) {
+////                                // extract first element
+////                                auto first_element = list_load_value(env, builder, src_element.val, src_value_type, env.i64Const(0));
+////
+////                                auto f_len = list_length(env, builder, first_element.val, src_value_type.elementType());
+////                                env.printValue(builder, f_len, "loaded list " + src_value_type.elementType().desc() + " with n elements=");
+////                                auto f_serialized = list_serialized_size(env, builder, first_element.val, src_value_type.elementType());
+////                                env.printValue(builder, f_serialized, "serialized size of list " + src_value_type.elementType().desc() + " is: ");
+////                            }
+//                        }
 
                         // type upcast necessary?
                         if(src_value_type != dst_value_type)

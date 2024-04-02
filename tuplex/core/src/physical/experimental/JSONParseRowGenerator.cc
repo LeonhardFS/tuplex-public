@@ -757,6 +757,9 @@ namespace tuplex {
             // -> basically get the data!
             auto list_rc = generateDecodeListItemsLoop(builder, sub_array, list_ptr, list_type, num_elements);
 
+            // store into rc_var
+            builder.CreateStore(list_rc, rc_var);
+
             // debug print, checking what the list decode gives back...
             // _env.printValue(builder, list_rc, "decode result is: ");
 
@@ -774,6 +777,9 @@ namespace tuplex {
 
             builder.SetInsertPoint(bbDecodeDone);
             llvm::Value* rc = builder.CreateLoad(builder.getInt64Ty(), rc_var);
+
+            _env.printValue(builder, rc, "decodeListFromArray returned with rc=");
+
             SerializableValue value;
             value.val = builder.CreateLoad(list_llvm_type, list_ptr); // retrieve the ptr representing the list
             return make_tuple(rc, value);

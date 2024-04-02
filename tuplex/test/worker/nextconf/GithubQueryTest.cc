@@ -279,7 +279,7 @@ namespace tuplex {
                 co.set(kv.first, kv.second);
 
         // enable/disable optimizer
-        co.set("tuplex.useLLVMOptimizer", "false");
+        co.set("tuplex.useLLVMOptimizer", "true");
 
         co.set("tuplex.executorCount", "0"); // <-- uncomment if there are any multi-threading issues
 
