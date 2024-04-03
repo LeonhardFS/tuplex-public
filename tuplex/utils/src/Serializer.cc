@@ -1498,7 +1498,7 @@ namespace tuplex {
                 else if(elType.isConstantValued()) // constants count as single-valued as well.
                     els.push_back(Field::from_constant_type(elType));
 
-                else throw std::runtime_error("Unsupported list element type deserialized: " + elType.desc());
+                else throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Unsupported list element type deserialized: " + elType.desc());
             }
             return List::from_vector(els);
         }
@@ -1688,7 +1688,7 @@ namespace tuplex {
             } else if(elType == python::Type::EMPTYDICT) {
                 els.insert(els.end(), numElements, Field::empty_dict());
             } else {
-                throw std::runtime_error("Unsupported list element type deserialized: " + elType.desc());
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Unsupported list element type deserialized: " + elType.desc());
             }
             return List::from_vector(els);
         }

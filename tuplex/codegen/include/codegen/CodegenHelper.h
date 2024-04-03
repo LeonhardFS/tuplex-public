@@ -1686,6 +1686,8 @@ namespace tuplex {
         [[maybe_unused]] extern SerializableValue serialize_cjson_as_runtime_str(const IRBuilder& builder, llvm::Value* cjson_obj);
 
 
+        extern llvm::Value* call_cjson_parse(const IRBuilder& builder, llvm::Value* str_ptr);
+
         extern llvm::Value* call_cjson_getarraysize(const IRBuilder& builder, llvm::Value* cjson_array);
         extern SerializableValue get_cjson_array_item(const IRBuilder& builder, llvm::Value* cjson_array, llvm::Value* idx);
 

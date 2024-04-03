@@ -1310,5 +1310,13 @@ namespace tuplex {
 
             return builder.CreateCall(func, {cjson_obj});
         }
+
+        extern llvm::Value* call_cjson_parse(const IRBuilder& builder, llvm::Value* str_ptr) {
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+            auto func = cJSONParse_prototype(builder.getContext(), mod);
+
+            return builder.CreateCall(func, {str_ptr});
+        }
     }
 }

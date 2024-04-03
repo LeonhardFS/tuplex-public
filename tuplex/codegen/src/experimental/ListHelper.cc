@@ -100,15 +100,14 @@ namespace tuplex {
                 auto idx_size = builder.CreateStructGEP(list_ptr, llvm_list_type, 1); assert(idx_size->getType() == env.i64ptrType());
                 builder.CreateStore(env.i64Const(0), idx_size);
 
-
-
                 auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
 
                 if(elementType.isStructuredDictionaryType()) {
                     auto llvm_element_type = env.getOrCreateStructuredDictType(elementType);
                     builder.CreateStore(env.nullConstant(llvm_element_type->getPointerTo()), idx_values);
                 } else {
-                    builder.CreateStore(env.nullConstant(env.i8ptrType()), idx_values);
+                    // array of cJSON* objects.
+                    builder.CreateStore(env.nullConstant(env.i8ptrType()->getPointerTo()), idx_values);
                 }
 
                 if(elements_optional) {
@@ -152,7 +151,7 @@ namespace tuplex {
                     builder.CreateStore(env.nullConstant(env.i8ptrType()), idx_opt_values);
                 }
             } else {
-                throw std::runtime_error("Unsupported list element type: " + list_type.desc());
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + "Unsupported list element type: " + list_type.desc());
             }
         }
 
@@ -282,7 +281,7 @@ namespace tuplex {
                 if(elements_optional)
                     list_init_array(env, builder, list_ptr, list_type, capacity, 3, initialize);
             } else {
-                throw std::runtime_error("Unsupported list element type: " + list_type.desc());
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + "Unsupported list element type: " + list_type.desc());
             }
         }
 
@@ -659,7 +658,7 @@ namespace tuplex {
                 } else if(elementType.isTupleType()) {
                     struct_opt_index = 3;
                 } else {
-                    throw std::runtime_error("Unsupported list element type: " + list_type.desc());
+                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + "Unsupported list element type: " + list_type.desc());
                 }
 
                 // create blocks
@@ -833,7 +832,7 @@ namespace tuplex {
                 // env.printValue(builder, builder.CreateLoad(target_idx), "pointer stored - post update: ");
 
             } else {
-                throw std::runtime_error("Unsupported list element type: " + list_type.desc());
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + "Unsupported list element type: " + list_type.desc());
             }
 
             // connect blocks + create storage for null
@@ -891,7 +890,7 @@ namespace tuplex {
                 auto idx_size = builder.CreateStructGEP(list_ptr, llvm_list_type, 1); assert(idx_size->getType() == env.i64ptrType());
                 builder.CreateStore(size, idx_size);
             } else {
-                throw std::runtime_error("Unsupported list element type: " + list_type.desc());
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + "Unsupported list element type: " + list_type.desc());
             }
         }
 
@@ -924,7 +923,7 @@ namespace tuplex {
                       || elementType.isStructuredDictionaryType()
                       || elementType.isListType()
                       || elementType.isTupleType())) {
-                throw std::runtime_error("Unsupported list element type: " + list_type.desc());
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + "Unsupported list element type: " + list_type.desc());
             }
 
             // shorten the code below
@@ -1709,7 +1708,7 @@ namespace tuplex {
                 l_size = builder.CreateAdd(l_size, opt_size);
                 return l_size;
             } else {
-                throw std::runtime_error("Unsupported list element type: " + list_type.desc());
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + "Unsupported list element type: " + list_type.desc());
             }
         }
 
@@ -1949,8 +1948,15 @@ namespace tuplex {
             // move the size of the first i64 indicating the length
             ptr = builder.MovePtrByBytes(ptr, env.i64Const(sizeof(int64_t)));
 
-            // deserialize based on list element type
-            if(python::Type::STRING == elementType) {
+            // deserialize based on list element type.
+            if(python::Type::STRING == elementType || python::Type::PYOBJECT == elementType || python::Type::GENERICDICT == elementType) {
+                // These here are all stored as strings.
+                // The per element decode differs though.
+
+                llvm::Value* list_arr_malloc = nullptr;
+                llvm::Value* list_sizearr_malloc = nullptr;
+
+
                 auto offset_ptr = builder.CreateBitCast(ptr, env.i64ptrType()); // get pointer to i64 serialized array of offsets
 //               llvm::Value* listSize = env.CreateFirstBlockAlloca(builder, env.i64Type());
                 auto& context = env.getContext();
@@ -1963,12 +1969,18 @@ namespace tuplex {
                 BasicBlock *loopBodyEnd = BasicBlock::Create(context, "list_loop_body_end", func);
                 BasicBlock *after = BasicBlock::Create(context, "list_after", func);
 
-                // allocate the char* array
-                auto list_arr_malloc = builder.CreatePointerCast(env.malloc(builder, builder.CreateMul(num_elements, env.i64Const(8))),
-                        llvm_list_type->getStructElementType(2));
-                // allocate the sizes array
-                auto list_sizearr_malloc = builder.CreatePointerCast(env.malloc(builder, builder.CreateMul(num_elements, env.i64Const(8))),
-                        llvm_list_type->getStructElementType(3));
+                if(python::Type::STRING == elementType || python::Type::PYOBJECT == elementType) {
+                    // allocate the char* array
+                    list_arr_malloc = builder.CreatePointerCast(env.malloc(builder, builder.CreateMul(num_elements, env.i64Const(8))),
+                                                                llvm_list_type->getStructElementType(2));
+                    // allocate the sizes array
+                    list_sizearr_malloc = builder.CreatePointerCast(env.malloc(builder, builder.CreateMul(num_elements, env.i64Const(8))),
+                                                                    llvm_list_type->getStructElementType(3));
+                } else {
+                    assert(elementType == python::Type::GENERICDICT);
+                    list_arr_malloc = builder.CreatePointerCast(env.malloc(builder, builder.CreateMul(num_elements, env.i64Const(8))),
+                                                                env.i8ptrType()->getPointerTo());
+                }
 
                 // read the elements
                 auto loopCounter = builder.CreateAlloca(Type::getInt64Ty(context));
@@ -1987,17 +1999,26 @@ namespace tuplex {
                                                             builder.CreateLoad(builder.getInt64Ty(), loopCounter));
                 auto current_offset = builder.CreateLoad(builder.getInt64Ty(),
                                                          current_offset_ptr);
-                auto next_str_ptr = builder.CreateGEP(env.i8ptrType(), list_arr_malloc, builder.CreateLoad(builder.getInt64Ty(), loopCounter));
+                auto arr_target_ptr = builder.CreateGEP(env.i8ptrType(), list_arr_malloc, builder.CreateLoad(builder.getInt64Ty(), loopCounter));
 
                 llvm::Value* offset=nullptr; llvm::Value *size=nullptr;
                 std::tie(offset, size) = unpack_offset_and_size(builder, current_offset);
 
                 auto curStrPtr = builder.MovePtrByBytes(builder.CreateBitCast(current_offset_ptr, env.i8ptrType()), offset);
-                builder.CreateStore(curStrPtr, next_str_ptr);
 
-                // set up to calculate the size based on offsets
-                auto next_size_ptr = builder.CreateGEP(builder.getInt64Ty(), list_sizearr_malloc, builder.CreateLoad(builder.getInt64Ty(), loopCounter));
-                builder.CreateStore(size, next_size_ptr);
+                // for GENERICDICT decode cJSON
+                if(elementType == python::Type::GENERICDICT) {
+                    auto item = call_cjson_parse(builder, curStrPtr);
+                    builder.CreateStore(item, arr_target_ptr);
+                } else {
+                    // for str/pyobject store raw data ref
+                    builder.CreateStore(curStrPtr, arr_target_ptr);
+
+                    // store also size
+                    // set up to calculate the size based on offsets
+                    auto next_size_ptr = builder.CreateGEP(builder.getInt64Ty(), list_sizearr_malloc, builder.CreateLoad(builder.getInt64Ty(), loopCounter));
+                    builder.CreateStore(size, next_size_ptr);
+                }
 
                 builder.CreateBr(loopBodyEnd);
 
@@ -2013,8 +2034,11 @@ namespace tuplex {
                 // store the malloc'd and populated array to the struct
                 auto list_arr = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
                 builder.CreateStore(list_arr_malloc, list_arr);
-                auto list_sizearr = builder.CreateStructGEP(list_ptr, llvm_list_type, 3);
-                builder.CreateStore(list_sizearr_malloc, list_sizearr);
+
+                if(elementType != python::Type::GENERICDICT && list_sizearr_malloc) {
+                    auto list_sizearr = builder.CreateStructGEP(list_ptr, llvm_list_type, 3);
+                    builder.CreateStore(list_sizearr_malloc, list_sizearr);
+                }
             } else if(python::Type::I64 == elementType || python::Type::F64 == elementType || python::Type::BOOLEAN == elementType) {
                 // can just directly point to the serialized data
                 auto list_arr = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
@@ -2030,7 +2054,7 @@ namespace tuplex {
                 auto size_in_bytes = list_deserialize_list_of_lists_from_memory(env, builder, ptr, list_type, num_elements, list_ptr);
                 ptr = builder.MovePtrByBytes(ptr, size_in_bytes);
             } else {
-                throw std::runtime_error("list of type " + list_type.desc() + " deserialize not yet supported.");
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " list of type " + list_type.desc() + " deserialize not yet supported.");
             }
 
 //                        auto llvmType = _env->createOrGetListType(type);

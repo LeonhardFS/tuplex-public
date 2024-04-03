@@ -896,6 +896,7 @@ namespace tuplex {
             jit.registerSymbol("cJSON_CreateString", cJSON_CreateString);
             jit.registerSymbol("cJSON_GetNumberValue", cJSON_GetNumberValue);
             jit.registerSymbol("cJSON_GetArrayItem", cJSON_GetArrayItem);
+            jit.registerSymbol("cJSON_Parse", cJSON_Parse);
 #endif
 
             jit.registerSymbol("cJSON_IsArrayOfObjects", cJSON_IsArrayOfObjects);
