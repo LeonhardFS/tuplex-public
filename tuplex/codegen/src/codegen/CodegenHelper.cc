@@ -1318,5 +1318,18 @@ namespace tuplex {
 
             return builder.CreateCall(func, {str_ptr});
         }
+
+        SerializableValue call_cjson_to_string(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+            auto& ctx = mod->getContext();
+            auto f_print = cJSONPrintUnformatted_prototype(ctx, mod);
+            auto f_strlen = strlen_prototype(ctx, mod);
+
+            SerializableValue v;
+            v.val = builder.CreateCall(f_print, {cjson_obj});
+            v.size = builder.CreateAdd(llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, 1)), builder.CreateCall(f_strlen, {v.val}));
+            return v;
+        }
     }
 }

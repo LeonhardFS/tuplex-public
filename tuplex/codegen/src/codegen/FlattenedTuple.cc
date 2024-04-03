@@ -768,14 +768,9 @@ namespace tuplex {
                         continue; // field done.
                     } else {
                         // assert(!is_option_field); // --> need to implement if logic for this!
-
-
-                        field = builder.CreateCall(
-                                cJSONPrintUnformatted_prototype(_env->getContext(), _env->getModule().get()),
-                                {field});
-                        size = builder.CreateAdd(
-                                builder.CreateCall(strlen_prototype(_env->getContext(), _env->getModule().get()), {field}),
-                                _env->i64Const(1));
+                        auto f = call_cjson_to_string(builder, field);
+                        field = f.val;
+                        size = f.size;
 
                         // // debug:
                         // _env->debugPrint(builder, "serializing generic dict: ");
@@ -1144,13 +1139,8 @@ namespace tuplex {
                         s = builder.CreateAdd(s, l_size);
                     } else if(type.isDictionaryType()) {
                         // could store size explicitly to avoid the formatting call here...
-                        auto field = builder.CreateCall(
-                                cJSONPrintUnformatted_prototype(_env->getContext(), _env->getModule().get()),
-                                {el.val});
-                        auto size = builder.CreateAdd(
-                                builder.CreateCall(strlen_prototype(_env->getContext(), _env->getModule().get()), {field}),
-                                _env->i64Const(1));
-                        s = builder.CreateAdd(s, size);
+                        auto f = call_cjson_to_string(builder, el.val);
+                        s = builder.CreateAdd(s, f.size);
                     } else {
                         // string etc.
                         assert(el.size && el.size->getType() == _env->i64Type());

@@ -1066,12 +1066,7 @@ namespace tuplex {
                 // note, this could be directly done as str const!
                 auto ret = builder.CreateCall(cJSONCreateObject_prototype(ctx, _module.get()), {});
                 assert(ret->getType()->isPointerTy());
-                auto cjsonstr = builder.CreateCall(
-                        cJSONPrintUnformatted_prototype(ctx, _module.get()),
-                        {ret});
-                size= builder.CreateAdd(
-                        builder.CreateCall(strlen_prototype(ctx, _module.get()), {cjsonstr}),
-                        i64Const(1));
+                auto size = call_cjson_to_string(builder, ret).size;
                 return SerializableValue{ret, size, isnull};
             }
 
