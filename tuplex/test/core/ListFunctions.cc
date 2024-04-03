@@ -330,9 +330,23 @@ TEST_F(ListFunctions, ListOf3Elements) {
 
     // use arbitrary elements & then access
     std::vector<List> test_lists{
-        List(1, 2, 3),
+        // primitive objects
+//        List(1, 2, 3),
+//        List(true, false, true),
+//        List("abc", "", "def"),
+//        List(2.7, -9.0, 9999.99),
+//        List(Field::null(), Field::null(), Field::null()),
+//        List(List(), List(), List()),
+        List(Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)),
+        // compound objects
+        // options of primitives
+        // list of lists
+        // list of structured dicts
+        // list of list of structure dicts
+        // list of tuples
+        // options of other complex compound objects.
                                // List(Field((int64_t)42), Field::null(), Field::null()),
-        //                       List("abc", "", "def"),
+        //
     //                           List("abd", Field::null(), "xyz")
     };
 

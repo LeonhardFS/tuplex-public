@@ -2015,7 +2015,7 @@ namespace tuplex {
                 builder.CreateStore(list_arr_malloc, list_arr);
                 auto list_sizearr = builder.CreateStructGEP(list_ptr, llvm_list_type, 3);
                 builder.CreateStore(list_sizearr_malloc, list_sizearr);
-            } else if(python::Type::I64 == elementType || python::Type::F64 == elementType) {
+            } else if(python::Type::I64 == elementType || python::Type::F64 == elementType || python::Type::BOOLEAN == elementType) {
                 // can just directly point to the serialized data
                 auto list_arr = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
                 auto llvm_target_cast_type = python::Type::F64 == elementType ? env.doublePointerType() : env.i64ptrType();

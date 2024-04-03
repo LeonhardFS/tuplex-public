@@ -174,12 +174,14 @@ namespace tuplex {
 
     List* List::allocate_deep_copy() const {
         List *L = new List();
-        assert(L->_elements == nullptr);
-        L->_numElements = _numElements;
-        L->_elements = new Field[L->_numElements];
-        L->_listType = _listType;
-        for(unsigned i = 0; i < _numElements; ++i) {
-            L->_elements[i] = _elements[i];
+        if(_numElements > 0) {
+            assert(L->_elements == nullptr);
+            L->_numElements = _numElements;
+            L->_elements = new Field[L->_numElements];
+            L->_listType = _listType;
+            for(unsigned i = 0; i < _numElements; ++i) {
+                L->_elements[i] = _elements[i];
+            }
         }
         return L;
     }

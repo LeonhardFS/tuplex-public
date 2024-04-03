@@ -744,7 +744,7 @@ namespace tuplex {
             elementType = elementType.getReturnType();
         }
 
-        if(elementType == python::Type::STRING || elementType == python::Type::PYOBJECT) { // strings are serialized differently
+        if(elementType == python::Type::STRING || elementType == python::Type::PYOBJECT || elementType == python::Type::GENERICDICT) { // strings are serialized differently
             // offset numbers
             size_t current_offset = sizeof(uint64_t) * l.numElements();
             for (size_t i = 0; i < l.numElements(); i++) {
@@ -784,7 +784,7 @@ namespace tuplex {
            size += l.numElements() * sizeof(int64_t); // 8 bytes each
         } else {
             throw std::runtime_error(
-                    "invalid list type: " + l.getType().desc() + " encountered, can't serialize.");
+                    "invalid list type: " + l.getType().desc() + " encountered, can't infer serialized size.");
         }
         return size;
     }
@@ -816,7 +816,7 @@ namespace tuplex {
             ptr += bitmapSize;
         }
 
-        if(elementType == python::Type::STRING) { // strings are serialized differently
+        if(elementType == python::Type::STRING || elementType == python::Type::PYOBJECT || elementType == python::Type::GENERICDICT) { // strings are serialized differently
             // offset numbers
             size_t current_offset = sizeof(uint64_t) * l.numElements();
             for (size_t i = 0; i < l.numElements(); i++) {
@@ -1729,6 +1729,12 @@ namespace tuplex {
                 els.emplace_back(Field((const char *)(ptr + el_offset)));
                 ptr += sizeof(uint64_t);
             }
+        } else if(elType == python::Type::PYOBJECT || elType == python::Type::GENERICDICT) {
+            for (size_t i = 0; i < numElements; i++) {
+                std::tie(el_offset, el_size) = unpack_offset_and_size_from_value(*(uint64_t*)ptr);
+                els.emplace_back(Field::from_str_data((const char *)(ptr + el_offset), elType));
+                ptr += sizeof(uint64_t);
+            }
         } else if(elType.isTupleType()) {
             // read each tuple
             for (size_t i = 0; i < numElements; i++) {
@@ -1754,6 +1760,18 @@ namespace tuplex {
                     } else {
                         std::tie(el_offset, el_size) = unpack_offset_and_size_from_value(*(uint64_t*)ptr);
                         els.emplace_back(Field(option<std::string>((const char *)(ptr + el_offset))));
+                        ptr += sizeof(uint64_t);
+                    }
+                }
+            } else if(underlyingElType == python::Type::PYOBJECT || underlyingElType == python::Type::GENERICDICT) {
+                // check for none then read each string
+                for (size_t i = 0; i < numElements; i++) {
+                    if(bitmapV[i]) {
+                        // is None
+                        els.emplace_back(Field::null(elType));
+                    } else {
+                        std::tie(el_offset, el_size) = unpack_offset_and_size_from_value(*(uint64_t*)ptr);
+                        els.emplace_back(Field::from_str_data(option<std::string>((const char *)(ptr + el_offset)), elType));
                         ptr += sizeof(uint64_t);
                     }
                 }
