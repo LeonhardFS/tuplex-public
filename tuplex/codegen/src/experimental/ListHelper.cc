@@ -2448,7 +2448,7 @@ namespace tuplex {
                     list_print(env, builder, element.val, element_type);
                     env.debugPrint(builder, "<- sub list ");
                 } else {
-                    throw std::runtime_error("list_print for type " + list_type.desc() + " not supported yet");
+                    // throw std::runtime_error("list_print for type " + list_type.desc() + " not supported yet");
                 }
 
                 // inc. loop counter
