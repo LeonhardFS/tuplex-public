@@ -3209,12 +3209,7 @@ namespace tuplex {
                                    {ret, key, value});
             }
             assert(ret->getType()->isPointerTy());
-            auto cjsonstr = builder.CreateCall(
-                    cJSONPrintUnformatted_prototype(_env->getContext(), _env->getModule().get()),
-                    {ret});
-            auto size = builder.CreateAdd(
-                    builder.CreateCall(strlen_prototype(_env->getContext(), _env->getModule().get()), {cjsonstr}),
-                    _env->i64Const(1));
+            auto size = call_cjson_to_string(builder, ret).size;
             return {ret, size};
         }
 

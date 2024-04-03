@@ -151,7 +151,7 @@ namespace tuplex {
                     builder.CreateStore(env.nullConstant(env.i8ptrType()), idx_opt_values);
                 }
             } else {
-                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + "Unsupported list element type: " + list_type.desc());
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Unsupported list element type: " + list_type.desc());
             }
         }
 
@@ -281,7 +281,7 @@ namespace tuplex {
                 if(elements_optional)
                     list_init_array(env, builder, list_ptr, list_type, capacity, 3, initialize);
             } else {
-                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + "Unsupported list element type: " + list_type.desc());
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Unsupported list element type: " + list_type.desc());
             }
         }
 
@@ -658,7 +658,7 @@ namespace tuplex {
                 } else if(elementType.isTupleType()) {
                     struct_opt_index = 3;
                 } else {
-                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + "Unsupported list element type: " + list_type.desc());
+                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Unsupported list element type: " + list_type.desc());
                 }
 
                 // create blocks
@@ -832,7 +832,7 @@ namespace tuplex {
                 // env.printValue(builder, builder.CreateLoad(target_idx), "pointer stored - post update: ");
 
             } else {
-                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + "Unsupported list element type: " + list_type.desc());
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Unsupported list element type: " + list_type.desc());
             }
 
             // connect blocks + create storage for null
@@ -890,7 +890,7 @@ namespace tuplex {
                 auto idx_size = builder.CreateStructGEP(list_ptr, llvm_list_type, 1); assert(idx_size->getType() == env.i64ptrType());
                 builder.CreateStore(size, idx_size);
             } else {
-                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + "Unsupported list element type: " + list_type.desc());
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Unsupported list element type: " + list_type.desc());
             }
         }
 
@@ -923,7 +923,7 @@ namespace tuplex {
                       || elementType.isStructuredDictionaryType()
                       || elementType.isListType()
                       || elementType.isTupleType())) {
-                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + "Unsupported list element type: " + list_type.desc());
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Unsupported list element type: " + list_type.desc());
             }
 
             // shorten the code below
@@ -1082,6 +1082,33 @@ namespace tuplex {
             return l_size;
         }
 
+        llvm::Value* list_of_generic_dicts_size(LLVMEnvironment& env, const IRBuilder& builder,
+                                         llvm::Value* list_ptr, const python::Type& list_type) {
+
+            auto f_generic_dict_element_size = [list_type](LLVMEnvironment& env, const IRBuilder& builder,
+                                                    llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
+                auto element_type = list_type.elementType();
+                assert(element_type == python::Type::GENERICDICT);
+
+                auto llvm_list_type = env.createOrGetListType(list_type);
+                auto ptr_values = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, 2);
+
+                auto item_ptr = builder.CreateGEP(env.i8ptrType(), ptr_values, index);
+                auto item = builder.CreateLoad(env.i8ptrType(), item_ptr);
+
+                // call cjson serialize
+                auto val = call_cjson_to_string(builder, item);
+
+                // get size
+                auto item_size = val.size;
+                return item_size;
+            };
+
+            auto l_size = list_of_varitems_serialized_size(env, builder, list_ptr, list_type, f_generic_dict_element_size);
+
+            return l_size;
+        }
+
         static llvm::Value* list_serialize_fixed_sized_to(LLVMEnvironment& env, const IRBuilder& builder,
                                                           llvm::Value* list_ptr,
                                                           const python::Type& list_type,
@@ -1212,6 +1239,53 @@ namespace tuplex {
 
             return list_serialize_varitems_to(env, builder, list_ptr, list_type,
                                               dest_ptr, f_tuple_element_size, f_tuple_element_serialize_to);
+        }
+
+        llvm::Value* list_of_generic_dicts_serialize_to(LLVMEnvironment& env,
+                                                 const IRBuilder& builder,
+                                                 llvm::Value* list_ptr,
+                                                 llvm::Value* dest_ptr) {
+
+            // TODO: could call cJSON only once...
+            auto list_type = python::Type::makeListType(python::Type::GENERICDICT);
+            auto f_generic_dict_element_size = [list_type](LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
+                assert(index && index->getType() == env.i64Type());
+
+                auto llvm_list_type = env.createOrGetListType(list_type);
+                auto ptr_values = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, 2);
+
+                auto item_ptr = builder.CreateGEP(env.i8ptrType(), ptr_values, index);
+                auto item = builder.CreateLoad(env.i8ptrType(), item_ptr);
+
+                // call cjson serialize
+                auto val = call_cjson_to_string(builder, item);
+
+                // get size
+                auto item_size = val.size;
+                return item_size;
+            };
+
+            auto f_generic_dict_element_serialize_to = [list_type](LLVMEnvironment& env, const IRBuilder& builder,
+                                                            llvm::Value* list_ptr, llvm::Value* index, llvm::Value* dest_ptr) -> llvm::Value* {
+
+                assert(index && index->getType() == env.i64Type());
+
+                auto llvm_list_type = env.createOrGetListType(list_type);
+                auto ptr_values = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, 2);
+
+                auto item_ptr = builder.CreateGEP(env.i8ptrType(), ptr_values, index);
+                auto item = builder.CreateLoad(env.i8ptrType(), item_ptr);
+
+                // call cjson serialize
+                auto val = call_cjson_to_string(builder, item);
+
+                builder.CreateMemCpy(dest_ptr, 0, val.val, 0, val.size);
+                auto s_size = val.size;
+                return s_size;
+            };
+
+            return list_serialize_varitems_to(env, builder, list_ptr, list_type,
+                                              dest_ptr, f_generic_dict_element_size, f_generic_dict_element_serialize_to);
         }
 
         // generic list of variable fields serialization function
@@ -1572,8 +1646,10 @@ namespace tuplex {
                 return list_of_tuples_serialize_to(env, builder, list_ptr, list_type, dest_ptr);
             } else if(elementType.isListType()) {
                 return list_of_lists_serialize_to(env, builder, list_ptr, list_type, dest_ptr);
+            } else if(elementType == python::Type::GENERICDICT) {
+                return list_of_generic_dicts_serialize_to(env, builder, list_ptr, dest_ptr);
             } else {
-                throw std::runtime_error("Unsupported list to serialize: " + list_type.desc());
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Unsupported list to serialize: " + list_type.desc());
             }
 
             return nullptr;
@@ -1707,8 +1783,12 @@ namespace tuplex {
                 llvm::Value* l_size = list_of_tuples_size(env, builder, list_ptr, list_type);
                 l_size = builder.CreateAdd(l_size, opt_size);
                 return l_size;
+            } else if(elementType == python::Type::GENERICDICT) {
+                llvm::Value* l_size = list_of_generic_dicts_size(env, builder, list_ptr, list_type);
+                l_size = builder.CreateAdd(l_size, opt_size);
+                return l_size;
             } else {
-                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + "Unsupported list element type: " + list_type.desc());
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Unsupported list element type: " + list_type.desc());
             }
         }
 
