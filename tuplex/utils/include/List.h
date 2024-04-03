@@ -72,6 +72,8 @@ namespace tuplex {
             return l;
         }
 
+        std::vector<Field> to_vector() const;
+
         List* allocate_deep_copy() const;
 
         size_t serialized_length() const;

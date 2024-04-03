@@ -68,6 +68,14 @@ inline void compareStrArrays(std::vector<std::string> arr_A, std::vector<std::st
     ASSERT_EQ(arr_A.size(), arr_B.size());
 }
 
+inline void compare_rows(const std::vector<tuplex::Row>& ans, const std::vector<tuplex::Row>& ref) {
+    EXPECT_EQ(ans.size(), ref.size());
+
+    for(unsigned i = 0; i < std::min(ans.size(), ref.size()); ++i) {
+        EXPECT_EQ(ans[i].toPythonString(), ref[i].toPythonString());
+    }
+}
+
 class TuplexTest : public ::testing::Test {
 protected:
     std::string testName;

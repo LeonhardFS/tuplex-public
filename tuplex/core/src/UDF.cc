@@ -486,7 +486,7 @@ namespace tuplex {
            _ast.setUnpacking(true);
 
 #warning "TODO, revisit this function. Could be better refactored."
-           if(PARAM_USE_ROW_TYPE) {
+           if(PARAM_USE_ROW_TYPE && hintType.isRowType()) {
                if(!hintParams(hintType.get_column_types(), params, true, removeBranches))
                    return false;
                _inputSchema = Schema(Schema::MemoryLayout::ROW, hintType);

@@ -192,4 +192,12 @@ namespace tuplex {
         auto len = serialized_list_size(*this);
         return serialize_list_to_ptr(*this, ptr, len);
     }
+
+    std::vector<Field> List::to_vector() const {
+        std::vector<Field> v;
+        for(unsigned i = 0; i < _numElements; ++i) {
+            v.push_back(_elements[i]);
+        }
+        return v;
+    }
 }
