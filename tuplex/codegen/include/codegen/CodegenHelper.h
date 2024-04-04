@@ -1696,6 +1696,15 @@ namespace tuplex {
         [[maybe_unused]] extern llvm::Value* call_cjson_is_list_of_generic_dicts(const IRBuilder& builder, llvm::Value* cjson_obj);
 
         extern llvm::Value* call_cjson_type_as_str(const IRBuilder& builder, llvm::Value* cjson_obj);
+
+
+        /*!
+         * return number of 8 byte blocks required to deserialize bitmap
+         * @param builder
+         * @param num_elements
+         * @return number of 8 byte blocks
+         */
+        extern llvm::Value* calc_bitmap_size_in_64bit_blocks(const IRBuilder& builder, llvm::Value* num_elements);
     }
 }
 

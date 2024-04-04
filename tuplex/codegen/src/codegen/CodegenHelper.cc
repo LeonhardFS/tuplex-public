@@ -1331,5 +1331,32 @@ namespace tuplex {
             v.size = builder.CreateAdd(llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, 1)), builder.CreateCall(f_strlen, {v.val}));
             return v;
         }
+
+        llvm::Value* calc_bitmap_size_in_64bit_blocks(const IRBuilder& builder, llvm::Value* num_elements) {
+            // implement here the same logic as
+            // calc_bitmap_size_in_64bit_blocks in Serializer.h provides
+
+            assert(num_elements && num_elements->getType()->isIntegerTy() && num_elements->getType()->getIntegerBitWidth() == 64);
+
+            auto& ctx = builder.getContext();
+
+            auto base = llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, 64));
+            // T k = x / base;
+            auto k = builder.CreateSDiv(num_elements, base);
+
+            //  if(k * base >= x)
+            //            return k * base;
+            //        else
+            //            return (k + 1) * base;
+            auto k_base = builder.CreateMul(k, base);
+            auto lgtx = builder.CreateICmpSGE(k_base, num_elements);
+
+            auto k_base_plus_one = builder.CreateAdd(k_base, base);
+            auto ceil_to_multiple_base = builder.CreateSelect(lgtx, k_base, k_base_plus_one);
+            llvm::Value* num_bitmap_fields = builder.CreateSDiv(ceil_to_multiple_base, base);
+
+            return builder.CreateMul(num_bitmap_fields, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, sizeof(uint64_t))));
+
+        }
     }
 }

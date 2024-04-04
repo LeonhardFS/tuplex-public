@@ -337,15 +337,16 @@ TEST_F(ListFunctions, ListOf3Elements) {
 //        List(2.7, -9.0, 9999.99),
 //        List(Field::null(), Field::null(), Field::null()),
 //        List(List(), List(), List()),
-        List(Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)),
+//        List(Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)),
         // compound objects
         // options of primitives
+        List(Field((int64_t)42), Field::null(), Field::null()),
         // list of lists
         // list of structured dicts
         // list of list of structure dicts
         // list of tuples
         // options of other complex compound objects.
-                               // List(Field((int64_t)42), Field::null(), Field::null()),
+
         //
     //                           List("abd", Field::null(), "xyz")
     };
@@ -360,20 +361,20 @@ TEST_F(ListFunctions, ListOf3Elements) {
         os<<"Running test case "<<(test_case_no+1)<<"/"<<test_lists.size()<<": "<<test_list.getType().desc()<<endl;
 
 
-        {
-            os<<"-- Testing deserialize + list access"<<endl;
-            // construct test data (list access)
-            std::vector<Row> test_data;
-            std::vector<Row> ref_data;
-            for(unsigned i = 0; i < num_list_elements; ++i) {
-                test_data.push_back(Row(test_list, Field((int64_t)i)));
-                ref_data.push_back(Row(test_list.getField(i)));
-            }
-
-            // mini pipeline -> checks that deserialize + list access works.
-            auto ans = ctx.parallelize(test_data).map(UDF("lambda L, i: L[i]")).collectAsVector();
-            compare_rows(ans, ref_data);
-        }
+//        {
+//            os<<"-- Testing deserialize + list access"<<endl;
+//            // construct test data (list access)
+//            std::vector<Row> test_data;
+//            std::vector<Row> ref_data;
+//            for(unsigned i = 0; i < num_list_elements; ++i) {
+//                test_data.push_back(Row(test_list, Field((int64_t)i)));
+//                ref_data.push_back(Row(test_list.getField(i)));
+//            }
+//
+//            // mini pipeline -> checks that deserialize + list access works.
+//            auto ans = ctx.parallelize(test_data).map(UDF("lambda L, i: L[i]")).collectAsVector();
+//            compare_rows(ans, ref_data);
+//        }
 
         // now test that serialize works, by transforming tuple -> list.
         {

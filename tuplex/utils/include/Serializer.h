@@ -358,13 +358,19 @@ namespace tuplex {
     size_t serialize_list_to_ptr(const List& l, uint8_t* ptr, size_t capacity_left);
 
     inline std::tuple<size_t, size_t> unpack_offset_and_size_from_value(uint64_t data) {
-        uint64_t size = ((data & (0xFFFFFFFFl << 32)) >> 32) - 1;
+        uint64_t size = ((data & (0xFFFFFFFFl << 32)) >> 32);
         uint64_t offset = data & 0xFFFFFFFF;
         return std::make_tuple(offset, size);
     }
 
     inline uint64_t pack_offset_and_size(uint64_t offset, uint64_t size) {
         return offset | (size << 32);
+    }
+
+    inline size_t calc_bitmap_size_in_64bit_blocks(size_t num_elements) {
+        auto numBitmapFields = core::ceilToMultiple(num_elements, 64ul)/64;
+        auto bitmapSize = numBitmapFields * sizeof(uint64_t);
+        return bitmapSize;
     }
 
 }

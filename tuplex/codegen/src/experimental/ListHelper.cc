@@ -19,6 +19,157 @@ namespace tuplex {
             // list should only use runtime allocations -> hence free later!
         }
 
+        llvm::Function* create_list_serialize_bitmap_function(LLVMEnvironment& env, const std::string& func_key) {
+
+            using namespace llvm;
+
+            auto& ctx = env.getContext();
+            auto FT = FunctionType::get(llvm::Type::getVoidTy(ctx), {env.i64Type(), env.i8ptrType(), env.i8ptrType()}, false);
+            llvm::Function* func = getOrInsertFunction(*env.getModule(), func_key, FT);
+            func->setLinkage(llvm::Function::InternalLinkage);
+
+            auto bbEntry = BasicBlock::Create(ctx, "body", func);
+
+            IRBuilder builder(bbEntry);
+
+            auto args = mapLLVMFunctionArgs(func, {"num_elements", "bitmap_ptr", "dest_ptr"});
+
+            auto num_elements = args["num_elements"];
+            auto bitmap_ptr = args["bitmap_ptr"];
+            auto dest_ptr = args["dest_ptr"];
+
+            // create loop to decode bits and store them in bitmap
+            auto bbLoopHeader = BasicBlock::Create(env.getContext(), "list_serialize_bitmap_loop_header", builder.GetInsertBlock()->getParent());
+            auto bbLoopBody = BasicBlock::Create(env.getContext(), "list_serialize_bitmap_loop_body", builder.GetInsertBlock()->getParent());
+            auto bbLoopDone = BasicBlock::Create(env.getContext(), "list_serialize_bitmap_loop_done", builder.GetInsertBlock()->getParent());
+
+            // memset dest ptr to zero
+            auto bitmap_size = calc_bitmap_size_in_64bit_blocks(builder, num_elements);
+            builder.CreateMemSet(dest_ptr, env.i8Const(0), bitmap_size, 0);
+
+
+            auto i_var = env.CreateFirstBlockAlloca(builder, env.i64Type());
+            builder.CreateStore(env.i64Const(0), i_var);
+            builder.CreateBr(bbLoopHeader);
+
+            {
+                builder.SetInsertPoint(bbLoopHeader);
+                auto i = builder.CreateLoad(builder.getInt64Ty(), i_var);
+                auto loop_cond = builder.CreateICmpSLT(i, num_elements);
+                builder.CreateCondBr(loop_cond, bbLoopBody, bbLoopDone);
+            }
+
+
+            {
+                builder.SetInsertPoint(bbLoopBody);
+                auto i = builder.CreateLoad(builder.getInt64Ty(), i_var);
+
+                // read from bitmap ptr
+                llvm::Value* is_null = builder.CreateLoad(env.i8Type(), builder.CreateGEP(env.i8Type(), bitmap_ptr, i));
+                env.printValue(builder, is_null, "element is null (i8): ");
+                is_null = builder.CreateICmpEQ(is_null, env.i8Const(1));
+
+                env.printValue(builder, i, "serializing element no=");
+                env.printValue(builder, is_null, "element is null: ");
+
+                auto i64_ptr = builder.CreatePointerCast(dest_ptr, env.i64ptrType());
+                auto block_idx = builder.CreateSDiv(i, env.i64Const(64));
+                auto target_block_ptr = builder.CreateGEP(env.i64Type(), i64_ptr, block_idx);
+                llvm::Value* block = builder.CreateLoad(env.i64Type(), target_block_ptr);
+                auto bit_idx = builder.CreateSRem(i, env.i64Const(64));
+
+
+                // create nth bit set & or to block + save block back!
+                block = builder.CreateOr(block, builder.CreateShl(
+                        builder.CreateZExt(is_null, env.i64Type()),
+                        bit_idx));
+
+                builder.CreateStore(block, target_block_ptr);
+
+                builder.CreateStore(builder.CreateAdd(i, env.i64Const(1)), i_var);
+                builder.CreateBr(bbLoopHeader);
+            }
+
+            builder.SetInsertPoint(bbLoopDone);
+
+            builder.CreateRetVoid();
+
+            return func;
+        }
+
+        void list_serialize_bitmap_to(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, const python::Type& list_type, llvm::Value* dest_ptr) {
+            using namespace llvm;
+
+            auto num_elements = list_length(env, builder, list_ptr, list_type);
+
+            // get bitmap pointer
+            auto llvm_list_type = env.createOrGetListType(list_type);
+            auto n_struct_elements = llvm_list_type->getStructNumElements();
+
+            auto bitmap_ptr = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, n_struct_elements - 1);
+
+            // TOOD: make sure names do not clash...
+            auto func_key = "list_serialize_bitmap";
+            if(!env.functionCacheHasKey(func_key)) {
+                auto func = create_list_serialize_bitmap_function(env, func_key);
+                env.functionCacheSet(func_key, func);
+            }
+            auto func = env.functionCacheGet(func_key);
+
+            builder.CreateCall(func, {num_elements, builder.CreatePointerCast(bitmap_ptr, env.i8ptrType()), builder.CreatePointerCast(dest_ptr, env.i8ptrType())});
+        }
+
+        llvm::Value* list_deserialize_bitmap(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* ptr, llvm::Value* num_elements) {
+
+            using namespace llvm;
+
+            // alloc pointer of num_elements bytes for fast read.
+            auto bitmap_ptr = env.malloc(builder, num_elements);
+
+            // create loop to decode bits and store them in bitmap
+            auto bbLoopHeader = BasicBlock::Create(env.getContext(), "decode_list_bitmap_loop_header", builder.GetInsertBlock()->getParent());
+            auto bbLoopBody = BasicBlock::Create(env.getContext(), "decode_list_bitmap_loop_body", builder.GetInsertBlock()->getParent());
+            auto bbLoopDone = BasicBlock::Create(env.getContext(), "decode_list_bitmap_loop_done", builder.GetInsertBlock()->getParent());
+
+            auto i_var = env.CreateFirstBlockAlloca(builder, env.i64Type());
+            builder.CreateStore(env.i64Const(0), i_var);
+            builder.CreateBr(bbLoopHeader);
+
+            {
+                builder.SetInsertPoint(bbLoopHeader);
+                auto i = builder.CreateLoad(builder.getInt64Ty(), i_var);
+                auto loop_cond = builder.CreateICmpSLT(i, num_elements);
+                builder.CreateCondBr(loop_cond, bbLoopBody, bbLoopDone);
+            }
+
+
+            {
+                builder.SetInsertPoint(bbLoopBody);
+                auto i = builder.CreateLoad(builder.getInt64Ty(), i_var);
+
+                // read from ptr
+                auto i64_ptr = builder.CreatePointerCast(ptr, env.i64ptrType());
+                auto block_idx = builder.CreateSDiv(i, env.i64Const(64));
+                auto block = builder.CreateLoad(env.i64Type(), builder.CreateGEP(env.i64Type(), i64_ptr, block_idx));
+
+                auto bit_idx = builder.CreateSRem(i, env.i64Const(64));
+
+                auto is_null = env.extractNthBit(builder, block, bit_idx);
+
+                env.printValue(builder, i, "extracting bit number=");
+                env.printValue(builder, is_null, "nth element is null: ");
+
+                auto byte_value = builder.CreateZExt(is_null, env.i8Type());
+                builder.CreateStore(byte_value, builder.CreateGEP(env.i8Type(), bitmap_ptr, i));
+
+                builder.CreateStore(builder.CreateAdd(i, env.i64Const(1)), i_var);
+                builder.CreateBr(bbLoopHeader);
+            }
+
+            builder.SetInsertPoint(bbLoopDone);
+            return bitmap_ptr;
+        }
+
         void list_init_empty(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, const python::Type& list_type) {
             using namespace llvm;
             using namespace std;
@@ -390,6 +541,9 @@ namespace tuplex {
             }
 
 
+            env.printValue(builder, idx, "list access with index=");
+            env.printValue(builder, ret.val, "list [] got=");
+
             return ret;
         }
 
@@ -669,11 +823,18 @@ namespace tuplex {
                 bStoreDone = BasicBlock::Create(ctx, "store_done", F);
 
                 // need to ALWAYS store null
-                auto idx_nulls = builder.CreateStructGEP(list_ptr, llvm_list_type, struct_opt_index);
-                assert(value.is_null);
-                auto ptr = builder.CreateLoad(llvm_list_type->getStructElementType(struct_opt_index), idx_nulls);
-                auto idx_null = builder.CreateGEP(builder.getInt8Ty(), ptr, idx);
-                builder.CreateStore(builder.CreateZExtOrTrunc(value.is_null, env.i8Type()), idx_null);
+                auto nullmap_ptr = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, struct_opt_index);
+                auto is_null_to_store = builder.CreateZExtOrTrunc(value.is_null, env.i8Type());
+                builder.CreateStore(is_null_to_store, builder.MovePtrByBytes( nullmap_ptr, idx), true);
+
+
+                env.printValue(builder, is_null_to_store, "value to store is: ");
+                env.printValue(builder, idx, "storing value to idx in list: ");
+                env.printValue(builder, value.is_null, "value is null: ");
+
+                // now load value to check it's ok
+                auto check = list_load_value(env, builder, list_ptr, list_type, idx);
+                env.printValue(builder, check.val, "CHECK: val isnull= ");
 
                 // jump now according to block!
                 builder.CreateCondBr(value.is_null, bStoreDone, bElementIsNotNull);
@@ -1611,7 +1772,7 @@ namespace tuplex {
             return l_size;
         }
 
-        llvm::Value* list_serialize_to(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, const python::Type& list_type, llvm::Value* dest_ptr) {
+        llvm::Value* list_serialize_to(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, python::Type list_type, llvm::Value* dest_ptr) {
 
             using namespace llvm;
             using namespace std;
@@ -1627,32 +1788,60 @@ namespace tuplex {
             // cf. now getOrCreateListType(...) ==> different layouts depending on element type.
             // init accordingly.
             auto elementType = list_type.elementType();
+            auto original_list_type = list_type;
+
+            bool has_optional_elements = elementType.isOptionType();
+            llvm::Value* num_elements = nullptr, *bitmap_size_in_bytes=nullptr, *bitmap_dest_ptr=nullptr;
+            if(has_optional_elements) {
+                num_elements = list_length(env, builder, list_ptr, list_type);
+                bitmap_size_in_bytes = calc_bitmap_size_in_64bit_blocks(builder, num_elements);
+
+                // save now to pointer num_elements, and move with bitmap size.
+                // i.e. first 8 bytes will be num elements, then comes bitmap, then data.
+                // however, do here the trick of first serializing the data which overwrites the last 8 bytes.
+                // bitmap at end overwrites this!
+                builder.CreateStore(num_elements, builder.CreatePointerCast(dest_ptr, env.i64ptrType()));
+                bitmap_dest_ptr = builder.MovePtrByBytes(dest_ptr, sizeof(int64_t));
+                dest_ptr = builder.MovePtrByBytes(dest_ptr, bitmap_size_in_bytes);
+
+                elementType = elementType.withoutOption();
+                list_type = python::Type::makeListType(elementType);
+            }
+
+            llvm::Value* size_in_bytes = nullptr;
             if(elementType.isSingleValued()) {
                 // store length of list to dest_ptr!
                 auto len = list_length(env, builder, list_ptr, list_type);
                 auto casted_dest_ptr = builder.CreateBitOrPointerCast(dest_ptr, env.i64ptrType());
                 builder.CreateStore(len, casted_dest_ptr);
-                return env.i64Const(8);
+                size_in_bytes = env.i64Const(8);
             } else if(elementType == python::Type::I64
                       || elementType == python::Type::F64
                       || elementType == python::Type::BOOLEAN) {
-                return list_serialize_fixed_sized_to(env, builder, list_ptr, list_type, dest_ptr);
+                size_in_bytes =list_serialize_fixed_sized_to(env, builder, list_ptr, list_type, dest_ptr);
             } else if(elementType == python::Type::STRING
                       || elementType == python::Type::PYOBJECT) {
-                return list_serialize_str_like_to(env, builder, list_ptr, list_type, dest_ptr);
+                size_in_bytes = list_serialize_str_like_to(env, builder, list_ptr, list_type, dest_ptr);
             } else if(elementType.isStructuredDictionaryType()) {
-                return list_of_structs_serialize_to(env, builder, list_ptr, list_type, dest_ptr);
+                size_in_bytes = list_of_structs_serialize_to(env, builder, list_ptr, list_type, dest_ptr);
             } else if(elementType.isTupleType()) {
-                return list_of_tuples_serialize_to(env, builder, list_ptr, list_type, dest_ptr);
+                size_in_bytes = list_of_tuples_serialize_to(env, builder, list_ptr, list_type, dest_ptr);
             } else if(elementType.isListType()) {
-                return list_of_lists_serialize_to(env, builder, list_ptr, list_type, dest_ptr);
+                size_in_bytes = list_of_lists_serialize_to(env, builder, list_ptr, list_type, dest_ptr);
             } else if(elementType == python::Type::GENERICDICT) {
-                return list_of_generic_dicts_serialize_to(env, builder, list_ptr, dest_ptr);
+                size_in_bytes = list_of_generic_dicts_serialize_to(env, builder, list_ptr, dest_ptr);
             } else {
-                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Unsupported list to serialize: " + list_type.desc());
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Unsupported list to serialize: " + original_list_type.desc());
             }
 
-            return nullptr;
+            // Now time to serialize bitmap
+            // => note that bitmap is saved in memory as pointer
+            if(has_optional_elements) {
+                list_serialize_bitmap_to(env, builder, list_ptr, list_type, bitmap_dest_ptr);
+                size_in_bytes = builder.CreateAdd(size_in_bytes, bitmap_size_in_bytes);
+            }
+
+            return size_in_bytes;
         }
 
         llvm::Value* list_serialized_size(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, const python::Type& list_type) {
@@ -1677,10 +1866,7 @@ namespace tuplex {
             llvm::Value* opt_size = env.i64Const(0);
             if(elements_optional) {
                 auto len = list_length(env, builder, list_ptr, list_type);
-                // store 1 byte?
-                opt_size = builder.CreateMul(env.i64Const(1), len);
-                // for efficiency, round up to multiple of 8. (alignment)
-                opt_size = env.roundUpToMultiple(builder, opt_size, sizeof(int64_t));
+                opt_size = calc_bitmap_size_in_64bit_blocks(builder, len);
             }
 
             if(elementType.isSingleValued()) {
@@ -1698,7 +1884,8 @@ namespace tuplex {
                 llvm::Value* l_size = builder.CreateAdd(env.i64Const(8), builder.CreateMul(env.i64Const(8), len));
                 if(elements_optional)
                     l_size = builder.CreateAdd(l_size, opt_size);
-                l_size = builder.CreateAdd(l_size, opt_size);
+                env.printValue(builder, l_size, "serialized size of " + list_type.desc() + " is: ");
+
                 return l_size;
             } else if(elementType == python::Type::STRING
                       || elementType == python::Type::PYOBJECT) {
@@ -2012,21 +2199,46 @@ namespace tuplex {
             list_reserve_capacity(env, builder, list_ptr, list_type, num_elements, false);
             list_store_size(env, builder, list_ptr, list_type, num_elements);
 
-            env.debugPrint(builder, "decoding list " + list_type.desc() + " with num_elements=", num_elements);
+            env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " decoding list " + list_type.desc() + " with num_elements=", num_elements);
 
-            // decode now depending on element type
-            // first check if list has optional elements, if so the next values will have the bitmap for the options
-            llvm::Value* opt_size = env.i64Const(0);
-            if(elements_optional) {
-                auto len = list_length(env, builder, list_ptr, list_type);
-                // store 1 byte?
-                opt_size = builder.CreateMul(env.i64Const(1), len);
-                // for efficiency, round up to multiple of 8. (alignment)
-                opt_size = env.roundUpToMultiple(builder, opt_size, sizeof(int64_t));
-            }
+//            // decode now depending on element type
+//            // first check if list has optional elements, if so the next values will have the bitmap for the options
+//            if(elements_optional) {
+//
+////                throw std::runtime_error("not yet implemetned");
+////                deserializeBitmap(env, builder, ptr,  len);
+////
+////                auto len = list_length(env, builder, list_ptr, list_type);
+////                // store 1 byte?
+////                opt_size = builder.CreateMul(env.i64Const(1), len);
+////                // for efficiency, round up to multiple of 8. (alignment)
+////                opt_size = env.roundUpToMultiple(builder, opt_size, sizeof(int64_t));
+//
+//                auto opt_size =
+//
+//
+//            }
 
             // move the size of the first i64 indicating the length
             ptr = builder.MovePtrByBytes(ptr, env.i64Const(sizeof(int64_t)));
+
+            // bitmap? --> move ptr to rest of data & store
+            if(elements_optional) {
+
+                auto opt_size = calc_bitmap_size_in_64bit_blocks(builder, num_elements);
+
+                env.printValue(builder, opt_size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " list " + list_type.desc() + " has serialized bitmap of size=");
+
+                auto bitmap_ptr = list_deserialize_bitmap(env, builder, ptr, num_elements);
+
+                auto n_struct_elements = llvm_list_type->getStructNumElements();
+                assert(n_struct_elements >= 3);
+
+                auto target_bitmap_ptr = builder.CreateStructGEP(list_ptr, llvm_list_type, n_struct_elements - 1);
+                builder.CreateStore(bitmap_ptr, target_bitmap_ptr);
+
+                ptr = builder.MovePtrByBytes(ptr, opt_size);
+            }
 
             // deserialize based on list element type.
             if(python::Type::STRING == elementType || python::Type::PYOBJECT == elementType || python::Type::GENERICDICT == elementType) {
@@ -2331,6 +2543,8 @@ namespace tuplex {
 
             if(serialized_size_in_bytes) {
                 *serialized_size_in_bytes = builder.CreatePtrDiff(builder.getInt8Ty(), ptr, original_ptr);
+
+                env.debugPrint(builder, "read bytes=", *serialized_size_in_bytes);
             }
 
             return list_val;

@@ -68,7 +68,7 @@ namespace tuplex {
         extern llvm::Value* list_serialized_size(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, const python::Type& list_type);
 
 
-        extern llvm::Value* list_serialize_to(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, const python::Type& list_type, llvm::Value* dest_ptr);
+        extern llvm::Value* list_serialize_to(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, python::Type list_type, llvm::Value* dest_ptr);
 
         /*!
          * deserialize list from memory pointer. Returns number of decoded bytes (if not null), and list pointer.
