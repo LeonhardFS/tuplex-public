@@ -50,6 +50,9 @@ namespace tuplex {
 
             auto i_var = env.CreateFirstBlockAlloca(builder, env.i64Type());
             builder.CreateStore(env.i64Const(0), i_var);
+
+            env.printValue(builder, num_elements, "serializing bitmap for List with n_elements=");
+
             builder.CreateBr(bbLoopHeader);
 
             {
@@ -84,6 +87,8 @@ namespace tuplex {
                         builder.CreateZExt(is_null, env.i64Type()),
                         bit_idx));
 
+                env.printValue(builder, block, "block after: ");
+
                 builder.CreateStore(block, target_block_ptr);
 
                 builder.CreateStore(builder.CreateAdd(i, env.i64Const(1)), i_var);
@@ -101,6 +106,8 @@ namespace tuplex {
             using namespace llvm;
 
             auto num_elements = list_length(env, builder, list_ptr, list_type);
+
+            assert(list_type.elementType().isOptionType());
 
             // get bitmap pointer
             auto llvm_list_type = env.createOrGetListType(list_type);
@@ -832,10 +839,6 @@ namespace tuplex {
                 env.printValue(builder, idx, "storing value to idx in list: ");
                 env.printValue(builder, value.is_null, "value is null: ");
 
-                // now load value to check it's ok
-                auto check = list_load_value(env, builder, list_ptr, list_type, idx);
-                env.printValue(builder, check.val, "CHECK: val isnull= ");
-
                 // jump now according to block!
                 builder.CreateCondBr(value.is_null, bStoreDone, bElementIsNotNull);
                 builder.SetInsertPoint(bElementIsNotNull);
@@ -1001,6 +1004,11 @@ namespace tuplex {
                 assert(bStoreDone);
                 builder.CreateBr(bStoreDone);
                 builder.SetInsertPoint(bStoreDone);
+
+                // now load value to check it's ok
+                auto check = list_load_value(env, builder, list_ptr, list_type, idx);
+                env.printValue(builder, check.is_null, "CHECK: val isnull= ");
+                env.printValue(builder, check.val, "CHECK: val value= ");
             }
         }
 
@@ -1837,6 +1845,7 @@ namespace tuplex {
             // Now time to serialize bitmap
             // => note that bitmap is saved in memory as pointer
             if(has_optional_elements) {
+                list_type = python::Type::makeListType(python::Type::makeOptionType(elementType));
                 list_serialize_bitmap_to(env, builder, list_ptr, list_type, bitmap_dest_ptr);
                 size_in_bytes = builder.CreateAdd(size_in_bytes, bitmap_size_in_bytes);
             }
@@ -1844,7 +1853,7 @@ namespace tuplex {
             return size_in_bytes;
         }
 
-        llvm::Value* list_serialized_size(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, const python::Type& list_type) {
+        llvm::Value* list_serialized_size(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, python::Type list_type) {
             using namespace llvm;
             using namespace std;
 
@@ -1862,11 +1871,14 @@ namespace tuplex {
             if(elements_optional)
                 elementType = elementType.getReturnType();
 
+            python::Type original_list_type = list_type;
+
             // optional? => add size!
             llvm::Value* opt_size = env.i64Const(0);
             if(elements_optional) {
                 auto len = list_length(env, builder, list_ptr, list_type);
                 opt_size = calc_bitmap_size_in_64bit_blocks(builder, len);
+                list_type = python::Type::makeListType(elementType);
             }
 
             if(elementType.isSingleValued()) {
@@ -1890,11 +1902,11 @@ namespace tuplex {
             } else if(elementType == python::Type::STRING
                       || elementType == python::Type::PYOBJECT) {
 
-                if(elements_optional)
-                    throw std::runtime_error("Option[str] or Option[pyobject] serialization of list elements not yet supported");
+                auto size_in_bytes = list_serialized_size_str_like(env, builder, list_ptr, list_type);
 
-                // new
-                return list_serialized_size_str_like(env, builder, list_ptr, list_type);
+                if(elements_optional)
+                    size_in_bytes = builder.CreateAdd(size_in_bytes, opt_size);
+                return size_in_bytes;
 
 //                // this requires a loop (maybe generate instead function?)
 //                auto size_var = env.CreateFirstBlockAlloca(builder, env.i64Type());
@@ -1960,22 +1972,26 @@ namespace tuplex {
                 // pointer to the structured dict type!
                 // this is quite involved, therefore put into its own function. basically iterate over elements and then query their size!
                 llvm::Value* l_size =  list_of_structs_size(env, builder, list_ptr, list_type);
-                l_size = builder.CreateAdd(l_size, opt_size);
+                if(elements_optional)
+                    l_size = builder.CreateAdd(l_size, opt_size);
                 return l_size;
             } else if(elementType.isListType()) {
                 llvm::Value* l_size = list_of_lists_size(env, builder, list_ptr, list_type);
-                l_size = builder.CreateAdd(l_size, opt_size);
+                if(elements_optional)
+                    l_size = builder.CreateAdd(l_size, opt_size);
                 return l_size;
             } else if(elementType.isTupleType()) {
                 llvm::Value* l_size = list_of_tuples_size(env, builder, list_ptr, list_type);
+                if(elements_optional)
                 l_size = builder.CreateAdd(l_size, opt_size);
                 return l_size;
             } else if(elementType == python::Type::GENERICDICT) {
                 llvm::Value* l_size = list_of_generic_dicts_size(env, builder, list_ptr, list_type);
-                l_size = builder.CreateAdd(l_size, opt_size);
+                if(elements_optional)
+                    l_size = builder.CreateAdd(l_size, opt_size);
                 return l_size;
             } else {
-                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Unsupported list element type: " + list_type.desc());
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Unsupported list element type: " + original_list_type.desc());
             }
         }
 

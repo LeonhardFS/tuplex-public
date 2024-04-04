@@ -926,7 +926,7 @@ namespace tuplex {
         // @TODO: do not compile slow path yet, do it later in parallel when other threads are already working!
         // deactivate slow path symbols when using interpreter only for resolve...
         auto syms = tstage->compile(*_compiler, _options.USE_LLVM_OPTIMIZER() ? &optimizer : nullptr,
-                                    _options.RESOLVE_WITH_INTERPRETER_ONLY(), true, true);
+                                    _options.RESOLVE_WITH_INTERPRETER_ONLY(), true, false);
         bool combineOutputHashmaps = syms->aggInitFunctor && syms->aggCombineFunctor && syms->aggAggregateFunctor;
         JobMetrics& metrics = tstage->PhysicalStage::plan()->getContext().metrics();
         double total_compilation_time = metrics.getTotalCompilationTime() + timer.time();
