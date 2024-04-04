@@ -1332,8 +1332,8 @@ namespace tuplex {
 
             auto buf_size = getSize(builder);
 
-             // debug
-             // _env->debugPrint(builder, "buf_size to serialize is: ", buf_size);
+            // debug
+            _env->debugPrint(builder, "buf_size to serialize is: ", buf_size);
 
             // debug print
             auto buf = _env->malloc(builder, buf_size);

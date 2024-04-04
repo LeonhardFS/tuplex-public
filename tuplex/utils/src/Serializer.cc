@@ -810,8 +810,8 @@ namespace tuplex {
         void *bitmapAddr = nullptr;
         size_t bitmapSize = 0;
         if(elementType.isOptionType()) {
-            auto numBitmapFields = core::ceilToMultiple(l.numElements(), 64ul)/64;
-            bitmapSize = numBitmapFields * sizeof(uint64_t);
+            bitmapSize = calc_bitmap_size_in_64bit_blocks(l.numElements());
+
             bitmapAddr = ptr;
             ptr += bitmapSize;
         }
@@ -1695,8 +1695,7 @@ namespace tuplex {
 
         std::vector<bool> bitmapV;
         if (elType.isOptionType()) {
-            auto numBitmapFields = core::ceilToMultiple((unsigned long)numElements, 64ul)/64;
-            auto bitmapSize = numBitmapFields * sizeof(uint64_t);
+            auto bitmapSize = calc_bitmap_size_in_64bit_blocks(numElements);
             auto *bitmapAddr = (uint64_t *)ptr;
             ptr += bitmapSize;
             for (size_t i = 0; i < numElements; i++) {
