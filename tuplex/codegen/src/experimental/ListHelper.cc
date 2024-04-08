@@ -1070,6 +1070,7 @@ namespace tuplex {
 
             // check ptr has correct type
             auto llvm_list_type = env.createOrGetListType(list_type);
+            auto original_list_type = list_type;
             // if(list_ptr->getType() != llvm_list_type->getPointerTo())
             //    throw std::runtime_error("expected pointer of " + env.getLLVMTypeName(llvm_list_type->getPointerTo()) + " but list_ptr has " + env.getLLVMTypeName(list_ptr->getType()));
 
@@ -1107,12 +1108,9 @@ namespace tuplex {
             } else {
                 auto size_position = 1;
 
-                if(list_ptr->getType()->isPointerTy()) {
-                    auto idx_size = builder.CreateStructGEP(list_ptr, llvm_list_type, size_position); assert(idx_size->getType() == env.i64ptrType());
-                    return builder.CreateLoad(builder.getInt64Ty(), idx_size);
-                } else {
-                    return builder.CreateExtractValue(list_ptr, std::vector<unsigned>(1, size_position));
-                }
+                auto ans = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, size_position);
+                assert(ans->getType() == env.i64Type());
+                return ans;
             }
         }
 
@@ -1701,12 +1699,21 @@ namespace tuplex {
 
         llvm::Value* list_serialized_size_str_like(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr,
         const python::Type& list_type) {
+
+            // optional?
+            auto element_type = list_type.elementType();
+
+            llvm::Value* opt_size = nullptr;
+            if(element_type.isOptionType()) {
+                auto len = list_length(env, builder, list_ptr, list_type);
+                opt_size = calc_bitmap_size_in_64bit_blocks(builder, len);
+                element_type = element_type.withoutOption();
+            }
+
+            assert(element_type == python::Type::STRING || element_type == python::Type::PYOBJECT);
+
             auto list_get_str_like_item_size = [list_type](LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
                 assert(index && index->getType() == env.i64Type());
-
-                auto element_type = list_type.elementType();
-
-                assert(element_type == python::Type::STRING || element_type == python::Type::PYOBJECT);
 
                 auto llvm_list_type = env.createOrGetListType(list_type);
 
@@ -1720,18 +1727,16 @@ namespace tuplex {
                 return item_size;
             };
 
-            return list_of_varitems_serialized_size(env, builder, list_ptr, list_type, list_get_str_like_item_size);
+            auto ans = list_of_varitems_serialized_size(env, builder, list_ptr, list_type, list_get_str_like_item_size);
+            if(opt_size)
+                ans = builder.CreateAdd(opt_size, ans);
+            return ans;
         }
 
         llvm::Value* list_serialize_str_like_to(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr,
                                                 const python::Type& list_type, llvm::Value* dest_ptr) {
             auto list_get_str_like_item_size = [list_type](LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
                 assert(index && index->getType() == env.i64Type());
-
-                auto element_type = list_type.elementType();
-
-                assert(element_type == python::Type::STRING || element_type == python::Type::PYOBJECT);
-
                 auto llvm_list_type = env.createOrGetListType(list_type);
 
                 auto ptr_sizes = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, 3);
@@ -1902,10 +1907,7 @@ namespace tuplex {
             } else if(elementType == python::Type::STRING
                       || elementType == python::Type::PYOBJECT) {
 
-                auto size_in_bytes = list_serialized_size_str_like(env, builder, list_ptr, list_type);
-
-                if(elements_optional)
-                    size_in_bytes = builder.CreateAdd(size_in_bytes, opt_size);
+                auto size_in_bytes = list_serialized_size_str_like(env, builder, list_ptr, original_list_type);
                 return size_in_bytes;
 
 //                // this requires a loop (maybe generate instead function?)
@@ -1971,24 +1973,16 @@ namespace tuplex {
             } else if(elementType.isStructuredDictionaryType()) {
                 // pointer to the structured dict type!
                 // this is quite involved, therefore put into its own function. basically iterate over elements and then query their size!
-                llvm::Value* l_size =  list_of_structs_size(env, builder, list_ptr, list_type);
-                if(elements_optional)
-                    l_size = builder.CreateAdd(l_size, opt_size);
+                llvm::Value* l_size =  list_of_structs_size(env, builder, list_ptr, original_list_type);
                 return l_size;
             } else if(elementType.isListType()) {
-                llvm::Value* l_size = list_of_lists_size(env, builder, list_ptr, list_type);
-                if(elements_optional)
-                    l_size = builder.CreateAdd(l_size, opt_size);
+                llvm::Value* l_size = list_of_lists_size(env, builder, list_ptr, original_list_type);
                 return l_size;
             } else if(elementType.isTupleType()) {
-                llvm::Value* l_size = list_of_tuples_size(env, builder, list_ptr, list_type);
-                if(elements_optional)
-                l_size = builder.CreateAdd(l_size, opt_size);
+                llvm::Value* l_size = list_of_tuples_size(env, builder, list_ptr, original_list_type);
                 return l_size;
             } else if(elementType == python::Type::GENERICDICT) {
-                llvm::Value* l_size = list_of_generic_dicts_size(env, builder, list_ptr, list_type);
-                if(elements_optional)
-                    l_size = builder.CreateAdd(l_size, opt_size);
+                llvm::Value* l_size = list_of_generic_dicts_size(env, builder, list_ptr, original_list_type);
                 return l_size;
             } else {
                 throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Unsupported list element type: " + original_list_type.desc());

@@ -322,6 +322,22 @@ TEST_F(ListFunctions, ListOfTuples) {
 }
 
 
+TEST_F(ListFunctions, OptionalStringListSerialization) {
+    using namespace tuplex;
+
+    uint8_t buffer[5000];
+    memset(buffer, 0, 5000);
+    Row r(List(Field("this is a test string"), Field::null(), Field("another test string")));
+
+    auto serialized_size = r.serializedLength();
+    r.serializeToMemory(buffer, 5000);
+
+    // now deserialize & check
+    auto d_r = Row::fromMemory(r.getSchema(), buffer, 5000);
+
+    EXPECT_EQ(d_r.toPythonString(), r.toPythonString());
+}
+
 TEST_F(ListFunctions, ListOf3Elements) {
     using namespace tuplex;
     using namespace std;

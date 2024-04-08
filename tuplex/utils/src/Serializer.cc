@@ -900,27 +900,31 @@ namespace tuplex {
             if(underlyingElementType == python::Type::STRING) {
                 // offset numbers
                 size_t currentOffset = sizeof(uint64_t) * l.numElements();
+                uint8_t* current_data_ptr = ptr + currentOffset;
                 for(size_t i = 0; i < l.numElements(); i++) {
+                    *((uint64_t *)ptr) = 0;
                     if(l.getField(i).isNull()) {
                         bitmapV.push_back(true);
                     } else {
                         bitmapV.push_back(false);
                         // write offset
-                        *((uint64_t *)ptr) = currentOffset;
+                        auto str_size = strlen((char *) l.getField(i).getPtr()) + 1;
+                        *((uint64_t *)ptr) = pack_offset_and_size(currentOffset - sizeof(uint64_t) * i, str_size);
+
+                        std::memcpy(current_data_ptr, l.getField(i).getPtr(), str_size);
+                        *((uint8_t *) current_data_ptr + str_size - 1) = 0;
+                        auto offset = current_data_ptr - ptr;
+                        assert(offset == currentOffset - sizeof(uint64_t) * i);
+                        current_data_ptr += str_size;
+
                         // update for next field: move forward one uint64_t, then add on the string
-                        currentOffset += strlen((char *) l.getField(i).getPtr()) + 1;
+                        currentOffset += str_size;
                     }
                     ptr += sizeof(uint64_t);
                 }
-                // string data
-                for (size_t i = 0; i < l.numElements(); i++) {
-                    if(!l.getField(i).isNull()) {
-                        size_t slen = strlen((char*)l.getField(i).getPtr());
-                        std::memcpy(ptr, l.getField(i).getPtr(), slen);
-                        *((uint8_t *) ptr + slen) = 0;
-                        ptr += slen + 1;
-                    }
-                }
+
+                // update, so size returned is correct.
+                ptr = current_data_ptr;
             } else if(underlyingElementType.isTupleType()) {
                 void *varLenOffsetAddr = ptr;
                 // skip #elements * 8 bytes as placeholder for offsets
@@ -1758,9 +1762,12 @@ namespace tuplex {
                         els.emplace_back(Field(option<std::string>::none));
                     } else {
                         std::tie(el_offset, el_size) = unpack_offset_and_size_from_value(*(uint64_t*)ptr);
+
+                        // make sure offset is something reasonable.
+                        assert(el_offset < 1000000);
                         els.emplace_back(Field(option<std::string>((const char *)(ptr + el_offset))));
-                        ptr += sizeof(uint64_t);
                     }
+                    ptr += sizeof(uint64_t); // always increase.
                 }
             } else if(underlyingElType == python::Type::PYOBJECT || underlyingElType == python::Type::GENERICDICT) {
                 // check for none then read each string
