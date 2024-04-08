@@ -357,8 +357,11 @@ TEST_F(ListFunctions, ListOf3Elements) {
         // compound objects
         // options of primitives
         //List(Field((int64_t)42), Field::null(), Field::null()),
-        List(Field("this is a test string"), Field::null(), Field("another test string")),
-        List(Field::null(), Field::null(), Field(3.256))
+        //List(Field::null(), Field::null(), Field(3.256)),
+        //List(Field(false), Field(true), Field::null()),
+        //List(Field("this is a test string"), Field::null(), Field("another test string")),
+        List(List(), Field::null(), List()),
+        List(Field::null(), Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)),
         // list of lists
         // list of structured dicts
         // list of list of structure dicts

@@ -1897,7 +1897,7 @@ namespace tuplex {
                       || elementType == python::Type::F64
                       || elementType == python::Type::BOOLEAN) {
                 // it's the size field + the size * sizeof(int64_t) + opt_size
-                auto len = list_length(env, builder, list_ptr, list_type);
+                auto len = list_length(env, builder, list_ptr, original_list_type);
                 llvm::Value* l_size = builder.CreateAdd(env.i64Const(8), builder.CreateMul(env.i64Const(8), len));
                 if(elements_optional)
                     l_size = builder.CreateAdd(l_size, opt_size);
