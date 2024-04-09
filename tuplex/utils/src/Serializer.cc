@@ -385,6 +385,9 @@ namespace tuplex {
     }
 
     Serializer &Serializer::appendWithoutInference(const option<List> &list, const python::Type &listType) {
+        if(listType == python::Type::EMPTYLIST)
+            return *this;
+
         assert(!listType.isOptionType() && listType != python::Type::EMPTYLIST);
         bool isVar = !(listType.elementType().isSingleValued());
         _isVarField.push_back(isVar);
@@ -765,6 +768,9 @@ namespace tuplex {
                 size += tuple_serialized_length;
             }
         }  else if (elementType.isListType()) {
+            if(elementType == python::Type::EMPTYLIST)
+                return size;
+
             // skip #elements * 8 bytes as placeholder for offsets
             size += l.numElements() * sizeof(uint64_t);
 
@@ -946,25 +952,29 @@ namespace tuplex {
                     }
                 }
             } else if(underlyingElementType.isListType()) {
-                uint8_t *varLenOffsetAddr = ptr;
-                // skip #elements * 8 bytes as placeholder for offsets
-                auto offsetBytes = l.numElements() * sizeof(uint64_t);
-                ptr += offsetBytes;
-                for (size_t listIndex = 0; listIndex < l.numElements(); ++listIndex) {
-                    if(l.getField(listIndex).isNull()) {
-                        bitmapV.push_back(true);
-                    } else {
-                        bitmapV.push_back(false);
-                        // write offset to placeholder
-                        uint64_t currOffset = (uintptr_t)ptr - (uintptr_t)varLenOffsetAddr;
-                        *(uint64_t *)varLenOffsetAddr = currOffset;
-                        // append list
-                        auto currList = *(List *)(l.getField(listIndex).getPtr());
-                        ptr += currList.serialize_to(ptr);
+                // only serialize data if NOT empty list.s
+                if(underlyingElementType != python::Type::EMPTYLIST) {
+                    uint8_t *varLenOffsetAddr = ptr;
+                    // skip #elements * 8 bytes as placeholder for offsets
+                    auto offsetBytes = l.numElements() * sizeof(uint64_t);
+                    ptr += offsetBytes;
+                    for (size_t listIndex = 0; listIndex < l.numElements(); ++listIndex) {
+                        if(l.getField(listIndex).isNull()) {
+                            bitmapV.push_back(true);
+                        } else {
+                            bitmapV.push_back(false);
+                            // write offset to placeholder
+                            uint64_t currOffset = (uintptr_t)ptr - (uintptr_t)varLenOffsetAddr;
+                            *(uint64_t *)varLenOffsetAddr = currOffset;
+                            // append list
+                            auto currList = *(List *)(l.getField(listIndex).getPtr());
+                            ptr += currList.serialize_to(ptr);
+                        }
+                        // increment varLenOffsetAddr always by 8
+                        varLenOffsetAddr += sizeof(uint64_t);
                     }
-                    // increment varLenOffsetAddr always by 8
-                    varLenOffsetAddr += sizeof(uint64_t);
                 }
+
             } else if(underlyingElementType == python::Type::I64 || underlyingElementType == python::Type::BOOLEAN) {
                 for(size_t i = 0; i < l.numElements(); i++) {
                     if(l.getField(i).isNull()) {
@@ -1671,15 +1681,19 @@ namespace tuplex {
     }
 
     List Deserializer::getListHelper(const python::Type &listType, const uint8_t *ptr) const {
-        auto elType = listType.elementType();
+
+        if(listType == python::Type::EMPTYLIST)
+            return List();
+
         std::vector<Field> els;
         // get number of elements
         uint64_t numElements = *(uint64_t *)ptr;
         ptr += sizeof(uint64_t);
 
-        if(0 == numElements)
+        if(0 == numElements || listType == python::Type::EMPTYLIST)
             return List();
 
+        auto elType = listType.elementType();
         if(listType.isSingleValued()) {
             // does not need memory data
             // fill els with numElements of the single value
@@ -1748,9 +1762,13 @@ namespace tuplex {
         } else if(elType.isListType()) {
             // read each list
             for (size_t i = 0; i < numElements; i++) {
-                std::tie(el_offset, el_size) = unpack_offset_and_size_from_value(*(uint64_t*)ptr);
-                els.emplace_back(Field(getListHelper(elType, ptr + el_offset)));
-                ptr += sizeof(uint64_t);
+                if(elType == python::Type::EMPTYLIST) {
+                    els.emplace_back(Field::empty_list());
+                } else {
+                    std::tie(el_offset, el_size) = unpack_offset_and_size_from_value(*(uint64_t*)ptr);
+                    els.emplace_back(Field(getListHelper(elType, ptr + el_offset)));
+                    ptr += sizeof(uint64_t);
+                }
             }
         } else if(elType.isOptionType()) {
             auto underlyingElType = elType.getReturnType();
@@ -1801,9 +1819,13 @@ namespace tuplex {
                         // is None
                         els.emplace_back(Field::null(elType));
                     } else {
-                        std::tie(el_offset, el_size) = unpack_offset_and_size_from_value(*(uint64_t*)ptr);
-                        els.emplace_back(Field(option<List>(getListHelper(underlyingElType, ptr + el_offset))));
-                        ptr += sizeof(uint64_t);
+                        if(underlyingElType == python::Type::EMPTYLIST) {
+                            els.emplace_back(Field::empty_list());
+                        } else {
+                            std::tie(el_offset, el_size) = unpack_offset_and_size_from_value(*(uint64_t*)ptr);
+                            els.emplace_back(Field(option<List>(getListHelper(underlyingElType, ptr + el_offset))));
+                            ptr += sizeof(uint64_t);
+                        }
                     }
                 }
             } else if(underlyingElType == python::Type::BOOLEAN) {

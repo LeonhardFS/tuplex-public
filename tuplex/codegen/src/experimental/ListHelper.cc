@@ -494,6 +494,9 @@ namespace tuplex {
             auto llvm_list_type = env.createOrGetListType(list_type);
 
 
+            if(element_type.withoutOption().isSingleValued())
+                nullmap_index = 2;
+
             // (1) is null
             // load whether entry is null (or not)
             if(nullmap_index >= 1) {
@@ -508,6 +511,16 @@ namespace tuplex {
 
             // struct and list element types require special handling
             if(element_type.withoutOption().isStructuredDictionaryType() || element_type.withoutOption().isListType()) {
+                // special case: empty list -> return allocated empty list structure.
+                if(element_type.withoutOption() == python::Type::EMPTYLIST) {
+                    // note: that isnull is filled above...
+                    auto ptr = env.CreateHeapAlloca(builder, llvm_list_type, true);
+                    ret.val = ptr;
+                    ret.size = env.i64Const(0);
+                    return ret;
+                }
+
+
                 // special case: data ptr of List is heap-allocated struct dicts. Hence, use heap here
                 auto llvm_value_type = env.pythonToLLVMType(element_type.withoutOption());
                 auto data_ptr = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, data_index);
@@ -2087,14 +2100,14 @@ namespace tuplex {
 
             assert(list_type.isListType());
             auto element_type = list_type.elementType();
-            assert(element_type.isListType());
+            assert(element_type.withoutOption().isListType());
 
             // this var can be eliminated --> put this logic into func?
             auto acc_size_var = env.CreateFirstBlockAlloca(builder, builder.getInt64Ty());
             builder.CreateStore(env.i64Const(0), acc_size_var);
 
             auto llvm_list_type = env.createOrGetListType(list_type);
-            auto llvm_list_element_type = env.createOrGetListType(element_type);
+            auto llvm_list_element_type = env.createOrGetListType(element_type.withoutOption());
             auto offset_ptr = builder.CreateBitCast(ptr, env.i64ptrType()); // get pointer to i64 serialized array of offsets
             auto& context = env.getContext();
 
@@ -2251,7 +2264,9 @@ namespace tuplex {
             }
 
             // deserialize based on list element type.
-            if(python::Type::STRING == elementType || python::Type::PYOBJECT == elementType || python::Type::GENERICDICT == elementType) {
+            if(elementType.withoutOption().isSingleValued()) {
+                // nothing todo, bitmap already decoded above.
+            } else if(python::Type::STRING == elementType || python::Type::PYOBJECT == elementType || python::Type::GENERICDICT == elementType) {
                 // These here are all stored as strings.
                 // The per element decode differs though.
 

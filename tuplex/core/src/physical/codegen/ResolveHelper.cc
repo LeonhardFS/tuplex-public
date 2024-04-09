@@ -413,6 +413,7 @@ namespace tuplex {
 
             auto general_case_input_row_type = pip_input_row_type;
             logger.debug("Assuming exceptions are given as general case rows with schema=" + general_case_input_row_type.desc());
+            env.printValue(builder, ecCode, "handling general case exceptions " + pip_input_row_type.desc() + " of ec=");
             handleGeneralCaseExceptionsFromTuplexMemory(env, builder, pip_input_row_type, pipFunc, ecCode, rowNo, userData, dataPtr, dataSize);
 
             // check if current block is not terminated, if so end function with original ecCode and free all runtime memory before.

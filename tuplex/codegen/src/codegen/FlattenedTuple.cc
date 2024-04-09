@@ -1080,7 +1080,7 @@ namespace tuplex {
                 auto type = _tree.fieldType(i);
 
                 // skip single-valued elements.
-                if(type.isSingleValued())
+                if(type.isSingleValued() || type.withoutOption().isSingleValued())
                     continue;
 
                 // not single-valued? there should be a value!

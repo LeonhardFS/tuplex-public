@@ -1055,8 +1055,8 @@ namespace tuplex {
             // remove option
             elementType = elementType.withoutOption();
 
-            // empty tuple, empty dict
-            if (python::Type::EMPTYTUPLE == elementType || python::Type::EMPTYROW == elementType) {
+            // empty tuple, empty dict, empty list
+            if (python::Type::EMPTYTUPLE == elementType || python::Type::EMPTYROW == elementType || python::Type::EMPTYDICT == elementType || python::Type::EMPTYLIST == elementType) {
                 // special case, just empty object
                 return SerializableValue(nullptr, nullptr, isnull);
             }
