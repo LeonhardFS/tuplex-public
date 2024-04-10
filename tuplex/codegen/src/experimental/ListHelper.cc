@@ -1837,7 +1837,7 @@ namespace tuplex {
             llvm::Value* size_in_bytes = nullptr;
             if(elementType.isSingleValued()) {
                 // store length of list to dest_ptr!
-                auto len = list_length(env, builder, list_ptr, list_type);
+                auto len = list_length(env, builder, list_ptr, original_list_type);
                 auto casted_dest_ptr = builder.CreateBitOrPointerCast(dest_ptr, env.i64ptrType());
                 builder.CreateStore(len, casted_dest_ptr);
                 size_in_bytes = env.i64Const(8);

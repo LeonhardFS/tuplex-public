@@ -65,6 +65,9 @@ namespace tuplex {
             if(type.isOptionType())
                 type = type.getReturnType();
 
+            if(type == python::Type::EMPTYLIST)
+                return false;
+
             return python::Type::STRING == type ||
                    type.isTupleType() || type.isDictionaryType() ||
                    python::Type::GENERICDICT == type || type.isListType() || type == python::Type::PYOBJECT;
@@ -162,6 +165,11 @@ namespace tuplex {
         // i.e. init with the dummy data for the option::none case
         // ==> helpful also for the tuple case!
         template<typename T> explicit Field(const option<T>& opt) : Field(opt.data()) {
+
+            // release memory if null
+            if(!opt.has_value())
+                releaseMemory();
+
             _isNull = !opt.has_value();
 
             if(!opt.has_value())

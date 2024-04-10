@@ -385,14 +385,15 @@ namespace tuplex {
     }
 
     Serializer &Serializer::appendWithoutInference(const option<List> &list, const python::Type &listType) {
-        if(listType == python::Type::EMPTYLIST)
-            return *this;
-
-        assert(!listType.isOptionType() && listType != python::Type::EMPTYLIST);
-        bool isVar = !(listType.elementType().isSingleValued());
+        assert(!listType.isOptionType());
+        bool isVar = listType != python::Type::EMPTYLIST ? !(listType.elementType().isSingleValued()) : false;
         _isVarField.push_back(isVar);
         _isNull.push_back(!list.has_value());
         _requiresBitmap.push_back(true);
+
+        // bitmap is saved, if empty list can return now.
+        if(listType == python::Type::EMPTYLIST)
+            return *this;
 
         // add a 8 byte offset
         _fixedLenFields.provideSpace(sizeof(int64_t));
@@ -973,6 +974,10 @@ namespace tuplex {
                         // increment varLenOffsetAddr always by 8
                         varLenOffsetAddr += sizeof(uint64_t);
                     }
+                } else {
+                    // go through elements
+                    for(unsigned i = 0; i < l.numElements(); ++i)
+                        bitmapV.push_back(l.getField(i).isNull());
                 }
 
             } else if(underlyingElementType == python::Type::I64 || underlyingElementType == python::Type::BOOLEAN) {
@@ -1007,9 +1012,11 @@ namespace tuplex {
         }
 
         // write bitmap if exists
-        if (bitmapSize) {
+        if (bitmapSize != 0) {
             uint64_t bitmap[bitmapSize / sizeof(int64_t)];
             std::memset(bitmap, 0, bitmapSize);
+
+            assert(!bitmapV.empty());
 
             int opt_counter = 0;
             for (int i = 0; i < bitmapV.size(); i++) {
@@ -1133,6 +1140,11 @@ namespace tuplex {
             // important, make check that sizes match
             Deserializer ds(this->_schema);
             assert(ds.inferLength(ptr) == size);
+
+            auto inferred_length = ds.inferLength(ptr);
+            if(inferred_length != size) {
+                std::cerr<<"inferred length: "<<inferred_length<<" actual length: "<<size<<std::endl;
+            }
 #endif
             return size;
         }
