@@ -418,7 +418,6 @@ TEST_F(ListFunctions, ListOf3Elements) {
         auto num_list_elements = test_list.numElements();
         os<<"Running test case "<<(test_case_no+1)<<"/"<<test_lists.size()<<": "<<test_list.getType().desc()<<endl;
 
-
         {
             os<<"-- Testing deserialize + list access"<<endl;
             // construct test data (list access)

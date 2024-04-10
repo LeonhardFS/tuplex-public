@@ -615,13 +615,22 @@ namespace tuplex {
             return serializationSize;
         }
 
+        python::Type tuple_type_without_first_level_options(const python::Type& tuple_type) {
+            std::vector<python::Type> col_types = tuple_type.parameters();
+            for(auto& type : col_types) {
+                if(type.isOptionType())
+                    type = type.getReturnType();
+            }
+            return python::Type::makeTupleType(col_types);
+        }
+
         llvm::Value* FlattenedTuple::serialize(const codegen::IRBuilder& builder, llvm::Value *ptr) const {
             using namespace llvm;
             using namespace std;
 
             auto& context = _env->getContext();
             auto types = getFieldTypes();
-            bool hasVarField = !getTupleType().withoutOptionsRecursive().isFixedSizeType();
+            bool hasVarField = !tuple_type_without_first_level_options(getTupleType()).isFixedSizeType();
 
             auto original_start_ptr = ptr;
 
