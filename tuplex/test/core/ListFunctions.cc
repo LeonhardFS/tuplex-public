@@ -381,8 +381,10 @@ TEST_F(ListFunctions, ListOfGenericDict) {
     List test_list(Field::null(), Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT));
     Row r(test_list);
 
-    // 3 fields. So 8 bytes for list length, 3x8 for offsets, and then data 10 + 3 + 9, and then also 8 bytes for list bitmap.
-    EXPECT_EQ(serialized_list_size(test_list), 10 + 3 + 9 + 3 * 8 + 8 + 8);
+    EXPECT_EQ(test_list.getType().desc(), python::Type::makeListType(python::Type::makeOptionType(python::Type::GENERICDICT)).desc());
+
+    // 3 fields. So 8 bytes for list length, 3x8 for offsets, and then data 3 + 9, and then also 8 bytes for list bitmap.
+    EXPECT_EQ(serialized_list_size(test_list), 3 + 9 + 3 * 8 + 8 + 8);
 
     std::cout<<r.toPythonString()<<std::endl;
 

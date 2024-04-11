@@ -750,9 +750,12 @@ namespace tuplex {
 
         if(elementType == python::Type::STRING || elementType == python::Type::PYOBJECT || elementType == python::Type::GENERICDICT) { // strings are serialized differently
             // offset numbers
-            size_t current_offset = sizeof(uint64_t) * l.numElements();
+            size += sizeof(uint64_t) * l.numElements();
             for (size_t i = 0; i < l.numElements(); i++) {
-                size += sizeof(uint64_t);
+                // skip None entries
+                if(bitmapSize != 0 && l.getField(i).isNull())
+                    continue;
+
                 size += l.getField(i).getPtrSize();
             }
         } else if(elementType.isTupleType()) {
