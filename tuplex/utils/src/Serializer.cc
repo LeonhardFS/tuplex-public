@@ -917,6 +917,9 @@ namespace tuplex {
                         bitmapV.push_back(true);
                     } else {
                         bitmapV.push_back(false);
+
+                        assert(!l.getField(i).isNull());
+
                         // write offset
                         auto str_size = strlen((char *) l.getField(i).getPtr()) + 1;
                         *((uint64_t *)ptr) = pack_offset_and_size(currentOffset - sizeof(uint64_t) * i, str_size);

@@ -1282,6 +1282,21 @@ namespace tuplex {
                 // call cjson serialize (if not NULL)
                 auto val = call_cjson_to_string(builder, item);
 
+                // if optional, load isnull from bitmap
+                if(list_type.elementType().isOptionType()) {
+                    auto struct_bitmap_index = llvm_list_type->getStructNumElements() - 1;
+                    assert(struct_bitmap_index == 3);
+                    auto nullmap_ptr = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, struct_bitmap_index);
+                    assert(nullmap_ptr);
+
+                    // in deserialize, best to store nullptr for this...
+                    auto is_null = builder.CreateLoad(builder.getInt8Ty(), builder.CreateGEP(builder.getInt8Ty(), nullmap_ptr, index));
+                    val.is_null = builder.CreateICmpNE(is_null, env.i8Const(0));
+
+                    env.printValue(builder, val.is_null, "generic dict item, isnull: ");
+                }
+
+
                 // get size
                 auto item_size = val.size;
 
@@ -2341,6 +2356,9 @@ namespace tuplex {
                 // for GENERICDICT decode cJSON
                 if(elementType == python::Type::GENERICDICT) {
                     env.printValue(builder, curStrPtr, "decoding " + elementType.desc() + " by parsing as cjson from ptr= ");
+                    env.printValue(builder, current_offset, "current info: ");
+                    env.printValue(builder, offset, "current offset=");
+                    env.printValue(builder, size, "current size=");
                     auto item = call_cjson_parse(builder, curStrPtr);
                     builder.CreateStore(item, arr_target_ptr);
                 } else {
@@ -2383,7 +2401,7 @@ namespace tuplex {
                 std::tie(offset, size) = unpack_offset_and_size(builder, last_info);
                 env.printValue(builder, offset, "last info offset: ");
                 env.printValue(builder, size, "last size: ");
-                auto num_elements_plus_one = builder.CreateAdd(num_elements, env.i64Const(-1));
+                auto num_elements_plus_one = builder.CreateAdd(num_elements, env.i64Const(0));
                 llvm::Value* var_data_length = builder.CreateAdd(builder.CreateMul(env.i64Const(sizeof(int64_t)), num_elements_plus_one), builder.CreateAdd(offset, size));
                 var_data_length = builder.CreateSelect(builder.CreateICmpEQ(env.i64Const(0), num_elements), env.i64Const(0), var_data_length);
                 env.printValue(builder, var_data_length, "varlength after initial i64 field (bytes to be moved + 8): ");
