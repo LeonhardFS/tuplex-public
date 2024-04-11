@@ -378,16 +378,21 @@ TEST_F(ListFunctions, ListOfGenericDict) {
 
     uint8_t buffer[5000];
     memset(buffer, 0, 5000);
-    Row r(List(Field::null(), Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)));
+    List test_list(Field::null(), Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT));
+    Row r(test_list);
+
+    // 3 fields. So 8 bytes for list length, 3x8 for offsets, and then data 10 + 3 + 9, and then also 8 bytes for list bitmap.
+    EXPECT_EQ(serialized_list_size(test_list), 10 + 3 + 9 + 3 * 8 + 8 + 8);
 
     std::cout<<r.toPythonString()<<std::endl;
+
 
     // list itself is 52bytes + 8 bytes for offset/size + 8 bytes for varlength skip.
     auto serialized_size = r.serializedLength();
     auto ans_size = r.serializeToMemory(buffer, 5000);
     EXPECT_EQ(ans_size, serialized_size);
 
-
+    EXPECT_EQ(68, ans_size);
     // serialize again & deserialize
     r.serializeToMemory(buffer + serialized_size, 4000);
 

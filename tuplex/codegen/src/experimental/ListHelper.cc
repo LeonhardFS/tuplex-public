@@ -1604,7 +1604,7 @@ namespace tuplex {
             // fetch length of list
             auto len = list_length(env, builder, list_ptr, list_type);
 
-            // env.printValue(builder, len, "---\ncomputing serialized size of list " + list_type.desc() + " with #elements = ");
+            env.printValue(builder, len, "---\ncomputing serialized size of list " + list_type.desc() + " with #elements = ");
 
 
             // generate loop to go over items.
@@ -1636,18 +1636,18 @@ namespace tuplex {
                 builder.SetInsertPoint(bLoopBody);
                 auto loop_i_val = builder.CreateLoad(env.i64Type(), loop_i);
 
-                // env.printValue(builder, loop_i_val, "Computing size of element " + list_type.elementType().desc() + " of list " + list_type.desc() + " for i=");
+                 env.printValue(builder, loop_i_val, "Computing size of element " + list_type.elementType().desc() + " of list " + list_type.desc() + " for i=");
 
 
                 // get item's serialized size
                 auto item_size = f_item_size(env, builder, list_ptr, loop_i_val);
                 auto varlen_bytes = builder.CreateLoad(builder.getInt64Ty(), varlen_bytes_var);
 
-                // env.printValue(builder, item_size, "-> item size is: ");
+                 env.printValue(builder, item_size, "-> item size is: ");
 
                 // inc. variable length bytes serialized so far
                 builder.CreateStore(builder.CreateAdd(varlen_bytes, item_size), varlen_bytes_var);
-                // env.printValue(builder, builder.CreateLoad(builder.getInt64Ty(), varlen_bytes_var), "cum bytes so far: ");
+                 env.printValue(builder, builder.CreateLoad(builder.getInt64Ty(), varlen_bytes_var), "cum bytes so far: ");
 
 
                 // inc. loop counter
@@ -1661,7 +1661,7 @@ namespace tuplex {
             auto varlen_bytes = builder.CreateLoad(builder.getInt64Ty(), varlen_bytes_var);
             auto size = builder.CreateAdd(env.i64Const(8), builder.CreateAdd(builder.CreateMul(env.i64Const(8), len), varlen_bytes));
             assert(size->getType() == env.i64Type());
-            // env.printValue(builder, size, "===\ncomputed serialized size of list " + list_type.desc() + " as: ");
+             env.printValue(builder, size, "===\ncomputed serialized size of list " + list_type.desc() + " as: ");
             return size;
         }
 
@@ -2383,7 +2383,7 @@ namespace tuplex {
                 std::tie(offset, size) = unpack_offset_and_size(builder, last_info);
                 env.printValue(builder, offset, "last info offset: ");
                 env.printValue(builder, size, "last size: ");
-                auto num_elements_plus_one = builder.CreateAdd(num_elements, env.i64Const(1));
+                auto num_elements_plus_one = builder.CreateAdd(num_elements, env.i64Const(-1));
                 llvm::Value* var_data_length = builder.CreateAdd(builder.CreateMul(env.i64Const(sizeof(int64_t)), num_elements_plus_one), builder.CreateAdd(offset, size));
                 var_data_length = builder.CreateSelect(builder.CreateICmpEQ(env.i64Const(0), num_elements), env.i64Const(0), var_data_length);
                 env.printValue(builder, var_data_length, "varlength after initial i64 field (bytes to be moved + 8): ");
