@@ -307,7 +307,7 @@ namespace tuplex {
             // @TODO: update with concrete/correct typing -> conversion to python!
             char *dstr = reinterpret_cast<char*>(_ptrValue);
             if(!type.isStructuredDictionaryType())
-                return PrintCJSONDict(cJSON_Parse(dstr));
+                return std::string(dstr); //PrintCJSONDict(cJSON_Parse(dstr));
 
             return dstr;
         } else if(type.isListType()) {

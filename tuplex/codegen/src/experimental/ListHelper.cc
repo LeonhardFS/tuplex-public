@@ -564,6 +564,11 @@ namespace tuplex {
             env.printValue(builder, idx, "list access with index=");
             env.printValue(builder, ret.val, "list [] got=");
 
+            if(element_type.withoutOption() == python::Type::GENERICDICT) {
+                auto formatted_str = call_cjson_to_string(builder, ret.val);
+                env.printValue(builder, formatted_str.val, list_type.desc() + " encodes following JSON dict: ");
+            }
+
             return ret;
         }
 
@@ -825,7 +830,8 @@ namespace tuplex {
                 } else if(elementType == python::Type::STRING
                           || elementType == python::Type::PYOBJECT) {
                     struct_opt_index = 4;
-                } else if(elementType.isStructuredDictionaryType()) {
+                } else if(elementType.isStructuredDictionaryType() || elementType == python::Type::GENERICDICT) {
+                    // note that internally genericdict is stored as cJSON* objects.
                     struct_opt_index = 3;
                 } else if(elementType.isListType()) {
                     struct_opt_index = 3;
@@ -1267,20 +1273,24 @@ namespace tuplex {
 
             auto f_generic_dict_element_size = [list_type](LLVMEnvironment& env, const IRBuilder& builder,
                                                     llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
-                auto element_type = list_type.elementType();
-                assert(element_type == python::Type::GENERICDICT);
-
                 auto llvm_list_type = env.createOrGetListType(list_type);
                 auto ptr_values = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, 2);
 
                 auto item_ptr = builder.CreateGEP(env.i8ptrType(), ptr_values, index);
                 auto item = builder.CreateLoad(env.i8ptrType(), item_ptr);
 
-                // call cjson serialize
+                // call cjson serialize (if not NULL)
                 auto val = call_cjson_to_string(builder, item);
 
                 // get size
                 auto item_size = val.size;
+
+                // set to 0 if null
+                if(val.is_null)
+                    item_size = builder.CreateSelect(val.is_null, env.i64Const(0), item_size);
+
+                env.printValue(builder, index, "generic dict item size for i=");
+
                 return item_size;
             };
 
@@ -1996,6 +2006,9 @@ namespace tuplex {
                 return l_size;
             } else if(elementType == python::Type::GENERICDICT) {
                 llvm::Value* l_size = list_of_generic_dicts_size(env, builder, list_ptr, original_list_type);
+
+                env.printValue(builder, l_size, "serialized list size");
+
                 return l_size;
             } else {
                 throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Unsupported list element type: " + original_list_type.desc());
@@ -2325,6 +2338,7 @@ namespace tuplex {
 
                 // for GENERICDICT decode cJSON
                 if(elementType == python::Type::GENERICDICT) {
+                    env.printValue(builder, curStrPtr, "decoding " + elementType.desc() + " by parsing as cjson from ptr= ");
                     auto item = call_cjson_parse(builder, curStrPtr);
                     builder.CreateStore(item, arr_target_ptr);
                 } else {

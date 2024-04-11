@@ -904,7 +904,7 @@ namespace tuplex {
             }
         } else if(elementType.isOptionType()) {
             auto underlyingElementType = elementType.getReturnType();
-            if(underlyingElementType == python::Type::STRING) {
+            if(underlyingElementType == python::Type::STRING || underlyingElementType == python::Type::GENERICDICT || underlyingElementType == python::Type::PYOBJECT) {
                 // offset numbers
                 size_t currentOffset = sizeof(uint64_t) * l.numElements();
                 uint8_t* current_data_ptr = ptr + currentOffset;
@@ -1808,8 +1808,8 @@ namespace tuplex {
                     } else {
                         std::tie(el_offset, el_size) = unpack_offset_and_size_from_value(*(uint64_t*)ptr);
                         els.emplace_back(Field::from_str_data(option<std::string>((const char *)(ptr + el_offset)), elType));
-                        ptr += sizeof(uint64_t);
                     }
+                    ptr += sizeof(uint64_t);
                 }
             } else if(underlyingElType.isTupleType()) {
                 // check for none then read each tuple

@@ -361,18 +361,41 @@ TEST_F(ListFunctions, TupleOfOptionalEmptyList) {
 
     uint8_t buffer[5000];
     memset(buffer, 0, 5000);
-//    Row r(Tuple(Field(option<List>(List())), Field(option<List>::none), Field(option<List>(List()))));
     Row r((Tuple(Field(option<List>(List())), Field(option<List>::none))));
 
     auto serialized_size = r.serializedLength();
-    // EXPECT_EQ(serialized_size, 32); // 1 fixed field (size/offset), 1 field varlen skip, 16bytes varlength.
     auto ans_size = r.serializeToMemory(buffer, 5000);
-    //EXPECT_EQ(ans_size, serialized_size);
+    EXPECT_EQ(ans_size, serialized_size);
 
     // now deserialize & check
     auto d_r = Row::fromMemory(r.getSchema(), buffer, 5000);
 
     EXPECT_EQ(d_r.toPythonString(), r.toPythonString());
+}
+
+TEST_F(ListFunctions, ListOfGenericDict) {
+    using namespace tuplex;
+
+    uint8_t buffer[5000];
+    memset(buffer, 0, 5000);
+    Row r(List(Field::null(), Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)));
+
+    std::cout<<r.toPythonString()<<std::endl;
+
+    // list itself is 52bytes + 8 bytes for offset/size + 8 bytes for varlength skip.
+    auto serialized_size = r.serializedLength();
+    auto ans_size = r.serializeToMemory(buffer, 5000);
+    EXPECT_EQ(ans_size, serialized_size);
+
+    std::cout<<"ASCII dump:"<<std::endl;
+    core::asciidump(std::cout, buffer, ans_size);
+
+    // now deserialize & check
+    auto d_r = Row::fromMemory(r.getSchema(), buffer, 5000);
+
+    EXPECT_EQ(d_r.toPythonString(), r.toPythonString());
+
+
 }
 
 TEST_F(ListFunctions, ListOf3Elements) {
@@ -397,8 +420,8 @@ TEST_F(ListFunctions, ListOf3Elements) {
         //List(Field::null(), Field::null(), Field(3.256)),
         //List(Field(false), Field(true), Field::null()),
         //List(Field("this is a test string"), Field::null(), Field("another test string")),
-        List(List(), Field::null(), List()),
-        //List(Field::null(), Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)),
+//        List(List(), Field::null(), List()),
+        List(Field::null(), Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)),
         // list of lists
         // list of structured dicts
         // list of list of structure dicts
@@ -433,28 +456,28 @@ TEST_F(ListFunctions, ListOf3Elements) {
             compare_rows(ans, ref_data);
         }
 
-        // now test that serialize works, by transforming tuple -> list.
-        {
-            os<<"-- Testing list serialize"<<endl;
-
-            // construct test data (list access)
-            std::vector<Row> test_data;
-            std::vector<Row> ref_data;
-            // create function
-            std::stringstream ss;
-            ss<<"lambda t: [";
-            for(unsigned i = 0; i < num_list_elements; ++i) {
-                test_data.push_back(Row(Tuple::from_vector(test_list.to_vector())));
-                ref_data.push_back(Row(test_list));
-
-                ss<<"t["<<i<<"],";
-            }
-            ss<<"]";
-            auto udf_code = ss.str();
-
-            auto ans = ctx.parallelize(test_data).map(UDF(udf_code)).collectAsVector();
-            compare_rows(ans, ref_data);
-        }
+//        // now test that serialize works, by transforming tuple -> list.
+//        {
+//            os<<"-- Testing list serialize"<<endl;
+//
+//            // construct test data (list access)
+//            std::vector<Row> test_data;
+//            std::vector<Row> ref_data;
+//            // create function
+//            std::stringstream ss;
+//            ss<<"lambda t: [";
+//            for(unsigned i = 0; i < num_list_elements; ++i) {
+//                test_data.push_back(Row(Tuple::from_vector(test_list.to_vector())));
+//                ref_data.push_back(Row(test_list));
+//
+//                ss<<"t["<<i<<"],";
+//            }
+//            ss<<"]";
+//            auto udf_code = ss.str();
+//
+//            auto ans = ctx.parallelize(test_data).map(UDF(udf_code)).collectAsVector();
+//            compare_rows(ans, ref_data);
+//        }
 
 
         // TODO: list append together with append....

@@ -781,10 +781,10 @@ namespace tuplex {
                         field = f.val;
                         size = f.size;
 
-                        // // debug:
-                        // _env->debugPrint(builder, "serializing generic dict: ");
-                        // _env->printValue(builder, is_not_null, fieldType.desc() + " is not null: ");
-                        // _env->printValue(builder, size, fieldType.desc() + " size is: ");
+                         // debug:
+                         _env->debugPrint(builder, "serializing generic dict: ");
+                         _env->printValue(builder, is_not_null, fieldType.desc() + " is not null: ");
+                         _env->printValue(builder, size, fieldType.desc() + " size is: ");
                     }
                 }
 
@@ -962,7 +962,7 @@ namespace tuplex {
             // return diff
             auto bytes_written = builder.CreatePtrDiff(builder.getInt8Ty(), lastPtr, original_start_ptr);
 
-            // _env->printValue(builder, bytes_written, "bytes written: ");
+             _env->printValue(builder, bytes_written, "bytes written: ");
             return bytes_written;
         }
 
