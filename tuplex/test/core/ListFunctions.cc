@@ -387,6 +387,10 @@ TEST_F(ListFunctions, ListOfGenericDict) {
     auto ans_size = r.serializeToMemory(buffer, 5000);
     EXPECT_EQ(ans_size, serialized_size);
 
+
+    // serialize again & deserialize
+    r.serializeToMemory(buffer + serialized_size, 4000);
+
     std::cout<<"ASCII dump:"<<std::endl;
     core::asciidump(std::cout, buffer, ans_size);
 
@@ -395,7 +399,9 @@ TEST_F(ListFunctions, ListOfGenericDict) {
 
     EXPECT_EQ(d_r.toPythonString(), r.toPythonString());
 
+    auto d_r2 = Row::fromMemory(r.getSchema(), buffer + d_r.serializedLength(), 4000);
 
+    EXPECT_EQ(d_r2.toPythonString(), d_r.toPythonString());
 }
 
 TEST_F(ListFunctions, ListOf3Elements) {
@@ -416,10 +422,10 @@ TEST_F(ListFunctions, ListOf3Elements) {
 //        List(Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)),
         // compound objects
         // options of primitives
-        //List(Field((int64_t)42), Field::null(), Field::null()),
-        //List(Field::null(), Field::null(), Field(3.256)),
-        //List(Field(false), Field(true), Field::null()),
-        //List(Field("this is a test string"), Field::null(), Field("another test string")),
+//        List(Field((int64_t)42), Field::null(), Field::null()),
+//        List(Field::null(), Field::null(), Field(3.256)),
+//        List(Field(false), Field(true), Field::null()),
+//        List(Field("this is a test string"), Field::null(), Field("another test string")),
 //        List(List(), Field::null(), List()),
         List(Field::null(), Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)),
         // list of lists
