@@ -1319,10 +1319,11 @@ namespace tuplex {
                                                           llvm::Value* list_ptr,
                                                           const python::Type& list_type,
                                                           llvm::Value* dest_ptr) {
+            assert(list_type.isListType());
             auto elementType = list_type.elementType();
-            assert(elementType == python::Type::I64
-                   || elementType == python::Type::F64
-                   || elementType == python::Type::BOOLEAN);
+            assert(elementType.withoutOption() == python::Type::I64
+                   || elementType.withoutOption() == python::Type::F64
+                   || elementType.withoutOption() == python::Type::BOOLEAN);
 
             auto llvm_list_type = env.createOrGetListType(list_type);
 
@@ -1873,7 +1874,7 @@ namespace tuplex {
             } else if(elementType == python::Type::I64
                       || elementType == python::Type::F64
                       || elementType == python::Type::BOOLEAN) {
-                size_in_bytes =list_serialize_fixed_sized_to(env, builder, list_ptr, list_type, dest_ptr);
+                size_in_bytes = list_serialize_fixed_sized_to(env, builder, list_ptr, original_list_type, dest_ptr);
             } else if(elementType == python::Type::STRING
                       || elementType == python::Type::PYOBJECT) {
                 size_in_bytes = list_serialize_str_like_to(env, builder, list_ptr, list_type, dest_ptr);

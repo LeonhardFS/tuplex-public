@@ -1854,8 +1854,8 @@ namespace tuplex {
                         els.emplace_back(Field(option<bool>::none));
                     } else {
                         els.emplace_back(Field(option<bool>((bool)(*(uint64_t *)ptr))));
-                        ptr += sizeof(uint64_t);
                     }
+                    ptr += sizeof(uint64_t);
                 }
             } else if(underlyingElType == python::Type::I64) {
                 // check for none then read each value
@@ -1865,8 +1865,8 @@ namespace tuplex {
                         els.emplace_back(Field(option<int64_t>::none));
                     } else {
                         els.emplace_back(Field(option<int64_t>(*(int64_t *)ptr)));
-                        ptr += sizeof(uint64_t);
                     }
+                    ptr += sizeof(uint64_t);
                 }
             } else if(underlyingElType == python::Type::F64) {
                 // check for none then read each value
@@ -1876,8 +1876,8 @@ namespace tuplex {
                         els.emplace_back(Field(option<double>::none));
                     } else {
                         els.emplace_back(Field(option<double>((double)(*(double *)ptr))));
-                        ptr += sizeof(uint64_t);
                     }
+                    ptr += sizeof(uint64_t);
                 }
             } else {
                 Logger::instance().logger("deserializer").error(
