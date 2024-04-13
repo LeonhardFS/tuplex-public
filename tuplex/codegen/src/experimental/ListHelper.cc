@@ -1621,6 +1621,10 @@ namespace tuplex {
 
             env.printValue(builder, len, "---\ncomputing serialized size of list " + list_type.desc() + " with #elements = ");
 
+            llvm::Value* opt_size = env.i64Const(0);
+            if(list_type.elementType().isOptionType()) {
+                opt_size = calc_bitmap_size_in_64bit_blocks(builder, len);
+            }
 
             // generate loop to go over items.
             auto loop_i = env.CreateFirstBlockAlloca(builder, env.i64Type());
@@ -1674,7 +1678,15 @@ namespace tuplex {
 
             // calculate actual size
             auto varlen_bytes = builder.CreateLoad(builder.getInt64Ty(), varlen_bytes_var);
+
+            // debug print factors:
+            env.printValue(builder, env.i8Const(8), "8 bytes for length");
+            env.printValue(builder, builder.CreateMul(env.i64Const(8), len), "bytes for offsets/sizes of individual elements: ");
+            env.printValue(builder, varlen_bytes, "bytes for varlength data: ");
+            env.printValue(builder, opt_size, "opt size bytes: ");
+
             auto size = builder.CreateAdd(env.i64Const(8), builder.CreateAdd(builder.CreateMul(env.i64Const(8), len), varlen_bytes));
+            size = builder.CreateAdd(size, opt_size);
             assert(size->getType() == env.i64Type());
              env.printValue(builder, size, "===\ncomputed serialized size of list " + list_type.desc() + " as: ");
             return size;
@@ -1740,16 +1752,9 @@ namespace tuplex {
         const python::Type& list_type) {
 
             // optional?
+            assert(list_type.isListType());
             auto element_type = list_type.elementType();
-
-            llvm::Value* opt_size = nullptr;
-            if(element_type.isOptionType()) {
-                auto len = list_length(env, builder, list_ptr, list_type);
-                opt_size = calc_bitmap_size_in_64bit_blocks(builder, len);
-                element_type = element_type.withoutOption();
-            }
-
-            assert(element_type == python::Type::STRING || element_type == python::Type::PYOBJECT);
+            assert(element_type.withoutOption() == python::Type::STRING || element_type.withoutOption() == python::Type::PYOBJECT);
 
             auto list_get_str_like_item_size = [list_type](LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
                 assert(index && index->getType() == env.i64Type());
@@ -1767,8 +1772,6 @@ namespace tuplex {
             };
 
             auto ans = list_of_varitems_serialized_size(env, builder, list_ptr, list_type, list_get_str_like_item_size);
-            if(opt_size)
-                ans = builder.CreateAdd(opt_size, ans);
             return ans;
         }
 
@@ -1945,70 +1948,8 @@ namespace tuplex {
                 return l_size;
             } else if(elementType == python::Type::STRING
                       || elementType == python::Type::PYOBJECT) {
-
                 auto size_in_bytes = list_serialized_size_str_like(env, builder, list_ptr, original_list_type);
                 return size_in_bytes;
-
-//                // this requires a loop (maybe generate instead function?)
-//                auto size_var = env.CreateFirstBlockAlloca(builder, env.i64Type());
-//                // size field requires 8 bytes
-//                llvm::Value* size = env.i64Const(8);
-//
-//                // fetch length
-//                auto len = list_length(env, builder, list_ptr, list_type);
-//                // now store len x 8 bytes for the individual length of entries.
-//                // then store len x 8 bytes for the offsets.
-//                // --> pretty inefficient storage. can get optimized, but no time...
-//
-//                auto len4 = builder.CreateMul(env.i64Const(8 * 2), len);
-//
-//                size = builder.CreateAdd(len4, size);
-//                builder.CreateStore(size, size_var);
-//
-//                auto loop_i = env.CreateFirstBlockAlloca(builder, env.i64Type());
-//                builder.CreateStore(env.i64Const(0), loop_i);
-//
-//                // start loop going over the size entries (--> this could be vectorized!)
-//                auto& ctx = env.getContext(); auto F = builder.GetInsertBlock()->getParent();
-//                BasicBlock *bLoopHeader = BasicBlock::Create(ctx, "var_size_loop_header", F);
-//                BasicBlock *bLoopBody = BasicBlock::Create(ctx, "var_size_loop_body", F);
-//                BasicBlock *bLoopExit = BasicBlock::Create(ctx, "var_size_loop_done", F);
-//
-//                auto ptr_sizes = CreateStructLoad(builder, list_ptr, 3);
-//
-//                builder.CreateBr(bLoopHeader);
-//
-//                {
-//                    // --- header ---
-//                    builder.SetInsertPoint(bLoopHeader);
-//                    // if i < len:
-//                    auto loop_i_val = builder.CreateLoad(loop_i);
-//                    auto loop_cond = builder.CreateICmpULT(loop_i_val, len);
-//                    builder.CreateCondBr(loop_cond, bLoopBody, bLoopExit);
-//                }
-//
-//
-//                {
-//                    // --- body ---
-//                    builder.SetInsertPoint(bLoopBody);
-//                    auto loop_i_val = builder.CreateLoad(loop_i);
-//
-//                    // fetch size
-//                    auto idx_size = builder.CreateGEP(ptr_sizes, loop_i_val);
-//                    auto item_size = builder.CreateLoad(idx_size);
-//                    size = builder.CreateAdd(item_size, builder.CreateLoad(size_var));
-//                    builder.CreateStore(size, size_var);
-//
-//                    // inc.
-//                    builder.CreateStore(builder.CreateAdd(env.i64Const(1), loop_i_val), loop_i);
-//                    builder.CreateBr(bLoopHeader);
-//                }
-//
-//                builder.SetInsertPoint(bLoopExit);
-//
-//                llvm::Value* l_size = builder.CreateLoad(size_var);
-//                l_size = builder.CreateAdd(l_size, opt_size);
-//                return l_size;
             } else if(elementType.isStructuredDictionaryType()) {
                 // pointer to the structured dict type!
                 // this is quite involved, therefore put into its own function. basically iterate over elements and then query their size!
@@ -2023,7 +1964,7 @@ namespace tuplex {
             } else if(elementType == python::Type::GENERICDICT) {
                 llvm::Value* l_size = list_of_generic_dicts_size(env, builder, list_ptr, original_list_type);
 
-                env.printValue(builder, l_size, "serialized list size");
+                env.printValue(builder, l_size, "generic dict / serialized list size (for test case should be 52): ");
 
                 return l_size;
             } else {
