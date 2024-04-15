@@ -1296,7 +1296,6 @@ namespace tuplex {
                     env.printValue(builder, val.is_null, "generic dict item, isnull: ");
                 }
 
-
                 // get size
                 auto item_size = val.size;
 
@@ -1451,24 +1450,45 @@ namespace tuplex {
         llvm::Value* list_of_generic_dicts_serialize_to(LLVMEnvironment& env,
                                                  const IRBuilder& builder,
                                                  llvm::Value* list_ptr,
+                                                 const python::Type& list_type,
                                                  llvm::Value* dest_ptr) {
 
             // TODO: could call cJSON only once...
-            auto list_type = python::Type::makeListType(python::Type::GENERICDICT);
-            auto f_generic_dict_element_size = [list_type](LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
-                assert(index && index->getType() == env.i64Type());
-
+            auto f_generic_dict_element_size = [list_type](LLVMEnvironment& env, const IRBuilder& builder,
+                                                           llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
                 auto llvm_list_type = env.createOrGetListType(list_type);
                 auto ptr_values = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, 2);
 
                 auto item_ptr = builder.CreateGEP(env.i8ptrType(), ptr_values, index);
                 auto item = builder.CreateLoad(env.i8ptrType(), item_ptr);
 
-                // call cjson serialize
+                // call cjson serialize (if not NULL)
                 auto val = call_cjson_to_string(builder, item);
+
+                // if optional, load isnull from bitmap
+                if(list_type.elementType().isOptionType()) {
+                    auto struct_bitmap_index = llvm_list_type->getStructNumElements() - 1;
+                    assert(struct_bitmap_index == 3);
+                    auto nullmap_ptr = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, struct_bitmap_index);
+                    assert(nullmap_ptr);
+
+                    // in deserialize, best to store nullptr for this...
+                    auto is_null = builder.CreateLoad(builder.getInt8Ty(), builder.CreateGEP(builder.getInt8Ty(), nullmap_ptr, index));
+                    val.is_null = builder.CreateICmpNE(is_null, env.i8Const(0));
+
+                    env.printValue(builder, val.is_null, "generic dict item, isnull: ");
+                }
 
                 // get size
                 auto item_size = val.size;
+
+                // set to 0 if null
+                if(val.is_null)
+                    item_size = builder.CreateSelect(val.is_null, env.i64Const(0), item_size);
+
+                env.printValue(builder, index, "generic dict item size for i=");
+                env.printValue(builder, item_size, "generic dict item size is");
+
                 return item_size;
             };
 
@@ -1485,6 +1505,27 @@ namespace tuplex {
 
                 // call cjson serialize
                 auto val = call_cjson_to_string(builder, item);
+
+                if(list_type.elementType().isOptionType()) {
+                    auto struct_bitmap_index = llvm_list_type->getStructNumElements() - 1;
+                    assert(struct_bitmap_index == 3);
+                    auto nullmap_ptr = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, struct_bitmap_index);
+                    assert(nullmap_ptr);
+
+                    // in deserialize, best to store nullptr for this...
+                    auto is_null = builder.CreateLoad(builder.getInt8Ty(), builder.CreateGEP(builder.getInt8Ty(), nullmap_ptr, index));
+                    val.is_null = builder.CreateICmpNE(is_null, env.i8Const(0));
+
+                    // update both val and size accordingly
+                    std::string null_default_dict("{}");
+                    assert(null_default_dict.size() + 1 == 3);
+                    val.val = builder.CreateSelect(val.is_null, env.strConst(builder,  null_default_dict), val.val);
+                    val.size = builder.CreateSelect(val.is_null, env.i64Const(null_default_dict.size() + 1), val.size);
+                }
+
+                env.printValue(builder, index, "serializing list element no: ");
+                env.printValue(builder, val.val, "value to serialize is: ");
+                env.printValue(builder, val.size, "size of value to serialize is: ");
 
                 builder.CreateMemCpy(dest_ptr, 0, val.val, 0, val.size);
                 auto s_size = val.size;
@@ -1885,7 +1926,7 @@ namespace tuplex {
             } else if(elementType.isListType()) {
                 size_in_bytes = list_of_lists_serialize_to(env, builder, list_ptr, list_type, dest_ptr);
             } else if(elementType == python::Type::GENERICDICT) {
-                size_in_bytes = list_of_generic_dicts_serialize_to(env, builder, list_ptr, dest_ptr);
+                size_in_bytes = list_of_generic_dicts_serialize_to(env, builder, list_ptr, original_list_type, dest_ptr);
             } else {
                 throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Unsupported list to serialize: " + original_list_type.desc());
             }
