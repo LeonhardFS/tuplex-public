@@ -425,20 +425,20 @@ TEST_F(ListFunctions, ListOf3Elements) {
     // use arbitrary elements & then access
     std::vector<List> test_lists{
         // primitive objects
-//        List(1, 2, 3),
-//        List(true, false, true),
-//        List("abc", "", "def"),
-//        List(2.7, -9.0, 9999.99),
-//        List(Field::null(), Field::null(), Field::null()),
-//        List(List(), List(), List()),
-//        List(Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)),
+        List(1, 2, 3),
+        List(true, false, true),
+        List("abc", "", "def"),
+        List(2.7, -9.0, 9999.99),
+        List(Field::null(), Field::null(), Field::null()),
+        List(List(), List(), List()),
+        List(Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)),
         // compound objects
         // options of primitives
-//        List(Field((int64_t)42), Field::null(), Field::null(), Field((int64_t)37),
-        // List(Field::null(), Field::null(), Field(3.256)),
-//        List(Field(false), Field(true), Field::null(), Field(false)),
-//        List(Field("this is a test string"), Field::null(), Field("another test string")),
-//        List(List(), Field::null(), List()),
+        List(Field((int64_t)42), Field::null(), Field::null(), Field((int64_t)37),
+        List(Field::null(), Field::null(), Field(3.256)),
+        List(Field(false), Field(true), Field::null(), Field(false)),
+        List(Field("this is a test string"), Field::null(), Field("another test string")),
+        List(List(), Field::null(), List()),
         List(Field::null(), Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)), // <-- error
         // list of lists
         // list of structured dicts
