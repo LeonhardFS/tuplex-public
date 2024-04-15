@@ -424,6 +424,7 @@ namespace tuplex {
         }
 
         python::Type tuple_type_without_first_level_options(const python::Type& tuple_type) {
+            assert(tuple_type.isTupleType());
             std::vector<python::Type> col_types = tuple_type.parameters();
             for(auto& type : col_types) {
                 if(type.isOptionType())
@@ -438,7 +439,10 @@ namespace tuplex {
 
             auto& context = _env->getContext();
             auto types = getFieldTypes();
-            bool hasVarField = !tuple_type_without_first_level_options(getTupleType()).isFixedSizeType();
+            auto tuple_type = python::Type::makeTupleType(types);
+
+            // Logger::instance().defaultLogger().debug("serialize flattened tuple of type: " + getTupleType().desc());
+            bool hasVarField = !tuple_type_without_first_level_options(tuple_type).isFixedSizeType();
 
             auto original_start_ptr = ptr;
 
