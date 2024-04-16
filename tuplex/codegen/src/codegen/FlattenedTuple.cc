@@ -241,6 +241,7 @@ namespace tuplex {
                 }
                 if(python::Type::EMPTYLIST == type) {
                     _tree.set(i, codegen::SerializableValue(_env->i8nullptr(), _env->i64Const(sizeof(int64_t)), _env->i1Const(false)));
+                    continue;
                 }
 
                 llvm::Value* isnull = nullptr;
@@ -418,8 +419,10 @@ namespace tuplex {
             codegen::IRBuilder bThen(enoughCapacity);
             serialize(bThen, output);
 
-            // set builder to insert on then block
-            builder.SetInsertPoint(enoughCapacity);
+            // set builder to last block of bThen
+            assert(bThen.GetInsertBlock());
+            builder.SetInsertPoint(bThen.GetInsertBlock());
+
             return serializationSize;
         }
 

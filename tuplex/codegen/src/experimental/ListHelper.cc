@@ -1192,7 +1192,7 @@ namespace tuplex {
             };
 
             auto size_in_bytes = list_of_varitems_serialized_size(env, builder, list_ptr, list_type, list_get_list_item_size);
-            // env.printValue(builder, size_in_bytes, "total serialized size of list " + list_type.desc() + " is: ");
+             env.printValue(builder, size_in_bytes, "total serialized size of list " + list_type.desc() + " is: ");
             return size_in_bytes;
         }
 
@@ -1731,6 +1731,7 @@ namespace tuplex {
             size = builder.CreateAdd(size, opt_size);
             assert(size->getType() == env.i64Type());
              env.printValue(builder, size, "===\ncomputed serialized size of list " + list_type.desc() + " as: ");
+
             return size;
         }
 
@@ -1748,7 +1749,7 @@ namespace tuplex {
                 assert(element_type.isListType());
 
                 auto llvm_list_type = env.createOrGetListType(list_type);
-                auto ptr_values = builder.CreateStructLoad(llvm_list_type, list_ptr, 2);
+                auto ptr_values = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, 2);
                 assert(ptr_values->getType()->isPointerTy());
 
                 auto llvm_list_element_type = env.pythonToLLVMType(element_type.withoutOption());
@@ -1771,7 +1772,7 @@ namespace tuplex {
 
                 assert(element_type.isListType());
                 auto llvm_list_type = env.createOrGetListType(list_type);
-                auto ptr_values = builder.CreateStructLoad(llvm_list_type, list_ptr, 2);
+                auto ptr_values = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, 2);
                 assert(ptr_values->getType()->isPointerTy());
 
                 // fetch size by calling struct_size on each retrieved pointer! (they should be ALL valid)
@@ -2114,6 +2115,8 @@ namespace tuplex {
             auto element_type = list_type.elementType();
             assert(element_type.withoutOption().isListType());
 
+            env.printValue(builder, num_elements, "Deserializing " + list_type.desc() + " from memory with #elements: ");
+
             // this var can be eliminated --> put this logic into func?
             auto acc_size_var = env.CreateFirstBlockAlloca(builder, builder.getInt64Ty());
             builder.CreateStore(env.i64Const(0), acc_size_var);
@@ -2158,6 +2161,11 @@ namespace tuplex {
             std::tie(offset, size) = unpack_offset_and_size(builder, current_offset);
             builder.CreateStore(builder.CreateAdd(size, builder.CreateLoad(builder.getInt64Ty(), acc_size_var)), acc_size_var);
 
+            auto i = builder.CreateLoad(builder.getInt64Ty(), loopCounter);
+            env.printValue(builder, i, "deserializing element no: ");
+            env.printValue(builder, offset, element_type.desc() + " current element offset: ");
+            env.printValue(builder, size, element_type.desc() + " current element size: ");
+
             auto serialized_list_element_ptr = builder.MovePtrByBytes(builder.CreateBitCast(current_offset_ptr, env.i8ptrType()), offset);
 
             // decode into rtmalloced pointer & store
@@ -2189,6 +2197,9 @@ namespace tuplex {
             // last element in offset will have size + offset. can use that to decode total size?
             auto total_varlen_size = builder.CreateLoad(builder.getInt64Ty(), acc_size_var);
             auto total_offset = builder.CreateAdd(builder.CreateMul(env.i64Const(sizeof(int64_t)), num_elements), total_varlen_size);
+
+            env.printValue(builder, total_offset, "total deserialized size: ");
+
             return total_offset;
         }
 
@@ -2428,6 +2439,8 @@ namespace tuplex {
             // check elements are ok
             assert(list_type.isListType() && target_list_type.isListType());
 
+            assert(list_type != python::Type::EMPTYLIST);
+
             auto el_type = list_type.elementType();
             auto target_el_type = target_list_type.elementType();
             assert(python::canUpcastType(el_type, target_el_type));
@@ -2499,6 +2512,14 @@ namespace tuplex {
             auto llvm_target_list_type = env.pythonToLLVMType(target_list_type);
             auto target_list_ptr = env.CreateFirstBlockAlloca(builder, llvm_target_list_type);
             list_init_empty(env, builder, target_list_ptr, target_list_type);
+
+            // shortcut, if empty list -> return target list as empty!
+            if(list_type == python::Type::EMPTYLIST) {
+                auto num_elements = env.i64Const(0);
+                list_reserve_capacity(env, builder, target_list_ptr, target_list_type, num_elements);
+                list_store_size(env, builder, target_list_ptr, target_list_type, num_elements);
+                return target_list_ptr;
+            }
 
             // create upcast func & fill in. (@TODO: could cache this!)
             auto upcast_func = list_create_upcast_func(env, list_type, target_list_type);

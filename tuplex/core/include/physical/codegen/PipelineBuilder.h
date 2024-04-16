@@ -212,7 +212,7 @@ namespace tuplex {
                 if (!verifyFunction(_func, &err)) {
 
                     // @TODO: use the better inspection capabilities...
-                    const size_t max_length = 50000; // max 50k chars
+                    const size_t max_length = 200000; // max 200k chars
                     auto irSample = _env->getIR();
                     if(irSample.length() > max_length)
                         irSample = irSample.substr(0, max_length);

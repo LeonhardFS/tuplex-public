@@ -416,6 +416,30 @@ TEST_F(ListFunctions, ListOfGenericDict) {
     EXPECT_EQ(d_r2.toPythonString(), d_r.toPythonString());
 }
 
+TEST_F(ListFunctions, ListOfListOfI64) {
+
+    using namespace tuplex;
+
+    auto test_list = List(List(), List(1, 2, 5, 6, 3, 2), List(3, 4), List(8), List(), List(4, 3, 69, -20));
+
+    uint8_t buffer[5000];
+    memset(buffer, 0, 5000);
+    Row r((test_list));
+
+    auto serialized_size = r.serializedLength();
+    auto ans_size = r.serializeToMemory(buffer, 5000);
+    EXPECT_EQ(ans_size, serialized_size);
+
+    // now deserialize & check
+    auto d_r = Row::fromMemory(r.getSchema(), buffer, 5000);
+
+    EXPECT_EQ(d_r.toPythonString(), r.toPythonString());
+}
+
+
+// refactor this using http://google.github.io/googletest/advanced.html#value-parameterized-tests
+// to make combos better.
+
 TEST_F(ListFunctions, ListOf3Elements) {
     using namespace tuplex;
     using namespace std;
@@ -441,7 +465,12 @@ TEST_F(ListFunctions, ListOf3Elements) {
 //        List(List(), Field::null(), List()),
 //        List(Field::null(), Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)), // <-- error
         // list of lists
-        List(List(), List(1, 2, 5, 6, 3, 2), List(3, 4), List(8), List(), List(4, 3, 69, -20))
+        //List(List(), List(1, 2, 5, 6, 3, 2), List(3, 4), List(8), List(), List(4, 3, 69, -20)),
+        //List(List(3.7, -46.0), List(8.986), List(), List(-4.0, 3.3, 69.3, -20.0)),
+//        List(List("a", "b", "c"), List()),
+//        List(List("need to", " perform ", " some testing here")),
+        List(List("need to", " perform ", " some testing here"), List("tuplex rocks")),
+        //List(List("need to", " perform ", " some testing here"), List("tuplex rocks"), List("a", "b", "c", "d", "e", "f", "g", "h", "i", "j"), List(), List("this is a very long string!"), List("abc", "", "def"))
         // list of structured dicts
         // list of list of structured dicts
         // list of tuples
@@ -451,7 +480,9 @@ TEST_F(ListFunctions, ListOf3Elements) {
     //                           List("abd", Field::null(), "xyz")
     };
 
-    auto ctx = Context(microTestOptions());
+    auto ctx_options = microTestOptions();
+    ctx_options.set("tuplex.useLLVMOptimizer", "false");
+    auto ctx = Context(ctx_options);
 
     for(unsigned test_case_no = 0; test_case_no < test_lists.size(); ++test_case_no) {
         auto test_list = test_lists[test_case_no];
@@ -460,20 +491,20 @@ TEST_F(ListFunctions, ListOf3Elements) {
         auto num_list_elements = test_list.numElements();
         os<<"Running test case "<<(test_case_no+1)<<"/"<<test_lists.size()<<": "<<test_list.getType().desc()<<endl;
 
-//        {
-//            os<<"-- Testing deserialize + list access"<<endl;
-//            // construct test data (list access)
-//            std::vector<Row> test_data;
-//            std::vector<Row> ref_data;
-//            for(unsigned i = 0; i < num_list_elements; ++i) {
-//                test_data.push_back(Row(test_list, Field((int64_t)i)));
-//                ref_data.push_back(Row(test_list.getField(i)));
-//            }
-//
-//            // mini pipeline -> checks that deserialize + list access works.
-//            auto ans = ctx.parallelize(test_data).map(UDF("lambda L, i: L[i]")).collectAsVector();
-//            compare_rows(ans, ref_data);
-//        }
+        {
+            os<<"-- Testing deserialize + list access"<<endl;
+            // construct test data (list access)
+            std::vector<Row> test_data;
+            std::vector<Row> ref_data;
+            for(unsigned i = 0; i < num_list_elements; ++i) {
+                test_data.push_back(Row(test_list, Field((int64_t)i)));
+                ref_data.push_back(Row(test_list.getField(i)));
+            }
+
+            // mini pipeline -> checks that deserialize + list access works.
+            auto ans = ctx.parallelize(test_data).map(UDF("lambda L, i: L[i]")).collectAsVector();
+            compare_rows(ans, ref_data);
+        }
 
         // now test that serialize works, by transforming tuple -> list.
         {
