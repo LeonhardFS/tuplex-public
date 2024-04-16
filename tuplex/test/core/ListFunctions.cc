@@ -448,29 +448,29 @@ TEST_F(ListFunctions, ListOf3Elements) {
 
     // use arbitrary elements & then access
     std::vector<List> test_lists{
-//        // primitive objects
-//        List(1, 2, 3),
-//        List(true, false, true),
-//        List("abc", "", "def"),
-//        List(2.7, -9.0, 9999.99),
-//        List(Field::null(), Field::null(), Field::null()),
-//        List(List(), List(), List()),
-//        List(Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)),
-//        // compound objects
-//        // options of primitives
-//        List(Field((int64_t)42), Field::null(), Field::null(), Field((int64_t)37)),
-//        List(Field::null(), Field::null(), Field(3.256)),
-//        List(Field(false), Field(true), Field::null(), Field(false)),
-//        List(Field("this is a test string"), Field::null(), Field("another test string")),
-//        List(List(), Field::null(), List()),
-//        List(Field::null(), Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)), // <-- error
+        // primitive objects
+        List(1, 2, 3),
+        List(true, false, true),
+        List("abc", "", "def"),
+        List(2.7, -9.0, 9999.99),
+        List(Field::null(), Field::null(), Field::null()),
+        List(List(), List(), List()),
+        List(Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)),
+        // compound objects
+        // options of primitives
+        List(Field((int64_t)42), Field::null(), Field::null(), Field((int64_t)37)),
+        List(Field::null(), Field::null(), Field(3.256)),
+        List(Field(false), Field(true), Field::null(), Field(false)),
+        List(Field("this is a test string"), Field::null(), Field("another test string")),
+        List(List(), Field::null(), List()),
+        List(Field::null(), Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)), // <-- error
         // list of lists
-        //List(List(), List(1, 2, 5, 6, 3, 2), List(3, 4), List(8), List(), List(4, 3, 69, -20)),
-        //List(List(3.7, -46.0), List(8.986), List(), List(-4.0, 3.3, 69.3, -20.0)),
-//        List(List("a", "b", "c"), List()),
-//        List(List("need to", " perform ", " some testing here")),
+        List(List(), List(1, 2, 5, 6, 3, 2), List(3, 4), List(8), List(), List(4, 3, 69, -20)),
+        List(List(3.7, -46.0), List(8.986), List(), List(-4.0, 3.3, 69.3, -20.0)),
+        List(List("a", "b", "c"), List()),
+        List(List("need to", " perform ", " some testing here")),
         List(List("need to", " perform ", " some testing here"), List("tuplex rocks")),
-        //List(List("need to", " perform ", " some testing here"), List("tuplex rocks"), List("a", "b", "c", "d", "e", "f", "g", "h", "i", "j"), List(), List("this is a very long string!"), List("abc", "", "def"))
+        List(List("need to", " perform ", " some testing here"), List("tuplex rocks"), List("a", "b", "c", "d", "e", "f", "g", "h", "i", "j"), List(), List("this is a very long string!"), List("abc", "", "def"))
         // list of structured dicts
         // list of list of structured dicts
         // list of tuples

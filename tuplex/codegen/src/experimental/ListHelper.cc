@@ -2510,7 +2510,9 @@ namespace tuplex {
             // function creation can be cached...
             auto llvm_list_type = env.pythonToLLVMType(list_type);
             auto llvm_target_list_type = env.pythonToLLVMType(target_list_type);
-            auto target_list_ptr = env.CreateFirstBlockAlloca(builder, llvm_target_list_type);
+            // Note: can not use stack alloced var here, because in list of list scenario - this could get saved as list ptr into list which would be a problem.
+            // --> could do stack alloc check & promote if necessary.
+            auto target_list_ptr = env.CreateHeapAlloca(builder, llvm_target_list_type); // env.CreateFirstBlockAlloca(builder, llvm_target_list_type); <-- stack alloc version
             list_init_empty(env, builder, target_list_ptr, target_list_type);
 
             // shortcut, if empty list -> return target list as empty!
