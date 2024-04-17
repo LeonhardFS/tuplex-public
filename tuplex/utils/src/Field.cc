@@ -443,8 +443,24 @@ namespace tuplex {
             return Field((double)f._iValue);
         }
 
+        // upcasting lists to each other
+        if(f._type.isListType() && targetType.isListType() && targetType.elementType().isOptionType()) {
+            // case 1: can upcast list of nulls to option
+            // case 2: can upcast element type to Option[element type]
+            if(f._type.elementType() == python::Type::NULLVALUE || f._type.elementType() == targetType.elementType().getReturnType()) {
+                assert(f.hasPtrData());
+                auto L = *((List*)f.getPtr());
+                auto list_elements = L.to_vector();
+
+//                for(const auto& el : list_elements)
+//                    upcastTo_unsafe(el, targetType.elementType());
+                auto ret_list = List::from_vector(list_elements);
+                return Field((ret_list));
+            }
+        }
+
 #ifndef NDEBUG
-        throw std::runtime_error("bad field in upcast");
+        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " bad field in upcast, field has type: " + f._type.desc() + " and target type is: " + targetType.desc());
 #endif
         // @TODO: construct dummy based on target type
         return Field::null();

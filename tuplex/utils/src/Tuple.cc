@@ -44,6 +44,11 @@ namespace tuplex {
     }
 
     Tuple& Tuple::operator = (const Tuple &other) {
+
+        // perform self-assignment check to avoid unpredictable behavior.
+        if(&other == this)
+            return *this;
+
         // release mem
         if(_elements)
             delete [] _elements;
@@ -124,7 +129,7 @@ namespace tuplex {
             return false;
 
         // elementwise comparison
-        for(unsigned i = 0; i < rhs._numElements; ++i) {
+        for(int i = 0; i < rhs._numElements; ++i) {
             Field a = rhs.getField(i);
             Field b = rhs.getField(i);
             if(a != b)
