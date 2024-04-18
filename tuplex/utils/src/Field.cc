@@ -125,12 +125,21 @@ namespace tuplex {
         if(other.hasPtrData()) {
             assert(_ptrValue == nullptr);
 
+            // is other NULL? --> skip.
+            if(other.isNull()) {
+                _isNull = true;
+                _ptrValue = nullptr;
+                _size = 0;
+                _type = other._type;
+                return;
+            }
+
             // special data structs have to perform individual deep copies
-            if(other._type.isTupleType()) {
+            if(other._type.withoutOption().isTupleType()) {
                 auto tuple_ptr = reinterpret_cast<Tuple*>(other._ptrValue);
                 _ptrValue = reinterpret_cast<uint8_t*>(tuple_ptr->allocate_deep_copy());
                 _size = sizeof(Tuple);
-            } else if(other._type.isListType()) {
+            } else if(other._type.withoutOption().isListType()) {
                 auto list_ptr = reinterpret_cast<List*>(other._ptrValue);
                 _ptrValue = reinterpret_cast<uint8_t*>(list_ptr->allocate_deep_copy());
                 _size = sizeof(List);
@@ -156,6 +165,9 @@ namespace tuplex {
 
     Field& Field::operator = (const Field &other) {
 
+        if(&other == this)
+            return *this;
+
         _size = other._size;
         _isNull = other._isNull;
 
@@ -166,7 +178,7 @@ namespace tuplex {
             _ptrValue = nullptr;
 
             // only invoke deepcopy if size != 0
-            if(other._size != 0) {
+            if(other._size != 0 && !other._isNull) {
                 assert(other._ptrValue);
                 deep_copy_from_other(other);
             }
@@ -184,7 +196,8 @@ namespace tuplex {
             if(_ptrValue) {
 
                 // select correct deletion method!
-                if(_type.withoutOption().isListType() || (_type.withoutOption().isTupleType() && !_type.withoutOption().parameters().empty())) {
+                if((_type.withoutOption().isListType() && _type.withoutOption() != python::Type::EMPTYLIST)
+                || (_type.withoutOption().isTupleType() && !_type.withoutOption().parameters().empty())) {
                     assert(!_isNull);
 
                     // need to cast to invoke correct destructor.
@@ -451,10 +464,10 @@ namespace tuplex {
                 assert(f.hasPtrData());
                 auto L = *((List*)f.getPtr());
                 auto list_elements = L.to_vector();
-
-//                for(const auto& el : list_elements)
-//                    upcastTo_unsafe(el, targetType.elementType());
-                auto ret_list = List::from_vector(list_elements);
+                std::vector<Field> casted_fields; casted_fields.reserve(list_elements.size());
+                for(const auto& el : list_elements)
+                    casted_fields.push_back(upcastTo_unsafe(el, targetType.elementType()));
+                auto ret_list = List::from_vector(casted_fields);
                 return Field((ret_list));
             }
         }

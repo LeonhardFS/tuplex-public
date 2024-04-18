@@ -1827,8 +1827,8 @@ namespace tuplex {
                         std::tie(el_offset, el_size) = unpack_offset_and_size_from_value(*(uint64_t*)ptr);
                         els.emplace_back(Field(option<Tuple>(
                                 getTupleHelper(underlyingElType, ptr + el_offset))));
-                        ptr += sizeof(uint64_t);
                     }
+                    ptr += sizeof(uint64_t);
                 }
             } else if(underlyingElType.isListType()) {
                 // check for none then read each list
@@ -1842,9 +1842,9 @@ namespace tuplex {
                         } else {
                             std::tie(el_offset, el_size) = unpack_offset_and_size_from_value(*(uint64_t*)ptr);
                             els.emplace_back(Field(option<List>(getListHelper(underlyingElType, ptr + el_offset))));
-                            ptr += sizeof(uint64_t);
                         }
                     }
+                    ptr += sizeof(uint64_t);
                 }
             } else if(underlyingElType == python::Type::BOOLEAN) {
                 // check for none then read each value

@@ -1170,7 +1170,7 @@ namespace tuplex {
 
                 auto element_type = list_type.elementType();
 
-                assert(element_type.isListType());
+                assert(element_type.withoutOption().isListType());
 
                 auto llvm_list_type = env.createOrGetListType(list_type);
                 auto ptr_values = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, 2);
@@ -1182,11 +1182,24 @@ namespace tuplex {
                 auto item_ptr = builder.CreateGEP(llvm_list_element_type->getPointerTo(), ptr_values, index);
                 auto item = builder.CreateLoad(llvm_list_element_type->getPointerTo(), item_ptr);
 
-                auto item_length = list_length(env, builder, item, element_type);
+                auto item_length = list_length(env, builder, item, element_type.withoutOption());
                 env.printValue(builder, item_length, "got list " + element_type.desc() + " with n elements: ");
 
                 // call function! (or better said: emit the necessary code...)
-                auto item_size = list_serialized_size(env, builder, item, element_type);
+                auto item_size = list_serialized_size(env, builder, item, element_type.withoutOption());
+
+                // special case: element_type is option type: check if NULL
+                if(element_type.isOptionType()) {
+                    auto struct_bitmap_index = llvm_list_type->getStructNumElements() - 1;
+                    assert(struct_bitmap_index == 3);
+                    auto nullmap_ptr = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, struct_bitmap_index);
+                    assert(nullmap_ptr);
+
+                    // in deserialize, best to store nullptr for this...
+                    llvm::Value* is_null = builder.CreateLoad(builder.getInt8Ty(), builder.CreateGEP(builder.getInt8Ty(), nullmap_ptr, index));
+                    is_null = builder.CreateICmpNE(is_null, env.i8Const(0));
+                    item_size = builder.CreateSelect(is_null, env.i64Const(0), item_size);
+                }
 
                 return item_size;
             };
@@ -1777,7 +1790,7 @@ namespace tuplex {
 
                 // fetch size by calling struct_size on each retrieved pointer! (they should be ALL valid)
                 // --> no check here!
-                auto llvm_list_element_type = env.pythonToLLVMType(element_type.withoutOption());
+                auto llvm_list_element_type = env.pythonToLLVMType(element_type);
                 auto item_ptr = builder.CreateGEP(llvm_list_element_type->getPointerTo(), ptr_values, index);
                 auto item = builder.CreateLoad(llvm_list_element_type->getPointerTo(), item_ptr);
 
@@ -1838,7 +1851,7 @@ namespace tuplex {
 
                 auto element_type = list_type.elementType();
 
-                assert(element_type == python::Type::STRING || element_type == python::Type::PYOBJECT);
+                assert(element_type.withoutOption() == python::Type::STRING || element_type.withoutOption() == python::Type::PYOBJECT);
 
                 auto llvm_list_type = env.createOrGetListType(list_type);
                 auto ptr_values = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, 2);
@@ -1847,7 +1860,7 @@ namespace tuplex {
                 assert(ptr_values->getType() == env.i8ptrType()->getPointerTo(0));
                 assert(ptr_sizes->getType() == env.i64ptrType());
 
-                auto llvm_value_type = env.pythonToLLVMType(element_type);
+                auto llvm_value_type = env.pythonToLLVMType(element_type.withoutOption());
                 auto idx_value = builder.CreateGEP(llvm_value_type, ptr_values, index);
                 auto idx_size = builder.CreateGEP(env.i64Type(), ptr_sizes, index);
 
@@ -1919,7 +1932,7 @@ namespace tuplex {
                 size_in_bytes = list_serialize_fixed_sized_to(env, builder, list_ptr, original_list_type, dest_ptr);
             } else if(elementType == python::Type::STRING
                       || elementType == python::Type::PYOBJECT) {
-                size_in_bytes = list_serialize_str_like_to(env, builder, list_ptr, list_type, dest_ptr);
+                size_in_bytes = list_serialize_str_like_to(env, builder, list_ptr, original_list_type, dest_ptr);
             } else if(elementType.isStructuredDictionaryType()) {
                 size_in_bytes = list_of_structs_serialize_to(env, builder, list_ptr, list_type, dest_ptr);
             } else if(elementType.isTupleType()) {
@@ -2170,7 +2183,16 @@ namespace tuplex {
 
             // decode into rtmalloced pointer & store
             llvm::Value* element_size_in_bytes=nullptr;
-            auto stack_element_list_ptr = list_deserialize_from(env, builder, serialized_list_element_ptr, element_type, nullptr, &element_size_in_bytes);
+            llvm::Value* is_null = nullptr;
+            if(element_type.isOptionType()) {
+                auto nullmap_index = llvm_list_type->getStructNumElements() - 1;
+                auto nullmap_ptr = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, nullmap_index);
+                is_null = builder.CreateLoad(builder.getInt8Ty(), builder.CreateGEP(builder.getInt8Ty(), nullmap_ptr, i));
+                assert(is_null->getType() == env.i8Type());
+                is_null = builder.CreateICmpNE(is_null, env.i8Const(0));
+                env.printValue(builder, is_null, "is list element to deserialize None: ");
+            }
+            auto stack_element_list_ptr = list_deserialize_from(env, builder, serialized_list_element_ptr, element_type.withoutOption(), is_null, &element_size_in_bytes);
             auto element_list = builder.CreateLoad(llvm_list_element_type, stack_element_list_ptr.val);
 
             // heap alloc!
@@ -2215,8 +2237,8 @@ namespace tuplex {
             assert(ptr && ptr->getType() == env.i8ptrType());
             assert(list_type.isListType());
 
-            if(is_null)
-                throw std::runtime_error("Option[List] decode in list_deserialize_from not yet implemented.");
+//            if(is_null)
+//                throw std::runtime_error("Option[List] decode in list_deserialize_from not yet implemented.");
 
 
             // fetch element type and whether there's a bitmap to indicate optional list elements.
@@ -2239,6 +2261,20 @@ namespace tuplex {
 
             auto original_ptr = ptr;
 
+            BasicBlock* bbDecodeList = nullptr;
+            BasicBlock* bbDecodeDone = nullptr;
+            BasicBlock* bbFirstBlock = nullptr;
+            if(is_null) {
+                // create blocks & connect.
+                auto& ctx = builder.getContext();
+                bbFirstBlock = builder.GetInsertBlock();
+                bbDecodeList = BasicBlock::Create(ctx, "list_deserialize_if_not_null", builder.GetInsertBlock()->getParent());
+                bbDecodeDone = BasicBlock::Create(ctx, "list_deserialize_done", builder.GetInsertBlock()->getParent());
+                builder.CreateCondBr(is_null, bbDecodeDone, bbDecodeList);
+                builder.SetInsertPoint(bbDecodeList);
+            }
+
+
             // each list has first 8 bytes always store size
             auto num_elements = builder.CreateLoad(builder.getInt64Ty(), builder.CreateBitCast(ptr, env.i64ptrType()), "list_num_elements");
 
@@ -2247,24 +2283,6 @@ namespace tuplex {
             list_store_size(env, builder, list_ptr, list_type, num_elements);
 
             env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " decoding list " + list_type.desc() + " with num_elements=", num_elements);
-
-//            // decode now depending on element type
-//            // first check if list has optional elements, if so the next values will have the bitmap for the options
-//            if(elements_optional) {
-//
-////                throw std::runtime_error("not yet implemetned");
-////                deserializeBitmap(env, builder, ptr,  len);
-////
-////                auto len = list_length(env, builder, list_ptr, list_type);
-////                // store 1 byte?
-////                opt_size = builder.CreateMul(env.i64Const(1), len);
-////                // for efficiency, round up to multiple of 8. (alignment)
-////                opt_size = env.roundUpToMultiple(builder, opt_size, sizeof(int64_t));
-//
-//                auto opt_size =
-//
-//
-//            }
 
             // move the size of the first i64 indicating the length
             ptr = builder.MovePtrByBytes(ptr, env.i64Const(sizeof(int64_t)));
@@ -2418,6 +2436,19 @@ namespace tuplex {
                 ptr = builder.MovePtrByBytes(ptr, size_in_bytes);
             } else {
                 throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " list of type " + list_type.desc() + " deserialize not yet supported.");
+            }
+
+            // if Option[List] deode, insert blocks.
+            if(is_null) {
+                auto currentBlock = builder.GetInsertBlock();
+                builder.CreateBr(bbDecodeDone);
+
+                builder.SetInsertPoint(bbDecodeDone);
+                // now create phi for: 1.) value, 2.) size, 3.) ptr.
+                auto phi_ptr = builder.CreatePHI(ptr->getType(), 2);
+                phi_ptr->addIncoming(ptr, currentBlock);
+                phi_ptr->addIncoming(original_ptr, bbFirstBlock);
+                ptr = phi_ptr;
             }
 
             // debug print
