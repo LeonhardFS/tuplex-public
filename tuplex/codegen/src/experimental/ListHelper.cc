@@ -1168,6 +1168,7 @@ namespace tuplex {
             auto list_get_list_item_size = [list_type](LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
                 assert(index && index->getType() == env.i64Type());
 
+                env.printValue(builder, index, "computing list element size for idx=");
                 auto element_type = list_type.elementType();
 
                 assert(element_type.withoutOption().isListType());
@@ -1679,6 +1680,8 @@ namespace tuplex {
             llvm::Value* opt_size = env.i64Const(0);
             if(list_type.elementType().isOptionType()) {
                 opt_size = calc_bitmap_size_in_64bit_blocks(builder, len);
+
+                env.printValue(builder, opt_size, "opt_size is: ");
             }
 
             // generate loop to go over items.
