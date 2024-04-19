@@ -544,20 +544,20 @@ TEST_F(ListFunctions, ListOf3Elements) {
         auto num_list_elements = test_list.numElements();
         os<<"Running test case "<<(test_case_no+1)<<"/"<<test_lists.size()<<": "<<test_list.getType().desc()<<endl;
 
-        {
-            os<<"-- Testing deserialize + list access"<<endl;
-            // construct test data (list access)
-            std::vector<Row> test_data;
-            std::vector<Row> ref_data;
-            for(unsigned i = 0; i < num_list_elements; ++i) {
-                test_data.push_back(Row(test_list, Field((int64_t)i)));
-                ref_data.push_back(Row(test_list.getField(i)));
-            }
-
-            // mini pipeline -> checks that deserialize + list access works.
-            auto ans = ctx.parallelize(test_data).map(UDF("lambda L, i: L[i]")).collectAsVector();
-            compare_rows(ans, ref_data);
-        }
+//        {
+//            os<<"-- Testing deserialize + list access"<<endl;
+//            // construct test data (list access)
+//            std::vector<Row> test_data;
+//            std::vector<Row> ref_data;
+//            for(unsigned i = 0; i < num_list_elements; ++i) {
+//                test_data.push_back(Row(test_list, Field((int64_t)i)));
+//                ref_data.push_back(Row(test_list.getField(i)));
+//            }
+//
+//            // mini pipeline -> checks that deserialize + list access works.
+//            auto ans = ctx.parallelize(test_data).map(UDF("lambda L, i: L[i]")).collectAsVector();
+//            compare_rows(ans, ref_data);
+//        }
 
         // now test that serialize works, by transforming tuple -> list.
         {

@@ -15,6 +15,7 @@
 // this file contains various helper functions to deal with AST trees
 #include <ast/ASTNodes.h>
 #include <Field.h>
+#include <stack>
 
 namespace tuplex {
     /*!

@@ -326,7 +326,10 @@ namespace tuplex {
 
                         // TODO: isnull decode
                         list_value.is_null = isnull;
-                        list_value = list_deserialize_from(*_env, builder, ptr, type, nullptr, &list_size_in_bytes);
+                        list_value = list_deserialize_from(*_env, builder, ptr, type, isnull, &list_size_in_bytes);
+
+                        if(isnull)
+                            assert(list_value.is_null);
 
                         _env->printValue(builder, list_size_in_bytes, "dserialized list " + type.desc() + " with bytes: ");
                         _env->printValue(builder, size, "stored field size used for skipping, this number should match: ");
