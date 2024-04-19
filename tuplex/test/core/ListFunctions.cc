@@ -559,28 +559,28 @@ TEST_F(ListFunctions, ListOf3Elements) {
             compare_rows(ans, ref_data);
         }
 
-//        // now test that serialize works, by transforming tuple -> list.
-//        {
-//            os<<"-- Testing list serialize"<<endl;
-//
-//            // construct test data (list access)
-//            std::vector<Row> test_data;
-//            std::vector<Row> ref_data;
-//            // create function
-//            std::stringstream ss;
-//            ss<<"lambda t: [";
-//            for(unsigned i = 0; i < num_list_elements; ++i) {
-//                test_data.push_back(Row(Tuple::from_vector(test_list.to_vector())));
-//                ref_data.push_back(Row(test_list));
-//
-//                ss<<"t["<<i<<"],";
-//            }
-//            ss<<"]";
-//            auto udf_code = ss.str();
-//
-//            auto ans = ctx.parallelize(test_data).map(UDF(udf_code)).collectAsVector();
-//            compare_rows(ans, ref_data);
-//        }
+        // now test that serialize works, by transforming tuple -> list.
+        {
+            os<<"-- Testing list serialize"<<endl;
+
+            // construct test data (list access)
+            std::vector<Row> test_data;
+            std::vector<Row> ref_data;
+            // create function
+            std::stringstream ss;
+            ss<<"lambda t: [";
+            for(unsigned i = 0; i < num_list_elements; ++i) {
+                test_data.push_back(Row(Tuple::from_vector(test_list.to_vector())));
+                ref_data.push_back(Row(test_list));
+
+                ss<<"t["<<i<<"],";
+            }
+            ss<<"]";
+            auto udf_code = ss.str();
+
+            auto ans = ctx.parallelize(test_data).map(UDF(udf_code)).collectAsVector();
+            compare_rows(ans, ref_data);
+        }
 
 
         // TODO: list append together with append....
