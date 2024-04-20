@@ -58,12 +58,17 @@ namespace tuplex {
 
         void releaseMemory();
 
-        inline bool hasPtrData() const {
+        [[nodiscard]] inline bool hasPtrData() const {
 
             // option type may have data
             auto type = _type;
-            if(type.isOptionType())
+            if(type.isOptionType()) {
                 type = type.getReturnType();
+
+                // if null is true, then assume NO pointer data.
+                if(_isNull)
+                    return false;
+            }
 
             if(type == python::Type::EMPTYLIST)
                 return false;

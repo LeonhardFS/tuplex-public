@@ -13,6 +13,7 @@
 #include "../../utils/include/Utils.h"
 #include "TestUtils.h"
 #include "jit/RuntimeInterface.h"
+#include "JsonStatistic.h"
 
 // need for these tests a running python interpreter, so spin it up
 class ListFunctions : public PyTest {};
@@ -457,8 +458,6 @@ TEST_F(ListFunctions, ListOfOptionalListOfStrings) {
 }
 
 TEST_F(ListFunctions, ListOfOptionalListOfIntegers) {
-    //
-
     using namespace tuplex;
     List test_list(Field::null(), List(1, 2, 3));
 
@@ -482,9 +481,86 @@ TEST_F(ListFunctions, ListOfOptionalListOfIntegers) {
     EXPECT_EQ(d_r.toPythonString(), r.toPythonString());
 }
 
+TEST_F(ListFunctions, ListFunctions_ListOfOptionalListOfOptionalIntegers) {
+    using namespace tuplex;
+    List test_list(List(1, 3), Field::null(), List(2, Field::null()));
+
+    // check types & fields
+    EXPECT_EQ(test_list.getType().desc(), "List[Option[List[Option[i64]]]]");
+    ASSERT_EQ(test_list.numElements(), 3);
+    ASSERT_EQ(test_list.getField(0).desc(), "[1,3]");
+    ASSERT_EQ(test_list.getField(1).desc(), "None");
+    ASSERT_EQ(test_list.getField(2).desc(), "[2,None]");
+
+    uint8_t buffer[5000];
+    memset(buffer, 0, 5000);
+
+    {
+        Row r((test_list));
+        auto serialized_size = r.serializedLength();
+        auto ans_size = r.serializeToMemory(buffer, 5000);
+        EXPECT_EQ(ans_size, serialized_size);
+
+        // now deserialize & check
+        auto d_r = Row::fromMemory(r.getSchema(), buffer, 5000);
+
+        EXPECT_EQ(d_r.toPythonString(), r.toPythonString());
+    }
+
+    auto f = Field::null(test_list.getField(0).getType());
+    EXPECT_EQ(f.desc(), "None");
+    EXPECT_EQ(f.getType(), test_list.getField(0).getType());
+
+    {
+        memset(buffer, 0, 5000);
+        Row test_row((Tuple::from_vector(test_list.to_vector())));
+        auto serialized_size = test_row.serializedLength();
+        auto ans_size = test_row.serializeToMemory(buffer, 5000);
+        EXPECT_EQ(ans_size, serialized_size);
+
+        auto d_r = Row::fromMemory(test_row.getSchema(), buffer, 5000);
+
+        EXPECT_EQ(d_r.toPythonString(), test_row.toPythonString());
+    }
+
+}
+
 
 // refactor this using http://google.github.io/googletest/advanced.html#value-parameterized-tests
 // to make combos better.
+
+namespace tuplex {
+    // helper function to parse json string to struct dict
+    Field parse_json_to_struct_dict(const std::string& s) {
+        auto v = parseRowsFromJSONStratified(s.c_str(), s.size(), nullptr, false,
+                                             true, 1, 1, 1,
+                                             1, {}, false);
+        assert(v.size() == 1);
+        return v[0].get(0);
+    }
+}
+
+TEST_F(ListFunctions, ListOfStructDicts) {
+    using namespace tuplex;
+    List test_list(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":20}"));
+
+    // check types & fields
+    EXPECT_EQ(test_list.getType().desc(), "List[Struct[(str,'a'->i64)]]");
+    ASSERT_EQ(test_list.numElements(), 2);
+
+    uint8_t buffer[5000];
+    memset(buffer, 0, 5000);
+    Row r((test_list));
+
+    auto serialized_size = r.serializedLength();
+    auto ans_size = r.serializeToMemory(buffer, 5000);
+    EXPECT_EQ(ans_size, serialized_size);
+
+    // now deserialize & check
+    auto d_r = Row::fromMemory(r.getSchema(), buffer, 5000);
+
+    EXPECT_EQ(d_r.toPythonString(), r.toPythonString());
+}
 
 TEST_F(ListFunctions, ListOf3Elements) {
     using namespace tuplex;
@@ -502,7 +578,6 @@ TEST_F(ListFunctions, ListOf3Elements) {
 //        List(Field::null(), Field::null(), Field::null()),
 //        List(List(), List(), List()),
 //        List(Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)),
-
 //        // compound objects
 //        // options of primitives
 //        List(Field((int64_t)42), Field::null(), Field::null(), Field((int64_t)37)),
@@ -518,13 +593,16 @@ TEST_F(ListFunctions, ListOf3Elements) {
 //        List(List("need to", " perform ", " some testing here")),
 //        List(List("need to", " perform ", " some testing here"), List("tuplex rocks")),
 //        List(List("need to", " perform ", " some testing here"), List("tuplex rocks"), List("a", "b", "c", "d", "e", "f", "g", "h", "i", "j"), List(), List("this is a very long string!"), List("abc", "", "def")),
-        // list of lists with options.
+//        // list of lists with options.
 //        List(List("a", Field::null()), List("b")),
-        //List(List("a", Field::null()), List(Field::null()), List("a", "b", "c")),
+//        List(List("a", Field::null()), List(Field::null()), List("a", "b", "c")),
 //        List(List(1, 2, 3), List(4, Field::null(), 6)),
-        List(Field::null(), List(1, 2, 3)), // List[Option[List[i64]]]
-//        List(List(1, 3), Field::null(), List(2, Field::null()))
+//        List(Field::null(), List(1, 2, 3)), // List[Option[List[i64]]]
+//        List(List(1, 3), Field::null(), List(2, Field::null())), // List[Option[List[Option[i64]]]]
+//        // triple nested list
+//        List(List(List(1, 2), List(4)), List(List(4), List(5, 6)))
         // list of structured dicts
+        List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":20}"))
         // list of list of structured dicts
         // list of tuples
         // options of other complex compound objects.
@@ -544,20 +622,20 @@ TEST_F(ListFunctions, ListOf3Elements) {
         auto num_list_elements = test_list.numElements();
         os<<"Running test case "<<(test_case_no+1)<<"/"<<test_lists.size()<<": "<<test_list.getType().desc()<<endl;
 
-//        {
-//            os<<"-- Testing deserialize + list access"<<endl;
-//            // construct test data (list access)
-//            std::vector<Row> test_data;
-//            std::vector<Row> ref_data;
-//            for(unsigned i = 0; i < num_list_elements; ++i) {
-//                test_data.push_back(Row(test_list, Field((int64_t)i)));
-//                ref_data.push_back(Row(test_list.getField(i)));
-//            }
-//
-//            // mini pipeline -> checks that deserialize + list access works.
-//            auto ans = ctx.parallelize(test_data).map(UDF("lambda L, i: L[i]")).collectAsVector();
-//            compare_rows(ans, ref_data);
-//        }
+        {
+            os<<"-- Testing deserialize + list access"<<endl;
+            // construct test data (list access)
+            std::vector<Row> test_data;
+            std::vector<Row> ref_data;
+            for(unsigned i = 0; i < num_list_elements; ++i) {
+                test_data.push_back(Row(test_list, Field((int64_t)i)));
+                ref_data.push_back(Row(test_list.getField(i)));
+            }
+
+            // mini pipeline -> checks that deserialize + list access works.
+            auto ans = ctx.parallelize(test_data).map(UDF("lambda L, i: L[i]")).collectAsVector();
+            compare_rows(ans, ref_data);
+        }
 
         // now test that serialize works, by transforming tuple -> list.
         {
