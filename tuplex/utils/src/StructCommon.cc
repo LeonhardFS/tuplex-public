@@ -4,6 +4,7 @@
 
 #include <StructCommon.h>
 #include <JSONUtils.h>
+#include <Serializer.h>
 
 namespace tuplex {
 
@@ -568,6 +569,287 @@ namespace tuplex {
         return "[]"; // empty list as dummy default.
     }
 
+
+    Field extract_field_from_json_with_type(nlohmann::json& j, const python::Type& value_type) {
+        // check what the value_type should be
+        auto err_msg = "value mismatch, expected " + value_type.desc() + " but go instead " + j.dump();
+        if(value_type == python::Type::NULLVALUE) {
+            if(j.is_null())
+                return Field::null();
+            throw std::runtime_error(err_msg);
+        }
+
+        if(value_type == python::Type::BOOLEAN) {
+            if(j.is_boolean())
+                return Field(j.get<bool>());
+            throw std::runtime_error(err_msg);
+        }
+
+        if(value_type == python::Type::I64) {
+            if(j.is_number_integer())
+                return Field(j.get<int64_t>());
+            throw std::runtime_error(err_msg);
+        }
+
+        if(value_type == python::Type::F64) {
+            if(j.is_number_float())
+                return Field(j.get<double>());
+            throw std::runtime_error(err_msg);
+        }
+
+        if(value_type == python::Type::STRING) {
+            if(j.is_string())
+                return Field(j.get<std::string>());
+            throw std::runtime_error(err_msg);
+        }
+
+        // some primitives
+        if(value_type == python::Type::EMPTYLIST) {
+            if(j.is_array() && j.size() == 0)
+                return Field::empty_list();
+            throw std::runtime_error(err_msg);
+        }
+
+        if(value_type == python::Type::EMPTYTUPLE) {
+            if(j.is_array() && j.size() == 0)
+                return Field::empty_tuple();
+            throw std::runtime_error(err_msg);
+        }
+
+        if(value_type == python::Type::EMPTYDICT) {
+            if(j.is_object() && j.size() == 0)
+                return Field::empty_dict();
+            throw std::runtime_error(err_msg);
+        }
+
+        if(value_type == python::Type::GENERICDICT) {
+            if(j.is_object())
+                return Field::from_str_data(j.dump(), value_type);
+            throw std::runtime_error(err_msg);
+        }
+
+        // compound objects
+        if(value_type.isOptionType()) {
+            // is null?
+            if(j.is_null()) {
+                return Field::null(value_type);
+            } else {
+                auto f = extract_field_from_json_with_type(j, value_type.withoutOption());
+                return f.makeOptional();
+            }
+        }
+
+        if(value_type.isListType() || value_type.isTupleType()) {
+            if(!j.is_array())
+                throw std::runtime_error(err_msg);
+
+            // extract fields
+            std::vector<Field> fields;
+            auto arr = j.get<std::vector<nlohmann::json>>();
+            for(auto element : arr)
+                fields.push_back(extract_field_from_json_with_type(element, value_type.elementType()));
+
+            if(value_type.isListType())
+                return Field(List::from_vector(fields));
+            else
+                return Field(Tuple::from_vector(fields));
+        }
+
+        if(value_type.isStructuredDictionaryType()) {
+            if(!j.is_object())
+                throw std::runtime_error(err_msg);
+            return Field::from_str_data(j.dump(), value_type);
+        }
+
+        throw std::runtime_error("unsupported type " + value_type.desc() + ", can not extract data from json " + j.dump());
+    }
+
+    std::string decode_key(const std::string& raw_value, const python::Type& key_type) {
+        std::string key;
+        if(python::Type::STRING == key_type) {
+            key = str_value_from_python_raw_value(raw_value);
+        } else {
+            throw std::runtime_error("unsupported key type " + key_type.desc() + ", can not decode value " + raw_value);
+        }
+        return key;
+    }
+
+    // helper function to get field along access path
+    Field get_struct_dict_field_by_path(const Field& f, const access_path_t& path, const python::Type& value_type) {
+        // this may be slow, because need to parse JSON:
+        assert(f.getType().isStructuredDictionaryType());
+        assert(f.getPtr() && f.getPtrSize() > 0);
+        const char* str_ptr = reinterpret_cast<const char*>(f.getPtr());
+        auto str_size = f.getPtrSize();
+
+        nlohmann::json j = nlohmann::json::parse(str_ptr);
+
+        // now go over access path and refine
+        for(unsigned i = 0; i  < path.size(); ++i) {
+            std::string encoded_key = path[i].first;
+            auto key_type = path[i].second;
+            j = j[decode_key(encoded_key, key_type)];
+        }
+        return extract_field_from_json_with_type(j, value_type);
+    }
+
+    size_t struct_dict_get_size(const Field& f) {
+        assert(f.getType().withoutOption().isStructuredDictionaryType());
+
+        // opt doesn't get serialized, return 0 bytes for this. Bitmap should go extra.
+        if(f.getType().isOptionType())
+            return 0;
+
+        auto dict_type = f.getType();
+        size_t serialized_size = 0;
+
+        flattened_struct_dict_entry_list_t entries;
+        flatten_recursive_helper(entries, dict_type, {});
+        auto indices = struct_dict_load_indices(dict_type);
+
+        // retrieve counts => i.e. how many fields are options? how many are maybe present?
+        size_t field_count = 0, option_count = 0, maybe_count = 0;
+
+        for (auto entry: entries) {
+            bool is_always_present = std::get<2>(entry);
+            maybe_count += !is_always_present;
+            bool is_value_optional = std::get<1>(entry).isOptionType();
+            option_count += is_value_optional;
+
+            bool is_struct_type = std::get<1>(entry).isStructuredDictionaryType();
+            field_count += !is_struct_type; // only count non-struct dict fields. -> yet the nested struct types may change the maybe count for the bitmap!
+        }
+
+        size_t num_option_bitmap_bits = option_count; // multiples of 64bit
+        size_t num_maybe_bitmap_bits = maybe_count;
+        size_t num_option_bitmap_elements = core::ceilToMultiple(option_count, 64ul) / 64ul;
+        size_t num_maybe_bitmap_elements = core::ceilToMultiple(maybe_count, 64ul) / 64ul;
+
+        std::vector<uint64_t> bitmap;
+        std::vector<uint64_t> presence_map;
+        if(num_option_bitmap_elements > 0) {
+            bitmap = std::vector<uint64_t>(num_option_bitmap_elements, 0);
+        }
+        if(num_maybe_bitmap_elements > 0) {
+            presence_map = std::vector<uint64_t>(num_maybe_bitmap_elements, 0);
+        }
+
+        // check if dict type has bitmaps, if so decode!
+        if(struct_dict_has_bitmap(dict_type))
+            serialized_size += sizeof(uint64_t) * num_option_bitmap_elements;
+
+        bool no_elements_present = false;
+        if(struct_dict_has_presence_map(dict_type)) {
+           serialized_size += sizeof(uint64_t) * num_maybe_bitmap_elements;
+
+            // special case: presence map all 0s -> return {}
+            bool all_zero = true;
+            for(auto p_el : presence_map)
+                if(p_el)
+                    all_zero =false;
+            if(all_zero) {
+
+                // check whether any elements must be there...
+                no_elements_present = true;
+                for(auto entry : entries) {
+                    auto access_path = std::get<0>(entry);
+                    auto value_type = std::get<1>(entry);
+                    auto always_present = std::get<2>(entry);
+                    auto t_indices = indices.at(access_path);
+
+                    auto path_str = json_access_path_to_string(access_path, value_type, always_present);
+
+                    int bitmap_idx = -1, present_idx = -1, value_idx = -1, size_idx = -1;
+                    std::tie(bitmap_idx, present_idx, value_idx, size_idx) = t_indices;
+
+                    if(bitmap_idx >= 0 || value_idx >= 0)
+                        no_elements_present = false;
+                }
+            }
+        }
+
+        // go through entries & decode!
+        // get indices to properly decode
+        // this func is basically modeled after struct_dict_serialize_to_memory
+        unsigned field_index = 0;
+
+        // handle all fixed length fields here
+        serialized_size += field_count * sizeof(int64_t);
+
+        std::unordered_map<access_path_t, std::string> elements;
+        for(auto entry : entries) {
+            auto access_path = std::get<0>(entry);
+            auto value_type = std::get<1>(entry);
+            auto always_present = std::get<2>(entry);
+            auto t_indices = indices.at(access_path);
+
+            auto path_str = json_access_path_to_string(access_path, value_type, always_present);
+
+            int bitmap_idx = -1, present_idx = -1, value_idx = -1, size_idx = -1;
+            std::tie(bitmap_idx, present_idx, value_idx, size_idx) = t_indices;
+
+            assert(field_index < field_count);
+
+            bool is_null = false;
+            bool is_present = struct_dict_field_present(indices, access_path, presence_map);
+
+            // if not present, do not decode. But do inc field_index!
+            if(!is_present) {
+                if(value_type.isOptionType())
+                    value_type = value_type.getReturnType();
+                if(!(value_type.isStructuredDictionaryType() || value_idx < 0))
+                    field_index++;
+                continue;
+            }
+
+            // special case null: (--> same applies for constants as well...)
+            if(value_type == python::Type::NULLVALUE || value_type == python::Type::EMPTYLIST
+            || value_type == python::Type::EMPTYLIST || value_type == python::Type::EMPTYTUPLE || value_type == python::Type::EMPTYDICT)
+                continue;
+
+            // get field via access path from struct dict and get size.
+            auto f_element = get_struct_dict_field_by_path(f, access_path, value_type);
+
+            if(python::Type::EMPTYLIST != value_type && value_type.isListType()) {
+                // special case list -> get serialized size and add
+                serialized_size += f_element.serialized_list_size();
+
+                field_index++;
+                continue;
+            }
+
+            if(python::Type::EMPTYTUPLE != value_type && value_type.isTupleType()) {
+                serialized_size += f_element.serialized_tuple_size();
+                field_index++;
+                continue;
+            }
+
+            // skip nested struct dicts! --> they're taken care of.
+            if(value_type.isStructuredDictionaryType())
+                continue;
+
+            // depending on field, add size!
+            if(value_idx < 0) {
+                // what's the type? add dummy field to string!
+                if(!is_null)
+                    throw std::runtime_error("decode type " + value_type.desc());
+                continue; // can skip field, not necessary to serialize
+            }
+
+            // is it string or option?
+            if(value_type.withoutOption() == python::Type::STRING) {
+                serialized_size += f_element.getPtrSize();
+                field_index++;
+                continue;
+            }
+
+            // serialized field -> inc index!
+            field_index++;
+        }
+
+        return serialized_size;
+    }
+
     std::string decodeStructDictFromBinary(const python::Type& dict_type, const uint8_t* buf, size_t buf_size) {
         assert(dict_type.isStructuredDictionaryType());
 
@@ -811,4 +1093,292 @@ namespace tuplex {
             return "{}"; // <-- this could happen for empty dict.
         return json_str;
     }
+
+    bool is_field_present(const Field& f, const access_path_t& path) {
+        // this may be slow, because need to parse JSON:
+        assert(f.getType().isStructuredDictionaryType());
+        assert(f.getPtr() && f.getPtrSize() > 0);
+        const char* str_ptr = reinterpret_cast<const char*>(f.getPtr());
+        auto str_size = f.getPtrSize();
+
+        nlohmann::json j = nlohmann::json::parse(str_ptr);
+
+        // now go over access path and refine. Note: only object -> object -> object paths here supported.
+        for(unsigned i = 0; i  < path.size(); ++i) {
+            std::string encoded_key = path[i].first;
+            auto key_type = path[i].second;
+            auto key = decode_key(encoded_key, key_type);
+            if(!j.is_object())
+                return false;
+            if(!j.contains(key))
+                return false;
+            j = j[key];
+        }
+        return true;
+    }
+
+    size_t struct_dict_serialize_to(const Field& f, uint8_t* ptr) {
+        assert(ptr);
+        assert(f.getType().isStructuredDictionaryType());
+
+        auto& logger = Logger::instance().logger("serializer");
+
+        auto original_ptr = ptr;
+        auto dict_type = f.getType();
+        auto serialized_size = 0;
+
+        // use same code as above in order to deserialize.
+        flattened_struct_dict_entry_list_t entries;
+        flatten_recursive_helper(entries, dict_type, {});
+        auto indices = struct_dict_load_indices(dict_type);
+
+
+        // create map of all fields for quick access by access path
+        std::unordered_map<access_path_t, Field> fields_to_encode_by_path;
+        for(auto entry : entries) {
+            auto access_path = std::get<0>(entry);
+            auto value_type = std::get<1>(entry);
+            auto always_present = std::get<2>(entry);
+
+            // is field present? --> add to fields to encode!
+            // always stop at lists, tuples, ...
+            if(is_field_present(f, access_path)) {
+                auto element = get_struct_dict_field_by_path(f, access_path, value_type);
+                fields_to_encode_by_path[access_path] = element;
+            }
+        }
+
+        // uncommnent for debugging:
+        logger.debug("found " + pluralize(fields_to_encode_by_path.size(), "field") + " to encode for type " + dict_type.desc());
+
+        // retrieve counts => i.e. how many fields are options? how many are maybe present?
+        size_t field_count = 0, option_count = 0, maybe_count = 0;
+
+        for (auto entry: entries) {
+            bool is_always_present = std::get<2>(entry);
+            maybe_count += !is_always_present;
+            bool is_value_optional = std::get<1>(entry).isOptionType();
+            option_count += is_value_optional;
+
+            bool is_struct_type = std::get<1>(entry).isStructuredDictionaryType();
+            field_count += !is_struct_type; // only count non-struct dict fields. -> yet the nested struct types may change the maybe count for the bitmap!
+        }
+
+        size_t num_option_bitmap_bits = option_count; // multiples of 64bit
+        size_t num_maybe_bitmap_bits = maybe_count;
+        size_t num_option_bitmap_elements = core::ceilToMultiple(option_count, 64ul) / 64ul;
+        size_t num_maybe_bitmap_elements = core::ceilToMultiple(maybe_count, 64ul) / 64ul;
+
+        std::vector<uint64_t> bitmap;
+        std::vector<uint64_t> presence_map;
+        if(num_option_bitmap_elements > 0) {
+            bitmap = std::vector<uint64_t>(num_option_bitmap_elements, 0);
+        }
+        if(num_maybe_bitmap_elements > 0) {
+            presence_map = std::vector<uint64_t>(num_maybe_bitmap_elements, 0);
+        }
+
+        // TODO: fill maps above with data...
+
+        // check if dict type has bitmaps, if so encode
+        if(struct_dict_has_bitmap(dict_type)) {
+            // decode
+            auto bitmap_size_to_encode = sizeof(uint64_t) * num_option_bitmap_elements;
+
+            // @TODO encode bitmap
+            throw std::runtime_error("TODO: encode bitmap");
+            //memcpy(&bitmap[0], ptr, bitmap_size_to_encode);
+
+            ptr += bitmap_size_to_encode;
+            serialized_size += bitmap_size_to_encode;
+        }
+
+        bool no_elements_present = false;
+
+        if(struct_dict_has_presence_map(dict_type)) {
+            auto bitmap_size_to_encode = sizeof(uint64_t) * num_maybe_bitmap_elements;
+            throw std::runtime_error("TODO: encode presence map");
+            //memcpy(&presence_map[0], ptr, bitmap_size_to_encode);
+            ptr += bitmap_size_to_encode;
+            serialized_size += bitmap_size_to_encode;
+
+            // // go over elements and print bit
+            // for(unsigned i = 0; i < presence_map.size(); ++i) {
+            //     for(unsigned j = 0; j < 64; ++j) {
+            //         if(presence_map[i] & (0x1ull << j))
+            //             std::cout<<"presence bit "<<j + 64 * i<<" set."<<std::endl;
+            //     }
+            // }
+
+            // special case: presence map all 0s -> return {}
+            bool all_zero = true;
+            for(auto p_el : presence_map)
+                if(p_el)
+                    all_zero =false;
+            if(all_zero) {
+
+                // check whether any elements must be there...
+                no_elements_present = true;
+                for(auto entry : entries) {
+                    auto access_path = std::get<0>(entry);
+                    auto value_type = std::get<1>(entry);
+                    auto always_present = std::get<2>(entry);
+                    auto t_indices = indices.at(access_path);
+
+                    auto path_str = json_access_path_to_string(access_path, value_type, always_present);
+
+                    int bitmap_idx = -1, present_idx = -1, value_idx = -1, size_idx = -1;
+                    std::tie(bitmap_idx, present_idx, value_idx, size_idx) = t_indices;
+
+                    if(bitmap_idx >= 0 || value_idx >= 0)
+                        no_elements_present = false;
+                }
+            }
+        }
+
+        // go through entries & decode!
+        // get indices to properly decode
+        // this func is basically modeled after struct_dict_serialize_to_memory
+        unsigned field_index = 0;
+
+        // how many fields are there?
+        // set var ptr start at field_count * 8 bytes off current one.
+        auto var_base_ptr = ptr + field_count * 8;
+        auto last_var_ptr = var_base_ptr;
+
+        for(auto entry : entries) {
+            auto access_path = std::get<0>(entry);
+            auto value_type = std::get<1>(entry);
+            auto always_present = std::get<2>(entry);
+            auto t_indices = indices.at(access_path);
+
+            auto path_str = json_access_path_to_string(access_path, value_type, always_present);
+
+            int bitmap_idx = -1, present_idx = -1, value_idx = -1, size_idx = -1;
+            std::tie(bitmap_idx, present_idx, value_idx, size_idx) = t_indices;
+
+            assert(field_index < field_count);
+            auto field_ptr = ptr + sizeof(uint64_t) * field_index;
+
+            bool is_null = false;
+            bool is_present = struct_dict_field_present(indices, access_path, presence_map);
+
+            // std::cout<<"decoding "<<path_str<<" from field= "<<field_index<<" present= "<<std::boolalpha<<is_present<<std::endl;
+
+            // if not present, do not decode. But do inc field_index!
+            if(!is_present) {
+                if(value_type.isOptionType())
+                    value_type = value_type.getReturnType();
+                if(value_type.isStructuredDictionaryType() || value_idx < 0) {
+                    // nothing todo...
+                } else {
+                    field_index++;
+                }
+                continue;
+            }
+
+            // special case null: (--> same applies for constants as well...)
+            if(value_type == python::Type::NULLVALUE || value_type == python::Type::EMPTYLIST || value_type == python::Type::EMPTYLIST || value_type == python::Type::EMPTYTUPLE) {
+                // nothing todo
+                continue;
+            }
+
+            // decode...
+            if(value_type.isOptionType()) {
+                throw std::runtime_error("not yet implemented.");
+                assert(bitmap_idx >= 0);
+                assert(!bitmap.empty());
+                // check if null or not
+                auto el_idx = bitmap_idx / 64;
+                auto bit_idx = bitmap_idx % 64;
+                is_null = bitmap[el_idx] & (0x1ull << bit_idx);
+//                if(is_null)
+//                    elements[access_path] = "null";
+                value_type = value_type.getReturnType();
+            }
+
+            if(python::Type::EMPTYLIST != value_type && value_type.isListType()) {
+                // special case list.
+
+                // check size & offset
+                uint32_t offset = *((uint64_t*)field_ptr) & 0xFFFFFFFF;
+                uint32_t size = *((uint64_t*)field_ptr) >> 32u;
+
+                //// @TODO. for now, save empty list
+                //elements[access_path] = "[]";
+                //tree->add(access_path_to_json_keys(access_path), decodeListAsJSON(value_type, field_ptr + offset, size));
+
+                throw std::runtime_error("not yet implemented");
+
+                field_index++;
+                continue;
+            }
+
+            // skip nested struct dicts! --> they're taken care of.
+            if(value_type.isStructuredDictionaryType())
+                continue;
+
+            // depending on field, add size!
+            if(value_idx < 0) {
+                // what's the type? add dummy field to string!
+                if(!is_null)
+                    throw std::runtime_error("decode type " + value_type.desc());
+                continue; // can skip field, not necessary to serialize
+            }
+
+            // what kind of data is it that needs to be serialized?
+            bool is_varlength_field = size_idx >= 0;
+            assert(value_idx >= 0);
+
+            if(!is_varlength_field) {
+                // either double or i64 or bool
+                if(value_type == python::Type::BOOLEAN) {
+                    if(!is_null)
+                        *(int64_t*)field_ptr = fields_to_encode_by_path[access_path].getInt();
+                    else
+                        *(int64_t*)field_ptr = 0; // dummy value
+                } else if(value_type == python::Type::I64) {
+                    if(!is_null)
+                        *(int64_t*)field_ptr = fields_to_encode_by_path[access_path].getInt();
+                    else
+                        *(int64_t*)field_ptr = 0; // dummy value
+                } else if(value_type == python::Type::F64) {
+                    if(!is_null)
+                        *(double*)field_ptr = fields_to_encode_by_path[access_path].getInt();
+                    else
+                        *(double*)field_ptr = 0.0; // dummy value
+                } else {
+                    throw std::runtime_error("can't decode primitive field " + value_type.desc());
+                }
+            } else {
+                // should be tuple or string or pyobject?
+                if(value_type != python::Type::STRING)
+                    throw std::runtime_error("unsupported type " + value_type.desc() + " encountered! ");
+
+                // check size & offset
+                uint32_t offset = last_var_ptr - field_ptr;
+                uint32_t size = 0;
+
+                std::string str_data = reinterpret_cast<const char*>(fields_to_encode_by_path[access_path].getPtr());
+                size = str_data.size();
+
+                if(!is_null) {
+                    *((uint64_t*)field_ptr) = pack_offset_and_size(offset, size);
+                    auto start_ptr = (char*)(field_ptr + offset);
+                    memcpy(start_ptr, str_data.c_str(), size);
+                } else {
+                    *((uint64_t*)field_ptr) = 0; // sets size & offset to 0 in case.
+                }
+                last_var_ptr += size; // inc var ptr by serialized size.
+            }
+
+            // serialized field -> inc index!
+            field_index++;
+        }
+
+        serialized_size = last_var_ptr - original_ptr;
+
+        return serialized_size;
+    }
+
 }

@@ -169,7 +169,7 @@ namespace tuplex {
                 serializer.append(std::string((char*)el.getPtr()));
             else if(python::Type::GENERICDICT == el.getType())
                 serializer.append(std::string((char*)el.getPtr()), python::Type::GENERICDICT);
-            else if(el.getType().isDictionaryType())
+            else if(el.getType().isDictionaryType() && !el.getType().isStructuredDictionaryType())
                 serializer.append(std::string((char*)el.getPtr()), el.getType());
             else if(el.getType() == python::Type::NULLVALUE) {
                 serializer.appendNull();
@@ -197,7 +197,7 @@ namespace tuplex {
                     }
                     else if(python::Type::GENERICDICT == rt)
                         serializer.append(el.isNull() ? option<std::string>::none : option<std::string>(std::string((const char*)el.getPtr())), python::Type::GENERICDICT);
-                    else if(rt.isDictionaryType())
+                    else if(rt.isDictionaryType() && !rt.isStructuredDictionaryType())
                         serializer.append(el.isNull() ? option<std::string>::none : option<std::string>(std::string((const char*)el.getPtr())), el.getType());
                     else if(rt.isListType())
                         serializer.append(el.isNull() ? option<List>::none : option<List>(*(List*)el.getPtr()), el.getType());

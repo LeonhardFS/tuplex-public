@@ -257,6 +257,9 @@ namespace tuplex {
            }
         }
 
+        size_t serialized_list_size() const;
+        size_t serialized_tuple_size() const;
+
         friend bool operator == (const Field& lhs, const Field& rhs);
 
 #ifdef BUILD_WITH_CEREAL

@@ -792,4 +792,34 @@ namespace tuplex {
         throw std::runtime_error("unsupported conversion from constant type " + constant_type.desc() + " to Field, not implemented yet.");
     }
 
+    size_t Field::serialized_list_size() const {
+        if(!_type.withoutOption().isListType())
+            throw std::runtime_error("can only call on list types, got " + _type.desc());
+        if(_type.withoutOption() == python::Type::EMPTYLIST)
+            return 0;
+
+        if(_isNull)
+            return 0;
+
+        // get list
+        auto list_ptr = reinterpret_cast<List*>(getPtr());
+        assert(list_ptr);
+        return list_ptr->serialized_length();
+    }
+
+    size_t Field::serialized_tuple_size() const {
+        if(!_type.withoutOption().isTupleType())
+            throw std::runtime_error("can only call on tuple types, got " + _type.desc());
+        if(_type.withoutOption() == python::Type::EMPTYTUPLE)
+            return 0;
+
+        if(_isNull)
+            return 0;
+
+        // get tuple
+        auto tuple_ptr = reinterpret_cast<Tuple*>(getPtr());
+        assert(tuple_ptr);
+        return tuple_ptr->serialized_length();
+    }
+
 }

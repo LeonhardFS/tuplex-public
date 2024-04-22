@@ -540,6 +540,20 @@ namespace tuplex {
     }
 }
 
+// basic struct dict serialize
+TEST_F(ListFunctions, BasicStructSerializeDeserialize) {
+    using namespace tuplex;
+    Row r(parse_json_to_struct_dict("{\"a\":10}"));
+
+    uint8_t buffer[5000];
+    memset(buffer, 0, 5000);
+    r.serializeToMemory(buffer, 5000);
+
+    auto d_r = Row::fromMemory(r.getSchema(), buffer, 5000);
+
+    EXPECT_EQ(d_r.toPythonString(), r.toPythonString());
+}
+
 TEST_F(ListFunctions, ListOfStructDicts) {
     using namespace tuplex;
     List test_list(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":20}"));

@@ -310,6 +310,8 @@ namespace tuplex {
          */
         List        getListHelper(const python::Type &listType, const uint8_t *ptr) const;
 
+        Field getStructuredDictionaryHelper(const python::Type& dictType, const uint8_t* ptr, size_t buf_size) const;
+
         const uint8_t* getPtr(const int col) const;
         size_t getSize(const int col) const;
 

@@ -488,7 +488,7 @@ namespace tuplex {
             return appendWithoutInference(std::string((char *) f.getPtr()));
         else if (python::Type::EMPTYDICT == f.getType()) {
             // nothing
-        } else if (python::Type::GENERICDICT == f.getType() || f.getType().isDictionaryType()) {
+        } else if (python::Type::GENERICDICT == f.getType() || (f.getType().isDictionaryType() && ! f.getType().isStructuredDictionaryType())) {
             return appendWithoutInference(std::string((char *) f.getPtr()));
         } else if (python::Type::EMPTYTUPLE == f.getType()) {
             // nothing
@@ -520,9 +520,11 @@ namespace tuplex {
                 _isNull.push_back(f.isNull());
                 _requiresBitmap.push_back(true);
             }
-            else if (python::Type::GENERICDICT == t || t.isDictionaryType()) {
+            else if (python::Type::GENERICDICT == t || (t.isDictionaryType() && !t.isStructuredDictionaryType())) {
                 return appendWithoutInference(
                         f.isNull() ? option<std::string>::none : option<std::string>(std::string((char *) f.getPtr())));
+            } else if(t.isStructuredDictionaryType()) {
+               throw std::runtime_error("not yet implemented");
             } else if (python::Type::EMPTYTUPLE == t) {
                 // optional empty tuple
                 _isVarField.push_back(false);
@@ -792,6 +794,18 @@ namespace tuplex {
                   elementType == python::Type::BOOLEAN ||
                   elementType == python::Type::F64) {
            size += l.numElements() * sizeof(int64_t); // 8 bytes each
+        } else if(elementType.isStructuredDictionaryType()) {
+            size_t L_size = 0;
+
+            L_size += l.numElements() * sizeof(uint64_t);
+            for (size_t listIndex = 0; listIndex < l.numElements(); ++listIndex) {
+                // skip None entries
+                if(bitmapSize != 0 && l.getField(listIndex).isNull())
+                    continue;
+
+                L_size += struct_dict_get_size(l.getField(listIndex));
+            }
+            size += L_size;
         } else {
             throw std::runtime_error(
                     "invalid list type: " + l.getType().desc() + " encountered, can't infer serialized size.");
@@ -869,7 +883,32 @@ namespace tuplex {
                 assert(size == tuple_serialized_length);
                 ptr += tuple_serialized_length;
             }
-        }  else if (elementType.isListType()) {
+        } else if(elementType.isStructuredDictionaryType()) {
+            uint8_t *varLenOffsetAddr = ptr;
+            // skip #elements * 8 bytes as placeholder for offsets
+            auto offsetBytes = l.numElements() * sizeof(uint64_t);
+            ptr += offsetBytes;
+
+            for (size_t listIndex = 0; listIndex < l.numElements(); ++listIndex) {
+                // write offset to placeholder
+                uint64_t currOffset = (uintptr_t)ptr - (uintptr_t)varLenOffsetAddr;
+                // *(uint64_t *)varLenOffsetAddr = currOffset; // <-- this is problematic (!)
+                // increment varLenOffsetAddr by 8
+                varLenOffsetAddr += sizeof(uint64_t);
+
+                // skip None entries
+                if(bitmapSize != 0 && l.getField(listIndex).isNull())
+                    continue;
+
+                // append tuple
+                auto currStruct = l.getField(listIndex);
+                auto struct_serialized_length = struct_dict_get_size(currStruct);
+                assert(ptr - original_ptr + struct_serialized_length <= capacity_left);
+                auto size = struct_dict_serialize_to(currStruct, ptr);
+                assert(size == struct_serialized_length);
+                ptr += struct_serialized_length;
+            }
+        } else if (elementType.isListType()) {
             uint8_t *varLenOffsetAddr = ptr;
             // skip #elements * 8 bytes as placeholder for offsets
             auto offsetBytes = l.numElements() * sizeof(uint64_t);
@@ -1595,6 +1634,12 @@ namespace tuplex {
                 listOffset &= 0xFFFFFFFF; // offset is lower 4 bytes.
                 f = Field(getListHelper(currFieldType, ptr + listOffset));
                 ptr += sizeof(uint64_t);
+            } else if(currFieldType.isStructuredDictionaryType()) {
+                auto info = *(int64_t *)ptr;
+                size_t struct_offset = 0, struct_size = 0;
+                std::tie(struct_offset, struct_size) = unpack_offset_and_size_from_value(info);
+                f = getStructuredDictionaryHelper(currFieldType, ptr + struct_offset, struct_size);
+                ptr += sizeof(uint64_t);
             } else if(currFieldType == python::Type::NULLVALUE) {
                 f = Field::null();
             } else if(currFieldType == python::Type::EMPTYTUPLE) {
@@ -1698,6 +1743,13 @@ namespace tuplex {
         return getTupleHelper(tupleType, ptr);
     }
 
+    Field Deserializer::getStructuredDictionaryHelper(const python::Type& dictType, const uint8_t* ptr, size_t buf_size) const {
+        // decode as JSON with the helper function
+        auto json_string_representation = decodeStructDictFromBinary(dictType, ptr, buf_size);
+
+        return Field::from_str_data(json_string_representation, dictType);
+    }
+
     List Deserializer::getListHelper(const python::Type &listType, const uint8_t *ptr) const {
 
         if(listType == python::Type::EMPTYLIST)
@@ -1775,6 +1827,13 @@ namespace tuplex {
             for (size_t i = 0; i < numElements; i++) {
                 std::tie(el_offset, el_size) = unpack_offset_and_size_from_value(*(uint64_t*)ptr);
                 els.emplace_back(Field(getTupleHelper(elType, ptr + el_offset)));
+                ptr += sizeof(uint64_t);
+            }
+        } else if(elType.isStructuredDictionaryType()) {
+            // read each tuple
+            for (size_t i = 0; i < numElements; i++) {
+                std::tie(el_offset, el_size) = unpack_offset_and_size_from_value(*(uint64_t*)ptr);
+                els.emplace_back(getStructuredDictionaryHelper(elType, ptr + el_offset, el_size));
                 ptr += sizeof(uint64_t);
             }
         } else if(elType.isListType()) {

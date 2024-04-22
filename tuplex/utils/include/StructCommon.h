@@ -11,6 +11,7 @@
 #include "TypeSystem.h"
 #include "Utils.h"
 #include "TypeHelper.h"
+#include "Field.h"
 
 // holds helper structures to decode struct dicts from memory e.g.
 namespace tuplex {
@@ -90,6 +91,15 @@ namespace tuplex {
     extern std::string decodeListAsJSON(const python::Type& list_type, const uint8_t* buf, size_t buf_size);
 
     extern std::string decodeStructDictFromBinary(const python::Type& dict_type, const uint8_t* buf, size_t buf_size);
+
+    /*!
+     * determine size of field holding struct dict type (or option thereof).
+     * @param f
+     * @return size in bytes encoded this requires.
+     */
+    extern size_t struct_dict_get_size(const Field& f);
+
+    extern size_t struct_dict_serialize_to(const Field& f, uint8_t* ptr);
 }
 
 #endif //TUPLEX_STRUCTCOMMON_H
