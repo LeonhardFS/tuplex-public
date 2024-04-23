@@ -1310,20 +1310,6 @@ namespace tuplex {
                 continue;
             }
 
-            // decode...
-            if(value_type.isOptionType()) {
-                throw std::runtime_error("not yet implemented.");
-                assert(bitmap_idx >= 0);
-                assert(!bitmap.empty());
-                // check if null or not
-                auto el_idx = bitmap_idx / 64;
-                auto bit_idx = bitmap_idx % 64;
-                is_null = bitmap[el_idx] & (0x1ull << bit_idx);
-//                if(is_null)
-//                    elements[access_path] = "null";
-                value_type = value_type.getReturnType();
-            }
-
             if(python::Type::EMPTYLIST != value_type && value_type.isListType()) {
                 // special case list.
 
