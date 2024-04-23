@@ -102,6 +102,10 @@ namespace tuplex {
 
     extern size_t struct_dict_serialize_to(const Field& f, uint8_t* ptr);
     extern size_t struct_dict_serialize_to(const python::Type& dict_type, const char* json_data, size_t json_data_size, uint8_t* ptr);
+
+    extern Field struct_dict_upcast_field(const Field& f, const python::Type& target_type);
+
+    extern std::vector<uint64_t> boolean_array_to_block_bitmap(const std::vector<bool>& bitmap, size_t n_blocks);
 }
 
 #endif //TUPLEX_STRUCTCOMMON_H

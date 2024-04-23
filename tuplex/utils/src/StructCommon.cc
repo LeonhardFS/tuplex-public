@@ -1161,6 +1161,19 @@ namespace tuplex {
       return is_field_present(str_ptr, str_size, path);
     }
 
+    std::vector<uint64_t> boolean_array_to_block_bitmap(const std::vector<bool>& bitmap, size_t n_blocks) {
+        std::vector<uint64_t> blocks(n_blocks, 0);
+        assert(bitmap.size() / 64 <= n_blocks);
+
+        for (int i = 0; i < bitmap.size(); i++) {
+            // set bit
+            if (bitmap[i]) {
+                blocks[i / 64] |= (1UL << (i % 64));
+            }
+        }
+        return blocks;
+    }
+
     size_t struct_dict_serialize_to(const python::Type& dict_type, const char* json_data, size_t json_data_size, uint8_t* ptr) {
         auto& logger = Logger::instance().logger("serializer");
         auto original_ptr = ptr;
@@ -1174,34 +1187,46 @@ namespace tuplex {
 
         // create map of all fields for quick access by access path
         std::unordered_map<access_path_t, Field> fields_to_encode_by_path;
+        std::vector<bool> bitmap_entries;
+        std::vector<bool> presence_map_entries;
+        // retrieve counts => i.e. how many fields are options? how many are maybe present?
+        size_t field_count = 0, option_count = 0, maybe_count = 0;
+
         for(auto entry : entries) {
             auto access_path = std::get<0>(entry);
             auto value_type = std::get<1>(entry);
-            auto always_present = std::get<2>(entry);
+
+            bool is_always_present = std::get<2>(entry);
+            maybe_count += !is_always_present;
+            bool is_value_optional = value_type.isOptionType();
+            option_count += is_value_optional;
+            bool is_struct_type = value_type.isStructuredDictionaryType();
+            field_count += !is_struct_type; // only count non-struct dict fields. -> yet the nested struct types may change the maybe count for the bitmap!
+
 
             // is field present? --> add to fields to encode!
             // always stop at lists, tuples, ...
             if(is_field_present(json_data, json_data_size, access_path)) {
                 auto element = get_struct_dict_field_by_path(json_data, json_data_size, access_path, value_type);
                 fields_to_encode_by_path[access_path] = element;
+
+                if(is_value_optional)
+                    bitmap_entries.push_back(element.isNull());
+
+                if(!is_always_present)
+                    presence_map_entries.push_back(true);
+            } else {
+                if(!is_always_present)
+                    presence_map_entries.push_back(false);
             }
         }
 
         // uncommnent for debugging:
         logger.debug("found " + pluralize(fields_to_encode_by_path.size(), "field") + " to encode for type " + dict_type.desc());
 
-        // retrieve counts => i.e. how many fields are options? how many are maybe present?
-        size_t field_count = 0, option_count = 0, maybe_count = 0;
-
-        for (auto entry: entries) {
-            bool is_always_present = std::get<2>(entry);
-            maybe_count += !is_always_present;
-            bool is_value_optional = std::get<1>(entry).isOptionType();
-            option_count += is_value_optional;
-
-            bool is_struct_type = std::get<1>(entry).isStructuredDictionaryType();
-            field_count += !is_struct_type; // only count non-struct dict fields. -> yet the nested struct types may change the maybe count for the bitmap!
-        }
+        // some simple checks for integrity:
+        assert(bitmap_entries.size() == option_count);
+        assert(presence_map_entries.size() == maybe_count);
 
         size_t num_option_bitmap_bits = option_count; // multiples of 64bit
         size_t num_maybe_bitmap_bits = maybe_count;
@@ -1210,69 +1235,32 @@ namespace tuplex {
 
         std::vector<uint64_t> bitmap;
         std::vector<uint64_t> presence_map;
-        if(num_option_bitmap_elements > 0) {
-            bitmap = std::vector<uint64_t>(num_option_bitmap_elements, 0);
-        }
-        if(num_maybe_bitmap_elements > 0) {
-            presence_map = std::vector<uint64_t>(num_maybe_bitmap_elements, 0);
-        }
+        if(num_option_bitmap_elements > 0)
+            bitmap = boolean_array_to_block_bitmap(bitmap_entries, num_option_bitmap_elements);
 
-        // TODO: fill maps above with data...
+        if(num_maybe_bitmap_elements > 0)
+            presence_map = boolean_array_to_block_bitmap(presence_map_entries, num_maybe_bitmap_elements);
 
         // check if dict type has bitmaps, if so encode
         if(struct_dict_has_bitmap(dict_type)) {
             // decode
             auto bitmap_size_to_encode = sizeof(uint64_t) * num_option_bitmap_elements;
 
-            // @TODO encode bitmap
-            throw std::runtime_error("TODO: encode bitmap");
-            //memcpy(&bitmap[0], ptr, bitmap_size_to_encode);
+            // simple copy from vector data
+            memcpy(ptr, &bitmap[0],  bitmap_size_to_encode);
 
             ptr += bitmap_size_to_encode;
             serialized_size += bitmap_size_to_encode;
         }
 
-        bool no_elements_present = false;
-
         if(struct_dict_has_presence_map(dict_type)) {
-            auto bitmap_size_to_encode = sizeof(uint64_t) * num_maybe_bitmap_elements;
+            auto presence_map_size_to_encode = sizeof(uint64_t) * num_maybe_bitmap_elements;
             throw std::runtime_error("TODO: encode presence map");
-            //memcpy(&presence_map[0], ptr, bitmap_size_to_encode);
-            ptr += bitmap_size_to_encode;
-            serialized_size += bitmap_size_to_encode;
+            // simple copy from vector data
+            memcpy(ptr, &presence_map[0], presence_map_size_to_encode);
 
-            // // go over elements and print bit
-            // for(unsigned i = 0; i < presence_map.size(); ++i) {
-            //     for(unsigned j = 0; j < 64; ++j) {
-            //         if(presence_map[i] & (0x1ull << j))
-            //             std::cout<<"presence bit "<<j + 64 * i<<" set."<<std::endl;
-            //     }
-            // }
-
-            // special case: presence map all 0s -> return {}
-            bool all_zero = true;
-            for(auto p_el : presence_map)
-                if(p_el)
-                    all_zero =false;
-            if(all_zero) {
-
-                // check whether any elements must be there...
-                no_elements_present = true;
-                for(auto entry : entries) {
-                    auto access_path = std::get<0>(entry);
-                    auto value_type = std::get<1>(entry);
-                    auto always_present = std::get<2>(entry);
-                    auto t_indices = indices.at(access_path);
-
-                    auto path_str = json_access_path_to_string(access_path, value_type, always_present);
-
-                    int bitmap_idx = -1, present_idx = -1, value_idx = -1, size_idx = -1;
-                    std::tie(bitmap_idx, present_idx, value_idx, size_idx) = t_indices;
-
-                    if(bitmap_idx >= 0 || value_idx >= 0)
-                        no_elements_present = false;
-                }
-            }
+            ptr += presence_map_size_to_encode;
+            serialized_size += presence_map_size_to_encode;
         }
 
         // go through entries & decode!
@@ -1437,6 +1425,16 @@ namespace tuplex {
         auto dict_type = f.getType();
 
         return struct_dict_serialize_to(dict_type, reinterpret_cast<const char*>(f.getPtr()), f.getPtrSize(), ptr);
+    }
+
+    Field struct_dict_upcast_field(const Field& f, const python::Type& target_type) {
+        assert(target_type.isStructuredDictionaryType());
+        assert(f.getType().isStructuredDictionaryType());
+
+        assert(python::canUpcastType(f.getType(), target_type));
+        // this can be actually done directly, because the JSON doesn't change. the check is sufficient
+        std::string data(reinterpret_cast<const char*>(f.getPtr()));
+        return Field::from_str_data(data, target_type);
     }
 
 }

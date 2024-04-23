@@ -23,6 +23,7 @@
 #include <iostream>
 #include <Logger.h>
 #include "JSONUtils.h"
+#include "StructCommon.h"
 
 #endif
 
@@ -469,6 +470,13 @@ namespace tuplex {
                     casted_fields.push_back(upcastTo_unsafe(el, targetType.elementType()));
                 auto ret_list = List::from_vector(casted_fields);
                 return Field((ret_list));
+            }
+        }
+
+        if(f._type.isStructuredDictionaryType() && targetType.isStructuredDictionaryType()) {
+            // check if an upcast is possible
+            if(python::canUpcastType(f._type, targetType)) {
+                return struct_dict_upcast_field(f, targetType);
             }
         }
 
