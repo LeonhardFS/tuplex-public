@@ -209,6 +209,8 @@ namespace tuplex {
                             assert(ptrToTuple);
                             serializer.append(option<Tuple>(*ptrToTuple), el.getType());
                         }
+                    } else if(rt.isStructuredDictionaryType()) {
+                        serializer.appendStructDict(el.getType(), static_cast<const uint8_t *>(el.getPtr()), el.getPtrSize(), el.isNull());
                     } else {
                         throw std::runtime_error("option underlying type " + rt.desc() + " not known");
                     }
@@ -216,6 +218,8 @@ namespace tuplex {
                     serializer.append(NullType());
                 } else if(el.getType() == python::Type::PYOBJECT) {
                     serializer.appendObject(static_cast<const uint8_t *>(el.getPtr()), el.getPtrSize());
+                } else if(el.getType().isStructuredDictionaryType()) {
+                    serializer.appendStructDict(el.getType(), static_cast<const uint8_t *>(el.getPtr()), el.getPtrSize(), el.isNull());
                 } else {
                     throw std::runtime_error("unsupported type " + el.getType().desc() + " found");
                 }

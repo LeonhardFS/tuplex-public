@@ -98,8 +98,10 @@ namespace tuplex {
      * @return size in bytes encoded this requires.
      */
     extern size_t struct_dict_get_size(const Field& f);
+    extern size_t struct_dict_get_size(const python::Type& dict_type, const char* json_data, size_t json_data_size);
 
     extern size_t struct_dict_serialize_to(const Field& f, uint8_t* ptr);
+    extern size_t struct_dict_serialize_to(const python::Type& dict_type, const char* json_data, size_t json_data_size, uint8_t* ptr);
 }
 
 #endif //TUPLEX_STRUCTCOMMON_H

@@ -111,16 +111,28 @@ namespace tuplex {
     }
 
 
+    inline std::string trim_whitespace(const std::string& s) {
+        if(s.empty())
+            return s;
+        int start = 0;
+        while(start < s.length() && std::isspace(s[start]))start++;
+        int end = s.length() - 1;
+        while(end >= start && std::isspace(s[end]))end--;
+
+        return s.substr(start, end - start + 1);
+    }
+
     std::string List::desc() const {
         std::stringstream ss;
 
         ss<<"[";
 
         if(_numElements > 0)
-            ss<<_elements[0].desc();
+            ss<<trim_whitespace(_elements[0].desc());
 
         for(int i = 1; i < _numElements; ++i) {
-            ss<<","<<_elements[i].desc();
+            auto const element_str = _elements[i].desc();
+            ss<<","<<trim_whitespace(element_str);
         }
         ss<<"]";
         return ss.str();

@@ -1396,7 +1396,7 @@ namespace tuplex {
                 assert(element_type.isStructuredDictionaryType());
 
                 auto llvm_list_type = env.createOrGetListType(list_type);
-                auto ptr_values = builder.CreateStructLoad(llvm_list_type, list_ptr, 2);
+                auto ptr_values = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, 2);
 
                 auto llvm_list_element_type = env.pythonToLLVMType(element_type.withoutOption());
 
@@ -1418,7 +1418,10 @@ namespace tuplex {
                 assert(element_type.isStructuredDictionaryType());
 
                 auto llvm_list_type = env.createOrGetListType(list_type);
-                auto ptr_values = builder.CreateStructLoad(llvm_list_type, list_ptr, 2);
+
+                env.printValue(builder, index, "struct element serialize of type " + element_type.desc());
+
+                auto ptr_values = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, 2);
 
                 auto llvm_list_element_type = env.pythonToLLVMType(element_type.withoutOption());
 
@@ -2198,6 +2201,8 @@ namespace tuplex {
 
             auto serialized_struct_ptr = builder.MovePtrByBytes(builder.CreateBitCast(current_offset_ptr, env.i8ptrType()), offset);
 
+            env.printValue(builder, builder.CreateLoad(builder.getInt64Ty(), loopCounter), "deserializing " + element_type.desc() + " at list position: ");
+
             // decode into rtmalloced pointer & store
             auto dict_ptr = struct_dict_deserialize_from_memory(env, builder, serialized_struct_ptr, element_type, true);
             auto dict = builder.CreateLoad(llvm_list_element_type, dict_ptr.val);
@@ -2541,6 +2546,9 @@ namespace tuplex {
                 ptr = builder.MovePtrByBytes(ptr, size_in_bytes);
             } else if(elementType.isStructuredDictionaryType()) {
                 auto size_in_bytes = list_deserialize_list_of_struct_dicts_from_memory(env, builder, ptr, list_type, num_elements, list_ptr);
+
+                env.printValue(builder, size_in_bytes, "deserialized " + list_type.desc() + " from memory stored in bytes: ");
+
                 ptr = builder.MovePtrByBytes(ptr, size_in_bytes);
             } else if(elementType.isListType()) {
                 auto size_in_bytes = list_deserialize_list_of_lists_from_memory(env, builder, ptr, list_type, num_elements, list_ptr);

@@ -498,8 +498,9 @@ namespace tuplex {
             // nothing
         } else if(f.getType().isListType()) {
             return appendWithoutInference(*(List*)f.getPtr());
-        }
-        else if (f.getType().isOptionType()) {
+        } else if(f.getType().isStructuredDictionaryType()) {
+            return appendStructDictWithoutInference(f.getType(), reinterpret_cast<uint8_t*>(f.getPtr()), f.getPtrSize(), false);
+        } else if (f.getType().isOptionType()) {
 
             // get underlying type
             auto t = f.getType().getReturnType();
@@ -892,13 +893,16 @@ namespace tuplex {
             for (size_t listIndex = 0; listIndex < l.numElements(); ++listIndex) {
                 // write offset to placeholder
                 uint64_t currOffset = (uintptr_t)ptr - (uintptr_t)varLenOffsetAddr;
-                // *(uint64_t *)varLenOffsetAddr = currOffset; // <-- this is problematic (!)
+                auto* offset_ptr = (uint64_t*)varLenOffsetAddr;
+                *offset_ptr = currOffset; // <-- store current offset, which is required to decode properly.
                 // increment varLenOffsetAddr by 8
                 varLenOffsetAddr += sizeof(uint64_t);
 
-                // skip None entries
-                if(bitmapSize != 0 && l.getField(listIndex).isNull())
+                // skip None entries, but set offset to 0
+                if(bitmapSize != 0 && l.getField(listIndex).isNull()) {
+                    *offset_ptr = 0;
                     continue;
+                }
 
                 // append tuple
                 auto currStruct = l.getField(listIndex);
@@ -1250,6 +1254,55 @@ namespace tuplex {
         }
 
         throw std::runtime_error("Unknown field type " + f.getType().desc() + " to append found.");
+    }
+
+    Serializer& Serializer::appendStructDict(const python::Type& dict_type, const uint8_t *json_data, size_t json_data_size,
+                                      bool is_null) {
+        if(_autoSchema) {
+            _types.push_back(dict_type);
+        } else {
+            assert(_schema.getRowType().parameters()[_col++] == dict_type);
+        }
+
+        return appendStructDictWithoutInference(dict_type, json_data, json_data_size, is_null);
+    }
+
+    Serializer &Serializer::appendStructDictWithoutInference(const python::Type &dict_type, const uint8_t *json_data,
+                                                             size_t json_data_size, bool is_null) {
+        _isVarField.push_back(true);
+        _isNull.push_back(is_null);
+        _requiresBitmap.push_back(dict_type.isOptionType());
+
+        // add a 8 byte offset
+        _fixedLenFields.provideSpace(sizeof(int64_t));
+
+        // write to buffer
+        *((int64_t *) _fixedLenFields.ptr()) = 0L;
+        _fixedLenFields.movePtr(sizeof(int64_t));
+
+        // store current size and move on.
+        _varLenFieldOffsets.push_back(_varLenFields.size());
+
+        // if not null, serialize var length buffer
+        if(!is_null) {
+
+            // add some security bytes
+            auto buf_size = struct_dict_get_size(dict_type, reinterpret_cast<const char *>(json_data), json_data_size);
+            uint8_t* buf = new uint8_t[buf_size + 64];
+
+            // serialize to buf
+            auto serialized_size = struct_dict_serialize_to(dict_type, reinterpret_cast<const char *>(json_data), json_data_size, buf);
+            assert(serialized_size == buf_size);
+
+            // copy out
+            _varLenFields.provideSpace(buf_size);
+
+            std::memcpy(_varLenFields.ptr(), buf, buf_size);
+            _varLenFields.movePtr(buf_size);
+            delete [] buf;
+        }
+
+        return *this;
     }
 
     Deserializer::Deserializer(const Schema &schema) : _schema(schema), _buffer(nullptr), _numSerializedFields(0) {

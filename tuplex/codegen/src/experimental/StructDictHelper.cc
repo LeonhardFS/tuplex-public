@@ -1200,6 +1200,9 @@ namespace tuplex {
                     // store with casting
                     auto casted_src_ptr = builder.CreateBitOrPointerCast(ptr, llvm_value_type_ptr);
                     value = builder.CreateLoad(llvm_value_type, casted_src_ptr);
+
+                    env.printValue(builder, value, "deserialized value for path " + access_path_to_str(access_path) + " from " + dict_type.desc() + ": ");
+
                     // store into struct ptr
                     struct_dict_store_value(env, builder, dict_ptr, dict_type, access_path, value); // always store value
                     struct_dict_store_size(env, builder, dict_ptr, dict_type, access_path, env.i64Const(sizeof(int64_t)));

@@ -142,6 +142,8 @@ namespace tuplex {
         Serializer& appendWithoutInferenceHelper(const List &l);
         Serializer& appendWithoutInferenceHelper(const std::string &str);
 
+        Serializer& appendStructDictWithoutInference(const python::Type& dict_type, const uint8_t *json_data, size_t json_data_size, bool is_null);
+
     public:
         Serializer(bool autoSchema = true) : _autoSchema(autoSchema),
                                              _fixedLenFields(_bufferGrowthConstant),
@@ -224,6 +226,8 @@ namespace tuplex {
          * @return length that serialized contents would have
          */
         size_t length();
+
+        Serializer& appendStructDict(const python::Type& dict_type, const uint8_t *json_data, size_t json_data_size, bool is_null);
     };
 
     class Deserializer {

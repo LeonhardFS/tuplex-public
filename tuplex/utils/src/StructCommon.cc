@@ -563,6 +563,30 @@ namespace tuplex {
             }
             ss<<"]";
             return ss.str();
+        } else if(element_type == python::Type::BOOLEAN || element_type == python::Type::I64 || element_type == python::Type::F64) {
+            std::stringstream ss;
+            ss<<"[";
+            auto ptr = buf + sizeof(int64_t);
+            for(unsigned i = 0; i < num_elements; ++i) {
+
+                if(element_type == python::Type::BOOLEAN) {
+                    auto value = *(int64_t*)ptr;
+                    ss<<(value ? "true" : "false");
+                } else if(element_type == python::Type::I64) {
+                    auto value = *(int64_t*)ptr;
+                    ss<<value;
+                } else {
+                    auto value = *(double*)ptr;
+                    ss<<value;
+                }
+
+                if(i != num_elements - 1)
+                    ss<<",";
+
+                ptr += sizeof(int64_t);
+            }
+            ss<<"]";
+            return ss.str();
         } else {
             throw std::runtime_error("unsupported element type " + element_type.desc() + " in decodeListAsJSON");
         }
@@ -674,15 +698,10 @@ namespace tuplex {
         return key;
     }
 
-    // helper function to get field along access path
-    Field get_struct_dict_field_by_path(const Field& f, const access_path_t& path, const python::Type& value_type) {
+    Field get_struct_dict_field_by_path(const char* json_data, size_t json_data_size, const access_path_t& path, const python::Type& value_type) {
         // this may be slow, because need to parse JSON:
-        assert(f.getType().isStructuredDictionaryType());
-        assert(f.getPtr() && f.getPtrSize() > 0);
-        const char* str_ptr = reinterpret_cast<const char*>(f.getPtr());
-        auto str_size = f.getPtrSize();
-
-        nlohmann::json j = nlohmann::json::parse(str_ptr);
+        assert(json_data && json_data_size > 0);
+        nlohmann::json j = nlohmann::json::parse(json_data);
 
         // now go over access path and refine
         for(unsigned i = 0; i  < path.size(); ++i) {
@@ -693,14 +712,20 @@ namespace tuplex {
         return extract_field_from_json_with_type(j, value_type);
     }
 
-    size_t struct_dict_get_size(const Field& f) {
-        assert(f.getType().withoutOption().isStructuredDictionaryType());
+    // helper function to get field along access path
+    Field get_struct_dict_field_by_path(const Field& f, const access_path_t& path, const python::Type& value_type) {
+        // this may be slow, because need to parse JSON:
+        assert(f.getType().isStructuredDictionaryType());
+        assert(f.getPtr() && f.getPtrSize() > 0);
+        const char* str_ptr = reinterpret_cast<const char*>(f.getPtr());
+        auto str_size = f.getPtrSize();
 
-        // opt doesn't get serialized, return 0 bytes for this. Bitmap should go extra.
-        if(f.getType().isOptionType())
-            return 0;
+        return get_struct_dict_field_by_path(str_ptr, str_size, path, value_type);
+    }
 
-        auto dict_type = f.getType();
+    size_t struct_dict_get_size(const python::Type& dict_type, const char* json_data, size_t json_data_size) {
+        assert(dict_type.withoutOption().isStructuredDictionaryType());
+
         size_t serialized_size = 0;
 
         flattened_struct_dict_entry_list_t entries;
@@ -740,7 +765,7 @@ namespace tuplex {
 
         bool no_elements_present = false;
         if(struct_dict_has_presence_map(dict_type)) {
-           serialized_size += sizeof(uint64_t) * num_maybe_bitmap_elements;
+            serialized_size += sizeof(uint64_t) * num_maybe_bitmap_elements;
 
             // special case: presence map all 0s -> return {}
             bool all_zero = true;
@@ -804,11 +829,11 @@ namespace tuplex {
 
             // special case null: (--> same applies for constants as well...)
             if(value_type == python::Type::NULLVALUE || value_type == python::Type::EMPTYLIST
-            || value_type == python::Type::EMPTYLIST || value_type == python::Type::EMPTYTUPLE || value_type == python::Type::EMPTYDICT)
+               || value_type == python::Type::EMPTYLIST || value_type == python::Type::EMPTYTUPLE || value_type == python::Type::EMPTYDICT)
                 continue;
 
             // get field via access path from struct dict and get size.
-            auto f_element = get_struct_dict_field_by_path(f, access_path, value_type);
+            auto f_element = get_struct_dict_field_by_path(json_data, json_data_size, access_path, value_type);
 
             if(python::Type::EMPTYLIST != value_type && value_type.isListType()) {
                 // special case list -> get serialized size and add
@@ -848,6 +873,18 @@ namespace tuplex {
         }
 
         return serialized_size;
+    }
+
+    size_t struct_dict_get_size(const Field& f) {
+        assert(f.getType().withoutOption().isStructuredDictionaryType());
+
+        // opt doesn't get serialized, return 0 bytes for this. Bitmap should go extra.
+        if(f.getType().isOptionType() && f.isNull())
+            return 0;
+
+        auto dict_type = f.getType();
+
+        return struct_dict_get_size(f.getType(), reinterpret_cast<const char*>(f.getPtr()), f.getPtrSize());
     }
 
     std::string decodeStructDictFromBinary(const python::Type& dict_type, const uint8_t* buf, size_t buf_size) {
@@ -1094,14 +1131,11 @@ namespace tuplex {
         return json_str;
     }
 
-    bool is_field_present(const Field& f, const access_path_t& path) {
+    bool is_field_present(const char* json_data, size_t json_data_size, const access_path_t& path) {
         // this may be slow, because need to parse JSON:
-        assert(f.getType().isStructuredDictionaryType());
-        assert(f.getPtr() && f.getPtrSize() > 0);
-        const char* str_ptr = reinterpret_cast<const char*>(f.getPtr());
-        auto str_size = f.getPtrSize();
+        assert(json_data && json_data_size > 0);
 
-        nlohmann::json j = nlohmann::json::parse(str_ptr);
+        nlohmann::json j = nlohmann::json::parse(json_data);
 
         // now go over access path and refine. Note: only object -> object -> object paths here supported.
         for(unsigned i = 0; i  < path.size(); ++i) {
@@ -1117,14 +1151,19 @@ namespace tuplex {
         return true;
     }
 
-    size_t struct_dict_serialize_to(const Field& f, uint8_t* ptr) {
-        assert(ptr);
+    bool is_field_present(const Field& f, const access_path_t& path) {
+        // this may be slow, because need to parse JSON:
         assert(f.getType().isStructuredDictionaryType());
+        assert(f.getPtr() && f.getPtrSize() > 0);
+        const char* str_ptr = reinterpret_cast<const char*>(f.getPtr());
+        auto str_size = f.getPtrSize();
 
+      return is_field_present(str_ptr, str_size, path);
+    }
+
+    size_t struct_dict_serialize_to(const python::Type& dict_type, const char* json_data, size_t json_data_size, uint8_t* ptr) {
         auto& logger = Logger::instance().logger("serializer");
-
         auto original_ptr = ptr;
-        auto dict_type = f.getType();
         auto serialized_size = 0;
 
         // use same code as above in order to deserialize.
@@ -1142,8 +1181,8 @@ namespace tuplex {
 
             // is field present? --> add to fields to encode!
             // always stop at lists, tuples, ...
-            if(is_field_present(f, access_path)) {
-                auto element = get_struct_dict_field_by_path(f, access_path, value_type);
+            if(is_field_present(json_data, json_data_size, access_path)) {
+                auto element = get_struct_dict_field_by_path(json_data, json_data_size, access_path, value_type);
                 fields_to_encode_by_path[access_path] = element;
             }
         }
@@ -1301,14 +1340,24 @@ namespace tuplex {
                 // special case list.
 
                 // check size & offset
-                uint32_t offset = *((uint64_t*)field_ptr) & 0xFFFFFFFF;
-                uint32_t size = *((uint64_t*)field_ptr) >> 32u;
+                uint32_t offset = last_var_ptr - field_ptr;
+                uint32_t size = 0;
 
-                //// @TODO. for now, save empty list
-                //elements[access_path] = "[]";
-                //tree->add(access_path_to_json_keys(access_path), decodeListAsJSON(value_type, field_ptr + offset, size));
+                auto list_ptr = (List*)(fields_to_encode_by_path[access_path].getPtr());
 
-                throw std::runtime_error("not yet implemented");
+                if(!is_null) {
+                    size = list_ptr->serialized_length();
+                    *((uint64_t*)field_ptr) = pack_offset_and_size(offset, size);
+                    auto start_ptr = (char*)(field_ptr + offset);
+
+                    // serialize directly to buffer
+                    auto serialized_size = list_ptr->serialize_to(reinterpret_cast<uint8_t *>(start_ptr));
+                    assert(serialized_size == size);
+                    // memcpy(start_ptr, str_data.c_str(), size);
+                } else {
+                    *((uint64_t*)field_ptr) = 0; // sets size & offset to 0 in case.
+                }
+                last_var_ptr += size; // inc var ptr by serialized size.
 
                 field_index++;
                 continue;
@@ -1344,7 +1393,7 @@ namespace tuplex {
                         *(int64_t*)field_ptr = 0; // dummy value
                 } else if(value_type == python::Type::F64) {
                     if(!is_null)
-                        *(double*)field_ptr = fields_to_encode_by_path[access_path].getInt();
+                        *(double*)field_ptr = fields_to_encode_by_path[access_path].getDouble();
                     else
                         *(double*)field_ptr = 0.0; // dummy value
                 } else {
@@ -1360,7 +1409,7 @@ namespace tuplex {
                 uint32_t size = 0;
 
                 std::string str_data = reinterpret_cast<const char*>(fields_to_encode_by_path[access_path].getPtr());
-                size = str_data.size();
+                size = str_data.size() + 1;
 
                 if(!is_null) {
                     *((uint64_t*)field_ptr) = pack_offset_and_size(offset, size);
@@ -1379,6 +1428,15 @@ namespace tuplex {
         serialized_size = last_var_ptr - original_ptr;
 
         return serialized_size;
+    }
+
+    size_t struct_dict_serialize_to(const Field& f, uint8_t* ptr) {
+        assert(ptr);
+        assert(f.getType().isStructuredDictionaryType());
+
+        auto dict_type = f.getType();
+
+        return struct_dict_serialize_to(dict_type, reinterpret_cast<const char*>(f.getPtr()), f.getPtrSize(), ptr);
     }
 
 }
