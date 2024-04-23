@@ -1304,12 +1304,40 @@ namespace tuplex {
                 continue;
             }
 
+            // skip nested struct dicts! --> they're taken care of.
+            if(value_type.isStructuredDictionaryType())
+                continue;
+
             // special case null: (--> same applies for constants as well...)
             if(value_type == python::Type::NULLVALUE || value_type == python::Type::EMPTYLIST || value_type == python::Type::EMPTYLIST || value_type == python::Type::EMPTYTUPLE) {
                 // nothing todo
                 continue;
             }
 
+            // check bitmap and update is_null.
+            if(value_type.isOptionType()) {
+                assert(bitmap_idx >= 0);
+                assert(!bitmap.empty());
+                // check if null or not
+                auto el_idx = bitmap_idx / 64;
+                auto bit_idx = bitmap_idx % 64;
+                is_null = bitmap[el_idx] & (0x1ull << bit_idx);
+                value_type = value_type.getReturnType();
+            }
+
+            // check if is_null, in this case -> store dummy and move on.
+            if(is_null) {
+                *((uint64_t*)field_ptr) = 0;
+
+                if(value_type == python::Type::F64)
+                    *((double*)field_ptr) = 0.0;
+
+                field_index++;
+                continue;
+            }
+
+            // must be non-null
+            assert(!is_null);
             if(python::Type::EMPTYLIST != value_type && value_type.isListType()) {
                 // special case list.
 
@@ -1337,15 +1365,11 @@ namespace tuplex {
                 continue;
             }
 
-            // skip nested struct dicts! --> they're taken care of.
-            if(value_type.isStructuredDictionaryType())
-                continue;
-
             // depending on field, add size!
             if(value_idx < 0) {
                 // what's the type? add dummy field to string!
                 if(!is_null)
-                    throw std::runtime_error("decode type " + value_type.desc());
+                    throw std::runtime_error("encoding type " + value_type.desc() + " failed ");
                 continue; // can skip field, not necessary to serialize
             }
 
@@ -1356,20 +1380,11 @@ namespace tuplex {
             if(!is_varlength_field) {
                 // either double or i64 or bool
                 if(value_type == python::Type::BOOLEAN) {
-                    if(!is_null)
-                        *(int64_t*)field_ptr = fields_to_encode_by_path[access_path].getInt();
-                    else
-                        *(int64_t*)field_ptr = 0; // dummy value
+                    *(int64_t*)field_ptr = fields_to_encode_by_path[access_path].getInt();
                 } else if(value_type == python::Type::I64) {
-                    if(!is_null)
-                        *(int64_t*)field_ptr = fields_to_encode_by_path[access_path].getInt();
-                    else
-                        *(int64_t*)field_ptr = 0; // dummy value
+                    *(int64_t*)field_ptr = fields_to_encode_by_path[access_path].getInt();
                 } else if(value_type == python::Type::F64) {
-                    if(!is_null)
-                        *(double*)field_ptr = fields_to_encode_by_path[access_path].getDouble();
-                    else
-                        *(double*)field_ptr = 0.0; // dummy value
+                    *(double*)field_ptr = fields_to_encode_by_path[access_path].getDouble();
                 } else {
                     throw std::runtime_error("can't decode primitive field " + value_type.desc());
                 }
