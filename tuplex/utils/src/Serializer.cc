@@ -893,14 +893,14 @@ namespace tuplex {
             for (size_t listIndex = 0; listIndex < l.numElements(); ++listIndex) {
                 // write offset to placeholder
                 uint64_t currOffset = (uintptr_t)ptr - (uintptr_t)varLenOffsetAddr;
-                auto* offset_ptr = (uint64_t*)varLenOffsetAddr;
-                *offset_ptr = currOffset; // <-- store current offset, which is required to decode properly.
+                auto* info_ptr = (uint64_t*)varLenOffsetAddr;
+
                 // increment varLenOffsetAddr by 8
                 varLenOffsetAddr += sizeof(uint64_t);
 
                 // skip None entries, but set offset to 0
                 if(bitmapSize != 0 && l.getField(listIndex).isNull()) {
-                    *offset_ptr = 0;
+                    *info_ptr = 0;
                     continue;
                 }
 
@@ -910,6 +910,8 @@ namespace tuplex {
                 assert(ptr - original_ptr + struct_serialized_length <= capacity_left);
                 auto size = struct_dict_serialize_to(currStruct, ptr);
                 assert(size == struct_serialized_length);
+
+                *info_ptr = pack_offset_and_size(currOffset, size); // <-- store current offset, which is required to decode properly.
                 ptr += struct_serialized_length;
             }
         } else if (elementType.isListType()) {

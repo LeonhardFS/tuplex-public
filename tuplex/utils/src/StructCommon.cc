@@ -738,10 +738,11 @@ namespace tuplex {
         for (auto entry: entries) {
             bool is_always_present = std::get<2>(entry);
             maybe_count += !is_always_present;
-            bool is_value_optional = std::get<1>(entry).isOptionType();
+            auto value_type = std::get<1>(entry);
+            bool is_value_optional = value_type.isOptionType();
             option_count += is_value_optional;
 
-            bool is_struct_type = std::get<1>(entry).isStructuredDictionaryType();
+            bool is_struct_type = value_type.isStructuredDictionaryType();
             field_count += !is_struct_type; // only count non-struct dict fields. -> yet the nested struct types may change the maybe count for the bitmap!
         }
 
@@ -1039,9 +1040,13 @@ namespace tuplex {
                 auto el_idx = bitmap_idx / 64;
                 auto bit_idx = bitmap_idx % 64;
                 is_null = bitmap[el_idx] & (0x1ull << bit_idx);
-                if(is_null)
+                if(is_null) {
                     elements[access_path] = "null";
-                value_type = value_type.getReturnType();
+                    tree->add(access_path_to_json_keys(access_path), "null");
+                    field_index++;
+                    continue;
+                } else
+                    value_type = value_type.getReturnType();
             }
 
             if(python::Type::EMPTYLIST != value_type && value_type.isListType()) {

@@ -557,17 +557,30 @@ TEST_F(ListFunctions, BasicStructSerializeDeserialize) {
 
 TEST_F(ListFunctions, ListOfStructDicts) {
     using namespace tuplex;
-    List test_list(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":20}"));
+    // List test_list(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":20}"));
+//    EXPECT_EQ(test_list.getType().desc(), "List[Struct[(str,'a'->i64)]]");
+    //List test_list(parse_json_to_struct_dict("{\"e\":[1,2,3,4]}"), parse_json_to_struct_dict("{\"e\":[3,4]}"));
+
+
+
+
+    List test_list(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":null}"));
+
 
     // check types & fields
-    EXPECT_EQ(test_list.getType().desc(), "List[Struct[(str,'a'->i64)]]");
+    EXPECT_EQ(test_list.getType().desc(), "List[Struct[(str,'a'->Option[i64])]]");
     ASSERT_EQ(test_list.numElements(), 2);
+    for(unsigned i = 0; i < test_list.numElements(); ++i)
+        EXPECT_EQ(test_list.getField(i).getType().desc(), "Struct[(str,'a'->Option[i64])]");
 
     uint8_t buffer[5000];
     memset(buffer, 0, 5000);
     Row r((test_list));
 
-    auto serialized_size = r.serializedLength();
+    // each struct dict has 16 bytes.
+    // List has 8 bytes for length, 16 bytes for indices + 32 bytes for data -> 7 * 8 = 56 bytes.
+
+    auto serialized_size = r.serializedLength(); // should be 72.
     auto ans_size = r.serializeToMemory(buffer, 5000);
     EXPECT_EQ(ans_size, serialized_size);
 
@@ -618,7 +631,9 @@ TEST_F(ListFunctions, ListOf3Elements) {
 //        List(List(List(1, 2), List(4)), List(List(4), List(5, 6)))
         // list of structured dicts
         //List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":20}")),
-        List(parse_json_to_struct_dict("{\"a\":10,\"b\":\"this is a test string\",\"c\":null,\"d\":10.9,\"e\":[1,2,3,4]}"), parse_json_to_struct_dict("{\"a\":40,\"b\":\"string\",\"c\":3,\"d\":1.9,\"e\":[3,4]}"))
+//        List(parse_json_to_struct_dict("{\"e\":[1,2,3,4]}"), parse_json_to_struct_dict("{\"e\":[3,4]}")),
+        List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":null}")),
+//        List(parse_json_to_struct_dict("{\"a\":10,\"b\":\"this is a test string\",\"c\":null,\"d\":10.9,\"e\":[1,2,3,4]}"), parse_json_to_struct_dict("{\"a\":40,\"b\":\"string\",\"c\":3,\"d\":1.9,\"e\":[3,4]}"))
         // list of list of structured dicts
         // list of tuples
         // options of other complex compound objects.
