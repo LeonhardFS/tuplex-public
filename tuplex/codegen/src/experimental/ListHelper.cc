@@ -903,6 +903,8 @@ namespace tuplex {
             } else if(elementType.isStructuredDictionaryType() || elementType == python::Type::GENERICDICT) {
                 // pointer to the structured dict type!
 
+                throw std::runtime_error("fix this here, NEED to use heap ptr storage similar to isListType because mutable element.");
+
                 // this is quite simple, store a HEAP allocated pointer.
                 auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
                 builder.CreateStore(env.i64Const(0), idx_capacity);
@@ -945,19 +947,6 @@ namespace tuplex {
                 // store into array
                 assert(element_as_ptr->getType()->getPointerTo() == target_idx->getType());
                 builder.CreateStore(element_as_ptr, target_idx, true);
-
-//                // store pointer
-//                assert(value.val);
-//                auto ptr = builder.CreateLoad(llvm_list_type->getStructElementType(2), idx_values);
-//                auto idx_value = builder.CreateGEP(llvm_element_type->getPointerTo(), ptr, idx);
-//
-//                // value.val can be given as list ptr. In this case, load to store!
-//                auto value_to_store = value.val;
-//                if(value_to_store->getType()->isPointerTy())
-//                    value_to_store = builder.CreateLoad(llvm_element_type, value_to_store);
-//
-//                assert(!value_to_store->getType()->isPointerTy());
-//                builder.CreateStore(value_to_store, idx_value);
             } else if(elementType.isTupleType()) {
                 // pointers to the list type!
                 // similar to above - yet, keep it here extra for more control...

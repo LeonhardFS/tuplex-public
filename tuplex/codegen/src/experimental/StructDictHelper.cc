@@ -1304,7 +1304,7 @@ namespace tuplex {
 //            env.printValue(builder, builder.CreatePtrDiff(dest_ptr, original_dest_ptr), "current dest_ptr position at byte: ");
 //            env.printValue(builder, varLengthOffset, "var length so far in bytes: ");
 
-//  #define TRACE_STRUCT_SERIALIZATION
+  #define TRACE_STRUCT_SERIALIZATION
             // get indices to properly decode
             for(auto entry : entries) {
                 auto access_path = std::get<0>(entry);
@@ -1405,8 +1405,10 @@ namespace tuplex {
                     auto casted_dest_ptr = builder.CreateBitOrPointerCast(dest_ptr, value->getType()->getPointerTo());
                     builder.CreateStore(value, casted_dest_ptr);
 
-                    // env.debugPrint(builder, path_str + ": encoding to field = " + std::to_string(field_index));
-
+#ifdef TRACE_STRUCT_SERIALIZATION
+                     env.debugPrint(builder, path_str + ": encoding to field = " + std::to_string(field_index));
+                     env.printValue(builder, value, "value of type " + value_type.desc() + " serialized is: ");
+#endif
                     dest_ptr = builder.MovePtrByBytes(dest_ptr, sizeof(int64_t));
                 } else {
                     // more complex:
@@ -1451,7 +1453,6 @@ namespace tuplex {
 
             // move dest ptr to end!
             dest_ptr = builder.MovePtrByBytes(dest_ptr, varLengthOffset);
-
 
             llvm::Value* serialized_size = builder.CreatePtrDiff(builder.getInt8Ty(), dest_ptr, original_dest_ptr);
             return SerializableValue(original_dest_ptr, serialized_size, nullptr);

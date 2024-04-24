@@ -311,12 +311,11 @@ namespace tuplex {
                     } else if(type.isDictionaryType()) {
                         if(type.isStructuredDictionaryType()) {
                             // deserialize from ptr
-                            auto dict_val = struct_dict_deserialize_from_memory(*_env, builder, ptr, type);
+                            auto dict_val = struct_dict_deserialize_from_memory(*_env, builder, ptr, type, false); // could set this to true...
                             _tree.set(i, dict_val);
                         } else {
                             // create the dictionary pointer
-                            auto dictPtr = builder.CreateCall(cJSONParse_prototype(_env->getContext(), _env->getModule().get()),
-                                                              {ptr});
+                            auto dictPtr = call_cjson_parse(builder, ptr);
                             _tree.set(i, codegen::SerializableValue(dictPtr, size, isnull));
                         }
                     } else if(type.isListType()) {
