@@ -1296,20 +1296,13 @@ namespace tuplex {
             // 1. null-bitmap
             size_t bitmap_offset = 0;
             if(struct_dict_has_bitmap(dict_type)) {
-                //                llvm::Value* bitmap = nullptr;
-                //                if(ptr->getType()->isPointerTy()) {
-                //                    auto bitmap_idx = CreateStructGEP(builder, ptr, bitmap_offset);
-                //                    bitmap = builder.CreateLoad(bitmap_idx);
-                //                } else {
-                //                    bitmap = builder.CreateExtractValue(ptr, std::vector<unsigned>(1, bitmap_offset));
-                //                }
-                auto bitmap = builder.CreateStructLoad(llvm_struct_type, ptr, bitmap_offset);
+                auto bitmap = builder.CreateStructLoadOrExtract(llvm_struct_type, ptr, bitmap_offset);
                 dest_ptr = serializeBitmap(env, builder, bitmap, dest_ptr);
                 bitmap_offset++;
             }
             // 2. presence-bitmap
             if(struct_dict_has_presence_map(dict_type)) {
-                auto presence_map = builder.CreateStructLoad(llvm_struct_type, ptr, bitmap_offset);
+                auto presence_map = builder.CreateStructLoadOrExtract(llvm_struct_type, ptr, bitmap_offset);
                 dest_ptr = serializeBitmap(env, builder, presence_map, dest_ptr);
                 bitmap_offset++;
             }
@@ -1357,7 +1350,7 @@ namespace tuplex {
                     auto value_idx = std::get<2>(t_indices);
                     assert(value_idx >= 0);
                     auto list_type = value_type;
-                    auto list_ptr = builder.CreateStructGEP(ptr, llvm_struct_type, value_idx);
+                    auto list_ptr = builder.CreateStructLoadOrExtract(llvm_struct_type, ptr, value_idx); // builder.CreateStructGEP(ptr, llvm_struct_type, value_idx);
                     auto list_size_in_bytes = list_serialized_size(env, builder, list_ptr, list_type);
 
                     // => list is ALWAYS a var length field, serialize like that.
@@ -1440,8 +1433,10 @@ namespace tuplex {
                         throw std::runtime_error("unsupported type " + value_type.desc() + " encountered! ");
 
                     // add size field + data
-                    auto llvm_size_idx = builder.CreateStructGEP(ptr, llvm_struct_type, size_idx);
-                    auto value_size = llvm_size_idx->getType()->isPointerTy() ? builder.CreateLoad(builder.getInt64Ty(), llvm_size_idx) : llvm_size_idx; // <-- serialized size.
+//                    auto llvm_size_idx = builder.CreateStructGEP(ptr, llvm_struct_type, size_idx);
+//                    auto value_size = llvm_size_idx->getType()->isPointerTy() ? builder.CreateLoad(builder.getInt64Ty(), llvm_size_idx) : llvm_size_idx; // <-- serialized size.
+
+                    auto value_size = builder.CreateStructLoadOrExtract(llvm_struct_type, ptr, size_idx);
 
                     // compute offset
                     // from current field -> varStart + varoffset

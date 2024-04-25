@@ -1019,12 +1019,12 @@ namespace tuplex {
             for(unsigned i = 1; i < list->_elements.size(); ++i) {
                 auto& el = list->_elements[i];
 
-                // list of lists is an unsupported feature right now, defer for now...
-                if(el->getInferredType().isListType() && el->getInferredType() != python::Type::EMPTYLIST) {
-                    list->setInferredType(python::Type::makeListType(python::Type::PYOBJECT));
-                    addCompileError(CompileError::TYPE_ERROR_LIST_OF_LISTS);
-                    return;
-                }
+                // // list of lists is an unsupported feature right now, defer for now...
+                // if(el->getInferredType().isListType() && el->getInferredType() != python::Type::EMPTYLIST) {
+                //     list->setInferredType(python::Type::makeListType(python::Type::PYOBJECT));
+                //     addCompileError(CompileError::TYPE_ERROR_LIST_OF_LISTS);
+                //     return;
+                // }
 
                 // check whether type unification is possible, if so -> ok.
                 auto uni_type = unifyTypes(el->getInferredType(), elementType, _policy.allowNumericTypeUnification);

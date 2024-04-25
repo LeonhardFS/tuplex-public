@@ -652,7 +652,7 @@ namespace tuplex {
                     memberTypes.push_back(i8ptrType()); // bool-array
                 llvm::ArrayRef<llvm::Type *> members(memberTypes);
                 retType = llvm::StructType::create(_context, members, "struct." + twine, false);
-            } else if(elementType.isStructuredDictionaryType() || elementType == python::Type::GENERICDICT) {
+            } else if(elementType.isStructuredDictionaryType()) {
                 auto llvm_element_type = elementType.isStructuredDictionaryType() ? getOrCreateStructuredDictType(elementType) : i8ptrType();
 
                 // pointer to the structured dict type!
@@ -660,6 +660,18 @@ namespace tuplex {
                 memberTypes.push_back(i64Type()); // array capacity
                 memberTypes.push_back(i64Type()); // size
                 memberTypes.push_back(llvm::PointerType::get(llvm_element_type, 0)->getPointerTo()); // struct_dict**
+                if(elements_optional)
+                    memberTypes.push_back(i8ptrType()); // bool-array
+                llvm::ArrayRef<llvm::Type *> members(memberTypes);
+                retType = llvm::StructType::create(_context, members, "struct." + twine, false);
+            } else if(elementType == python::Type::GENERICDICT) {
+                auto llvm_element_type = i8ptrType();
+
+                // pointer to the structured dict type!
+                std::vector<llvm::Type*> memberTypes;
+                memberTypes.push_back(i64Type()); // array capacity
+                memberTypes.push_back(i64Type()); // size
+                memberTypes.push_back(llvm::PointerType::get(llvm_element_type, 0)); // i8**
                 if(elements_optional)
                     memberTypes.push_back(i8ptrType()); // bool-array
                 llvm::ArrayRef<llvm::Type *> members(memberTypes);
