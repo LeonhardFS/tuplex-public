@@ -311,7 +311,19 @@ namespace tuplex {
                     } else if(type.isDictionaryType()) {
                         if(type.isStructuredDictionaryType()) {
                             // deserialize from ptr
-                            auto dict_val = struct_dict_deserialize_from_memory(*_env, builder, ptr, type, false); // could set this to true...
+                            auto dict_val = struct_dict_deserialize_from_memory(*_env, builder, ptr, type, true); // could set this to true...
+
+                            // print value:
+                            _env->debugPrint(builder, "-- DESERIALIZED " + type.desc() + " from memory:");
+                            struct_dict_print(*_env, builder, dict_val, type);
+                            _env->debugPrint(builder, " -- END");
+
+                            _env->debugPrint(builder, "SANITY CHECK:: load value from ptr and print");
+                            auto llvm_dict_type = _env->pythonToLLVMType(type);
+                            auto loaded_dict = builder.CreateLoad(llvm_dict_type, dict_val.val);
+                            struct_dict_print(*_env, builder, {loaded_dict, nullptr, nullptr}, type);
+                            _env->debugPrint(builder, " -- END");
+
                             _tree.set(i, dict_val);
                         } else {
                             // create the dictionary pointer

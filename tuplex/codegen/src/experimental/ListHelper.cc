@@ -262,7 +262,7 @@ namespace tuplex {
 
                 if(elementType.isStructuredDictionaryType()) {
                     auto llvm_element_type = env.getOrCreateStructuredDictType(elementType);
-                    builder.CreateStore(env.nullConstant(llvm_element_type->getPointerTo()), idx_values);
+                    builder.CreateStore(env.nullConstant(llvm_element_type->getPointerTo()->getPointerTo()), idx_values);
                 } else {
                     // array of cJSON* objects.
                     builder.CreateStore(env.nullConstant(env.i8ptrType()->getPointerTo()), idx_values);
@@ -903,24 +903,59 @@ namespace tuplex {
             } else if(elementType.isStructuredDictionaryType() || elementType == python::Type::GENERICDICT) {
                 // pointer to the structured dict type!
 
-                throw std::runtime_error("fix this here, NEED to use heap ptr storage similar to isListType because mutable element.");
+                // new:
 
-                // this is quite simple, store a HEAP allocated pointer.
+
+
+                // old:
+//
+//                throw std::runtime_error("fix this here, NEED to use heap ptr storage similar to isListType because mutable element.");
+//
+//                // this is quite simple, store a HEAP allocated pointer.
+//                auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
+//                builder.CreateStore(env.i64Const(0), idx_capacity);
+//
+//                auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
+//
+//                // store struct to pointer
+//                assert(value.val);
+//                auto llvm_value_type = env.pythonToLLVMType(elementType);
+//                auto ptr = builder.CreateLoad(llvm_list_type->getStructElementType(2), idx_values);
+//                auto idx_value = builder.CreateGEP(llvm_value_type, ptr, idx);
+//
+//                auto dict = value.val;
+//                if(dict->getType()->isPointerTy() && elementType != python::Type::GENERICDICT)
+//                    dict = builder.CreateLoad(llvm_value_type, dict);
+//                builder.CreateStore(dict, idx_value);
                 auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
                 builder.CreateStore(env.i64Const(0), idx_capacity);
 
-                auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
+                auto llvm_element_type = env.pythonToLLVMType(elementType);
+                auto ptr_values = builder.CreateStructLoad(llvm_list_type, list_ptr, 2);
 
-                // store struct to pointer
-                assert(value.val);
-                auto llvm_value_type = env.pythonToLLVMType(elementType);
-                auto ptr = builder.CreateLoad(llvm_list_type->getStructElementType(2), idx_values);
-                auto idx_value = builder.CreateGEP(llvm_value_type, ptr, idx);
+                auto target_idx = builder.CreateGEP(llvm_element_type->getPointerTo(), ptr_values, idx);
 
-                auto dict = value.val;
-                if(dict->getType()->isPointerTy() && elementType != python::Type::GENERICDICT)
-                    dict = builder.CreateLoad(llvm_value_type, dict);
-                builder.CreateStore(dict, idx_value);
+                llvm::Value* element_as_ptr = nullptr;
+                // is element given as struct or pointer?
+                // => if pointer, assume it is a valid heap ptr.
+                if(value.val->getType()->isStructTy()) {
+                    // not given as pointer, hence alloc heap (!) pointer and store with this.
+                    element_as_ptr = env.CreateHeapAlloca(builder, llvm_element_type);
+
+                    env.debugPrint(builder, "allocated new heap ptr for struct, value to store is: ");
+                    struct_dict_print(env, builder, value, elementType);
+
+                    builder.CreateStore(value.val, element_as_ptr);
+                } else {
+                    element_as_ptr = value.val;
+                }
+
+                env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " list_store_value into " + list_type.desc());
+                struct_dict_print(env, builder, SerializableValue(element_as_ptr, nullptr), elementType);
+
+                // store into array
+                assert(element_as_ptr->getType()->getPointerTo() == target_idx->getType());
+                builder.CreateStore(element_as_ptr, target_idx, true);
             } else if(elementType.isListType()) {
                 // pointers to the list type!
                 // similar to above - yet, keep it here extra for more control...
@@ -1141,7 +1176,10 @@ namespace tuplex {
                 std::cout<<"type name: "<<env.getLLVMTypeName(llvm_list_element_type)<<std::endl;
                 std::cout<<"type name: "<<env.getLLVMTypeName(llvm_list_type->getStructElementType(2))<<std::endl;
 
-                auto item = builder.CreateGEP(llvm_list_element_type, ptr_values, index);
+                auto item_idx = builder.CreateGEP(llvm_list_element_type->getPointerTo(), ptr_values, index);
+                auto item = builder.CreateLoad(llvm_list_element_type->getPointerTo(), item_idx);
+                // old:
+                //auto item = builder.CreateLoad(llvm_list_element_type, ptr_values, index);
                 auto item_size = struct_dict_serialized_memory_size(env, builder, item, element_type).val;
 
                 return item_size;
@@ -1389,7 +1427,13 @@ namespace tuplex {
 
                 auto llvm_list_element_type = env.pythonToLLVMType(element_type.withoutOption());
 
-                auto item = builder.CreateGEP(llvm_list_element_type, ptr_values, index);
+                // old:
+                //auto item = builder.CreateGEP(llvm_list_element_type, ptr_values, index);
+
+                // new:
+                auto item_idx = builder.CreateGEP(llvm_list_element_type->getPointerTo(), ptr_values, index);
+                auto item = builder.CreateLoad(llvm_list_element_type->getPointerTo(), item_idx);
+
                 auto item_size = struct_dict_serialized_memory_size(env, builder, item, element_type).val;
 
                 // env.printValue(builder, item_size, "list of element (" + element_type.desc() + ") to serialize is: ");
@@ -1414,7 +1458,12 @@ namespace tuplex {
 
                 auto llvm_list_element_type = env.pythonToLLVMType(element_type.withoutOption());
 
-                auto item = builder.CreateGEP(llvm_list_element_type, ptr_values, index);
+                // old:
+                // auto item = builder.CreateGEP(llvm_list_element_type, ptr_values, index);
+
+                // new:
+                auto item_idx = builder.CreateGEP(llvm_list_element_type->getPointerTo(), ptr_values, index);
+                auto item = builder.CreateLoad(llvm_list_element_type->getPointerTo(), item_idx);
 
                 // call struct dict serialize
                 auto s_result = struct_dict_serialize_to_memory(env, builder, item, element_type, dest_ptr);

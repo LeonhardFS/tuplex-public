@@ -63,6 +63,15 @@ namespace tuplex {
         extern SerializableValue struct_dict_load_value(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* ptr, const python::Type& dict_type, const access_path_t& path);
 
         extern SerializableValue struct_dict_upcast(LLVMEnvironment& env, const IRBuilder& builder, const SerializableValue& src, const python::Type& src_type, const python::Type& dest_type);
+
+        /*!
+         * debug prints struct dict out to check values
+         * @param env
+         * @param builder
+         * @param v
+         * @param dict_type
+         */
+        extern void struct_dict_print(LLVMEnvironment& env, const IRBuilder& builder, const SerializableValue& v, const python::Type& dict_type);
     }
 }
 

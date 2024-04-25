@@ -81,6 +81,11 @@ namespace tuplex {
                 assert(num_maybe_bitmap_elements > 0 && num_maybe_bitmap_bits > 0);
 #endif
 
+            // round to multiples of 64 to avoid alignment issues in LLVM.
+            assert(core::ceilToMultiple(0, 64) == 0);
+            num_option_bitmap_bits = core::ceilToMultiple(num_option_bitmap_bits, 64);
+            num_maybe_bitmap_bits = core::ceilToMultiple(num_maybe_bitmap_bits, 64);
+
             // i1 logic (similar to flattened tuple)
             if (num_option_bitmap_elements > 0)
                 member_types.push_back(llvm::ArrayType::get(Type::getInt1Ty(ctx), num_option_bitmap_bits));
@@ -187,10 +192,14 @@ namespace tuplex {
             size_t bitmap_idx = 0;
             if(struct_dict_has_bitmap(dict_type)) {
                 assert(structType->getStructElementType(bitmap_idx)->isArrayTy());
+                // check that alignment doesn't cause issues
+                assert(structType->getStructElementType(bitmap_idx)->getArrayNumElements() % 64 == 0);
                 bitmap_idx++;
             }
             if(struct_dict_has_presence_map(dict_type)) {
                 assert(structType->getStructElementType(bitmap_idx)->isArrayTy());
+                // check that alignment doesn't cause issues
+                assert(structType->getStructElementType(bitmap_idx)->getArrayNumElements() % 64 == 0);
             }
 
             return structType;
@@ -1083,7 +1092,7 @@ namespace tuplex {
             return num_fields;
         }
 
-        // deserializastion code...
+        // deserialization code...
         SerializableValue struct_dict_deserialize_from_memory(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* ptr, const python::Type& dict_type, bool heap_alloc) {
             auto& logger = Logger::instance().logger("codegen");
             assert(dict_type.isStructuredDictionaryType());
@@ -1141,7 +1150,24 @@ namespace tuplex {
             for(auto entry : entries) {
                 auto access_path = std::get<0>(entry);
                 auto value_type = std::get<1>(entry);
+                bool is_always_present = std::get<2>(entry);
                 auto t_indices = struct_dict_get_indices(dict_type, access_path);
+
+                int bitmap_idx=-1, present_idx=-1, value_idx=-1, size_idx=-1;
+                std::tie(bitmap_idx, present_idx, value_idx, size_idx) = t_indices;
+
+                // handle decoding of both presence map & option map
+                llvm::Value* is_null = nullptr;
+                llvm::Value* is_present = nullptr;
+                if(value_type.isOptionType()) {
+                    assert(bitmap_idx >= 0);
+                    // decode is_null
+                    is_null = env.extractNthBit(builder, bitmap[bitmap_idx / 64], env.i64Const(bitmap_idx % 64ul));
+                }
+                if(!is_always_present) {
+                    assert(present_idx >= 0);
+                    is_present = env.extractNthBit(builder, presence_map[present_idx / 64], env.i64Const(present_idx % 64ul));
+                }
 
                 // special case list: --> needs extra care
                 if(value_type.isOptionType())
@@ -1164,6 +1190,7 @@ namespace tuplex {
 
                     // call list decode and store result in struct!
                     auto list_val = list_deserialize_from(env, builder, data_ptr, value_type);
+                    list_val.is_null = is_null;
 
                     // store value in struct (pointer should be sufficient)
                     struct_dict_store_value(env, builder, list_val, dict_ptr, dict_type, access_path);
@@ -1175,10 +1202,6 @@ namespace tuplex {
                 // skip nested struct dicts! --> they're taken care of.
                 if(value_type.isStructuredDictionaryType())
                     continue;
-
-                // depending on field, add size!
-                auto value_idx = std::get<2>(t_indices);
-                auto size_idx = std::get<3>(t_indices);
 
                 if(value_idx < 0)
                     continue; // can skip field, not necessary to serialize
@@ -1204,8 +1227,8 @@ namespace tuplex {
                     env.printValue(builder, value, "deserialized value for path " + access_path_to_str(access_path) + " from " + dict_type.desc() + ": ");
 
                     // store into struct ptr
-                    struct_dict_store_value(env, builder, dict_ptr, dict_type, access_path, value); // always store value
-                    struct_dict_store_size(env, builder, dict_ptr, dict_type, access_path, env.i64Const(sizeof(int64_t)));
+                    SerializableValue value_to_store(value, env.i64Const(sizeof(int64_t)), is_null);
+                    struct_dict_store_value(env, builder, value_to_store, dict_ptr, dict_type, access_path);
                     ptr = builder.MovePtrByBytes(ptr, sizeof(int64_t));
                 } else {
                     // more complex:
@@ -1226,8 +1249,8 @@ namespace tuplex {
                     auto data_ptr = builder.MovePtrByBytes(ptr, offset);
 
                     // store (always safe to do)
-                    struct_dict_store_value(env, builder, dict_ptr, dict_type, access_path, data_ptr); // always store value
-                    struct_dict_store_size(env, builder, dict_ptr, dict_type, access_path, size);
+                    SerializableValue value_to_store(data_ptr, size, is_null);
+                    struct_dict_store_value(env, builder, value_to_store, dict_ptr, dict_type, access_path);
 
                     // move decode ptr.
                     ptr = builder.MovePtrByBytes(ptr, sizeof(int64_t));
@@ -1805,6 +1828,46 @@ namespace tuplex {
 
 
             return SerializableValue(dest_ptr, nullptr, nullptr);
+        }
+
+        void struct_dict_print(LLVMEnvironment& env, const IRBuilder& builder, const SerializableValue& v, const python::Type& dict_type) {
+            assert(dict_type.isStructuredDictionaryType());
+
+            // iterate over access paths
+            flattened_struct_dict_entry_list_t entries;
+            flatten_recursive_helper(entries, dict_type, {});
+            auto indices = struct_dict_load_indices(dict_type);
+
+            // retrieve counts => i.e. how many fields are options? how many are maybe present?
+            size_t field_count = 0, option_count = 0, maybe_count = 0;
+
+            env.debugPrint(builder, "Printing contents of value of type " + dict_type.desc() + " (" + pluralize(entries.size(), "field"));
+            for (auto entry: entries) {
+                auto access_path = std::get<0>(entry);
+                auto value_type = std::get<1>(entry);
+
+                bool is_always_present = std::get<2>(entry);
+                bool is_struct_type = value_type.isStructuredDictionaryType();
+
+                // skip nested entries
+                if(is_struct_type)
+                    continue;
+
+                // load va;ue if present
+                if(!is_always_present) {
+                    throw std::runtime_error("not yet supported, need if logic here");
+                }
+
+                auto el = struct_dict_load_value(env, builder, v.val, dict_type, access_path);
+
+                // print now depending on what is set.
+                if(el.val)
+                    env.printValue(builder, el.val, json_access_path_to_string(access_path, value_type, is_always_present) + " value is: ");
+                if(el.size)
+                    env.printValue(builder, el.size, json_access_path_to_string(access_path, value_type, is_always_present) + " size is: ");
+                if(el.is_null)
+                    env.printValue(builder, el.is_null, json_access_path_to_string(access_path, value_type, is_always_present) + " is_null is: ");
+            }
         }
     }
 }

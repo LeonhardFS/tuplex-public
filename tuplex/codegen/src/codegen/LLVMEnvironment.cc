@@ -659,7 +659,7 @@ namespace tuplex {
                 std::vector<llvm::Type*> memberTypes;
                 memberTypes.push_back(i64Type()); // array capacity
                 memberTypes.push_back(i64Type()); // size
-                memberTypes.push_back(llvm::PointerType::get(llvm_element_type, 0));
+                memberTypes.push_back(llvm::PointerType::get(llvm_element_type, 0)->getPointerTo()); // struct_dict**
                 if(elements_optional)
                     memberTypes.push_back(i8ptrType()); // bool-array
                 llvm::ArrayRef<llvm::Type *> members(memberTypes);
