@@ -590,6 +590,14 @@ TEST_F(ListFunctions, ListOfStructDicts) {
     EXPECT_EQ(d_r.toPythonString(), r.toPythonString());
 }
 
+TEST_F(ListFunctions, ListOfListOptionStrings) {
+    using namespace tuplex;
+
+    List test_list(List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":null}")), List(parse_json_to_struct_dict("{\"a\":null}")), List(), List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":42}")));
+
+    std::cout<<test_list.desc()<<std::endl;
+}
+
 TEST_F(ListFunctions, ListOf3Elements) {
     using namespace tuplex;
     using namespace std;
@@ -630,11 +638,13 @@ TEST_F(ListFunctions, ListOf3Elements) {
 //        // triple nested list
 //        List(List(List(1, 2), List(4)), List(List(4), List(5, 6)))
         // list of structured dicts
-        //List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":20}")),
-//        List(parse_json_to_struct_dict("{\"e\":[1,2,3,4]}"), parse_json_to_struct_dict("{\"e\":[3,4]}")),
+        List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":20}")),
+        List(parse_json_to_struct_dict("{\"a\":\"test string\",\"b\":20}"), parse_json_to_struct_dict("{\"a\":null,\"b\":21}")),
+        List(parse_json_to_struct_dict("{\"e\":[1,2,3,4]}"), parse_json_to_struct_dict("{\"e\":[3,4]}")),
         List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":null}")),
-//        List(parse_json_to_struct_dict("{\"a\":10,\"b\":\"this is a test string\",\"c\":null,\"d\":10.9,\"e\":[1,2,3,4]}"), parse_json_to_struct_dict("{\"a\":40,\"b\":\"string\",\"c\":3,\"d\":1.9,\"e\":[3,4]}"))
+        List(parse_json_to_struct_dict("{\"a\":10,\"b\":\"this is a test string\",\"c\":null,\"d\":10.9,\"e\":[1,2,3,4]}"), parse_json_to_struct_dict("{\"a\":40,\"b\":\"string\",\"c\":3,\"d\":1.9,\"e\":[3,4]}")),
         // list of list of structured dicts
+        List(List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":null}")), List(parse_json_to_struct_dict("{\"a\":null}")), List(), List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":42}")))
         // list of tuples
         // options of other complex compound objects.
 
@@ -653,20 +663,20 @@ TEST_F(ListFunctions, ListOf3Elements) {
         auto num_list_elements = test_list.numElements();
         os<<"Running test case "<<(test_case_no+1)<<"/"<<test_lists.size()<<": "<<test_list.getType().desc()<<endl;
 
-//        {
-//            os<<"-- Testing deserialize + list access"<<endl;
-//            // construct test data (list access)
-//            std::vector<Row> test_data;
-//            std::vector<Row> ref_data;
-//            for(unsigned i = 0; i < num_list_elements; ++i) {
-//                test_data.push_back(Row(test_list, Field((int64_t)i)));
-//                ref_data.push_back(Row(test_list.getField(i)));
-//            }
-//
-//            // mini pipeline -> checks that deserialize + list access works.
-//            auto ans = ctx.parallelize(test_data).map(UDF("lambda L, i: L[i]")).collectAsVector();
-//            compare_rows(ans, ref_data);
-//        }
+        {
+            os<<"-- Testing deserialize + list access"<<endl;
+            // construct test data (list access)
+            std::vector<Row> test_data;
+            std::vector<Row> ref_data;
+            for(unsigned i = 0; i < num_list_elements; ++i) {
+                test_data.push_back(Row(test_list, Field((int64_t)i)));
+                ref_data.push_back(Row(test_list.getField(i)));
+            }
+
+            // mini pipeline -> checks that deserialize + list access works.
+            auto ans = ctx.parallelize(test_data).map(UDF("lambda L, i: L[i]")).collectAsVector();
+            compare_rows(ans, ref_data);
+        }
 
         // now test that serialize works, by transforming tuple -> list.
         {

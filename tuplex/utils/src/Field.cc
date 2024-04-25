@@ -458,19 +458,17 @@ namespace tuplex {
         }
 
         // upcasting lists to each other
-        if(f._type.isListType() && targetType.isListType() && targetType.elementType().isOptionType()) {
-            // case 1: can upcast list of nulls to option
-            // case 2: can upcast element type to Option[element type]
-            if(f._type.elementType() == python::Type::NULLVALUE || f._type.elementType() == targetType.elementType().getReturnType()) {
-                assert(f.hasPtrData());
-                auto L = *((List*)f.getPtr());
-                auto list_elements = L.to_vector();
-                std::vector<Field> casted_fields; casted_fields.reserve(list_elements.size());
-                for(const auto& el : list_elements)
-                    casted_fields.push_back(upcastTo_unsafe(el, targetType.elementType()));
-                auto ret_list = List::from_vector(casted_fields);
-                return Field((ret_list));
-            }
+        // right now do not support i64 -> f64.
+        // but support upcasting struct dicts!
+        if(f._type.isListType() && targetType.isListType() && python::canUpcastType(f._type.elementType(), targetType.elementType())) {
+            assert(f.hasPtrData());
+            auto L = *((List*)f.getPtr());
+            auto list_elements = L.to_vector();
+            std::vector<Field> casted_fields; casted_fields.reserve(list_elements.size());
+            for(const auto& el : list_elements)
+                casted_fields.push_back(upcastTo_unsafe(el, targetType.elementType()));
+            auto ret_list = List::from_vector(casted_fields);
+            return Field((ret_list));
         }
 
         if(f._type.isStructuredDictionaryType() && targetType.isStructuredDictionaryType()) {

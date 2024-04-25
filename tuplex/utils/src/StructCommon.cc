@@ -357,27 +357,54 @@ namespace tuplex {
         }
 
         // dump as json
-        std::string to_json() const {
+        std::string to_json(bool sort_by_keys=true) const {
             std::stringstream ss;
-            to_json(ss);
+            to_json(ss, sort_by_keys);
             return ss.str();
         }
 
-        void to_json(std::ostream& os) const {
+        void to_json(std::ostream& os, bool sort_by_keys) const {
             // no children? simple
             if(_children.empty()) {
                 os<<_data;
             } else {
                 // children? struct
                 os<<"{";
-                unsigned i = 0;
+
+                std::vector<std::pair<std::string,std::string>> kv_pairs;
                 for(const auto& child : _children) {
-                    os<<child.first<<":";
-                    child.second->to_json(os);
-                    if(i != _children.size() - 1)
-                        os<<",";
-                    ++i;
+                    std::stringstream ss;
+                    child.second->to_json(ss, sort_by_keys);
+                    kv_pairs.push_back(std::make_pair(child.first, ss.str()));
                 }
+
+                if(sort_by_keys) {
+                    std::sort(kv_pairs.begin(), kv_pairs.end(), [](const std::pair<std::string,std::string>& lhs, const std::pair<std::string,std::string>& rhs) {
+                        // sort after keys if they're different.
+                        if(rhs.first.compare(lhs.first) != 0)
+                            return std::lexicographical_compare(lhs.first.begin(), lhs.first.end(), rhs.first.begin(), rhs.first.end());
+
+                        // if keys are identical, sort after values. this should not really happen...
+                        return std::lexicographical_compare(lhs.second.begin(), lhs.second.end(), rhs.second.begin(), rhs.second.end());
+                    });
+                }
+
+                 unsigned i = 0;
+                 for(const auto& p : kv_pairs) {
+                     os<<p.first<<":"<<p.second;
+                     if(i != kv_pairs.size() - 1)
+                         os<<",";
+                     ++i;
+                 }
+
+                // unsigned i = 0;
+                // for(const auto& child : _children) {
+                //     os<<child.first<<":";
+                //     child.second->to_json(os, sort_by_keys);
+                //     if(i != _children.size() - 1)
+                //         os<<",";
+                //     ++i;
+                // }
                 os<<"}";
             }
         }
