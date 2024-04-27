@@ -106,6 +106,16 @@ namespace tuplex {
     extern Field struct_dict_upcast_field(const Field& f, const python::Type& target_type);
 
     extern std::vector<uint64_t> boolean_array_to_block_bitmap(const std::vector<bool>& bitmap, size_t n_blocks);
+
+    inline bool struct_dict_access_paths_equal(const access_path_t& lhs, const access_path_t& rhs) {
+        return json_access_path_to_string(lhs, python::Type::UNKNOWN, false).compare(json_access_path_to_string(lhs, python::Type::UNKNOWN, false)) == 0;
+    }
+
+    extern std::vector<access_path_t> struct_dict_get_optional_nesting_paths_along_path(const python::Type& dict_type, const access_path_t& path);
+
+    inline bool struct_dict_access_path_has_optional_nesting(const python::Type& dict_type, const access_path_t& path) {
+        return !struct_dict_get_optional_nesting_paths_along_path(dict_type, path).empty();
+    }
 }
 
 #endif //TUPLEX_STRUCTCOMMON_H

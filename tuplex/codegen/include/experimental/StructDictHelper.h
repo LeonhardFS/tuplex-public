@@ -72,6 +72,8 @@ namespace tuplex {
          * @param dict_type
          */
         extern void struct_dict_print(LLVMEnvironment& env, const IRBuilder& builder, const SerializableValue& v, const python::Type& dict_type);
+
+        extern llvm::Value* struct_dict_load_is_null(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* ptr, const python::Type& dict_type, const access_path_t& path);
     }
 }
 

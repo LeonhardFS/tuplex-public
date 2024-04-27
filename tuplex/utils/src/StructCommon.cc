@@ -1552,4 +1552,27 @@ namespace tuplex {
         return Field::from_str_data(data, target_type);
     }
 
+    std::vector<access_path_t> struct_dict_get_optional_nesting_paths_along_path(const python::Type& dict_type, const access_path_t& path) {
+        // check parent path
+        if(path.empty() || path.size() == 1)
+            return {};
+
+        flattened_struct_dict_entry_list_t entries;
+        flatten_recursive_helper(entries, dict_type);
+        std::vector<access_path_t> v;
+
+        for(int i = 1; i < path.size(); ++i) {
+            auto parent_path = access_path_t(path.begin(), path.end() - i);
+            // get field value at this point, must be null and option type
+            auto parent_path_as_str = access_path_to_str(parent_path);
+            auto it = std::find_if(entries.begin(), entries.end(), [parent_path_as_str](const flattened_struct_dict_entry_t& entry) { return access_path_to_str(std::get<0>(entry)).compare(parent_path_as_str) == 0; });
+            assert(it != entries.end());
+            auto parent_entry = *it;
+            auto parent_value_type = std::get<1>(parent_entry);
+            if(parent_value_type.isOptionType() && parent_value_type.getReturnType().isStructuredDictionaryType())
+                v.push_back(parent_path);
+        }
+
+        return v;
+    }
 }
