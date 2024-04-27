@@ -1279,9 +1279,16 @@ namespace tuplex {
                 // Check whether for this path any of the parents are potentially null.
                 bool has_potential_null_parent_paths = struct_dict_access_path_has_optional_nesting(dict_type, access_path);
 
+                // special case Option[Struct] -> store is_null in ptr.
+                if(value_type.isOptionType() && value_type.withoutOption().isStructuredDictionaryType()) {
+                    struct_dict_store_isnull(env, builder, dict_ptr, dict_type, access_path, is_null);
+                    continue;
+                }
+
                 // special case list: --> needs extra care
                 if(value_type.isOptionType())
                     value_type = value_type.getReturnType();
+
                 if(python::Type::EMPTYLIST != value_type && value_type.isListType()) {
 
                     // not supported yet.
