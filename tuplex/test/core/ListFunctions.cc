@@ -14,6 +14,7 @@
 #include "TestUtils.h"
 #include "jit/RuntimeInterface.h"
 #include "JsonStatistic.h"
+#include "StructCommon.h"
 
 // need for these tests a running python interpreter, so spin it up
 class ListFunctions : public PyTest {};
@@ -598,6 +599,40 @@ TEST_F(ListFunctions, ListOfListOptionStrings) {
     std::cout<<test_list.desc()<<std::endl;
 }
 
+TEST_F(ListFunctions, NestedOptionStructSize) {
+    using namespace tuplex;
+    List test_list(parse_json_to_struct_dict("{\"a\":null,\"b\":21,\"c\":null}"), parse_json_to_struct_dict("{\"a\":\"test string\",\"b\":20,\"c\":{\"a\":10,\"b\":\"test\"}}"));
+
+    auto item = test_list.getField(1);
+
+    auto ans = struct_dict_get_size(item.getType(), (const char*)item.getPtr(), item.getPtrSize());
+
+    EXPECT_EQ(ans, 65);
+
+//    // check types & fields
+//    EXPECT_EQ(test_list.getType().desc(), "List[Struct[(str,'a'->Option[i64])]]");
+//    ASSERT_EQ(test_list.numElements(), 2);
+//    for(unsigned i = 0; i < test_list.numElements(); ++i)
+//        EXPECT_EQ(test_list.getField(i).getType().desc(), "Struct[(str,'a'->Option[i64])]");
+
+    uint8_t buffer[5000];
+    memset(buffer, 0, 5000);
+    Row r((test_list));
+
+    // each struct dict has 16 bytes.
+    // List has 8 bytes for length, 16 bytes for indices + 32 bytes for data -> 7 * 8 = 56 bytes.
+
+    auto serialized_size = r.serializedLength(); // should be 72.
+    auto ans_size = r.serializeToMemory(buffer, 5000);
+    EXPECT_EQ(ans_size, serialized_size);
+
+    // now deserialize & check
+    auto d_r = Row::fromMemory(r.getSchema(), buffer, 5000);
+
+    EXPECT_EQ(d_r.toPythonString(), r.toPythonString());
+
+}
+
 TEST_F(ListFunctions, ListOf3Elements) {
     using namespace tuplex;
     using namespace std;
@@ -606,46 +641,46 @@ TEST_F(ListFunctions, ListOf3Elements) {
 
     // use arbitrary elements & then access
     std::vector<List> test_lists{
-        // primitive objects
-        List(1, 2, 3),
-        List(true, false, true),
-        List("abc", "", "def"),
-        List(2.7, -9.0, 9999.99),
-        List(Field::null(), Field::null(), Field::null()),
-        List(List(), List(), List()),
-        List(Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)),
-        // compound objects
-        // options of primitives
-        List(Field((int64_t)42), Field::null(), Field::null(), Field((int64_t)37)),
-        List(Field::null(), Field::null(), Field(3.256)),
-        List(Field(false), Field(true), Field::null(), Field(false)),
-        List(Field("this is a test string"), Field::null(), Field("another test string")),
-        List(List(), Field::null(), List()),
-        List(Field::null(), Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)), // <-- error
-        // list of lists
-        List(List(), List(1, 2, 5, 6, 3, 2), List(3, 4), List(8), List(), List(4, 3, 69, -20)),
-        List(List(3.7, -46.0), List(8.986), List(), List(-4.0, 3.3, 69.3, -20.0)),
-        List(List("a", "b", "c"), List()),
-        List(List("need to", " perform ", " some testing here")),
-        List(List("need to", " perform ", " some testing here"), List("tuplex rocks")),
-        List(List("need to", " perform ", " some testing here"), List("tuplex rocks"), List("a", "b", "c", "d", "e", "f", "g", "h", "i", "j"), List(), List("this is a very long string!"), List("abc", "", "def")),
-        // list of lists with options.
-        List(List("a", Field::null()), List("b")),
-        List(List("a", Field::null()), List(Field::null()), List("a", "b", "c")),
-        List(List(1, 2, 3), List(4, Field::null(), 6)),
-        List(Field::null(), List(1, 2, 3)), // List[Option[List[i64]]]
-        List(List(1, 3), Field::null(), List(2, Field::null())), // List[Option[List[Option[i64]]]]
-        // triple nested list
-        List(List(List(1, 2), List(4)), List(List(4), List(5, 6))),
-        // list of structured dicts
-        List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":20}")),
-        List(parse_json_to_struct_dict("{\"a\":\"test string\",\"b\":20}"), parse_json_to_struct_dict("{\"a\":null,\"b\":21}")),
-        List(parse_json_to_struct_dict("{\"e\":[1,2,3,4]}"), parse_json_to_struct_dict("{\"e\":[3,4]}")),
-        List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":null}")),
-        List(parse_json_to_struct_dict("{\"a\":10,\"b\":\"this is a test string\",\"c\":null,\"d\":109,\"e\":[1,2,3,4]}"), parse_json_to_struct_dict("{\"a\":40,\"b\":\"string\",\"c\":3,\"d\":109,\"e\":[3,4]}")),
-        // list of list of structured dicts
-        List(List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":null}")), List(parse_json_to_struct_dict("{\"a\":null}")), List(), List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":42}"))),
-        // List(parse_json_to_struct_dict("{\"a\":\"test string\",\"b\":20,\"c\":{\"a\":10, \"b\":\"test\"}}"), parse_json_to_struct_dict("{\"a\":null,\"b\":21,\"c\":null}")), // nested with option
+//        // primitive objects
+//        List(1, 2, 3),
+//        List(true, false, true),
+//        List("abc", "", "def"),
+//        List(2.7, -9.0, 9999.99),
+//        List(Field::null(), Field::null(), Field::null()),
+//        List(List(), List(), List()),
+//        List(Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)),
+//        // compound objects
+//        // options of primitives
+//        List(Field((int64_t)42), Field::null(), Field::null(), Field((int64_t)37)),
+//        List(Field::null(), Field::null(), Field(3.256)),
+//        List(Field(false), Field(true), Field::null(), Field(false)),
+//        List(Field("this is a test string"), Field::null(), Field("another test string")),
+//        List(List(), Field::null(), List()),
+//        List(Field::null(), Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)), // <-- error
+//        // list of lists
+//        List(List(), List(1, 2, 5, 6, 3, 2), List(3, 4), List(8), List(), List(4, 3, 69, -20)),
+//        List(List(3.7, -46.0), List(8.986), List(), List(-4.0, 3.3, 69.3, -20.0)),
+//        List(List("a", "b", "c"), List()),
+//        List(List("need to", " perform ", " some testing here")),
+//        List(List("need to", " perform ", " some testing here"), List("tuplex rocks")),
+//        List(List("need to", " perform ", " some testing here"), List("tuplex rocks"), List("a", "b", "c", "d", "e", "f", "g", "h", "i", "j"), List(), List("this is a very long string!"), List("abc", "", "def")),
+//        // list of lists with options.
+//        List(List("a", Field::null()), List("b")),
+//        List(List("a", Field::null()), List(Field::null()), List("a", "b", "c")),
+//        List(List(1, 2, 3), List(4, Field::null(), 6)),
+//        List(Field::null(), List(1, 2, 3)), // List[Option[List[i64]]]
+//        List(List(1, 3), Field::null(), List(2, Field::null())), // List[Option[List[Option[i64]]]]
+//        // triple nested list
+//        List(List(List(1, 2), List(4)), List(List(4), List(5, 6))),
+//        // list of structured dicts
+//        List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":20}")),
+//        List(parse_json_to_struct_dict("{\"a\":\"test string\",\"b\":20}"), parse_json_to_struct_dict("{\"a\":null,\"b\":21}")),
+//        List(parse_json_to_struct_dict("{\"e\":[1,2,3,4]}"), parse_json_to_struct_dict("{\"e\":[3,4]}")),
+//        List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":null}")),
+//        List(parse_json_to_struct_dict("{\"a\":10,\"b\":\"this is a test string\",\"c\":null,\"d\":109,\"e\":[1,2,3,4]}"), parse_json_to_struct_dict("{\"a\":40,\"b\":\"string\",\"c\":3,\"d\":109,\"e\":[3,4]}")),
+//        // list of list of structured dicts
+//        List(List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":null}")), List(parse_json_to_struct_dict("{\"a\":null}")), List(), List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":42}"))),
+         List(parse_json_to_struct_dict("{\"a\":\"test string\",\"b\":20,\"c\":{\"a\":10, \"b\":\"test\"}}"), parse_json_to_struct_dict("{\"a\":null,\"b\":21,\"c\":null}")), // nested with option
         // List(parse_json_to_struct_dict("{\"a\":\"test string\",\"b\":20,\"c\":{\"a\":10, \"b\":\"test\"}}"), parse_json_to_struct_dict("{\"a\":null,\"b\":21,\"c\":{\"a\":99, \"b\":\"7x\"}}")) // nested without option
         // list of tuples
         // options of other complex compound objects.

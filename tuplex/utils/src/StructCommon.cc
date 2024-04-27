@@ -95,6 +95,16 @@ namespace tuplex {
         return g_struct_property_cache.at(dict_type.hash()).has_presence_map;
     }
 
+    std::string decode_key(const std::string& raw_value, const python::Type& key_type) {
+        std::string key;
+        if(python::Type::STRING == key_type) {
+            key = str_value_from_python_raw_value(raw_value);
+        } else {
+            throw std::runtime_error("unsupported key type " + key_type.desc() + ", can not decode value " + raw_value);
+        }
+        return key;
+    }
+
     python::Type struct_dict_type_get_element_type(const python::Type& dict_type, const access_path_t& path) {
 
         if(!dict_type.isStructuredDictionaryType())
@@ -136,6 +146,36 @@ namespace tuplex {
             }
         }
         return python::Type::UNKNOWN; // not found.
+    }
+
+    bool is_field_present(const char* json_data, size_t json_data_size, const access_path_t& path) {
+        // this may be slow, because need to parse JSON:
+        assert(json_data && json_data_size > 0);
+
+        nlohmann::json j = nlohmann::json::parse(json_data);
+
+        // now go over access path and refine. Note: only object -> object -> object paths here supported.
+        for(unsigned i = 0; i  < path.size(); ++i) {
+            std::string encoded_key = path[i].first;
+            auto key_type = path[i].second;
+            auto key = decode_key(encoded_key, key_type);
+            if(!j.is_object())
+                return false;
+            if(!j.contains(key))
+                return false;
+            j = j[key];
+        }
+        return true;
+    }
+
+    bool is_field_present(const Field& f, const access_path_t& path) {
+        // this may be slow, because need to parse JSON:
+        assert(f.getType().isStructuredDictionaryType());
+        assert(f.getPtr() && f.getPtrSize() > 0);
+        const char* str_ptr = reinterpret_cast<const char*>(f.getPtr());
+        auto str_size = f.getPtrSize();
+
+        return is_field_present(str_ptr, str_size, path);
     }
 
 
@@ -715,16 +755,6 @@ namespace tuplex {
         throw std::runtime_error("unsupported type " + value_type.desc() + ", can not extract data from json " + j.dump());
     }
 
-    std::string decode_key(const std::string& raw_value, const python::Type& key_type) {
-        std::string key;
-        if(python::Type::STRING == key_type) {
-            key = str_value_from_python_raw_value(raw_value);
-        } else {
-            throw std::runtime_error("unsupported key type " + key_type.desc() + ", can not decode value " + raw_value);
-        }
-        return key;
-    }
-
     Field get_struct_dict_field_by_path(const char* json_data, size_t json_data_size, const access_path_t& path, const python::Type& value_type) {
         // this may be slow, because need to parse JSON:
         assert(json_data && json_data_size > 0);
@@ -860,6 +890,35 @@ namespace tuplex {
                || value_type == python::Type::EMPTYLIST || value_type == python::Type::EMPTYTUPLE || value_type == python::Type::EMPTYDICT)
                 continue;
 
+            // check that field is present, if not make sure on access path proper option type and null.
+            if(!is_field_present(json_data, json_data_size, access_path)) {
+
+                // traverse access path
+                // basically when traversing a struct path
+                // A -> B -> C, then either A -> B must be null (and typed as Option[Struct]) or A must be null (and typed as Option[Struct[).
+                bool nesting_ok = false;
+                for(int i = 1; i < access_path.size() && !nesting_ok; ++i) {
+                    auto parent_path = access_path_t(access_path.begin(), access_path.end() - i);
+                    if(is_field_present(json_data, json_data_size, parent_path)) {
+                        // get field value at this point, must be null and option type
+                        auto parent_path_as_str = access_path_to_str(parent_path);
+                        auto it = std::find_if(entries.begin(), entries.end(), [parent_path_as_str](const flattened_struct_dict_entry_t& entry) { return access_path_to_str(std::get<0>(entry)).compare(parent_path_as_str) == 0; });
+                        assert(it != entries.end());
+                        auto parent_entry = *it;
+                        auto parent_value_type = std::get<1>(parent_entry);
+                        nesting_ok = parent_value_type.isOptionType() && parent_value_type.getReturnType().isStructuredDictionaryType() && get_struct_dict_field_by_path(json_data, json_data_size, access_path, parent_value_type).isNull();
+                    }
+                }
+
+                if(!nesting_ok)
+                    throw std::runtime_error("Invalid typing along path " + json_access_path_to_string(access_path, value_type, always_present) + " or missing encoded field");
+
+                // inc field index for non struct dict
+                if(!value_type.withoutOption().isStructuredDictionaryType())
+                    field_index++;
+                continue;
+            }
+
             // get field via access path from struct dict and get size.
             auto f_element = get_struct_dict_field_by_path(json_data, json_data_size, access_path, value_type);
 
@@ -878,7 +937,7 @@ namespace tuplex {
             }
 
             // skip nested struct dicts! --> they're taken care of.
-            if(value_type.isStructuredDictionaryType())
+            if(value_type.withoutOption().isStructuredDictionaryType())
                 continue;
 
             // depending on field, add size!
@@ -1015,6 +1074,9 @@ namespace tuplex {
 
         auto tree = std::make_unique<StrJsonTree>();
 
+        // lazy prefix entries for nested structs to check for NULL case (i.e., one subtree is potentially null)
+        std::unordered_map<access_path_t, bool> prefix_null_map;
+
         for(auto entry : entries) {
             auto access_path = std::get<0>(entry);
             auto value_type = std::get<1>(entry);
@@ -1033,6 +1095,16 @@ namespace tuplex {
             bool is_present = struct_dict_field_present(indices, access_path, presence_map);
 
             // std::cout<<"decoding "<<path_str<<" from field= "<<field_index<<" present= "<<std::boolalpha<<is_present<<std::endl;
+
+//            // check if the parent paths are all present
+//            access_path_t parent_path{access_path.begin(), access_path.() - 1};
+//            while(parent_path.size() > 0) {
+//                auto it = prefix_null_map.find(parent_path);
+//                if(it == prefix_null_map.end()) {
+//                    // calculate presence
+//                }
+//                parent_path = access_path_t(parent_path.begin(), parent_path.end() - 1);
+//            }
 
             // if not present, do not decode. But do inc field_index!
             if(!is_present) {
@@ -1070,11 +1142,37 @@ namespace tuplex {
                 if(is_null) {
                     elements[access_path] = "null";
                     tree->add(access_path_to_json_keys(access_path), "null");
-                    field_index++;
+
+                    if(value_type.withoutOption().isStructuredDictionaryType()) {
+                        // mark in prefix_null_map & continue.
+                        prefix_null_map[access_path] = true;
+                        continue;
+                    }
+
+                    // inc field for non single valued elements.
+                    if(!value_type.isSingleValued())
+                        field_index++;
                     continue;
                 } else
                     value_type = value_type.getReturnType();
             }
+
+            // check for access path if any are in prefix_null_map. If so, skip.
+            // Note: this requires entries to be sorted properly after length!
+            access_path_t parent_path{access_path.begin(), access_path.end() - 1};
+            bool skip_access_path = false;
+            while(parent_path.size() > 0) {
+                auto it = prefix_null_map.find(parent_path);
+                if(it != prefix_null_map.end()) {
+                    if(!value_type.isSingleValued())
+                        field_index++;
+                    skip_access_path = true;
+                    break;
+                }
+                parent_path = access_path_t(parent_path.begin(), parent_path.end() - 1);
+            }
+            if(skip_access_path)
+                continue;
 
             if(python::Type::EMPTYLIST != value_type && value_type.isListType()) {
                 // special case list.
@@ -1161,36 +1259,6 @@ namespace tuplex {
         if(json_str.empty())
             return "{}"; // <-- this could happen for empty dict.
         return json_str;
-    }
-
-    bool is_field_present(const char* json_data, size_t json_data_size, const access_path_t& path) {
-        // this may be slow, because need to parse JSON:
-        assert(json_data && json_data_size > 0);
-
-        nlohmann::json j = nlohmann::json::parse(json_data);
-
-        // now go over access path and refine. Note: only object -> object -> object paths here supported.
-        for(unsigned i = 0; i  < path.size(); ++i) {
-            std::string encoded_key = path[i].first;
-            auto key_type = path[i].second;
-            auto key = decode_key(encoded_key, key_type);
-            if(!j.is_object())
-                return false;
-            if(!j.contains(key))
-                return false;
-            j = j[key];
-        }
-        return true;
-    }
-
-    bool is_field_present(const Field& f, const access_path_t& path) {
-        // this may be slow, because need to parse JSON:
-        assert(f.getType().isStructuredDictionaryType());
-        assert(f.getPtr() && f.getPtrSize() > 0);
-        const char* str_ptr = reinterpret_cast<const char*>(f.getPtr());
-        auto str_size = f.getPtrSize();
-
-      return is_field_present(str_ptr, str_size, path);
     }
 
     std::vector<uint64_t> boolean_array_to_block_bitmap(const std::vector<bool>& bitmap, size_t n_blocks) {
@@ -1337,7 +1405,8 @@ namespace tuplex {
             }
 
             // skip nested struct dicts! --> they're taken care of.
-            if(value_type.isStructuredDictionaryType())
+            // same goes for Option[Struct[...]], the bitmap is handled separately.
+            if(value_type.withoutOption().isStructuredDictionaryType())
                 continue;
 
             // special case null: (--> same applies for constants as well...)
@@ -1355,6 +1424,12 @@ namespace tuplex {
                 auto bit_idx = bitmap_idx % 64;
                 is_null = bitmap[el_idx] & (0x1ull << bit_idx);
                 value_type = value_type.getReturnType();
+
+                // special case: option nested struct is null
+                if(value_type.isOptionType() && value_type.getReturnType().isStructuredDictionaryType() && is_null) {
+                    // no need to inc size.
+                    continue;
+                }
             }
 
             // check if is_null, in this case -> store dummy and move on.
@@ -1408,6 +1483,13 @@ namespace tuplex {
             // what kind of data is it that needs to be serialized?
             bool is_varlength_field = size_idx >= 0;
             assert(value_idx >= 0);
+
+            // check if present, if not - skip.
+            if(!is_field_present(json_data, json_data_size, access_path)) {
+                field_index++;
+                continue;
+            }
+
 
             if(!is_varlength_field) {
                 // either double or i64 or bool
