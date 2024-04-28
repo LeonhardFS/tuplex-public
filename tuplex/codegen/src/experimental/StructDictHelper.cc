@@ -947,6 +947,7 @@ namespace tuplex {
                 llvm::BasicBlock* bbLastSkipBlock = nullptr;
                 llvm::BasicBlock* bbSubtreeDone = nullptr;
                 llvm::BasicBlock* bbComputeSize = nullptr;
+                llvm::Value* skip_value = nullptr;
                 if(has_potential_null_parent_paths) {
                     auto parent_is_null = check_whether_any_parent_is_null(env, builder, ptr, dict_type, access_path);
 
@@ -956,6 +957,10 @@ namespace tuplex {
                     bbSubtreeDone = llvm::BasicBlock::Create(ctx, "struct_dict_subtree_done", builder.GetInsertBlock()->getParent()); // <-- continue code gen here after.
                     bbComputeSize = llvm::BasicBlock::Create(ctx, "struct_dict_subtree_size", builder.GetInsertBlock()->getParent());
                     bbLastSkipBlock = builder.GetInsertBlock(); // <-- save block to connect phi value later!
+
+                    // always save the 8 bytes, unless it's a single value when skipping logic.
+                    auto skip_value_add = value_type.isSingleValued() ? env.i64Const(0) : bytes8;
+                    skip_value = builder.CreateAdd(size, skip_value_add);
                     builder.CreateCondBr(parent_is_null, bbSubtreeDone, bbComputeSize);
 
                     // continue and tie things up later.
@@ -1038,9 +1043,6 @@ namespace tuplex {
                     // make size new phi node
                     builder.SetInsertPoint(bbSubtreeDone);
                     auto phi_size = builder.CreatePHI(builder.getInt64Ty(), 2);
-
-                    // always save the 8 bytes, unless its a skip value.
-                    auto skip_value = value_type.isSingleValued() ? env.i64Const(0) : bytes8;
 
                     phi_size->addIncoming(size, bbCurrentBlock);
                     phi_size->addIncoming(skip_value, bbLastSkipBlock);
