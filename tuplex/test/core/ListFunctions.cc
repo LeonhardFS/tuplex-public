@@ -642,12 +642,12 @@ TEST_F(ListFunctions, ListOfTuplesSerializeTest) {
     memset(buffer, 0, 5000);
     Row r((test_list));
 
-    // each struct dict has 16 bytes.
-    // List has 8 bytes for length, 16 bytes for indices + 32 bytes for data -> 7 * 8 = 56 bytes.
-
+   // 8 bytes offset | 8 bytes varlen | 8 bytes list, 3 * 8 byte offsets/size + 3 * 24 for tuples
+   // 24 + 24 + 3 * 24 = 5 * 24 = 100 + 20 = 1
     auto serialized_size = r.serializedLength(); // should be 72.
     auto ans_size = r.serializeToMemory(buffer, 5000);
     EXPECT_EQ(ans_size, serialized_size);
+    EXPECT_EQ(ans_size, 120);
 
     // now deserialize & check
     auto d_r = Row::fromMemory(r.getSchema(), buffer, 5000);
