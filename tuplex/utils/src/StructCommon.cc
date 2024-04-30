@@ -1566,6 +1566,10 @@ namespace tuplex {
             // get field value at this point, must be null and option type
             auto parent_path_as_str = access_path_to_str(parent_path);
             auto it = std::find_if(entries.begin(), entries.end(), [parent_path_as_str](const flattened_struct_dict_entry_t& entry) { return access_path_to_str(std::get<0>(entry)).compare(parent_path_as_str) == 0; });
+
+            // entry not found means there's no optional for this path. Continue.
+            if(it == entries.end())
+                continue;
             assert(it != entries.end());
             auto parent_entry = *it;
             auto parent_value_type = std::get<1>(parent_entry);

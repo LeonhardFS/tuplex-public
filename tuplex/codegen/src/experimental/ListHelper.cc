@@ -302,7 +302,7 @@ namespace tuplex {
                 auto llvm_element_type = env.getOrCreateTupleType(elementType);
 
                 auto idx_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
-                builder.CreateStore(env.nullConstant(llvm_element_type->getPointerTo()->getPointerTo()), idx_values);
+                builder.CreateStore(env.nullConstant(llvm_element_type->getPointerTo()), idx_values);
 
                 if(elements_optional) {
                     auto idx_opt_values = builder.CreateStructGEP(list_ptr, llvm_list_type, 3);
@@ -971,7 +971,7 @@ namespace tuplex {
                 // store into array
                 assert(element_as_ptr->getType()->getPointerTo() == target_idx->getType());
                 builder.CreateStore(element_as_ptr, target_idx, true);
-            } else if(elementType.isTupleType()) {
+            } else if(elementType.isTupleType() && elementType != python::Type::EMPTYTUPLE) {
                 // pointers to the list type!
                 // similar to above - yet, keep it here extra for more control...
                 // a list consists of 3 fields: capacity, size and a pointer to the members
@@ -981,16 +981,12 @@ namespace tuplex {
                 auto llvm_element_type = env.getOrCreateTupleType(elementType);
 
                 auto ptr_values = builder.CreateStructLoad(llvm_list_type, list_ptr, 2); // this should be a pointer
-                auto tuple = value.val;
 
                 // load FlattenedTuple from value (this ensures it is a heap ptr)
-                FlattenedTuple ft = FlattenedTuple::fromLLVMStructVal(&env, builder, tuple, elementType);
-
-                // this here works.
-                // auto heap_ptr = ft.loadToPtr(builder);
+                FlattenedTuple ft = FlattenedTuple::fromLLVMStructVal(&env, builder, value.val, elementType);
 
                 // must be a heap ptr, else invalid.
-                auto heap_ptr = ft.loadToHeapPtr(builder);
+                auto tuple_to_store = ft.getLoad(builder);
 
                 // // debug:
                 // env.printValue(builder, idx, "storing tuple of type " + elementType.desc() + " at index: ");
@@ -1022,7 +1018,7 @@ namespace tuplex {
                 // }
 
                 // store the heap ptr.
-                builder.CreateStore(heap_ptr, target_idx, true);
+                builder.CreateStore(tuple_to_store, target_idx, true);
 
                 // debug:
                 // env.printValue(builder, builder.CreateLoad(target_idx), "pointer stored - post update: ");
@@ -1270,13 +1266,12 @@ namespace tuplex {
 
             auto t_ptr_values = env.getLLVMTypeName(ptr_values->getType());
             // now load the i-th element from ptr_values as struct.tuple*
-            auto item_ptr = builder.CreateInBoundsGEP(ptr_values, llvm_list_type->getStructElementType(ptr_position), index);
+            auto llvm_value_type = env.pythonToLLVMType(element_type);
+            auto item_ptr = builder.CreateInBoundsGEP(ptr_values, llvm_value_type, index);
             auto t_item_ptr = env.getLLVMTypeName(item_ptr->getType()); // should be struct.tuple**
 
-            auto llvm_value_type = env.pythonToLLVMType(element_type);
             auto item = builder.CreateLoad(llvm_value_type, item_ptr); // <-- should be struct.tuple*
             auto t_item = env.getLLVMTypeName(llvm_value_type);
-            assert(item->getType()->isPointerTy()); // <-- this here fails...
 
             // debug print: retrieve heap ptr
             // env.printValue(builder, item, "stored heap ptr is: ");
@@ -2261,6 +2256,97 @@ namespace tuplex {
             return total_offset;
         }
 
+        static llvm::Value* list_deserialize_list_of_tuples_from_memory(LLVMEnvironment& env,
+                                                                              const codegen::IRBuilder& builder,
+                                                                              llvm::Value* ptr,
+                                                                              const python::Type& list_type,
+                                                                              llvm::Value* num_elements,
+                                                                              llvm::Value* list_ptr) {
+            using namespace llvm;
+
+            // len | (offset|size) | .... | (offset|size) | item1 | .... |item_len
+
+            assert(list_type.isListType());
+            auto element_type = list_type.elementType();
+            assert(element_type.isTupleType());
+
+            // this var can be eliminated --> put this logic into func?
+            auto acc_size_var = env.CreateFirstBlockAlloca(builder, builder.getInt64Ty());
+            builder.CreateStore(env.i64Const(0), acc_size_var);
+
+            auto llvm_list_type = env.createOrGetListType(list_type);
+            auto llvm_list_element_type = env.getOrCreateTupleType(element_type);
+            auto offset_ptr = builder.CreateBitCast(ptr, env.i64ptrType()); // get pointer to i64 serialized array of offsets
+            auto& context = env.getContext();
+
+            // need to point to each of the strings and calculate lengths
+            llvm::Function *func = builder.GetInsertBlock()->getParent();
+            assert(func);
+            BasicBlock *loopCondition = BasicBlock::Create(context, "list_loop_condition_tuple_decode", func);
+            BasicBlock *loopBody = BasicBlock::Create(context, "list_loop_body_tuple_decode", func);
+            BasicBlock *loopBodyEnd = BasicBlock::Create(context, "list_loop_body_end_tuple_decode", func);
+            BasicBlock *after = BasicBlock::Create(context, "list_after_tuple_decode", func);
+
+            // allocate the dict_ptr* array
+            auto list_arr_malloc = builder.CreatePointerCast(env.malloc(builder, builder.CreateMul(num_elements, env.i64Const(8))),
+                                                             llvm_list_type->getStructElementType(2));
+
+            // read the elements
+            auto loopCounter = builder.CreateAlloca(Type::getInt64Ty(context));
+            builder.CreateStore(env.i64Const(0), loopCounter);
+            builder.CreateBr(loopCondition);
+
+            builder.SetInsertPoint(loopCondition);
+            auto loopNotDone = builder.CreateICmpSLT(builder.CreateLoad(builder.getInt64Ty(), loopCounter),
+                                                     num_elements);
+            builder.CreateCondBr(loopNotDone, loopBody, after);
+
+            builder.SetInsertPoint(loopBody);
+            // store the pointer to the string
+            auto current_offset_ptr = builder.CreateGEP(builder.getInt64Ty(),
+                                                        offset_ptr,
+                                                        builder.CreateLoad(builder.getInt64Ty(), loopCounter));
+            auto current_offset = builder.CreateLoad(builder.getInt64Ty(),
+                                                     current_offset_ptr);
+            auto next_tuple_ptr = builder.CreateGEP(llvm_list_element_type, list_arr_malloc, builder.CreateLoad(builder.getInt64Ty(), loopCounter));
+
+            llvm::Value* offset=nullptr; llvm::Value *size=nullptr;
+            std::tie(offset, size) = unpack_offset_and_size(builder, current_offset);
+            builder.CreateStore(builder.CreateAdd(size, builder.CreateLoad(builder.getInt64Ty(), acc_size_var)), acc_size_var);
+
+            auto serialized_tuple_ptr = builder.MovePtrByBytes(builder.CreateBitCast(current_offset_ptr, env.i8ptrType()), offset);
+
+            env.printValue(builder, builder.CreateLoad(builder.getInt64Ty(), loopCounter), "deserializing " + element_type.desc() + " at list position: ");
+
+
+            // decode tuple, no need for heap alloc here because tuples are immutable.
+            FlattenedTuple ft(&env);
+            ft.init(element_type);
+            ft.deserializationCode(builder, serialized_tuple_ptr);
+            auto tuple_ptr = ft.getLoad(builder);
+
+            builder.CreateStore(tuple_ptr, next_tuple_ptr);
+            builder.CreateBr(loopBodyEnd);
+
+
+            builder.SetInsertPoint(loopBodyEnd);
+            // update the loop variable and return
+            builder.CreateStore(builder.CreateAdd(builder.CreateLoad(builder.getInt64Ty(), loopCounter),
+                                                  env.i64Const(1)), loopCounter);
+            builder.CreateBr(loopCondition);
+
+            builder.SetInsertPoint(after);
+
+            // store the malloc'd and populated array to the struct
+            auto list_arr = builder.CreateStructGEP(list_ptr, llvm_list_type, 2);
+            builder.CreateStore(list_arr_malloc, list_arr);
+
+            // last element in offset will have size + offset. can use that to decode total size?
+            auto total_varlen_size = builder.CreateLoad(builder.getInt64Ty(), acc_size_var);
+            auto total_offset = builder.CreateAdd(builder.CreateMul(env.i64Const(sizeof(int64_t)), num_elements), total_varlen_size);
+            return total_offset;
+        }
+
         static llvm::Value* list_deserialize_list_of_lists_from_memory(LLVMEnvironment& env,
                                                                               const codegen::IRBuilder& builder,
                                                                               llvm::Value* ptr,
@@ -2584,6 +2670,9 @@ namespace tuplex {
                 ptr = builder.MovePtrByBytes(ptr, size_in_bytes);
             } else if(elementType.isListType()) {
                 auto size_in_bytes = list_deserialize_list_of_lists_from_memory(env, builder, ptr, list_type, num_elements, list_ptr);
+                ptr = builder.MovePtrByBytes(ptr, size_in_bytes);
+            } else if(elementType.isTupleType() && elementType != python::Type::EMPTYTUPLE) {
+                auto size_in_bytes = list_deserialize_list_of_tuples_from_memory(env, builder, ptr, list_type, num_elements, list_ptr);
                 ptr = builder.MovePtrByBytes(ptr, size_in_bytes);
             } else {
                 throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " list of type " + list_type.desc() + " deserialize not yet supported.");

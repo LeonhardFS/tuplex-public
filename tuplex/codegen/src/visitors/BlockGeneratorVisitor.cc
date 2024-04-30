@@ -1746,7 +1746,7 @@ namespace tuplex {
 
                 // special case tuple: may have been passed as ptr
                 if(type.isTupleType() && param.val && param.val->getType()->isPointerTy()) {
-                    auto llvm_tuple_type = _env->getOrCreateTupleType(type);
+                    auto llvm_tuple_type = _env->pythonToLLVMType(type);
                     param.val = builder.CreateLoad(llvm_tuple_type, param.val);
                 }
 
