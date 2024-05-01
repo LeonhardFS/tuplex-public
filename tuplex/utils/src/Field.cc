@@ -374,10 +374,25 @@ namespace tuplex {
                 cJSON_free(b);
 
                 return ans;
+            } else if(lhs._type.isStructuredDictionaryType()) {
+
+                // @TODO: could replace with yyjson
+                // -> costly compare via indirect cJSON route. Could speed this up...
+
+                // parse cJSON and compare
+                auto a = cJSON_Parse((const char*)lhs._ptrValue);
+                auto b = cJSON_Parse((const char*)rhs._ptrValue);
+
+                auto ans = cJSON_Compare(a, b, true);
+
+                cJSON_free(a);
+                cJSON_free(b);
+
+                return ans;
             } else {
                 Logger::instance().defaultLogger().error("trying to compare for Field equality of "
                                                          "Field with type " + lhs._type.desc()
-                                                         +". Not yet implemented");
+                                                         +". Not yet implemented, exiting with status code 1");
                 exit(1);
             }
         } else {
