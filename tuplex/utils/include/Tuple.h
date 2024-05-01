@@ -66,6 +66,8 @@ namespace tuplex {
             return t;
         }
 
+        std::vector<tuplex::Field> to_vector() const;
+
         Tuple* allocate_deep_copy() const;
 
         size_t serialized_length() const;

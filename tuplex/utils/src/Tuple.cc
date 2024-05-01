@@ -174,5 +174,13 @@ namespace tuplex {
         auto length = s.length();
         return s.serialize(ptr, length);
     }
+
+    std::vector<Field> Tuple::to_vector() const {
+        std::vector<Field> v;
+        for(unsigned i = 0; i < _numElements; ++i) {
+            v.push_back(_elements[i]);
+        }
+        return v;
+    }
 }
 

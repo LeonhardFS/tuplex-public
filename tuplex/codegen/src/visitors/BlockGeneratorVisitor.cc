@@ -1808,6 +1808,10 @@ namespace tuplex {
                     _variableSlots[keyval.first] = slot;
                 }
             }
+
+            // update last block
+            _lfb->setLastBlock(builder.GetInsertBlock());
+
         }
 
         void BlockGeneratorVisitor::visit(NFunction *func) {
@@ -3796,7 +3800,9 @@ namespace tuplex {
                                                                       value.val,
                                                                       value_node->getInferredType());
 
-                return ft.getLoad(builder, {idx});
+                auto ans = ft.getLoad(builder, {idx});
+                _lfb->setLastBlock(builder.GetInsertBlock()); // <-- !!! important to update last block here.
+                return ans;
             } else {
                 throw std::runtime_error("indexing via [] for non homogenous tuple not supported for LLVM17+");
 //                // THIS HERE IS BACKUP CODE, usable if the AST tree isn't reduced completely.

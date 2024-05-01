@@ -478,6 +478,17 @@ namespace tuplex {
             }
         }
 
+        if(f._type.isTupleType() && targetType.isTupleType() && f._type.parameters().size() == targetType.parameters().size()) {
+            assert(f.hasPtrData());
+            auto T = *((Tuple*)f.getPtr());
+            auto tuple_elements = T.to_vector();
+            std::vector<Field> casted_fields; casted_fields.reserve(tuple_elements.size());
+            for(unsigned i = 0; i < tuple_elements.size(); ++i)
+                casted_fields.push_back(upcastTo_unsafe(tuple_elements[i], targetType.parameters()[i]));
+            auto ret_list = Tuple::from_vector(casted_fields);
+            return Field((ret_list));
+        }
+
 #ifndef NDEBUG
         throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " bad field in upcast, field has type: " + f._type.desc() + " and target type is: " + targetType.desc());
 #endif

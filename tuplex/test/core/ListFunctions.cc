@@ -707,7 +707,8 @@ TEST_F(ListFunctions, ListOf3Elements) {
 //        List(parse_json_to_struct_dict("{\"a\":\"test string\",\"b\":20,\"c\":{\"a\":10,\"b\":\"test\"}}"), parse_json_to_struct_dict("{\"a\":null,\"b\":21,\"c\":{\"a\":99,\"b\":\"7x\"}}")) // nested without option
         // @TODO: maybe add one example of deeply nested with options/no options to make sure everything is correct.
         // list of tuples
-        List(Tuple(1, 2, 3), Tuple(4,5,6), Tuple(7,8,9)),
+        //List(Tuple(1, 2, 3), Tuple(4,5,6), Tuple(7,8,9)),
+        List(Tuple(1, "test", 3.78), Tuple(4,"",Field::null()), Tuple(7,"abcdef",-9.99)),
         // @TODO: need to make sure list of tuples (homogenous/non-homogenous also works)
         // options of other complex compound objects.
 
@@ -726,43 +727,43 @@ TEST_F(ListFunctions, ListOf3Elements) {
         auto num_list_elements = test_list.numElements();
         os<<"Running test case "<<(test_case_no+1)<<"/"<<test_lists.size()<<": "<<test_list.getType().desc()<<endl;
 
-//        {
-//            os<<"-- Testing deserialize + list access"<<endl;
-//            // construct test data (list access)
-//            std::vector<Row> test_data;
-//            std::vector<Row> ref_data;
-//            for(unsigned i = 0; i < num_list_elements; ++i) {
-//                test_data.push_back(Row(test_list, Field((int64_t)i)));
-//                ref_data.push_back(Row(test_list.getField(i)));
-//            }
-//
-//            // mini pipeline -> checks that deserialize + list access works.
-//            auto ans = ctx.parallelize(test_data).map(UDF("lambda L, i: L[i]")).collectAsVector();
-//            compare_rows(ans, ref_data);
-//        }
-
-        // now test that serialize works, by transforming tuple -> list.
         {
-            os<<"-- Testing list serialize"<<endl;
-
+            os<<"-- Testing deserialize + list access"<<endl;
             // construct test data (list access)
             std::vector<Row> test_data;
             std::vector<Row> ref_data;
-            // create function
-            std::stringstream ss;
-            ss<<"lambda t: [";
             for(unsigned i = 0; i < num_list_elements; ++i) {
-                test_data.push_back(Row(Tuple::from_vector(test_list.to_vector())));
-                ref_data.push_back(Row(test_list));
-
-                ss<<"t["<<i<<"],";
+                test_data.push_back(Row(test_list, Field((int64_t)i)));
+                ref_data.push_back(Row(test_list.getField(i)));
             }
-            ss<<"]";
-            auto udf_code = ss.str();
 
-            auto ans = ctx.parallelize({test_data[0]}).map(UDF(udf_code)).collectAsVector();
+            // mini pipeline -> checks that deserialize + list access works.
+            auto ans = ctx.parallelize(test_data).map(UDF("lambda L, i: L[i]")).collectAsVector();
             compare_rows(ans, ref_data);
         }
+
+//        // now test that serialize works, by transforming tuple -> list.
+//        {
+//            os<<"-- Testing list serialize"<<endl;
+//
+//            // construct test data (list access)
+//            std::vector<Row> test_data;
+//            std::vector<Row> ref_data;
+//            // create function
+//            std::stringstream ss;
+//            ss<<"lambda t: [";
+//            for(unsigned i = 0; i < num_list_elements; ++i) {
+//                test_data.push_back(Row(Tuple::from_vector(test_list.to_vector())));
+//                ref_data.push_back(Row(test_list));
+//
+//                ss<<"t["<<i<<"],";
+//            }
+//            ss<<"]";
+//            auto udf_code = ss.str();
+//
+//            auto ans = ctx.parallelize(test_data).map(UDF(udf_code)).collectAsVector();
+//            compare_rows(ans, ref_data);
+//        }
 
 
         // TODO: list append together with append....

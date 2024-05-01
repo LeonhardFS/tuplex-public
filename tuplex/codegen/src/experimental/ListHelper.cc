@@ -329,17 +329,36 @@ namespace tuplex {
             assert(struct_index < llvm_list_type->getStructNumElements());
 
             // this is not the element type, but rather the type of the data array.
-            // base it on the struct type!
+            // the struct stores a pointer, so the size will be 8 bytes. However, correct thing is to allocate
+            // actual struct size if its a pointer to struct.
             llvm::Type* llvm_data_type = llvm_list_type->getStructElementType(struct_index);
 
+            auto element_type = list_type.withoutOption().elementType();
+            if((element_type.isTupleType() && element_type != python::Type::EMPTYTUPLE)) {
+                llvm_data_type = env.pythonToLLVMType(element_type);
+            }
+
             const auto& DL = env.getModule()->getDataLayout();
-            // debug
+            // debug, print type name.
             std::string t_name = env.getLLVMTypeName(llvm_data_type);
             size_t llvm_data_element_size = DL.getTypeAllocSize(llvm_data_type);
 
+            // perform sanity check in LLVM9:
+#if LLVM_VERSION_MAJOR < 15
+            if(llvm_list_type->getStructElementType(struct_index)->isPointerTy()) {
+                auto dbg_type = llvm_list_type->getStructElementType(struct_index)->getPointerElementType();
+                if(dbg_type->isStructTy()) {
+                    assert(llvm_data_type == dbg_type);
+                }
+            }
+#endif
             // allocate new memory of size sizeof(int64_t) * capacity
             auto data_size = builder.CreateMul(env.i64Const(llvm_data_element_size), capacity);
-            auto data_ptr = builder.CreatePointerCast(env.malloc(builder, data_size), llvm_data_type);
+
+            auto llvm_target_data_type = !llvm_data_type->isPointerTy() ? llvm_data_type->getPointerTo() : llvm_data_type; // <-- could be primitive type.
+            auto data_ptr = builder.CreatePointerCast(env.malloc(builder, data_size), llvm_target_data_type);
+
+            env.printValue(builder, data_size, "allocated data_ptr for " + list_type.desc() + " of size (in bytes): ");
 
             if(initialize) {
                 // call memset
@@ -985,6 +1004,9 @@ namespace tuplex {
                 // load FlattenedTuple from value (this ensures it is a heap ptr)
                 FlattenedTuple ft = FlattenedTuple::fromLLVMStructVal(&env, builder, value.val, elementType);
 
+                env.printValue(builder, idx, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " storing element " + elementType.desc() + " at position: ");
+                ft.print(builder);
+
                 // must be a heap ptr, else invalid.
                 auto tuple_to_store = ft.getLoad(builder);
 
@@ -1496,7 +1518,11 @@ namespace tuplex {
                     return env.i64Const(0);
 
                 auto ft = get_tuple_item(env, builder, list_ptr, list_type, index);
+
+                env.printValue(builder, index, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " storing element " + element_type.desc() + " at position: ");
+                ft.print(builder);
                 auto s_size = ft.serialize(builder, dest_ptr);
+                env.printValue(builder, s_size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " serialized size of " + element_type.desc() + " is: ");
                 return s_size;
             };
 
