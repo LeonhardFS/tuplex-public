@@ -713,10 +713,21 @@ namespace tuplex {
 
         // ---
         // structured dicts:
-        if(aUnderlyingType.isStructuredDictionaryType() && bUnderlyingType.isDictionaryType())
-            return unifyStructuredDictTypes(aUnderlyingType, bUnderlyingType, policy);
-        if(aUnderlyingType.isDictionaryType() && bUnderlyingType.isStructuredDictionaryType())
-            return unifyStructuredDictTypes(bUnderlyingType, aUnderlyingType, policy);
+        if(aUnderlyingType.isStructuredDictionaryType() && bUnderlyingType.isDictionaryType()) {
+            auto ans = unifyStructuredDictTypes(aUnderlyingType, bUnderlyingType, policy);
+            // if ans is not option type but a or b is option type -> make optional!
+            if(!ans.isOptionType() && (a.isOptionType() || b.isOptionType()))
+                ans = python::Type::makeOptionType(ans);
+            return ans;
+        }
+
+        if(aUnderlyingType.isDictionaryType() && bUnderlyingType.isStructuredDictionaryType()) {
+            auto ans = unifyStructuredDictTypes(bUnderlyingType, aUnderlyingType, policy);
+            // if ans is not option type but a or b is option type -> make optional!
+            if(!ans.isOptionType() && (a.isOptionType() || b.isOptionType()))
+                ans = python::Type::makeOptionType(ans);
+            return ans;
+        }
 
         // other dictionary types
         if(aUnderlyingType.isDictionaryType() && bUnderlyingType.isDictionaryType()) {
