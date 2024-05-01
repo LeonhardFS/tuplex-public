@@ -787,13 +787,18 @@ namespace tuplex {
     }
 
     size_t struct_dict_get_size(const python::Type& dict_type, const char* json_data, size_t json_data_size) {
+        // Option[StructDict[...]] ok here.
         assert(dict_type.withoutOption().isStructuredDictionaryType());
+
+        // handle null case for option.
+        if(dict_type.isOptionType() && (!json_data || json_data_size == 0))
+            return 0;
 
         size_t serialized_size = 0;
 
         flattened_struct_dict_entry_list_t entries;
-        flatten_recursive_helper(entries, dict_type, {});
-        auto indices = struct_dict_load_indices(dict_type);
+        flatten_recursive_helper(entries, dict_type.withoutOption(), {});
+        auto indices = struct_dict_load_indices(dict_type.withoutOption());
 
         // retrieve counts => i.e. how many fields are options? how many are maybe present?
         size_t field_count = 0, option_count = 0, maybe_count = 0;
@@ -824,11 +829,11 @@ namespace tuplex {
         }
 
         // check if dict type has bitmaps, if so decode!
-        if(struct_dict_has_bitmap(dict_type))
+        if(struct_dict_has_bitmap(dict_type.withoutOption()))
             serialized_size += sizeof(uint64_t) * num_option_bitmap_elements;
 
         bool no_elements_present = false;
-        if(struct_dict_has_presence_map(dict_type)) {
+        if(struct_dict_has_presence_map(dict_type.withoutOption())) {
             serialized_size += sizeof(uint64_t) * num_maybe_bitmap_elements;
 
             // special case: presence map all 0s -> return {}
