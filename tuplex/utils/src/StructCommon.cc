@@ -185,6 +185,12 @@ namespace tuplex {
                                   bool include_maybe_structs) {
         using namespace std;
 
+#ifndef NDEBUG
+        if(!dict_type.isStructuredDictionaryType()) {
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " flatten_recursive_helper expects structured dictionary type, but got instead type " + dict_type.desc());
+        }
+#endif
+
         assert(dict_type.isStructuredDictionaryType());
 
         for (auto kv_pair: dict_type.get_struct_pairs()) {

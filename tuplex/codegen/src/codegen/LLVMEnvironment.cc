@@ -704,7 +704,7 @@ namespace tuplex {
                 llvm::ArrayRef<llvm::Type *> members(memberTypes);
                 retType = llvm::StructType::create(_context, members, "struct." + twine, false);
             } else {
-                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + "Unsupported list element type: " + listType.desc());
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Unsupported list element type: " + listType.desc());
             }
 
             _generatedListTypes[listType] = retType;
