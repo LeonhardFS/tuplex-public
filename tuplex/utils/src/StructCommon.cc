@@ -1410,7 +1410,7 @@ namespace tuplex {
                 continue;
 
             // special case null: (--> same applies for constants as well...)
-            if(value_type == python::Type::NULLVALUE || value_type == python::Type::EMPTYLIST || value_type == python::Type::EMPTYLIST || value_type == python::Type::EMPTYTUPLE) {
+            if(value_type == python::Type::NULLVALUE || value_type == python::Type::EMPTYLIST || value_type == python::Type::EMPTYDICT || value_type == python::Type::EMPTYTUPLE) {
                 // nothing todo
                 continue;
             }
