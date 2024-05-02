@@ -85,7 +85,14 @@ namespace tuplex {
      */
     extern python::Type struct_dict_type_get_element_type(const python::Type& dict_type, const access_path_t& path);
 
-    extern void retrieve_bitmap_counts(const flattened_struct_dict_entry_list_t& entries, size_t& bitmap_element_count, size_t& presence_map_element_count);
+    extern void retrieve_bitmap_counts(const python::Type& dict_type, size_t& bitmap_element_count, size_t& presence_map_element_count);
+
+    /*!
+     * retrieves tuple of field_count, option_count, maybe_count from which number of elements required in bitmap or presence map can be inferred.
+     * @param dict_type
+     * @return tuple consisting of (field_count, option_count, maybe_count). option_count is number of entries for bitmap, maybe_count number of entries of presence map.
+     */
+    extern std::tuple<size_t, size_t, size_t> struct_dict_get_counts(const python::Type& dict_type);
 
     // decode
     extern std::string decodeListAsJSON(const python::Type& list_type, const uint8_t* buf, size_t buf_size);

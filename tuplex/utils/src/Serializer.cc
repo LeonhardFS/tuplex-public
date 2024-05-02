@@ -1293,11 +1293,11 @@ namespace tuplex {
         if(!is_null) {
 
             // add some security bytes
-            auto buf_size = struct_dict_get_size(dict_type, reinterpret_cast<const char *>(json_data), json_data_size);
+            auto buf_size = struct_dict_get_size(dict_type.withoutOption(), reinterpret_cast<const char *>(json_data), json_data_size);
             uint8_t* buf = new uint8_t[buf_size + 64];
 
             // serialize to buf
-            auto serialized_size = struct_dict_serialize_to(dict_type, reinterpret_cast<const char *>(json_data), json_data_size, buf);
+            auto serialized_size = struct_dict_serialize_to(dict_type.withoutOption(), reinterpret_cast<const char *>(json_data), json_data_size, buf);
             assert(serialized_size == buf_size);
 
             // copy out

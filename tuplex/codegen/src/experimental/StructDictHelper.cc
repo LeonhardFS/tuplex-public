@@ -248,7 +248,7 @@ namespace tuplex {
             size_t num_bitmap = 0, num_presence_map = 0;
             flattened_struct_dict_entry_list_t type_entries;
             flatten_recursive_helper(type_entries, dict_type);
-            retrieve_bitmap_counts(type_entries, num_bitmap, num_presence_map);
+            retrieve_bitmap_counts(dict_type, num_bitmap, num_presence_map);
             bool has_bitmap = num_bitmap > 0;
             bool has_presence_map = num_presence_map > 0;
 
@@ -849,9 +849,7 @@ namespace tuplex {
 
         size_t struct_dict_bitmap_size_in_bytes(const python::Type& dict_type) {
             size_t num_bitmap = 0, num_presence_map = 0;
-            flattened_struct_dict_entry_list_t type_entries;
-            flatten_recursive_helper(type_entries, dict_type);
-            retrieve_bitmap_counts(type_entries, num_bitmap, num_presence_map);
+            retrieve_bitmap_counts(dict_type, num_bitmap, num_presence_map);
 
             return sizeof(int64_t) * num_bitmap + sizeof(int64_t) * num_presence_map;
         }
@@ -1972,9 +1970,6 @@ namespace tuplex {
             flatten_recursive_helper(entries, dict_type, {});
             auto indices = struct_dict_load_indices(dict_type);
 
-            // retrieve counts => i.e. how many fields are options? how many are maybe present?
-            size_t field_count = 0, option_count = 0, maybe_count = 0;
-
             env.debugPrint(builder, "Printing contents of value of type " + dict_type.desc() + " (" + pluralize(entries.size(), "field"));
             for (auto entry: entries) {
                 auto access_path = std::get<0>(entry);
@@ -1987,9 +1982,19 @@ namespace tuplex {
                 if(is_struct_type)
                     continue;
 
-                // load va;ue if present
+                // load value if present
+                llvm::BasicBlock* bbPresenceDone = nullptr;
+                llvm::BasicBlock* bbShow = nullptr;
                 if(!is_always_present) {
-                    throw std::runtime_error("not yet supported, need if logic here");
+                    auto item_present = struct_dict_load_present(env, builder, v.val, dict_type, access_path);
+                    env.printValue(builder, item_present, json_access_path_to_string(access_path, value_type, is_always_present) + " is present: ");
+
+                    auto& ctx = builder.GetInsertBlock()->getContext();
+                    bbPresenceDone = llvm::BasicBlock::Create(ctx, "struct_dict_presence_done", builder.GetInsertBlock()->getParent());
+                    bbShow = llvm::BasicBlock::Create(ctx, "struct_dict_show", builder.GetInsertBlock()->getParent());
+
+                    builder.CreateCondBr(item_present, bbShow, bbPresenceDone);
+                    builder.SetInsertPoint(bbShow);
                 }
 
                 auto el = struct_dict_load_value(env, builder, v.val, dict_type, access_path);
@@ -2001,6 +2006,11 @@ namespace tuplex {
                     env.printValue(builder, el.size, json_access_path_to_string(access_path, value_type, is_always_present) + " size is: ");
                 if(el.is_null)
                     env.printValue(builder, el.is_null, json_access_path_to_string(access_path, value_type, is_always_present) + " is_null is: ");
+
+                if(!is_always_present) {
+                    builder.CreateBr(bbPresenceDone);
+                    builder.SetInsertPoint(bbPresenceDone);
+                }
             }
         }
     }

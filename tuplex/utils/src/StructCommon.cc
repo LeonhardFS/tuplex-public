@@ -56,13 +56,9 @@ namespace tuplex {
         StructDictProperties() = default;
         StructDictProperties(const python::Type& dict_type) {
             assert(dict_type.isStructuredDictionaryType());
-
-            flattened_struct_dict_entry_list_t entries;
-            flatten_recursive_helper(entries, dict_type);
-
             size_t num_bitmap = 0, num_presence_map = 0;
 
-            retrieve_bitmap_counts(entries, num_bitmap, num_presence_map);
+            retrieve_bitmap_counts(dict_type, num_bitmap, num_presence_map);
 
             // compute members.
             has_bitmap = num_bitmap > 0;
@@ -240,19 +236,10 @@ namespace tuplex {
         os << ss.str() << endl;
     }
 
-    void retrieve_bitmap_counts(const flattened_struct_dict_entry_list_t& entries, size_t& bitmap_element_count, size_t& presence_map_element_count) {
+    void retrieve_bitmap_counts(const python::Type& dict_type, size_t& bitmap_element_count, size_t& presence_map_element_count) {
         // retrieve counts => i.e. how many fields are options? how many are maybe present?
         size_t field_count = 0, option_count = 0, maybe_count = 0;
-
-        for (const auto& entry: entries) {
-            bool is_always_present = std::get<2>(entry);
-            maybe_count += !is_always_present;
-            bool is_value_optional = std::get<1>(entry).isOptionType();
-            option_count += is_value_optional;
-
-            bool is_struct_type = std::get<1>(entry).isStructuredDictionaryType();
-            field_count += !is_struct_type; // only count non-struct dict fields. -> yet the nested struct types may change the maybe count for the bitmap!
-        }
+        std::tie(field_count, option_count, maybe_count) = struct_dict_get_counts(dict_type);
 
 
         // let's start by allocating bitmaps for optional AND maybe types
@@ -312,7 +299,7 @@ namespace tuplex {
 
         size_t num_bitmap = 0, num_presence_map = 0;
 
-        retrieve_bitmap_counts(entries, num_bitmap, num_presence_map);
+        retrieve_bitmap_counts(dict_type, num_bitmap, num_presence_map);
         bool has_bitmap = num_bitmap > 0;
         bool has_presence_map = num_presence_map > 0;
 
@@ -994,16 +981,7 @@ namespace tuplex {
 
         // retrieve counts => i.e. how many fields are options? how many are maybe present?
         size_t field_count = 0, option_count = 0, maybe_count = 0;
-
-        for (auto entry: entries) {
-            bool is_always_present = std::get<2>(entry);
-            maybe_count += !is_always_present;
-            bool is_value_optional = std::get<1>(entry).isOptionType();
-            option_count += is_value_optional;
-
-            bool is_struct_type = std::get<1>(entry).isStructuredDictionaryType();
-            field_count += !is_struct_type; // only count non-struct dict fields. -> yet the nested struct types may change the maybe count for the bitmap!
-        }
+       std::tie(field_count, option_count, maybe_count) = struct_dict_get_counts(dict_type);
 
         size_t num_option_bitmap_bits = option_count; // multiples of 64bit
         size_t num_maybe_bitmap_bits = maybe_count;
@@ -1105,18 +1083,6 @@ namespace tuplex {
             bool is_null = false;
             bool is_present = struct_dict_field_present(indices, access_path, presence_map);
 
-            // std::cout<<"decoding "<<path_str<<" from field= "<<field_index<<" present= "<<std::boolalpha<<is_present<<std::endl;
-
-//            // check if the parent paths are all present
-//            access_path_t parent_path{access_path.begin(), access_path.() - 1};
-//            while(parent_path.size() > 0) {
-//                auto it = prefix_null_map.find(parent_path);
-//                if(it == prefix_null_map.end()) {
-//                    // calculate presence
-//                }
-//                parent_path = access_path_t(parent_path.begin(), parent_path.end() - 1);
-//            }
-
             // if not present, do not decode. But do inc field_index!
             if(!is_present) {
                 if(value_type.isOptionType())
@@ -1128,6 +1094,23 @@ namespace tuplex {
                 }
                 continue;
             }
+
+            // check for access path if any are in prefix_null_map. If so, skip.
+            // Note: this requires entries to be sorted properly after length!
+            access_path_t parent_path{access_path.begin(), access_path.end() - 1};
+            bool skip_access_path = false;
+            while(parent_path.size() > 0) {
+                auto it = prefix_null_map.find(parent_path);
+                if(it != prefix_null_map.end()) {
+                    if(!value_type.isSingleValued())
+                        field_index++;
+                    skip_access_path = true;
+                    break;
+                }
+                parent_path = access_path_t(parent_path.begin(), parent_path.end() - 1);
+            }
+            if(skip_access_path)
+                continue;
 
             // special case null: (--> same applies for constants as well...)
             if(value_type == python::Type::NULLVALUE) {
@@ -1167,23 +1150,6 @@ namespace tuplex {
                 } else
                     value_type = value_type.getReturnType();
             }
-
-            // check for access path if any are in prefix_null_map. If so, skip.
-            // Note: this requires entries to be sorted properly after length!
-            access_path_t parent_path{access_path.begin(), access_path.end() - 1};
-            bool skip_access_path = false;
-            while(parent_path.size() > 0) {
-                auto it = prefix_null_map.find(parent_path);
-                if(it != prefix_null_map.end()) {
-                    if(!value_type.isSingleValued())
-                        field_index++;
-                    skip_access_path = true;
-                    break;
-                }
-                parent_path = access_path_t(parent_path.begin(), parent_path.end() - 1);
-            }
-            if(skip_access_path)
-                continue;
 
             if(python::Type::EMPTYLIST != value_type && value_type.isListType()) {
                 // special case list.
@@ -1285,6 +1251,28 @@ namespace tuplex {
         return blocks;
     }
 
+    std::tuple<size_t, size_t, size_t> struct_dict_get_counts(const python::Type& dict_type) {
+        size_t field_count = 0, option_count = 0, maybe_count = 0;
+        flattened_struct_dict_entry_list_t entries;
+        flatten_recursive_helper(entries, dict_type, {});
+
+        for(auto entry : entries) {
+
+            // each entry is a full path pointing to an element.
+            auto access_path = std::get<0>(entry);
+            auto value_type = std::get<1>(entry);
+            bool is_always_present = std::get<2>(entry);
+
+            maybe_count += !is_always_present; // <-- checks whether this entry is always there.
+            bool is_value_optional = value_type.isOptionType();
+            option_count += is_value_optional;
+            bool is_struct_type = value_type.isStructuredDictionaryType();
+            field_count += !is_struct_type; // only count non-struct dict fields. -> yet the nested struct types may change the maybe count for the bitmap!
+        }
+
+        return std::make_tuple(field_count, option_count, maybe_count);
+    }
+
     size_t struct_dict_serialize_to(const python::Type& dict_type, const char* json_data, size_t json_data_size, uint8_t* ptr) {
         auto& logger = Logger::instance().logger("serializer");
         auto original_ptr = ptr;
@@ -1303,17 +1291,27 @@ namespace tuplex {
         // retrieve counts => i.e. how many fields are options? how many are maybe present?
         size_t field_count = 0, option_count = 0, maybe_count = 0;
 
+        std::tie(field_count, option_count, maybe_count) = struct_dict_get_counts(dict_type);
+
+
+        // convert items to bitmap, simply go over and check.
+        bitmap_entries = std::vector<bool>(option_count, true); // <-- set per default everything to null.
+        presence_map_entries = std::vector<bool>(maybe_count, false); // <-- same here as well.
+
         for(auto entry : entries) {
             auto access_path = std::get<0>(entry);
             auto value_type = std::get<1>(entry);
-
             bool is_always_present = std::get<2>(entry);
-            maybe_count += !is_always_present;
-            bool is_value_optional = value_type.isOptionType();
-            option_count += is_value_optional;
-            bool is_struct_type = value_type.isStructuredDictionaryType();
-            field_count += !is_struct_type; // only count non-struct dict fields. -> yet the nested struct types may change the maybe count for the bitmap!
 
+            // get indices
+            auto t_indices = indices.at(access_path);
+            auto path_str = json_access_path_to_string(access_path, value_type, is_always_present);
+            int bitmap_idx = -1, present_idx = -1, value_idx = -1, size_idx = -1;
+            std::tie(bitmap_idx, present_idx, value_idx, size_idx) = t_indices;
+
+            if(value_type.isOptionType()) {
+                assert(bitmap_idx >= 0);
+            }
 
             // is field present? --> add to fields to encode!
             // always stop at lists, tuples, ...
@@ -1321,19 +1319,23 @@ namespace tuplex {
                 auto element = get_struct_dict_field_by_path(json_data, json_data_size, access_path, value_type);
                 fields_to_encode_by_path[access_path] = element;
 
-                if(is_value_optional)
-                    bitmap_entries.push_back(element.isNull());
+               if(!element.isNull() && value_type.isOptionType()) {
+                 assert(bitmap_idx >= 0);
+                 bitmap_entries[bitmap_idx] = false;
+               }
 
-                if(!is_always_present)
-                    presence_map_entries.push_back(true);
+                if(!is_always_present) {
+                    assert(present_idx >= 0);
+                    presence_map_entries[present_idx] = true;
+                }
             } else {
-                if(!is_always_present)
-                    presence_map_entries.push_back(false);
+
             }
         }
 
-        // uncommnent for debugging:
-        logger.debug("found " + pluralize(fields_to_encode_by_path.size(), "field") + " to encode for type " + dict_type.desc());
+        // // uncommnent for debugging:
+        // logger.debug("found " + pluralize(fields_to_encode_by_path.size(), "field") + " to encode for type " + dict_type.desc());
+
 
         // some simple checks for integrity:
         assert(bitmap_entries.size() == option_count);
