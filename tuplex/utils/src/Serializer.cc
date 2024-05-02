@@ -908,7 +908,7 @@ namespace tuplex {
                     continue;
                 }
 
-                // append tuple
+                // append struct dict.
                 auto currStruct = l.getField(listIndex);
                 auto struct_serialized_length = struct_dict_get_size(currStruct);
                 assert(ptr - original_ptr + struct_serialized_length <= capacity_left);
@@ -1056,6 +1056,43 @@ namespace tuplex {
                         *((double*)ptr) = l.getField(i).getDouble();
                     }
                     ptr += sizeof(uint64_t);
+                }
+            } else if(underlyingElementType.isStructuredDictionaryType()) {
+
+                uint8_t *varLenOffsetAddr = ptr;
+                // skip #elements * 8 bytes as placeholder for offsets
+                auto offsetBytes = l.numElements() * sizeof(uint64_t);
+                ptr += offsetBytes;
+
+                for (size_t listIndex = 0; listIndex < l.numElements(); ++listIndex) {
+                    if(l.getField(listIndex).isNull()) {
+                        bitmapV.push_back(true);
+                    } else {
+                        bitmapV.push_back(false);
+                        // write offset to placeholder
+                        uint64_t currOffset = (uintptr_t)ptr - (uintptr_t)varLenOffsetAddr;
+                        auto* info_ptr = (uint64_t*)varLenOffsetAddr;
+
+                        // increment varLenOffsetAddr by 8
+                        varLenOffsetAddr += sizeof(uint64_t);
+
+                        // skip None entries, but set offset to 0
+                        if(bitmapSize != 0 && l.getField(listIndex).isNull()) {
+                            *info_ptr = 0;
+                            continue;
+                        }
+
+                        // append struct dict.
+                        auto currStruct = l.getField(listIndex).withoutOption();
+                        auto struct_serialized_length = struct_dict_get_size(currStruct);
+                        assert(ptr - original_ptr + struct_serialized_length <= capacity_left);
+                        auto size = struct_dict_serialize_to(currStruct, ptr);
+                        assert(size == struct_serialized_length);
+
+                        *info_ptr = pack_offset_and_size(currOffset, size); // <-- store current offset, which is required to decode properly.
+                        ptr += struct_serialized_length;
+                    }
+
                 }
             } else {
                 throw std::runtime_error(

@@ -676,6 +676,27 @@ TEST_F(ListFunctions, ListOfNestedOptionStructsSerialize) {
     EXPECT_EQ(d_r.toPythonString(), r.toPythonString());
 }
 
+TEST_F(ListFunctions, ListOfNestedOptionStructsSerializeII) {
+    using namespace tuplex;
+    List test_list(parse_json_to_struct_dict("{\"a\":null}"), Field::null(), parse_json_to_struct_dict("{\"a\":{\"b\":{\"c\":null}}}"), parse_json_to_struct_dict("{\"a\":{\"b\":{\"c\":{\"d\":null}}}}"), parse_json_to_struct_dict("{\"a\":{\"b\":{\"c\":{\"d\":{\"e\":{\"f\":42}}}}}}"));
+
+    uint8_t buffer[5000];
+    memset(buffer, 0, 5000);
+    Row r((test_list));
+
+    // 8 bytes offset | 8 bytes varlen | 8 bytes list, 3 * 8 byte offsets/size + 3 * 24 for tuples
+    // 24 + 24 + 3 * 24 = 5 * 24 = 100 + 20 = 1
+    auto serialized_size = r.serializedLength(); // should be 72.
+    auto ans_size = r.serializeToMemory(buffer, 5000);
+    EXPECT_EQ(ans_size, serialized_size);
+    EXPECT_EQ(ans_size, 232);
+
+    // now deserialize & check
+    auto d_r = Row::fromMemory(r.getSchema(), buffer, 5000);
+
+    EXPECT_EQ(d_r.toPythonString(), r.toPythonString());
+}
+
 
 TEST_F(ListFunctions, ListOf3Elements) {
     using namespace tuplex;
@@ -722,18 +743,18 @@ TEST_F(ListFunctions, ListOf3Elements) {
 //        List(parse_json_to_struct_dict("{\"e\":[1,2,3,4]}"), parse_json_to_struct_dict("{\"e\":[3,4]}")),
 //        List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":null}")),
 //        List(parse_json_to_struct_dict("{\"a\":10,\"b\":\"this is a test string\",\"c\":null,\"d\":109,\"e\":[1,2,3,4]}"), parse_json_to_struct_dict("{\"a\":40,\"b\":\"string\",\"c\":3,\"d\":109,\"e\":[3,4]}")),
-//        // list of list of structured dicts
+//        // list of lists of structured dicts
 //        List(List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":null}")), List(parse_json_to_struct_dict("{\"a\":null}")), List(), List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":42}"))),
 //        List(parse_json_to_struct_dict("{\"a\":null,\"b\":21,\"c\":null}"),parse_json_to_struct_dict("{\"a\":\"test string\",\"b\":20,\"c\":{\"a\":10,\"b\":\"test\"}}")), // nested with option
 //        List(parse_json_to_struct_dict("{\"a\":\"test string\",\"b\":20,\"c\":{\"a\":10,\"b\":\"test\"}}"), parse_json_to_struct_dict("{\"a\":null,\"b\":21,\"c\":{\"a\":99,\"b\":\"7x\"}}")), // nested without option
 //        // Example of deeply nested struct dict with options/no options to make sure everything is correct.
-        List(parse_json_to_struct_dict("{\"a\":null}"), parse_json_to_struct_dict("{\"a\":{\"b\":{\"c\":null}}}"), parse_json_to_struct_dict("{\"a\":{\"b\":{\"c\":{\"d\":null}}}}"), parse_json_to_struct_dict("{\"a\":{\"b\":{\"c\":{\"d\":{\"e\":{\"f\":42}}}}}}")),
+//        List(parse_json_to_struct_dict("{\"a\":null}"), parse_json_to_struct_dict("{\"a\":{\"b\":{\"c\":null}}}"), parse_json_to_struct_dict("{\"a\":{\"b\":{\"c\":{\"d\":null}}}}"), parse_json_to_struct_dict("{\"a\":{\"b\":{\"c\":{\"d\":{\"e\":{\"f\":42}}}}}}")),
+        List(parse_json_to_struct_dict("{\"a\":null}"), Field::null(), parse_json_to_struct_dict("{\"a\":{\"b\":{\"c\":null}}}"), parse_json_to_struct_dict("{\"a\":{\"b\":{\"c\":{\"d\":null}}}}"), parse_json_to_struct_dict("{\"a\":{\"b\":{\"c\":{\"d\":{\"e\":{\"f\":42}}}}}}")),
 //        // list of tuples
 //        List(Tuple(1, 2, 3), Tuple(4,5,6), Tuple(7,8,9)),
 //        List(Tuple(1, "test", 3.78), Tuple(4,"",Field::null()), Tuple(7,"abcdef",-9.99)),
-//        // @TODO: need to make sure list of tuples (homogenous/non-homogenous also works)
-//        // options of other complex compound objects.
-//        // @TODO
+//        List(Tuple(1, 2, 3), Field::null(), Tuple(4,5,6), Tuple(7,8,9), Field::null()),
+//        List(Tuple(1, "test", 3.78), Tuple(4,"",Field::null()), Field::null(), Tuple(7,"abcdef",-9.99)),
     };
 
     auto ctx_options = microTestOptions();
