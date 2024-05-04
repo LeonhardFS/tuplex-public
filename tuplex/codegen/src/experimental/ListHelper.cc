@@ -539,6 +539,8 @@ namespace tuplex {
                     return ret;
                 }
 
+                env.printValue(builder, idx, "list load value of type " + element_type.desc() + " index: ");
+                env.printValue(builder, ret.is_null, "list load value of type " + element_type.desc() + " is null: ");
 
                 // special case: data ptr of List is heap-allocated struct dict pointers. Hence, use heap here
                 auto llvm_value_type = env.pythonToLLVMType(element_type.withoutOption());
@@ -547,6 +549,8 @@ namespace tuplex {
                 llvm::Value* data_entry = nullptr;
                 if(element_type.withoutOption().isStructuredDictionaryType() || element_type.withoutOption().isListType())
                     data_entry = builder.CreateLoad(llvm_value_type->getPointerTo(), builder.CreateGEP(llvm_value_type->getPointerTo(), data_ptr, idx));
+
+                env.printValue(builder, data_entry, "loaded struct dict pointer is: ");
 
                 ret.val = data_entry;
                 assert(ret.val->getType()->isPointerTy());
@@ -1173,21 +1177,57 @@ namespace tuplex {
 
                 auto element_type = list_type.elementType();
 
-                assert(element_type.isStructuredDictionaryType());
+                assert(element_type.withoutOption().isStructuredDictionaryType());
 
                 auto llvm_list_type = env.createOrGetListType(list_type);
                 auto ptr_values = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, 2);
-
-                std::cout<<"ptr_values type name: "<<env.getLLVMTypeName(ptr_values->getType())<<std::endl;
                 auto llvm_list_element_type = env.pythonToLLVMType(list_type.elementType().withoutOption());
-                std::cout<<"type name: "<<env.getLLVMTypeName(llvm_list_element_type)<<std::endl;
-                std::cout<<"type name: "<<env.getLLVMTypeName(llvm_list_type->getStructElementType(2))<<std::endl;
 
+                env.printValue(builder, index, "---> computing struct size of element of type " + element_type.desc() + " for index: ");
+
+                // blocks for option decode with if.
+                llvm::BasicBlock* bBlockBeforeItemDecode = nullptr;
+                llvm::BasicBlock* bBlockDecodeDone = nullptr;
+                // special case: element_type is option type: check if NULL
+                if(element_type.isOptionType()) {
+                    auto struct_bitmap_index = llvm_list_type->getStructNumElements() - 1;
+                    assert(struct_bitmap_index == 3);
+                    auto nullmap_ptr = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, struct_bitmap_index);
+                    assert(nullmap_ptr);
+
+                    // in deserialize, best to store nullptr for this...
+                    llvm::Value* is_null = builder.CreateLoad(builder.getInt8Ty(), builder.CreateGEP(builder.getInt8Ty(), nullmap_ptr, index));
+                    is_null = builder.CreateICmpNE(is_null, env.i8Const(0));
+
+                    env.printValue(builder, is_null, "is list element null: ");
+
+                    auto bBlockDecode = llvm::BasicBlock::Create(builder.getContext(), "decode_list_of_struct_dict_item", builder.GetInsertBlock()->getParent());
+                    bBlockDecodeDone = llvm::BasicBlock::Create(builder.getContext(), "decode_list_of_struct_dict_item_done", builder.GetInsertBlock()->getParent());
+                    bBlockBeforeItemDecode = builder.GetInsertBlock();
+                    builder.CreateCondBr(is_null, bBlockDecodeDone, bBlockDecode);
+                    builder.SetInsertPoint(bBlockDecode);
+                }
+
+
+                env.debugPrint(builder, "element is not null, computing size: ");
                 auto item_idx = builder.CreateGEP(llvm_list_element_type->getPointerTo(), ptr_values, index);
                 auto item = builder.CreateLoad(llvm_list_element_type->getPointerTo(), item_idx);
                 // old:
                 //auto item = builder.CreateLoad(llvm_list_element_type, ptr_values, index);
-                auto item_size = struct_dict_serialized_memory_size(env, builder, item, element_type).val;
+                auto item_size = struct_dict_serialized_memory_size(env, builder, item, element_type.withoutOption()).val;
+
+                if(element_type.isOptionType()) {
+                    // end with phi block.
+                    auto lastBlock = builder.GetInsertBlock();
+                    builder.CreateBr(bBlockDecodeDone);
+
+                    builder.SetInsertPoint(bBlockDecodeDone);
+                    auto phi_size = builder.CreatePHI(builder.getInt64Ty(), 2);
+                    phi_size->addIncoming(item_size, lastBlock);
+                    phi_size->addIncoming(env.i64Const(0), bBlockBeforeItemDecode);
+                    item_size = phi_size;
+                }
+
 
                 return item_size;
             };
@@ -2201,14 +2241,14 @@ namespace tuplex {
 
             assert(list_type.isListType());
             auto element_type = list_type.elementType();
-            assert(element_type.isStructuredDictionaryType());
+            assert(element_type.withoutOption().isStructuredDictionaryType());
 
             // this var can be eliminated --> put this logic into func?
             auto acc_size_var = env.CreateFirstBlockAlloca(builder, builder.getInt64Ty());
             builder.CreateStore(env.i64Const(0), acc_size_var);
 
             auto llvm_list_type = env.createOrGetListType(list_type);
-            auto llvm_list_element_type = env.getOrCreateStructuredDictType(element_type);
+            auto llvm_list_element_type = env.getOrCreateStructuredDictType(element_type.withoutOption());
             auto offset_ptr = builder.CreateBitCast(ptr, env.i64ptrType()); // get pointer to i64 serialized array of offsets
             auto& context = env.getContext();
 
@@ -2235,13 +2275,44 @@ namespace tuplex {
             builder.CreateCondBr(loopNotDone, loopBody, after);
 
             builder.SetInsertPoint(loopBody);
+
+            auto i = builder.CreateLoad(builder.getInt64Ty(), loopCounter);
+
             // store the pointer to the string
             auto current_offset_ptr = builder.CreateGEP(builder.getInt64Ty(),
                                                         offset_ptr,
-                                                        builder.CreateLoad(builder.getInt64Ty(), loopCounter));
+                                                        i);
             auto current_offset = builder.CreateLoad(builder.getInt64Ty(),
                                                      current_offset_ptr);
             auto next_struct_ptr = builder.CreateGEP(llvm_list_element_type->getPointerTo(), list_arr_malloc, builder.CreateLoad(builder.getInt64Ty(), loopCounter));
+
+            llvm::Value* is_null = nullptr;
+            if(element_type.isOptionType()) {
+                auto nullmap_index = llvm_list_type->getStructNumElements() - 1;
+                auto nullmap_ptr = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, nullmap_index);
+                is_null = builder.CreateLoad(builder.getInt8Ty(), builder.CreateGEP(builder.getInt8Ty(), nullmap_ptr, i));
+                assert(is_null->getType() == env.i8Type());
+                is_null = builder.CreateICmpNE(is_null, env.i8Const(0));
+                env.printValue(builder, is_null, "is list element to deserialize None: ");
+            }
+
+
+            BasicBlock* bbDecodeNonNull = nullptr;
+            BasicBlock* bbDecodeDone = nullptr;
+            if(is_null) {
+                // create blocks
+                auto& ctx = builder.getContext();
+                bbDecodeNonNull = BasicBlock::Create(ctx, "decode_struct_dict_in_list", builder.GetInsertBlock()->getParent());
+                auto bbDecodeAsNull = BasicBlock::Create(ctx, "decode_null_in_list", builder.GetInsertBlock()->getParent());
+                bbDecodeDone = BasicBlock::Create(ctx, "decode_struct_dict_in_list_done", builder.GetInsertBlock()->getParent());
+                builder.CreateCondBr(is_null, bbDecodeAsNull, bbDecodeNonNull);
+
+                builder.SetInsertPoint(bbDecodeAsNull);
+                // store nullptr.
+                builder.CreateStore(env.nullConstant(llvm_list_element_type->getPointerTo()), next_struct_ptr);
+                builder.CreateBr(bbDecodeDone);
+                builder.SetInsertPoint(bbDecodeNonNull);
+            }
 
             llvm::Value* offset=nullptr; llvm::Value *size=nullptr;
             std::tie(offset, size) = unpack_offset_and_size(builder, current_offset);
@@ -2252,7 +2323,7 @@ namespace tuplex {
             env.printValue(builder, builder.CreateLoad(builder.getInt64Ty(), loopCounter), "deserializing " + element_type.desc() + " at list position: ");
 
             // decode into rtmalloced pointer & store
-            auto dict_ptr = struct_dict_deserialize_from_memory(env, builder, serialized_struct_ptr, element_type, true);
+            auto dict_ptr = struct_dict_deserialize_from_memory(env, builder, serialized_struct_ptr, element_type.withoutOption(), true);
 
             // old: when not using struct_dict** in list, but rather struct_dict*.
             // auto dict = builder.CreateLoad(llvm_list_element_type, dict_ptr.val);
@@ -2260,6 +2331,12 @@ namespace tuplex {
 
             // new:
             builder.CreateStore(dict_ptr.val, next_struct_ptr); // <-- MUST BE heap allocated.
+
+            // if isnull, connect block!
+            if(is_null) {
+                builder.CreateBr(bbDecodeDone);
+                builder.SetInsertPoint(bbDecodeDone);
+            }
 
             builder.CreateBr(loopBodyEnd);
 

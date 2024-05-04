@@ -454,6 +454,8 @@ namespace tuplex {
             using namespace llvm;
             using namespace std;
 
+            _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Serializing flattened tuple of type " + _flattenedTupleType.desc() + " to memory.");
+
             auto& context = _env->getContext();
             auto types = getFieldTypes();
             auto tuple_type = python::Type::makeTupleType(types);

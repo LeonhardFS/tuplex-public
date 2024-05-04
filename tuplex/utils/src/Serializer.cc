@@ -1067,6 +1067,11 @@ namespace tuplex {
                 for (size_t listIndex = 0; listIndex < l.numElements(); ++listIndex) {
                     if(l.getField(listIndex).isNull()) {
                         bitmapV.push_back(true);
+                        auto* info_ptr = (uint64_t*)varLenOffsetAddr;
+                        *info_ptr = 0;
+                        // increment varLenOffsetAddr by 8
+                        varLenOffsetAddr += sizeof(uint64_t);
+                        assert(bitmapSize != 0);
                     } else {
                         bitmapV.push_back(false);
                         // write offset to placeholder
@@ -1075,12 +1080,6 @@ namespace tuplex {
 
                         // increment varLenOffsetAddr by 8
                         varLenOffsetAddr += sizeof(uint64_t);
-
-                        // skip None entries, but set offset to 0
-                        if(bitmapSize != 0 && l.getField(listIndex).isNull()) {
-                            *info_ptr = 0;
-                            continue;
-                        }
 
                         // append struct dict.
                         auto currStruct = l.getField(listIndex).withoutOption();
@@ -1998,6 +1997,18 @@ namespace tuplex {
                             std::tie(el_offset, el_size) = unpack_offset_and_size_from_value(*(uint64_t*)ptr);
                             els.emplace_back(Field(option<List>(getListHelper(underlyingElType, ptr + el_offset))));
                         }
+                    }
+                    ptr += sizeof(uint64_t);
+                }
+            } else if(underlyingElType.isStructuredDictionaryType()) {
+                // read each struct dict if serialized.
+                for (size_t i = 0; i < numElements; i++) {
+                    if(bitmapV[i]) {
+                        // is None
+                        els.emplace_back(Field::null(elType));
+                    } else {
+                        std::tie(el_offset, el_size) = unpack_offset_and_size_from_value(*(uint64_t*)ptr);
+                        els.emplace_back(getStructuredDictionaryHelper(underlyingElType, ptr + el_offset, el_size).makeOptional());
                     }
                     ptr += sizeof(uint64_t);
                 }
