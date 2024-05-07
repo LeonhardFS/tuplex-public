@@ -1308,7 +1308,7 @@ namespace tuplex {
         FlattenedTuple get_tuple_item(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, const python::Type& list_type, llvm::Value* index) {
 
             assert(index && index->getType() == env.i64Type());
-            auto element_type = list_type.elementType();
+            auto element_type = list_type.elementType().withoutOption();
             assert(element_type.isTupleType());
 
 
@@ -1356,18 +1356,58 @@ namespace tuplex {
         llvm::Value* list_of_tuples_size(LLVMEnvironment& env, const IRBuilder& builder,
                                          llvm::Value* list_ptr, const python::Type& list_type) {
 
-            auto f_tuple_element_size = [list_type](LLVMEnvironment& env, const IRBuilder& builder,
-                    llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
-                auto element_type = list_type.elementType();
+            auto f_tuple_element_size = [list_type](LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
+                assert(index && index->getType() == env.i64Type());
+
+                auto element_type = list_type.elementType().withoutOption();
                 assert(element_type.isTupleType());
+
+                auto llvm_list_type = env.createOrGetListType(list_type);
 
                 if(python::Type::EMPTYTUPLE == element_type)
                     return env.i64Const(0);
+
+                // if optional, load isnull from bitmap
+                llvm::Value* is_null = nullptr;
+                llvm::BasicBlock* bbSerializeTuple = nullptr;
+                llvm::BasicBlock* bbSerializeDone = nullptr;
+                llvm::BasicBlock* bbLastBlock = nullptr;
+                if(list_type.elementType().isOptionType()) {
+                    auto struct_bitmap_index = llvm_list_type->getStructNumElements() - 1;
+                    assert(struct_bitmap_index == 3);
+                    auto nullmap_ptr = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, struct_bitmap_index);
+                    assert(nullmap_ptr);
+
+                    // in deserialize, best to store nullptr for this...
+                    auto is_null_bitmap = builder.CreateLoad(builder.getInt8Ty(), builder.CreateGEP(builder.getInt8Ty(), nullmap_ptr, index));
+                    is_null = builder.CreateICmpNE(is_null_bitmap, env.i8Const(0));
+
+                    env.printValue(builder, is_null, element_type.desc() + ", isnull: ");
+
+                    auto& ctx = builder.getContext();
+                    bbSerializeTuple = llvm::BasicBlock::Create(ctx, "serialize_tuple_item_size", builder.GetInsertBlock()->getParent());
+                    bbSerializeDone = llvm::BasicBlock::Create(ctx, "serialize_tuple_done_size", builder.GetInsertBlock()->getParent());
+                    bbLastBlock = builder.GetInsertBlock();
+                    builder.CreateCondBr(is_null, bbSerializeDone, bbSerializeTuple);
+                    builder.SetInsertPoint(bbSerializeTuple);
+                }
 
                 auto ft = get_tuple_item(env, builder, list_ptr, list_type, index);
 
                 // get size
                 auto item_size = ft.getSize(builder);
+
+                if(is_null) {
+                    auto bbCurrentBlock= builder.GetInsertBlock();
+                    builder.CreateBr(bbSerializeDone);
+
+                    builder.SetInsertPoint(bbSerializeDone);
+                    auto phi_size = builder.CreatePHI(env.i64Type(), 2);
+                    phi_size->addIncoming(env.i64Const(0), bbLastBlock);
+                    phi_size->addIncoming(item_size, bbCurrentBlock);
+                    item_size = phi_size;
+                }
+
                 return item_size;
             };
 
@@ -1613,16 +1653,55 @@ namespace tuplex {
             auto f_tuple_element_size = [list_type](LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* list_ptr, llvm::Value* index) -> llvm::Value* {
                 assert(index && index->getType() == env.i64Type());
 
-                auto element_type = list_type.elementType();
+                auto element_type = list_type.elementType().withoutOption();
                 assert(element_type.isTupleType());
+
+                auto llvm_list_type = env.createOrGetListType(list_type);
 
                 if(python::Type::EMPTYTUPLE == element_type)
                     return env.i64Const(0);
+
+                // if optional, load isnull from bitmap
+                llvm::Value* is_null = nullptr;
+                llvm::BasicBlock* bbSerializeTuple = nullptr;
+                llvm::BasicBlock* bbSerializeDone = nullptr;
+                llvm::BasicBlock* bbLastBlock = nullptr;
+                if(list_type.elementType().isOptionType()) {
+                    auto struct_bitmap_index = llvm_list_type->getStructNumElements() - 1;
+                    assert(struct_bitmap_index == 3);
+                    auto nullmap_ptr = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, struct_bitmap_index);
+                    assert(nullmap_ptr);
+
+                    // in deserialize, best to store nullptr for this...
+                    auto is_null_bitmap = builder.CreateLoad(builder.getInt8Ty(), builder.CreateGEP(builder.getInt8Ty(), nullmap_ptr, index));
+                    is_null = builder.CreateICmpNE(is_null_bitmap, env.i8Const(0));
+
+                    env.printValue(builder, is_null, element_type.desc() + ", isnull: ");
+
+                    auto& ctx = builder.getContext();
+                    bbSerializeTuple = llvm::BasicBlock::Create(ctx, "serialize_tuple_item_size", builder.GetInsertBlock()->getParent());
+                    bbSerializeDone = llvm::BasicBlock::Create(ctx, "serialize_tuple_done_size", builder.GetInsertBlock()->getParent());
+                    bbLastBlock = builder.GetInsertBlock();
+                    builder.CreateCondBr(is_null, bbSerializeDone, bbSerializeTuple);
+                    builder.SetInsertPoint(bbSerializeTuple);
+                }
 
                 auto ft = get_tuple_item(env, builder, list_ptr, list_type, index);
 
                 // get size
                 auto item_size = ft.getSize(builder);
+
+                if(is_null) {
+                    auto bbCurrentBlock= builder.GetInsertBlock();
+                    builder.CreateBr(bbSerializeDone);
+
+                    builder.SetInsertPoint(bbSerializeDone);
+                    auto phi_size = builder.CreatePHI(env.i64Type(), 2);
+                    phi_size->addIncoming(env.i64Const(0), bbLastBlock);
+                    phi_size->addIncoming(item_size, bbCurrentBlock);
+                    item_size = phi_size;
+                }
+
                 return item_size;
             };
 
@@ -1633,8 +1712,36 @@ namespace tuplex {
 
                 auto element_type = list_type.elementType();
 
+                auto llvm_list_type = env.createOrGetListType(list_type);
+
                 if(python::Type::EMPTYTUPLE == element_type)
                     return env.i64Const(0);
+
+
+                // if optional, load isnull from bitmap
+                llvm::Value* is_null = nullptr;
+                llvm::BasicBlock* bbSerializeTuple = nullptr;
+                llvm::BasicBlock* bbSerializeDone = nullptr;
+                llvm::BasicBlock* bbLastBlock = nullptr;
+                if(list_type.elementType().isOptionType()) {
+                    auto struct_bitmap_index = llvm_list_type->getStructNumElements() - 1;
+                    assert(struct_bitmap_index == 3);
+                    auto nullmap_ptr = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, struct_bitmap_index);
+                    assert(nullmap_ptr);
+
+                    // in deserialize, best to store nullptr for this...
+                    auto is_null_bitmap = builder.CreateLoad(builder.getInt8Ty(), builder.CreateGEP(builder.getInt8Ty(), nullmap_ptr, index));
+                    is_null = builder.CreateICmpNE(is_null_bitmap, env.i8Const(0));
+
+                    env.printValue(builder, is_null, element_type.desc() + ", isnull: ");
+
+                    auto& ctx = builder.getContext();
+                    bbSerializeTuple = llvm::BasicBlock::Create(ctx, "serialize_tuple_item", builder.GetInsertBlock()->getParent());
+                    bbSerializeDone = llvm::BasicBlock::Create(ctx, "serialize_tuple_done", builder.GetInsertBlock()->getParent());
+                    bbLastBlock = builder.GetInsertBlock();
+                    builder.CreateCondBr(is_null, bbSerializeDone, bbSerializeTuple);
+                    builder.SetInsertPoint(bbSerializeTuple);
+                }
 
                 auto ft = get_tuple_item(env, builder, list_ptr, list_type, index);
 
@@ -1642,6 +1749,20 @@ namespace tuplex {
                 ft.print(builder);
                 auto s_size = ft.serialize(builder, dest_ptr);
                 env.printValue(builder, s_size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " serialized size of " + element_type.desc() + " is: ");
+
+
+
+                if(is_null) {
+                    auto bbCurrentBlock= builder.GetInsertBlock();
+                    builder.CreateBr(bbSerializeDone);
+
+                    builder.SetInsertPoint(bbSerializeDone);
+                    auto phi_size = builder.CreatePHI(env.i64Type(), 2);
+                    phi_size->addIncoming(env.i64Const(0), bbLastBlock);
+                    phi_size->addIncoming(s_size, bbCurrentBlock);
+                    s_size = phi_size;
+                }
+
                 return s_size;
             };
 
@@ -2216,7 +2337,7 @@ namespace tuplex {
             } else if(elementType.isStructuredDictionaryType()) {
                 size_in_bytes = list_of_structs_serialize_to(env, builder, list_ptr, original_list_type, dest_ptr);
             } else if(elementType.isTupleType()) {
-                size_in_bytes = list_of_tuples_serialize_to(env, builder, list_ptr, list_type, dest_ptr);
+                size_in_bytes = list_of_tuples_serialize_to(env, builder, list_ptr, original_list_type, dest_ptr);
             } else if(elementType.isListType()) {
                 size_in_bytes = list_of_lists_serialize_to(env, builder, list_ptr, original_list_type, dest_ptr);
             } else if(elementType == python::Type::GENERICDICT) {

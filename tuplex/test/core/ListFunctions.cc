@@ -706,55 +706,55 @@ TEST_F(ListFunctions, ListOf3Elements) {
 
     // use arbitrary elements & then access
     std::vector<List> test_lists{
-//        // primitive objects
-//        List(1, 2, 3),
-//        List(true, false, true),
-//        List("abc", "", "def"),
-//        List(2.7, -9.0, 9999.99),
-//        List(Field::null(), Field::null(), Field::null()),
-//        List(List(), List(), List()),
-//        List(Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)),
-//        // compound objects
-//        // options of primitives
-//        List(Field((int64_t)42), Field::null(), Field::null(), Field((int64_t)37)),
-//        List(Field::null(), Field::null(), Field(3.256)),
-//        List(Field(false), Field(true), Field::null(), Field(false)),
-//        List(Field("this is a test string"), Field::null(), Field("another test string")),
-//        List(List(), Field::null(), List()),
-//        List(Field::null(), Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)), // <-- error
-//        // list of lists
-//        List(List(), List(1, 2, 5, 6, 3, 2), List(3, 4), List(8), List(), List(4, 3, 69, -20)),
-//        List(List(3.7, -46.0), List(8.986), List(), List(-4.0, 3.3, 69.3, -20.0)),
-//        List(List("a", "b", "c"), List()),
-//        List(List("need to", " perform ", " some testing here")),
-//        List(List("need to", " perform ", " some testing here"), List("tuplex rocks")),
-//        List(List("need to", " perform ", " some testing here"), List("tuplex rocks"), List("a", "b", "c", "d", "e", "f", "g", "h", "i", "j"), List(), List("this is a very long string!"), List("abc", "", "def")),
-//        // list of lists with options.
-//        List(List("a", Field::null()), List("b")),
-//        List(List("a", Field::null()), List(Field::null()), List("a", "b", "c")),
-//        List(List(1, 2, 3), List(4, Field::null(), 6)),
-//        List(Field::null(), List(1, 2, 3)), // List[Option[List[i64]]]
-//        List(List(1, 3), Field::null(), List(2, Field::null())), // List[Option[List[Option[i64]]]]
-//        // triple nested list
-//        List(List(List(1, 2), List(4)), List(List(4), List(5, 6))),
-//        // list of structured dicts
-//        List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":20}")),
-//        List(parse_json_to_struct_dict("{\"a\":\"test string\",\"b\":20}"), parse_json_to_struct_dict("{\"a\":null,\"b\":21}")),
-//        List(parse_json_to_struct_dict("{\"e\":[1,2,3,4]}"), parse_json_to_struct_dict("{\"e\":[3,4]}")),
-//        List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":null}")),
-//        List(parse_json_to_struct_dict("{\"a\":10,\"b\":\"this is a test string\",\"c\":null,\"d\":109,\"e\":[1,2,3,4]}"), parse_json_to_struct_dict("{\"a\":40,\"b\":\"string\",\"c\":3,\"d\":109,\"e\":[3,4]}")),
-//        // list of lists of structured dicts
-//        List(List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":null}")), List(parse_json_to_struct_dict("{\"a\":null}")), List(), List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":42}"))),
-//        List(parse_json_to_struct_dict("{\"a\":null,\"b\":21,\"c\":null}"),parse_json_to_struct_dict("{\"a\":\"test string\",\"b\":20,\"c\":{\"a\":10,\"b\":\"test\"}}")), // nested with option
-//        List(parse_json_to_struct_dict("{\"a\":\"test string\",\"b\":20,\"c\":{\"a\":10,\"b\":\"test\"}}"), parse_json_to_struct_dict("{\"a\":null,\"b\":21,\"c\":{\"a\":99,\"b\":\"7x\"}}")), // nested without option
-//        // Example of deeply nested struct dict with options/no options to make sure everything is correct.
-//        List(parse_json_to_struct_dict("{\"a\":null}"), parse_json_to_struct_dict("{\"a\":{\"b\":{\"c\":null}}}"), parse_json_to_struct_dict("{\"a\":{\"b\":{\"c\":{\"d\":null}}}}"), parse_json_to_struct_dict("{\"a\":{\"b\":{\"c\":{\"d\":{\"e\":{\"f\":42}}}}}}")),
+        // primitive objects
+        List(1, 2, 3),
+        List(true, false, true),
+        List("abc", "", "def"),
+        List(2.7, -9.0, 9999.99),
+        List(Field::null(), Field::null(), Field::null()),
+        List(List(), List(), List()),
+        List(Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)),
+        // compound objects
+        // options of primitives
+        List(Field((int64_t)42), Field::null(), Field::null(), Field((int64_t)37)),
+        List(Field::null(), Field::null(), Field(3.256)),
+        List(Field(false), Field(true), Field::null(), Field(false)),
+        List(Field("this is a test string"), Field::null(), Field("another test string")),
+        List(List(), Field::null(), List()),
+        List(Field::null(), Field::from_str_data("{}", python::Type::GENERICDICT), Field::from_str_data("{\"a\":42}", python::Type::GENERICDICT)), // <-- error
+        // list of lists
+        List(List(), List(1, 2, 5, 6, 3, 2), List(3, 4), List(8), List(), List(4, 3, 69, -20)),
+        List(List(3.7, -46.0), List(8.986), List(), List(-4.0, 3.3, 69.3, -20.0)),
+        List(List("a", "b", "c"), List()),
+        List(List("need to", " perform ", " some testing here")),
+        List(List("need to", " perform ", " some testing here"), List("tuplex rocks")),
+        List(List("need to", " perform ", " some testing here"), List("tuplex rocks"), List("a", "b", "c", "d", "e", "f", "g", "h", "i", "j"), List(), List("this is a very long string!"), List("abc", "", "def")),
+        // list of lists with options.
+        List(List("a", Field::null()), List("b")),
+        List(List("a", Field::null()), List(Field::null()), List("a", "b", "c")),
+        List(List(1, 2, 3), List(4, Field::null(), 6)),
+        List(Field::null(), List(1, 2, 3)), // List[Option[List[i64]]]
+        List(List(1, 3), Field::null(), List(2, Field::null())), // List[Option[List[Option[i64]]]]
+        // triple nested list
+        List(List(List(1, 2), List(4)), List(List(4), List(5, 6))),
+        // list of structured dicts
+        List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":20}")),
+        List(parse_json_to_struct_dict("{\"a\":\"test string\",\"b\":20}"), parse_json_to_struct_dict("{\"a\":null,\"b\":21}")),
+        List(parse_json_to_struct_dict("{\"e\":[1,2,3,4]}"), parse_json_to_struct_dict("{\"e\":[3,4]}")),
+        List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":null}")),
+        List(parse_json_to_struct_dict("{\"a\":10,\"b\":\"this is a test string\",\"c\":null,\"d\":109,\"e\":[1,2,3,4]}"), parse_json_to_struct_dict("{\"a\":40,\"b\":\"string\",\"c\":3,\"d\":109,\"e\":[3,4]}")),
+        // list of lists of structured dicts
+        List(List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":null}")), List(parse_json_to_struct_dict("{\"a\":null}")), List(), List(parse_json_to_struct_dict("{\"a\":10}"), parse_json_to_struct_dict("{\"a\":42}"))),
+        List(parse_json_to_struct_dict("{\"a\":null,\"b\":21,\"c\":null}"),parse_json_to_struct_dict("{\"a\":\"test string\",\"b\":20,\"c\":{\"a\":10,\"b\":\"test\"}}")), // nested with option
+        List(parse_json_to_struct_dict("{\"a\":\"test string\",\"b\":20,\"c\":{\"a\":10,\"b\":\"test\"}}"), parse_json_to_struct_dict("{\"a\":null,\"b\":21,\"c\":{\"a\":99,\"b\":\"7x\"}}")), // nested without option
+        // Example of deeply nested struct dict with options/no options to make sure everything is correct.
+        List(parse_json_to_struct_dict("{\"a\":null}"), parse_json_to_struct_dict("{\"a\":{\"b\":{\"c\":null}}}"), parse_json_to_struct_dict("{\"a\":{\"b\":{\"c\":{\"d\":null}}}}"), parse_json_to_struct_dict("{\"a\":{\"b\":{\"c\":{\"d\":{\"e\":{\"f\":42}}}}}}")),
         List(parse_json_to_struct_dict("{\"a\":null}"), Field::null(), parse_json_to_struct_dict("{\"a\":{\"b\":{\"c\":null}}}"), parse_json_to_struct_dict("{\"a\":{\"b\":{\"c\":{\"d\":null}}}}"), parse_json_to_struct_dict("{\"a\":{\"b\":{\"c\":{\"d\":{\"e\":{\"f\":42}}}}}}")),
-//        // list of tuples
-//        List(Tuple(1, 2, 3), Tuple(4,5,6), Tuple(7,8,9)),
-//        List(Tuple(1, "test", 3.78), Tuple(4,"",Field::null()), Tuple(7,"abcdef",-9.99)),
-//        List(Tuple(1, 2, 3), Field::null(), Tuple(4,5,6), Tuple(7,8,9), Field::null()),
-//        List(Tuple(1, "test", 3.78), Tuple(4,"",Field::null()), Field::null(), Tuple(7,"abcdef",-9.99)),
+        // list of tuples
+        List(Tuple(1, 2, 3), Tuple(4,5,6), Tuple(7,8,9)),
+        List(Tuple(1, "test", 3.78), Tuple(4,"",Field::null()), Tuple(7,"abcdef",-9.99)),
+        // List(Tuple(1, 2, 3), Field::null(), Tuple(4,5,6), Tuple(7,8,9), Field::null()), // same here.
+        // List(Tuple(1, "test", 3.78), Tuple(4,"",Field::null()), Field::null(), Tuple(7,"abcdef",-9.99)), // @TODO: this won't work because Option[Tuple[...]] is a support type/in createTupleStructType not yet supported. Need to fix.
     };
 
     auto ctx_options = microTestOptions();
@@ -769,27 +769,27 @@ TEST_F(ListFunctions, ListOf3Elements) {
         auto num_list_elements = test_list.numElements();
         os<<"Running test case "<<(test_case_no+1)<<"/"<<test_lists.size()<<": "<<test_list.getType().desc()<<endl;
 
-//        {
-//            os<<"-- Testing deserialize + list access"<<endl;
-//            // construct test data (list access)
-//            std::vector<Row> test_data;
-//            std::vector<Row> ref_data;
-//            for(unsigned i = 0; i < num_list_elements; ++i) {
-//                test_data.push_back(Row(test_list, Field((int64_t)i)));
-//                auto ref_ans = test_list.getField(i);
-//                ref_data.push_back(Row(ref_ans));
-//
-//                // special case: tuple return gets unwrapped into columns
-//                if(ref_ans.getType().isTupleType() && ref_ans.getType().parameters().size() > 0)
-//                    ref_data.back() = Row::from_vector(((Tuple*)ref_ans.getPtr())->to_vector());
-//
-//                // same is true for dict with string keys...
-//            }
-//
-//            // mini pipeline -> checks that deserialize + list access works.
-//            auto ans = ctx.parallelize(test_data).map(UDF("lambda L, i: L[i]")).collectAsVector();
-//            compare_rows(ans, ref_data);
-//        }
+        {
+            os<<"-- Testing deserialize + list access"<<endl;
+            // construct test data (list access)
+            std::vector<Row> test_data;
+            std::vector<Row> ref_data;
+            for(unsigned i = 0; i < num_list_elements; ++i) {
+                test_data.push_back(Row(test_list, Field((int64_t)i)));
+                auto ref_ans = test_list.getField(i);
+                ref_data.push_back(Row(ref_ans));
+
+                // special case: tuple return gets unwrapped into columns
+                if(ref_ans.getType().isTupleType() && ref_ans.getType().parameters().size() > 0)
+                    ref_data.back() = Row::from_vector(((Tuple*)ref_ans.getPtr())->to_vector());
+
+                // same is true for dict with string keys...
+            }
+
+            // mini pipeline -> checks that deserialize + list access works.
+            auto ans = ctx.parallelize(test_data).map(UDF("lambda L, i: L[i]")).collectAsVector();
+            compare_rows(ans, ref_data);
+        }
 
         // now test that serialize works, by transforming tuple -> list.
         {
