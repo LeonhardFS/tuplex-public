@@ -2308,8 +2308,18 @@ namespace tuplex {
                 builder.CreateCondBr(is_null, bbDecodeAsNull, bbDecodeNonNull);
 
                 builder.SetInsertPoint(bbDecodeAsNull);
-                // store nullptr.
-                builder.CreateStore(env.nullConstant(llvm_list_element_type->getPointerTo()), next_struct_ptr);
+
+                // In FlattenedTuple, there is no check on isnull.
+                // structs are always expected to be valid.
+                // Hence, init here a dummy and store this dummy.
+                auto dummy_ptr = env.CreateHeapAlloca(builder, llvm_list_element_type);
+                struct_dict_mem_zero(env, builder, dummy_ptr, list_type.elementType().withoutOption());
+                builder.CreateStore(dummy_ptr, next_struct_ptr);
+
+                // alternative for future:
+                // // store nullptr.
+                // builder.CreateStore(env.nullConstant(llvm_list_element_type->getPointerTo()), next_struct_ptr);
+
                 builder.CreateBr(bbDecodeDone);
                 builder.SetInsertPoint(bbDecodeNonNull);
             }

@@ -55,6 +55,7 @@
 
 #include <nlohmann/json.hpp>
 #include <cstddef>
+#include <boost/stacktrace.hpp>
 
 namespace tuplex {
     namespace codegen {

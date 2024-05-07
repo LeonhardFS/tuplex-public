@@ -759,6 +759,7 @@ TEST_F(ListFunctions, ListOf3Elements) {
 
     auto ctx_options = microTestOptions();
     ctx_options.set("tuplex.useLLVMOptimizer", "false");
+    ctx_options.set("tuplex.experimental.traceExecution", "false"); // <-- super slow trace per instruction.
     auto ctx = Context(ctx_options);
 
     for(unsigned test_case_no = 0; test_case_no < test_lists.size(); ++test_case_no) {
@@ -786,7 +787,7 @@ TEST_F(ListFunctions, ListOf3Elements) {
             }
 
             // mini pipeline -> checks that deserialize + list access works.
-            auto ans = ctx.parallelize({test_data[1]}).map(UDF("lambda L, i: L[i]")).collectAsVector();
+            auto ans = ctx.parallelize(test_data).map(UDF("lambda L, i: L[i]")).collectAsVector();
             compare_rows(ans, ref_data);
         }
 

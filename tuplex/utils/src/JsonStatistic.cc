@@ -774,6 +774,7 @@ namespace tuplex {
                     auto sv_value = simdjson::to_json_string(obj[key]).value();
 
                     std::string str_value(sv_value.begin(), sv_value.end());
+                    trim(str_value);
 
                     row_json_strings.push_back(str_value);
                     // cf. https://github.com/simdjson/simdjson/blob/master/doc/basics.md#direct-access-to-the-raw-string
@@ -823,6 +824,7 @@ namespace tuplex {
                         kv_pairs.push_back(entry);
                     }
                     python::Type struct_type = python::Type::makeStructuredDictType(kv_pairs);
+                    trim(json_line);
                     Row struct_row({Field::from_str_data(json_line, struct_type)});
                    ret_row = struct_row;
                 }

@@ -1208,6 +1208,12 @@ namespace tuplex {
                         // same as llvm_val_to_store->getType()->getPointerElementType().
                         auto llvm_val_to_store_llvm_type = pythonToLLVMType(elementType.withoutOption());
 
+                        // // new version
+                        // if(llvm_val_to_store->getType()->isPointerTy())
+                        //     llvm_val_to_store = builder.CreateLoad(llvm_val_to_store_llvm_type, llvm_val_to_store);
+                        // builder.CreateStore(llvm_val_to_store, structValIdx);
+
+                        // old version
                         if(llvm_val_to_store->getType() != structValIdx->getType()) {
 //                            if(llvm_val_to_store->getType() == structValIdx->getType()->getPointerElementType()) {
                             // load (special treatment for nested structures...)
@@ -1227,18 +1233,14 @@ namespace tuplex {
                             }
 
                             llvm_val_to_store = ptr;
-
-//                            } else {
-//                                throw std::runtime_error("incompatible type " + getLLVMTypeName(llvm_val_to_store->getType()) + " found for storing data.");
-//                            }
                         }
 
-                        // however, nested structs/aggs should be memcopied
-                        auto i8_src = builder.CreatePointerCast(llvm_val_to_store, i8ptrType());
-                        auto i8_dest = builder.CreatePointerCast(structValIdx, i8ptrType());
-                        auto& DL = _module->getDataLayout();
-                        auto struct_size = DL.getTypeAllocSize(llvm_val_to_store_llvm_type);
-                        builder.CreateMemCpy(i8_dest, 0, i8_src, 0, i64Const(struct_size));
+                         // however, nested structs/aggs should be memcopied
+                         auto i8_src = builder.CreatePointerCast(llvm_val_to_store, i8ptrType());
+                         auto i8_dest = builder.CreatePointerCast(structValIdx, i8ptrType());
+                         auto& DL = _module->getDataLayout();
+                         auto struct_size = DL.getTypeAllocSize(llvm_val_to_store_llvm_type);
+                         builder.CreateMemCpy(i8_dest, 0, i8_src, 0, i64Const(struct_size));
                     }
                 } else {
                     // primitives can be stored
