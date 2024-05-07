@@ -310,8 +310,9 @@ namespace tuplex {
                         throw std::runtime_error("Should not happen!");
                     } else if(type.isDictionaryType()) {
                         if(type.isStructuredDictionaryType()) {
+
                             // deserialize from ptr
-                            auto dict_val = struct_dict_deserialize_from_memory(*_env, builder, ptr, type, true); // could set this to true...
+                            auto dict_val = struct_dict_deserialize_from_memory(*_env, builder, ptr, type, true, isnull); // could set this to true...
 
                             // print value:
                             _env->debugPrint(builder, "-- DESERIALIZED " + type.desc() + " from memory:");

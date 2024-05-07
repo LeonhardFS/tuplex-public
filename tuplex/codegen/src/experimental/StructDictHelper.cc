@@ -1199,7 +1199,7 @@ namespace tuplex {
 
 
         // deserialization code...
-        SerializableValue struct_dict_deserialize_from_memory(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* ptr, const python::Type& dict_type, bool heap_alloc) {
+        SerializableValue struct_dict_deserialize_from_memory(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* ptr, const python::Type& dict_type, bool heap_alloc, llvm::Value* is_null) {
             auto& logger = Logger::instance().logger("codegen");
             assert(dict_type.isStructuredDictionaryType());
 
@@ -1219,6 +1219,18 @@ namespace tuplex {
             struct_dict_mem_zero(env, builder, v.val, dict_type);
             auto dict_ptr = v.val;
             auto original_mem_start_ptr = ptr; // save pointer for memory distance
+
+            // if is_null is valid, do conditional decode - else return value as is
+            auto& ctx = builder.getContext();
+            BasicBlock* bbDone = nullptr;
+
+            if(is_null) {
+                bbDone = BasicBlock::Create(ctx, "struct_dict_decode_done", builder.GetInsertBlock()->getParent());
+                auto bbDecode = BasicBlock::Create(ctx, "struct_dict_decode", builder.GetInsertBlock()->getParent());
+                assert(is_null->getType() == env.i1Type());
+                builder.CreateCondBr(is_null, bbDone, bbDecode);
+                builder.SetInsertPoint(bbDecode);
+            }
 
             // get flattened structure!
             flattened_struct_dict_entry_list_t entries;
@@ -1403,6 +1415,13 @@ namespace tuplex {
 #ifndef NDEBUG
             env.printValue(builder, deserialized_size, "deserialized struct_dict from bytes: ");
 #endif
+
+            if(is_null) {
+                builder.CreateBr(bbDone);
+                builder.SetInsertPoint(bbDone);
+                v.is_null = is_null;
+            }
+
             return v;
         }
 

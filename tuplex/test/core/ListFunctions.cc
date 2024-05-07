@@ -769,50 +769,50 @@ TEST_F(ListFunctions, ListOf3Elements) {
         auto num_list_elements = test_list.numElements();
         os<<"Running test case "<<(test_case_no+1)<<"/"<<test_lists.size()<<": "<<test_list.getType().desc()<<endl;
 
-        {
-            os<<"-- Testing deserialize + list access"<<endl;
-            // construct test data (list access)
-            std::vector<Row> test_data;
-            std::vector<Row> ref_data;
-            for(unsigned i = 0; i < num_list_elements; ++i) {
-                test_data.push_back(Row(test_list, Field((int64_t)i)));
-                auto ref_ans = test_list.getField(i);
-                ref_data.push_back(Row(ref_ans));
-
-                // special case: tuple return gets unwrapped into columns
-                if(ref_ans.getType().isTupleType() && ref_ans.getType().parameters().size() > 0)
-                    ref_data.back() = Row::from_vector(((Tuple*)ref_ans.getPtr())->to_vector());
-
-                // same is true for dict with string keys...
-            }
-
-            // mini pipeline -> checks that deserialize + list access works.
-            auto ans = ctx.parallelize(test_data).map(UDF("lambda L, i: L[i]")).collectAsVector();
-            compare_rows(ans, ref_data);
-        }
-
-//        // now test that serialize works, by transforming tuple -> list.
 //        {
-//            os<<"-- Testing list serialize"<<endl;
-//
+//            os<<"-- Testing deserialize + list access"<<endl;
 //            // construct test data (list access)
 //            std::vector<Row> test_data;
 //            std::vector<Row> ref_data;
-//            // create function
-//            std::stringstream ss;
-//            ss<<"lambda t: [";
 //            for(unsigned i = 0; i < num_list_elements; ++i) {
-//                test_data.push_back(Row(Tuple::from_vector(test_list.to_vector())));
-//                ref_data.push_back(Row(test_list));
+//                test_data.push_back(Row(test_list, Field((int64_t)i)));
+//                auto ref_ans = test_list.getField(i);
+//                ref_data.push_back(Row(ref_ans));
 //
-//                ss<<"t["<<i<<"],";
+//                // special case: tuple return gets unwrapped into columns
+//                if(ref_ans.getType().isTupleType() && ref_ans.getType().parameters().size() > 0)
+//                    ref_data.back() = Row::from_vector(((Tuple*)ref_ans.getPtr())->to_vector());
+//
+//                // same is true for dict with string keys...
 //            }
-//            ss<<"]";
-//            auto udf_code = ss.str();
 //
-//            auto ans = ctx.parallelize(test_data).map(UDF(udf_code)).collectAsVector();
+//            // mini pipeline -> checks that deserialize + list access works.
+//            auto ans = ctx.parallelize(test_data).map(UDF("lambda L, i: L[i]")).collectAsVector();
 //            compare_rows(ans, ref_data);
 //        }
+
+        // now test that serialize works, by transforming tuple -> list.
+        {
+            os<<"-- Testing list serialize"<<endl;
+
+            // construct test data (list access)
+            std::vector<Row> test_data;
+            std::vector<Row> ref_data;
+            // create function
+            std::stringstream ss;
+            ss<<"lambda t: [";
+            for(unsigned i = 0; i < num_list_elements; ++i) {
+                test_data.push_back(Row(Tuple::from_vector(test_list.to_vector())));
+                ref_data.push_back(Row(test_list));
+
+                ss<<"t["<<i<<"],";
+            }
+            ss<<"]";
+            auto udf_code = ss.str();
+
+            auto ans = ctx.parallelize(test_data).map(UDF(udf_code)).collectAsVector();
+            compare_rows(ans, ref_data);
+        }
 
 
         // TODO: list append together with append....

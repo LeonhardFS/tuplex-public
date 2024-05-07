@@ -36,7 +36,7 @@ namespace tuplex {
 
         extern SerializableValue struct_dict_serialize_to_memory(LLVMEnvironment& env, const codegen::IRBuilder& builder, llvm::Value* ptr, const python::Type& dict_type, llvm::Value* dest_ptr);
 
-        extern SerializableValue struct_dict_deserialize_from_memory(LLVMEnvironment& env, const codegen::IRBuilder& builder, llvm::Value* ptr, const python::Type& dict_type, bool heap_alloc=false);
+        extern SerializableValue struct_dict_deserialize_from_memory(LLVMEnvironment& env, const codegen::IRBuilder& builder, llvm::Value* ptr, const python::Type& dict_type, bool heap_alloc=false, llvm::Value* is_null=nullptr);
 
         extern void struct_dict_verify_storage(LLVMEnvironment& env, const python::Type& dict_type, std::ostream& os);
 

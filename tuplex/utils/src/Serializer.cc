@@ -525,7 +525,8 @@ namespace tuplex {
                 return appendWithoutInference(
                         f.isNull() ? option<std::string>::none : option<std::string>(std::string((char *) f.getPtr())));
             } else if(t.isStructuredDictionaryType()) {
-               throw std::runtime_error("not yet implemented");
+                return appendStructDictWithoutInference(f.getType(),
+                                                 reinterpret_cast<const uint8_t *>((const char *) f.getPtr()), f.getPtrSize(), f.isNull());
             } else if (python::Type::EMPTYTUPLE == t) {
                 // optional empty tuple
                 _isVarField.push_back(false);
