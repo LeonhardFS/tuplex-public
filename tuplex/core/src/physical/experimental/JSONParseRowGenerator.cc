@@ -778,7 +778,7 @@ namespace tuplex {
             builder.SetInsertPoint(bbDecodeDone);
             llvm::Value* rc = builder.CreateLoad(builder.getInt64Ty(), rc_var);
 
-            _env.printValue(builder, rc, "decodeListFromArray returned with rc=");
+            // _env.printValue(builder, rc, "decodeListFromArray returned with rc=");
 
             SerializableValue value;
             value.val = builder.CreateLoad(list_llvm_type, list_ptr); // retrieve the ptr representing the list

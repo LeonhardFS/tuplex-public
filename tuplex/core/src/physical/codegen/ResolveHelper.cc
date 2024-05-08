@@ -178,10 +178,10 @@ namespace tuplex {
                     builder.SetInsertPoint(bParseFailed);
                     env.freeAll(builder);
 
-                    env.debugPrint(builder, "parsing badparsestringinput exception failed, returning error code " + std::to_string(
-                            ecToI64(return_code_on_parse_error)));
-                    env.printValue(builder, str, "data: ");
-                    env.printValue(builder, str_size, "data size: ");
+                    // env.debugPrint(builder, "parsing badparsestringinput exception failed, returning error code " + std::to_string(
+                    //        ecToI64(return_code_on_parse_error)));
+                    // env.printValue(builder, str, "data: ");
+                    // env.printValue(builder, str_size, "data size: ");
 
                     builder.CreateRet(env.i64Const(ecToI64(return_code_on_parse_error)));
 

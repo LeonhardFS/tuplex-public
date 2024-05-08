@@ -3595,8 +3595,8 @@ namespace tuplex {
                     var.size = _env.CreateFirstBlockAlloca(builder, _env.i64Type());
                     var.is_null = _env.CreateFirstBlockAlloca(builder, _env.i1Type());
 
-                    // null variable and set to default (here anyways null)
-                    builder.CreateStore(_env.nullConstant(var.val->getType()->getPointerElementType()), var.val);
+                    // null variable and set to default (here anyway null)
+                    builder.CreateStore(_env.nullConstant(llvm_val_type), var.val);
                     builder.CreateStore(_env.i64Const(0), var.size);
                     builder.CreateStore(_env.i1Const(true), var.is_null); // indicate None!
 
@@ -3651,7 +3651,7 @@ namespace tuplex {
 
                                 // handle is present case (same like in pair.alwaysPresent)
                                 builder.SetInsertPoint(bbIsPresent);
-                                _env.debugPrint(builder, "access path " + access_path_to_str(access_path) + " present.");
+                                // _env.debugPrint(builder, "access path " + access_path_to_str(access_path) + " present.");
                                 auto val = struct_dict_load_value(_env, builder, caller.val, callerType, access_path);
 
                                 // special case: struct dict will be returned as pointer, do load struct to store.
@@ -3676,7 +3676,7 @@ namespace tuplex {
 
                                 // special case, is return type option or not? if not, deoptimize...
                                 if(retType.isOptionType()) {
-                                    _env.debugPrint(builder, "access path " + access_path_to_str(access_path) + " NOT present.");
+                                    // _env.debugPrint(builder, "access path " + access_path_to_str(access_path) + " NOT present.");
 
                                     builder.CreateStore(_env.i1Const(true), var.is_null);
                                     bbNotPresent = builder.GetInsertBlock();
