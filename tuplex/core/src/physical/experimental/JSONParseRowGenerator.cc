@@ -367,8 +367,8 @@ namespace tuplex {
             v.size = builder.CreateLoad(builder.getInt64Ty(), str_size_var);
             v.is_null = _env.i1Const(false);
 
-            _env.printValue(builder, v.val, "decoded str from array, value=");
-            _env.printValue(builder, v.size, "decoded str from array, size=");
+            // _env.printValue(builder, v.val, "decoded str from array, value=");
+            // _env.printValue(builder, v.size, "decoded str from array, size=");
 
             return make_tuple(rc, v);
         }
@@ -530,12 +530,12 @@ namespace tuplex {
                     // ok block:
                     builder.SetInsertPoint(bDecodeOK);
 
-                    // // next: store in list
-                    // _env.printValue(builder, item.val, "decoded value: ");
-                    if(element_type.isListType()) {
-                        _env.debugPrint(builder, "decode of " + element_type.desc() + " successful.");
-                        list_print(_env, builder, item.val, element_type);
-                    }
+                    // // // next: store in list
+                    // // _env.printValue(builder, item.val, "decoded value: ");
+                    // if(element_type.isListType()) {
+                    //     _env.debugPrint(builder, "decode of " + element_type.desc() + " successful.");
+                    //     list_print(_env, builder, item.val, element_type);
+                    // }
 
                     auto loop_i_val = builder.CreateLoad(builder.getInt64Ty(), loop_i);
                     list_store_value(_env, builder, list_ptr, list_type, loop_i_val, item);
@@ -1097,11 +1097,11 @@ namespace tuplex {
             value.val = builder.CreateLoad(list_llvm_type, list_ptr); // retrieve the ptr representing the list
 
 
-            // debug:
-            if(listType.elementType().isListType()) {
-                _env.printValue(builder, rc, "decoded " + listType.desc() + " with rc=");
-                list_print(_env, builder, list_ptr, listType);
-            }
+            // // debug:
+            // if(listType.elementType().isListType()) {
+            //     _env.printValue(builder, rc, "decoded " + listType.desc() + " with rc=");
+            //     list_print(_env, builder, list_ptr, listType);
+            // }
 
 
             return make_tuple(rc, value);

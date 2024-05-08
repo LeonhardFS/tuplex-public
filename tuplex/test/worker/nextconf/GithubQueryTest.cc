@@ -8,6 +8,7 @@
 //  License: Apache 2.0                                                                                               //
 //--------------------------------------------------------------------------------------------------------------------//
 #include "TestUtils.h"
+#include "JsonStatistic.h"
 
 #include <simdjson.h>
 
@@ -231,6 +232,38 @@ namespace tuplex {
                 .tocsv(output_path);
     }
 
+    TEST_F(GithubQuery, CheckSingleFileUpcastType) {
+        // input_pattern = "../resources/hyperspecialization/github_daily/2011-10-15.json.sample"
+
+        using namespace tuplex;
+
+        // TODO:
+        // load lines of file, for each line with given type explain reason why line can't get parsed.
+        std::string input_pattern = "../resources/hyperspecialization/github_daily/2011-10-15.json.sample";
+
+        auto encoded_input_row_type = "Row['type'->Option[str],'public'->Option[bool],'actor'->Option[Struct[(str,'gravatar_id'=>str),(str,'url'=>str),(str,'avatar_url'=>str),(str,'id'=>i64),(str,'login'=>str)]],'created_at'->Option[str],'payload'->Option[Struct[(str,'action'=>str),(str,'comment'=>Struct[(str,'created_at'=>str),(str,'body'=>str),(str,'updated_at'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'user'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)])]),(str,'commits'=>List[Struct[(str,'sha'->str),(str,'author'->Struct[(str,'name'->str),(str,'email'->str)]),(str,'url'->str),(str,'message'->str)]]),(str,'description'=>str),(str,'head'=>str),(str,'issue'=>Struct[(str,'number'=>i64),(str,'created_at'=>str),(str,'pull_request'=>Struct[(str,'diff_url'=>null),(str,'patch_url'=>null),(str,'html_url'=>null)]),(str,'body'=>str),(str,'comments'=>i64),(str,'title'=>str),(str,'updated_at'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'assignee'=>null),(str,'milestone'=>Struct[(str,'number'=>i64),(str,'created_at'=>str),(str,'due_on'=>str),(str,'title'=>str),(str,'creator'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)]),(str,'url'=>str),(str,'open_issues'=>i64),(str,'closed_issues'=>i64),(str,'description'=>str),(str,'state'=>str)]),(str,'closed_at'=>str),(str,'user'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)]),(str,'html_url'=>str),(str,'labels'=>List[Struct[(str,'name'->str),(str,'url'->str),(str,'color'->str)]]),(str,'state'=>str)]),(str,'legacy'=>Struct[(str,'comment_id'=>i64),(str,'head'=>str),(str,'issue_id'=>i64),(str,'push_id'=>i64),(str,'ref'=>str),(str,'shas'=>List[List[str]]),(str,'size'=>i64)]),(str,'master_branch'=>str),(str,'push_id'=>i64),(str,'ref'=>Option[str]),(str,'ref_type'=>str),(str,'size'=>i64)]],'id'->Option[str],'repo'->Option[Struct[(str,'url'=>str),(str,'id'=>i64),(str,'name'=>str)]],'org'->null]";
+
+        auto data = fileToString(input_pattern);
+        std::vector<std::vector<std::string>> column_names_per_row;
+        auto rows = parseRowsFromJSONStratified(data.c_str(), data.size(), &column_names_per_row, true, true, 100000, 1, 1, 0, {}, false);
+
+
+        std::cout<<"parsed "<<pluralize(rows.size(), "row")<<" from "<<input_pattern<<std::endl;
+        ASSERT_EQ(rows.size(), 1200);
+
+        auto desired_row_type = python::Type::decode(encoded_input_row_type);
+
+        int num_fitting = 0;
+        for(unsigned i = 0; i < rows.size(); ++i) {
+            auto row_type = rows[i].getRowType();
+            bool can_upcast = python::canUpcastType(row_type, desired_row_type);
+            num_fitting += can_upcast;
+            std::cout<<"row #"<<i<<" can upcast: "<<std::boolalpha<<can_upcast<<std::endl;
+        }
+
+        std::cout<<num_fitting<<"/"<<rows.size()<<" rows fit type"<<std::endl;
+    }
+
     TEST_F(GithubQuery, ForkEventsExtendedLLVM16Debug) {
 
         // Notes: slow path compilation seems to be a problem, fix by using
@@ -259,7 +292,7 @@ namespace tuplex {
 
         // @TODO: non-hyper mode doesn't work yet ??
         // hyper-moder returns empty files ??
-        auto use_hyper = true; // false;//true; // should work for both true/false.
+        auto use_hyper = false; // true; // false;//true; // should work for both true/false.
 
         // set input/output paths
         // auto exp_settings = lambdaSettings(true);
@@ -267,7 +300,10 @@ namespace tuplex {
         auto input_pattern = exp_settings["input_path"];
 
         // // local test files
-        // input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
+        input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
+
+        // this should be 100% fitting?
+        input_pattern = "../resources/hyperspecialization/github_daily/2011-10-15.json.sample";
 
 
         auto output_path = exp_settings["output_path"];
