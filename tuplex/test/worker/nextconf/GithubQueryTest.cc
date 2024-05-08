@@ -304,6 +304,16 @@ namespace tuplex {
         std::cout<<num_fitting<<"/"<<rows.size()<<" rows fit type"<<std::endl;
     }
 
+    // @TODO: mock sparse parsing, i.e. parse only with manual type required
+    // -> for Row['year'->int64,
+    // 'type'->str,
+    // 'payload'->Struct['target'->Struct['id'->int64],'id'->int64],
+    // 'id'->Option[int64],
+    // 'repo'->Struct['id'->Option[int64]]]
+    // --> check all files whether this partial match works or not.
+    // if any path outside of this is accessed, abort.
+
+
     TEST_F(GithubQuery, ForkEventsExtendedLLVM16Debug) {
 
         // Notes: slow path compilation seems to be a problem, fix by using
