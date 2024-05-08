@@ -232,6 +232,34 @@ namespace tuplex {
                 .tocsv(output_path);
     }
 
+    bool check_row_types_compatible(python::Type from, python::Type to, bool extend_with_nulls) {
+
+        assert(from.isRowType());
+        assert(to.isRowType());
+
+        if(extend_with_nulls && from.get_column_count() != to.get_column_count()) {
+            // make sure that all columns of from are contained within to.
+            // if not, return false
+            for(auto name : from.get_column_names()) {
+                if(indexInVector(name, to.get_column_names()) < 0)
+                    return false;
+            }
+
+            // now extend, find columns of to which arent present in from
+            std::vector<python::Type> col_types;
+            for(auto name : to.get_column_names()) {
+                if(indexInVector(name, from.get_column_names()) >= 0)
+                    col_types.push_back(from.get_column_type(name));
+                else
+                    col_types.push_back(python::Type::NULLVALUE);
+            }
+
+            from = python::Type::makeRowType(col_types, to.get_column_names());
+        }
+
+        return python::canUpcastType(from, to);
+    }
+
     TEST_F(GithubQuery, CheckSingleFileUpcastType) {
         // input_pattern = "../resources/hyperspecialization/github_daily/2011-10-15.json.sample"
 
@@ -241,7 +269,17 @@ namespace tuplex {
         // load lines of file, for each line with given type explain reason why line can't get parsed.
         std::string input_pattern = "../resources/hyperspecialization/github_daily/2011-10-15.json.sample";
 
-        auto encoded_input_row_type = "Row['type'->Option[str],'public'->Option[bool],'actor'->Option[Struct[(str,'gravatar_id'=>str),(str,'url'=>str),(str,'avatar_url'=>str),(str,'id'=>i64),(str,'login'=>str)]],'created_at'->Option[str],'payload'->Option[Struct[(str,'action'=>str),(str,'comment'=>Struct[(str,'created_at'=>str),(str,'body'=>str),(str,'updated_at'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'user'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)])]),(str,'commits'=>List[Struct[(str,'sha'->str),(str,'author'->Struct[(str,'name'->str),(str,'email'->str)]),(str,'url'->str),(str,'message'->str)]]),(str,'description'=>str),(str,'head'=>str),(str,'issue'=>Struct[(str,'number'=>i64),(str,'created_at'=>str),(str,'pull_request'=>Struct[(str,'diff_url'=>null),(str,'patch_url'=>null),(str,'html_url'=>null)]),(str,'body'=>str),(str,'comments'=>i64),(str,'title'=>str),(str,'updated_at'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'assignee'=>null),(str,'milestone'=>Struct[(str,'number'=>i64),(str,'created_at'=>str),(str,'due_on'=>str),(str,'title'=>str),(str,'creator'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)]),(str,'url'=>str),(str,'open_issues'=>i64),(str,'closed_issues'=>i64),(str,'description'=>str),(str,'state'=>str)]),(str,'closed_at'=>str),(str,'user'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)]),(str,'html_url'=>str),(str,'labels'=>List[Struct[(str,'name'->str),(str,'url'->str),(str,'color'->str)]]),(str,'state'=>str)]),(str,'legacy'=>Struct[(str,'comment_id'=>i64),(str,'head'=>str),(str,'issue_id'=>i64),(str,'push_id'=>i64),(str,'ref'=>str),(str,'shas'=>List[List[str]]),(str,'size'=>i64)]),(str,'master_branch'=>str),(str,'push_id'=>i64),(str,'ref'=>Option[str]),(str,'ref_type'=>str),(str,'size'=>i64)]],'id'->Option[str],'repo'->Option[Struct[(str,'url'=>str),(str,'id'=>i64),(str,'name'=>str)]],'org'->null]";
+        // this type is detected, but it is not general enough.
+        // need to either null extent or use =>
+        // auto encoded_input_row_type = "Row['type'->Option[str],'public'->Option[bool],'actor'->Option[Struct[(str,'gravatar_id'=>str),(str,'url'=>str),(str,'avatar_url'=>str),(str,'id'=>i64),(str,'login'=>str)]],'created_at'->Option[str],'payload'->Option[Struct[(str,'action'=>str),(str,'comment'=>Struct[(str,'created_at'=>str),(str,'body'=>str),(str,'updated_at'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'user'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)])]),(str,'commits'=>List[Struct[(str,'sha'->str),(str,'author'->Struct[(str,'name'->str),(str,'email'->str)]),(str,'url'->str),(str,'message'->str)]]),(str,'description'=>str),(str,'head'=>str),(str,'issue'=>Struct[(str,'number'=>i64),(str,'created_at'=>str),(str,'pull_request'=>Struct[(str,'diff_url'=>null),(str,'patch_url'=>null),(str,'html_url'=>null)]),(str,'body'=>str),(str,'comments'=>i64),(str,'title'=>str),(str,'updated_at'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'assignee'=>null),(str,'milestone'=>Struct[(str,'number'=>i64),(str,'created_at'=>str),(str,'due_on'=>str),(str,'title'=>str),(str,'creator'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)]),(str,'url'=>str),(str,'open_issues'=>i64),(str,'closed_issues'=>i64),(str,'description'=>str),(str,'state'=>str)]),(str,'closed_at'=>str),(str,'user'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)]),(str,'html_url'=>str),(str,'labels'=>List[Struct[(str,'name'->str),(str,'url'->str),(str,'color'->str)]]),(str,'state'=>str)]),(str,'legacy'=>Struct[(str,'comment_id'=>i64),(str,'head'=>str),(str,'issue_id'=>i64),(str,'push_id'=>i64),(str,'ref'=>str),(str,'shas'=>List[List[str]]),(str,'size'=>i64)]),(str,'master_branch'=>str),(str,'push_id'=>i64),(str,'ref'=>Option[str]),(str,'ref_type'=>str),(str,'size'=>i64)]],'id'->Option[str],'repo'->Option[Struct[(str,'url'=>str),(str,'id'=>i64),(str,'name'=>str)]],'org'->null]";
+
+        // fixed org to have option
+        // this gives 923/1200 ok.
+        auto encoded_input_row_type = "Row['type'->Option[str],'public'->Option[bool],'actor'->Option[Struct[(str,'gravatar_id'=>str),(str,'url'=>str),(str,'avatar_url'=>str),(str,'id'=>i64),(str,'login'=>str)]],'created_at'->Option[str],'payload'->Option[Struct[(str,'action'=>str),(str,'comment'=>Struct[(str,'created_at'=>str),(str,'body'=>str),(str,'updated_at'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'user'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)])]),(str,'commits'=>List[Struct[(str,'sha'->str),(str,'author'->Struct[(str,'name'->str),(str,'email'->str)]),(str,'url'->str),(str,'message'->str)]]),(str,'description'=>str),(str,'head'=>str),(str,'issue'=>Struct[(str,'number'=>i64),(str,'created_at'=>str),(str,'pull_request'=>Struct[(str,'diff_url'=>null),(str,'patch_url'=>null),(str,'html_url'=>null)]),(str,'body'=>str),(str,'comments'=>i64),(str,'title'=>str),(str,'updated_at'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'assignee'=>null),(str,'milestone'=>Struct[(str,'number'=>i64),(str,'created_at'=>str),(str,'due_on'=>str),(str,'title'=>str),(str,'creator'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)]),(str,'url'=>str),(str,'open_issues'=>i64),(str,'closed_issues'=>i64),(str,'description'=>str),(str,'state'=>str)]),(str,'closed_at'=>str),(str,'user'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)]),(str,'html_url'=>str),(str,'labels'=>List[Struct[(str,'name'->str),(str,'url'->str),(str,'color'->str)]]),(str,'state'=>str)]),(str,'legacy'=>Struct[(str,'comment_id'=>i64),(str,'head'=>str),(str,'issue_id'=>i64),(str,'push_id'=>i64),(str,'ref'=>str),(str,'shas'=>List[List[str]]),(str,'size'=>i64)]),(str,'master_branch'=>str),(str,'push_id'=>i64),(str,'ref'=>Option[str]),(str,'ref_type'=>str),(str,'size'=>i64)]],'id'->Option[str],'repo'->Option[Struct[(str,'url'=>str),(str,'id'=>i64),(str,'name'=>str)]],'org'->Option[Struct[(str,'gravatar_id'->str),(str,'url'->str),(str,'avatar_url'->str),(str,'id'->i64),(str,'login'->str)]]]";
+
+
+        // manually fixed with presence map ??
+        // auto encoded_input_row_type = "Row['type'->Option[str],'public'->Option[bool],'actor'->Option[Struct[(str,'gravatar_id'=>str),(str,'url'=>str),(str,'avatar_url'=>str),(str,'id'=>i64),(str,'login'=>str)]],'created_at'->Option[str],'payload'->Option[Struct[(str,'action'=>str),(str,'comment'=>Struct[(str,'created_at'=>str),(str,'body'=>str),(str,'updated_at'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'user'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)])]),(str,'commits'=>List[Struct[(str,'sha'->str),(str,'author'->Struct[(str,'name'->str),(str,'email'->str)]),(str,'url'->str),(str,'message'->str)]]),(str,'description'=>str),(str,'head'=>str),(str,'issue'=>Struct[(str,'number'=>i64),(str,'created_at'=>str),(str,'pull_request'=>Struct[(str,'diff_url'=>null),(str,'patch_url'=>null),(str,'html_url'=>null)]),(str,'body'=>str),(str,'comments'=>i64),(str,'title'=>str),(str,'updated_at'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'assignee'=>null),(str,'milestone'=>Struct[(str,'number'=>i64),(str,'created_at'=>str),(str,'due_on'=>str),(str,'title'=>str),(str,'creator'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)]),(str,'url'=>str),(str,'open_issues'=>i64),(str,'closed_issues'=>i64),(str,'description'=>str),(str,'state'=>str)]),(str,'closed_at'=>str),(str,'user'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)]),(str,'html_url'=>str),(str,'labels'=>List[Struct[(str,'name'->str),(str,'url'->str),(str,'color'->str)]]),(str,'state'=>str)]),(str,'legacy'=>Struct[(str,'comment_id'=>i64),(str,'head'=>str),(str,'issue_id'=>i64),(str,'push_id'=>i64),(str,'ref'=>str),(str,'shas'=>List[List[str]]),(str,'size'=>i64)]),(str,'master_branch'=>str),(str,'push_id'=>i64),(str,'ref'=>Option[str]),(str,'ref_type'=>str),(str,'size'=>i64)]],'id'->Option[str],'repo'->Option[Struct[(str,'url'=>str),(str,'id'=>i64),(str,'name'=>str)]],'org'=>null]";
 
         auto data = fileToString(input_pattern);
         std::vector<std::vector<std::string>> column_names_per_row;
@@ -255,8 +293,10 @@ namespace tuplex {
 
         int num_fitting = 0;
         for(unsigned i = 0; i < rows.size(); ++i) {
-            auto row_type = rows[i].getRowType();
-            bool can_upcast = python::canUpcastType(row_type, desired_row_type);
+            auto row_type_as_tuple = rows[i].getRowType();
+            auto columns = column_names_per_row[i];
+            auto row_type = python::Type::makeRowType(row_type_as_tuple.parameters(), columns);
+            bool can_upcast = check_row_types_compatible(row_type, desired_row_type, true);
             num_fitting += can_upcast;
             std::cout<<"row #"<<i<<" can upcast: "<<std::boolalpha<<can_upcast<<std::endl;
         }
