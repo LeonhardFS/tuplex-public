@@ -954,16 +954,16 @@ namespace tuplex {
                     // not given as pointer, hence alloc heap (!) pointer and store with this.
                     element_as_ptr = env.CreateHeapAlloca(builder, llvm_element_type);
 
-                    env.debugPrint(builder, "allocated new heap ptr for struct, value to store is: ");
-                    struct_dict_print(env, builder, value, elementType);
+                    // env.debugPrint(builder, "allocated new heap ptr for struct, value to store is: ");
+                    // struct_dict_print(env, builder, value, elementType);
 
                     builder.CreateStore(value.val, element_as_ptr);
                 } else {
                     element_as_ptr = value.val;
                 }
 
-                env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " list_store_value into " + list_type.desc());
-                struct_dict_print(env, builder, SerializableValue(element_as_ptr, nullptr), elementType);
+                // env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " list_store_value into " + list_type.desc());
+                // struct_dict_print(env, builder, SerializableValue(element_as_ptr, nullptr), elementType);
 
                 // store into array
                 assert(element_as_ptr->getType()->getPointerTo() == target_idx->getType());
