@@ -1025,12 +1025,6 @@ namespace tuplex {
             // create list ptr (in any case!)
             auto list_llvm_type = _env.createOrGetListType(listType);
 
-            bool is_relevant_dbg = listType.elementType().isListType();
-
-            if(is_relevant_dbg) {
-                _env.debugPrint(builder, "found troublesome " + listType.desc());
-            }
-
             // auto list_ptr = _env.CreateFirstBlockAlloca(builder, list_llvm_type);
             auto list_ptr = _env.CreateHeapAlloca(builder, list_llvm_type);
 
@@ -1062,10 +1056,6 @@ namespace tuplex {
             builder.SetInsertPoint(bbArrayFound);
             auto array = builder.CreateLoad(_env.i8ptrType(), item_var);
             auto num_elements = arraySize(builder, array);
-
-            // debug print here number of elements...
-            if(is_relevant_dbg)
-                _env.printValue(builder, num_elements, "found for type " + listType.desc() + " elements: ");
 
             // reserve capacity for elements
             bool initialize_elements_as_null = true; //false;

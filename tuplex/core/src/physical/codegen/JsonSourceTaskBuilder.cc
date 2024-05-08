@@ -631,7 +631,7 @@ namespace tuplex {
                     auto ecOpID = builder.CreateZExtOrTrunc(pip_res.exceptionOperatorID, env().i64Type());
                     auto numRowsCreated = builder.CreateZExtOrTrunc(pip_res.numProducedRows, env().i64Type());
 
-                     env().printValue(builder, ecCode, "pip ecCode= ");
+                    // env().printValue(builder, ecCode, "pip ecCode= ");
 
                     // if ecCode != success -> inc bad normal count.
                     // do this here branchless
@@ -656,12 +656,12 @@ namespace tuplex {
                         builder.CreateCondBr(bad_row_cond, bNotOK, bNext);
                         builder.SetInsertPoint(bNotOK);
 
-                         _env->debugPrint(builder, "found row to serialize as exception in normal-case handler");
+                        // _env->debugPrint(builder, "found row to serialize as exception in normal-case handler");
 
                          // print out original row:
                          //_env->debugPrint(builder, "original normal-case row is: ");
                          //normal_case_row.print(builder);
-                         _env->printValue(builder, normal_case_row.getSize(builder), "SERIALIZED SIZE OF ROW:: ");
+                        // _env->printValue(builder, normal_case_row.getSize(builder), "SERIALIZED SIZE OF ROW:: ");
 
                         // normal case row is parsed - can it be converted to general case row?
                         // if so emit directly, if not emit fallback row.
@@ -693,8 +693,8 @@ namespace tuplex {
                             }
 
 
-                            auto upcasted_row_serialized_size = upcasted_row.getSize(builder);
-                            _env->printValue(builder, upcasted_row_serialized_size, "serialized size of row AFTER UPCAST AND REORDER::");
+                            // auto upcasted_row_serialized_size = upcasted_row.getSize(builder);
+                            // _env->printValue(builder, upcasted_row_serialized_size, "serialized size of row AFTER UPCAST AND REORDER::");
 
                             // serialize as exception --> this connects already to freeStart.
                             serializeAsNormalCaseException(builder, userData, _inputOperatorID, rowNumber(builder), upcasted_row);

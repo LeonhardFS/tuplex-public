@@ -1971,8 +1971,8 @@ namespace tuplex {
                 }
             }
 
-            auto after_size_dbg = struct_dict_serialized_memory_size(env, builder, dest_ptr, dest_type);
-            env.printValue(builder, after_size_dbg.val, "after upcast for dict in struct_dict_upcast, serialization size is: ");
+            // auto after_size_dbg = struct_dict_serialized_memory_size(env, builder, dest_ptr, dest_type);
+            // env.printValue(builder, after_size_dbg.val, "after upcast for dict in struct_dict_upcast, serialization size is: ");
 
 
             return SerializableValue(dest_ptr, nullptr, nullptr);
