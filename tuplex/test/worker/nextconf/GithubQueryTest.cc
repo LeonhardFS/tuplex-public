@@ -345,6 +345,18 @@ namespace tuplex {
         // this should be 100% fitting?
         input_pattern = "../resources/hyperspecialization/github_daily/2011-10-15.json.sample";
 
+        // test file
+        auto tmp_path = testName + "_sample.json";
+        auto data = fileToString(input_pattern);
+        auto lines = splitToLines(data);
+        EXPECT_EQ(lines.size(), 1200);
+
+        // now write N lines to tmp_path
+        auto N = 50;
+        lines = std::vector<std::string>(lines.begin(), lines.begin() + N);
+        auto sample = mkString(lines.begin(), lines.end(), "\n");
+        stringToFile(tmp_path, sample);
+        input_pattern = tmp_path;
 
         auto output_path = exp_settings["output_path"];
         SamplingMode sm = static_cast<SamplingMode>(stoi(exp_settings["sampling_mode"]));
