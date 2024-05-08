@@ -1209,7 +1209,7 @@ namespace tuplex {
                 }
 
 
-                env.debugPrint(builder, "element is not null, computing size: ");
+                // env.debugPrint(builder, "element is not null, computing size: ");
                 auto item_idx = builder.CreateGEP(llvm_list_element_type->getPointerTo(), ptr_values, index);
                 auto item = builder.CreateLoad(llvm_list_element_type->getPointerTo(), item_idx);
                 // old:
@@ -2290,7 +2290,7 @@ namespace tuplex {
 
             assert(dest_ptr && dest_ptr->getType() == env.i8ptrType());
 
-            env.debugPrint(builder, "serializing list " + list_type.desc() + " to memory");
+            // env.debugPrint(builder, "serializing list " + list_type.desc() + " to memory");
 
             if(python::Type::EMPTYLIST == list_type)
                 return env.i64Const(0); // nothing to do
@@ -2827,7 +2827,7 @@ namespace tuplex {
             list_reserve_capacity(env, builder, list_ptr, list_type, num_elements, false);
             list_store_size(env, builder, list_ptr, list_type, num_elements);
 
-            env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " decoding list " + list_type.desc() + " with num_elements=", num_elements);
+            // env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " decoding list " + list_type.desc() + " with num_elements=", num_elements);
 
             // move the size of the first i64 indicating the length
             ptr = builder.MovePtrByBytes(ptr, env.i64Const(sizeof(int64_t)));
@@ -3002,13 +3002,13 @@ namespace tuplex {
                 ptr = phi_ptr;
             }
 
-            // debug print
             if(serialized_size_in_bytes) {
                 *serialized_size_in_bytes = builder.CreatePtrDiff(builder.getInt8Ty(), ptr, original_ptr);
 
-                env.debugPrint(builder, "read bytes=", *serialized_size_in_bytes);
-                auto dbg_serialized_bytes = list_serialized_size(env, builder, list_ptr, list_type);
-                env.debugPrint(builder, "serialized size should be in bytes for "+list_type.desc() + ": ", dbg_serialized_bytes);
+                // debug print
+                // env.debugPrint(builder, "read bytes=", *serialized_size_in_bytes);
+                // auto dbg_serialized_bytes = list_serialized_size(env, builder, list_ptr, list_type);
+                // env.debugPrint(builder, "serialized size should be in bytes for "+list_type.desc() + ": ", dbg_serialized_bytes);
             }
 
             return list_val;

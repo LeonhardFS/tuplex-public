@@ -912,8 +912,6 @@ namespace tuplex {
             //if(ptr->getType() != stype->getPointerTo())
             //    throw std::runtime_error("ptr has not correct type, must be pointer to " + stype->getStructName().str());
 
-#define TRACE_STRUCT_SERIALIZATION
-
             // get flattened structure!
             flattened_struct_dict_entry_list_t entries;
             flatten_recursive_helper(entries, dict_type);
@@ -1053,7 +1051,7 @@ namespace tuplex {
 #endif
             }
 
-             env.printValue(builder, size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " total size is");
+            // env.printValue(builder, size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " total size is");
 
             return SerializableValue(size, bytes8, nullptr);
         }
@@ -1364,7 +1362,7 @@ namespace tuplex {
                         value = builder.CreateSelect(parent_is_null, env.dummyValue(builder, value_type).val, value);
                     }
 
-                    env.printValue(builder, value, "deserialized value for path " + access_path_to_str(access_path) + " from " + dict_type.desc() + ": ");
+                    // env.printValue(builder, value, "deserialized value for path " + access_path_to_str(access_path) + " from " + dict_type.desc() + ": ");
 
                     // store into struct ptr
                     SerializableValue value_to_store(value, env.i64Const(sizeof(int64_t)), is_null);
@@ -1413,7 +1411,7 @@ namespace tuplex {
             ptr = builder.MovePtrByBytes(ptr, varLengthOffset);
             llvm::Value* deserialized_size = builder.CreatePtrDiff(builder.getInt8Ty(), ptr, original_mem_start_ptr);
 #ifndef NDEBUG
-            env.printValue(builder, deserialized_size, "deserialized struct_dict from bytes: ");
+            // env.printValue(builder, deserialized_size, "deserialized struct_dict from bytes: ");
 #endif
 
             if(is_null) {
@@ -1476,7 +1474,6 @@ namespace tuplex {
 //            env.printValue(builder, builder.CreatePtrDiff(dest_ptr, original_dest_ptr), "current dest_ptr position at byte: ");
 //            env.printValue(builder, varLengthOffset, "var length so far in bytes: ");
 
-  #define TRACE_STRUCT_SERIALIZATION
             // get indices to properly decode
             for(auto entry : entries) {
                 auto access_path = std::get<0>(entry);

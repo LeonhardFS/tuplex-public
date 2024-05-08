@@ -314,16 +314,16 @@ namespace tuplex {
                             // deserialize from ptr
                             auto dict_val = struct_dict_deserialize_from_memory(*_env, builder, ptr, type, true, isnull); // could set this to true...
 
-                            // print value:
-                            _env->debugPrint(builder, "-- DESERIALIZED " + type.desc() + " from memory:");
-                            struct_dict_print(*_env, builder, dict_val, type);
-                            _env->debugPrint(builder, " -- END");
+                            // // print value:
+                            // _env->debugPrint(builder, "-- DESERIALIZED " + type.desc() + " from memory:");
+                            // struct_dict_print(*_env, builder, dict_val, type);
+                            // _env->debugPrint(builder, " -- END");
 
-                            _env->debugPrint(builder, "SANITY CHECK:: load value from ptr and print");
-                            auto llvm_dict_type = _env->pythonToLLVMType(type);
-                            auto loaded_dict = builder.CreateLoad(llvm_dict_type, dict_val.val);
-                            struct_dict_print(*_env, builder, {loaded_dict, nullptr, nullptr}, type);
-                            _env->debugPrint(builder, " -- END");
+                            // _env->debugPrint(builder, "SANITY CHECK:: load value from ptr and print");
+                            // auto llvm_dict_type = _env->pythonToLLVMType(type);
+                            // auto loaded_dict = builder.CreateLoad(llvm_dict_type, dict_val.val);
+                            // struct_dict_print(*_env, builder, {loaded_dict, nullptr, nullptr}, type);
+                            // _env->debugPrint(builder, " -- END");
 
                             _tree.set(i, dict_val);
                         } else {
@@ -343,8 +343,8 @@ namespace tuplex {
                         if(isnull)
                             assert(list_value.is_null);
 
-                        _env->printValue(builder, list_size_in_bytes, "dserialized list " + type.desc() + " with bytes: ");
-                        _env->printValue(builder, size, "stored field size used for skipping, this number should match: ");
+                        // _env->printValue(builder, list_size_in_bytes, "dserialized list " + type.desc() + " with bytes: ");
+                        // _env->printValue(builder, size, "stored field size used for skipping, this number should match: ");
 
                         // set the deserialized list
                         _tree.set(i, list_value);
@@ -455,7 +455,7 @@ namespace tuplex {
             using namespace llvm;
             using namespace std;
 
-            _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Serializing flattened tuple of type " + _flattenedTupleType.desc() + " to memory.");
+            // _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Serializing flattened tuple of type " + _flattenedTupleType.desc() + " to memory.");
 
             auto& context = _env->getContext();
             auto types = getFieldTypes();
@@ -613,10 +613,10 @@ namespace tuplex {
                         field = f.val;
                         size = f.size;
 
-                         // debug:
-                         _env->debugPrint(builder, "serializing generic dict: ");
-                         _env->printValue(builder, is_not_null, fieldType.desc() + " is not null: ");
-                         _env->printValue(builder, size, fieldType.desc() + " size is: ");
+                         // // debug:
+                         // _env->debugPrint(builder, "serializing generic dict: ");
+                         // _env->printValue(builder, is_not_null, fieldType.desc() + " is not null: ");
+                         // _env->printValue(builder, size, fieldType.desc() + " size is: ");
                     }
                 }
 
@@ -794,7 +794,7 @@ namespace tuplex {
             // return diff
             auto bytes_written = builder.CreatePtrDiff(builder.getInt8Ty(), lastPtr, original_start_ptr);
 
-             _env->printValue(builder, bytes_written, "bytes written: ");
+            // _env->printValue(builder, bytes_written, "bytes written: ");
             return bytes_written;
         }
 
@@ -1173,8 +1173,8 @@ namespace tuplex {
 
             auto buf_size = getSize(builder);
 
-            // debug
-            _env->debugPrint(builder, "buf_size to serialize is: ", buf_size);
+            // // debug
+            // _env->debugPrint(builder, "buf_size to serialize is: ", buf_size);
 
             // debug print
             auto buf = _env->malloc(builder, buf_size);
