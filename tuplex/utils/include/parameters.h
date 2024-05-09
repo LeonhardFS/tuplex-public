@@ -11,5 +11,8 @@ namespace tuplex {
 
     // check to use generic dict instead of struct dict type to execute
     static const bool PARAM_USE_GENERIC_DICT=false;//true;
+
+    // manually modify for Github types to parse only in JSON what's necessary.
+    static const bool PARAM_USE_SPARSE_HACK=true;
 }
 #endif //TUPLEX_PARAMETERS_H
