@@ -9,7 +9,9 @@
 //--------------------------------------------------------------------------------------------------------------------//
 
 #include "gtest/gtest.h"
-
+#include "absl/debugging/failure_signal_handler.h"
+#include "absl/debugging/stacktrace.h"
+#include "absl/debugging/symbolize.h"
 //#ifndef NDEBUG
 //#include <mcheck.h>
 //#endif
@@ -19,6 +21,11 @@ int main(int argc, char **argv) {
 //#ifndef NDEBUG
 //mtrace();
 //#endif
+
+   absl::InitializeSymbolizer(argv[0]);
+
+   absl::FailureSignalHandlerOptions options;
+   absl::InstallFailureSignalHandler(options);
 
     ::testing::InitGoogleTest(&argc, argv);
     int ret = RUN_ALL_TESTS();

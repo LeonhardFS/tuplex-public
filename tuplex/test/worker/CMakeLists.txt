@@ -8,6 +8,9 @@ include(GoogleTest)
 ADD_EXECUTABLE(testworker main.cc BasicInvocation.cc nextconf/FlightsQueryTest.cc nextconf/GithubQueryTest.cc nextconf/ServiceRequestsQueryTest.cc nextconf/QueriesTest.cc)
 target_include_directories(testworker PUBLIC "../../worker/include")
 # find_package(pybind11 REQUIRED)
+
+find_package(absl REQUIRED)
+
 TARGET_LINK_LIBRARIES(testworker
         libutils
         libio
@@ -18,6 +21,10 @@ TARGET_LINK_LIBRARIES(testworker
         ${AWSSDK_LINK_LIBRARIES}
         ${Python3_LIBRARIES}
         pybind11::embed
+        absl::absl_check
+        absl::absl_log
+        absl::debugging
+        absl::failure_signal_handler
         )
 
 message(STATUS "Building tests for worker ${WORKER_NAME}")
