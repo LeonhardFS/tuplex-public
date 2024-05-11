@@ -23,7 +23,9 @@ namespace tuplex {
     std::vector<QueryConfiguration> g_configurations_to_test({QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false, false, 378},
                                                                 QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false, true, 378},
                                                                 QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true, false, 378},
-                                                                QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true, true, 378}});
+                                                                QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true, true, 378},
+                                                                QueryConfiguration{"benchmark", "/hot/data/github_daily/", false, true, 294195},
+                                                                QueryConfiguration{"benchmark", "/hot/data/github_daily/", true, true, 294195}});
 
 // see https://github.com/google/googletest/blob/main/docs/advanced.md#specifying-names-for-value-parameterized-test-parameters
 
