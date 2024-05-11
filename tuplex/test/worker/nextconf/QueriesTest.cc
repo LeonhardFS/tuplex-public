@@ -9,12 +9,21 @@ namespace tuplex {
         std::string name; // <-- specify unique test name here.
         std::string input_pattern;
 
+        // settings for experiment
+        bool use_hyper;
+        bool use_llvm_optimizer;
+
         // ref variable
         size_t expected_result_row_count;
     };
 
 
-    std::vector<QueryConfiguration> g_configurations_to_test({QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", 1000}});
+    // 31 + 19 + 54 + 56 + 63 + 41 + 32 + 16 + 27 + 25 + 25 - 11 = 378 <-- how many rows result for *.json.sample has.
+
+    std::vector<QueryConfiguration> g_configurations_to_test({QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false, false, 378},
+                                                                QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false, true, 378},
+                                                                QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true, false, 378},
+                                                                QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true, true, 378}});
 
 // see https://github.com/google/googletest/blob/main/docs/advanced.md#specifying-names-for-value-parameterized-test-parameters
 
@@ -157,14 +166,11 @@ namespace tuplex {
             GTEST_SKIP() << "Did not find any files for pattern " + input_pattern + " skipping test.";
         }
 
-        // @TODO: non-hyper mode doesn't work yet ??
-        // hyper-moder returns empty files ??
-        auto use_hyper = false;//true; // should work for both true/false.
-
         // set input/output paths
         // auto exp_settings = lambdaSettings(true);
         auto exp_settings = contextTestSettings();
-        exp_settings["tuplex.experimental.hyperspecialization"] = boolToString(use_hyper);
+        exp_settings["tuplex.experimental.hyperspecialization"] = boolToString(test_conf.use_hyper);
+        exp_settings["tuplex.useLLVMOptimizer"] = boolToString(test_conf.use_llvm_optimizer);
         SamplingMode sm = static_cast<SamplingMode>(stoi(exp_settings["sampling_mode"]));
         sm = sm | SamplingMode::SINGLETHREADED;
         ContextOptions co = ContextOptions::defaults();
@@ -172,9 +178,7 @@ namespace tuplex {
             if(startsWith(kv.first, "tuplex."))
                 co.set(kv.first, kv.second);
 
-        // disable optimizer
-        co.set("tuplex.useLLVMOptimizer", "false");
-
+        // this allows large files to be processed without splitting.
         co.set("tuplex.inputSplitSize", "20G");
         co.set("tuplex.experimental.worker.workerBufferSize", "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
 
@@ -230,6 +234,17 @@ namespace tuplex {
                              [](const testing::TestParamInfo<NextConfFullTestSuite::ParamType>& info) {
                                  // Can use info.param here to generate the test suffix
                                  auto param = info.param;
-                                 return param.name;
+
+                                 std::stringstream ss;
+                                 ss<<param.name;
+                                 if(param.use_hyper)
+                                     ss<<"_hyper";
+                                 else
+                                     ss<<"_no_hyper";
+                                 if(param.use_llvm_optimizer)
+                                     ss<<"_llvm_opt";
+                                 else
+                                     ss<<"_no_llvm_opt";
+                                 return ss.str();
                              });
 }
