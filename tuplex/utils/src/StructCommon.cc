@@ -723,7 +723,7 @@ namespace tuplex {
             }
         }
 
-        if(value_type.isListType() || value_type.isTupleType()) {
+        if(value_type.isListType()) {
             if(!j.is_array())
                 throw std::runtime_error(err_msg);
 
@@ -733,10 +733,24 @@ namespace tuplex {
             for(auto element : arr)
                 fields.push_back(extract_field_from_json_with_type(element, value_type.elementType()));
 
-            if(value_type.isListType())
-                return Field(List::from_vector(fields));
-            else
-                return Field(Tuple::from_vector(fields));
+            return Field(List::from_vector(fields));
+        }
+
+        if(value_type.isTupleType()) {
+            if(!j.is_array())
+                throw std::runtime_error(err_msg);
+
+            // extract fields
+            std::vector<Field> fields;
+            auto arr = j.get<std::vector<nlohmann::json>>();
+            if(arr.size() != value_type.parameters().size())
+                throw std::runtime_error("incompatible JSON array of " + pluralize(arr.size(), "element") + " found, require exactly " +
+                                                 pluralize(value_type.parameters().size(), "element"));
+            unsigned pos = 0;
+            for(auto element : arr)
+                fields.push_back(extract_field_from_json_with_type(element, value_type.parameters()[pos++]));
+
+            return Field(Tuple::from_vector(fields));
         }
 
         if(value_type.isStructuredDictionaryType()) {
