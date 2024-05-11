@@ -224,6 +224,9 @@ namespace tuplex {
             BasicBlock* bIsNot = BasicBlock::Create(ctx, "is_not", builder.GetInsertBlock()->getParent());
 
             auto is_bad_parse_cond = builder.CreateICmpEQ(ecCode, env.i64Const(ecToI64(ExceptionCode::BADPARSE_STRING_INPUT)));
+
+            env.printValue(builder, is_bad_parse_cond, "is it a bad-parse exception (ec=" + std::to_string(ecToI64(ExceptionCode::BADPARSE_STRING_INPUT)) + "): ");
+
             builder.CreateCondBr(is_bad_parse_cond, bIsBadParseStringInput, bIsNot);
 
             builder.SetInsertPoint(bIsBadParseStringInput);
@@ -239,6 +242,7 @@ namespace tuplex {
             auto ft = decodeBadParseStringInputException(env, builder, input_op, pip_input_row_type,
                                                          ExceptionCode::GENERALCASEVIOLATION, buf, buf_size);
 
+            env.printValue(builder, buf_size, "decoded exception into row from buffer with size: ");
 
             // process using pipeline
             //PipelineBuilder::call(builder, pip.build(), ft, userData, )
@@ -251,7 +255,7 @@ namespace tuplex {
             auto ecOpID = builder.CreateZExtOrTrunc(pip_res.exceptionOperatorID, env.i64Type());
             auto numRowsCreated = builder.CreateZExtOrTrunc(pip_res.numProducedRows, env.i64Type());
 
-            // env.printValue(builder, ecCode, "slow pip ec= ");
+             env.printValue(builder, ecCode, "called pipeline for bad-parse row, return code for pipeline is ec= ");
 
             // use provided return code.
             env.freeAll(builder);
@@ -259,6 +263,7 @@ namespace tuplex {
 
             // before exiting function, make sure to set builder to correct insert point.
             builder.SetInsertPoint(bIsNot);
+            env.debugPrint(builder, "exception not considered bad parse input, continuing resolve paths...");
         }
 
         // env, builder, pip_input_row_type, pipFunc, ecCode, rowNo, userData, dataPtr, dataSize
@@ -392,6 +397,9 @@ namespace tuplex {
             auto dataSize = args["bufSize"];
             auto userData = args["userData"];
             auto rowNo = args["rowNumber"];
+
+            env.printValue(builder, ecCode, "got exception to process with ec=");
+            env.printValue(builder, rowNo, "exception row number is: ");
 
             // exceptions are stored in a variety of formats
             // 1. PYTHON_PARALLELIZE -> stored as pickled object, can't decode. Requires interpreter functor.
