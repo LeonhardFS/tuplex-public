@@ -3687,14 +3687,16 @@ namespace tuplex {
                                     // _env.debugPrint(builder, "access path " + access_path_to_str(access_path) + " NOT present.");
 
                                     builder.CreateStore(_env.i1Const(true), var.is_null);
-                                    bbNotPresent = builder.GetInsertBlock();
+                                   // bbNotPresent = builder.GetInsertBlock();
 
                                     // connect both to new block
                                     auto bbDone = llvm::BasicBlock::Create(_env.getContext(), "presence_done_pair" + std::to_string(pair_pos), func);
                                     builder.SetInsertPoint(bbIsPresent);
                                     builder.CreateBr(bbDone);
+
                                     builder.SetInsertPoint(bbNotPresent);
-                                    builder.SetInsertPoint(bbDone);
+                                    builder.CreateBr(bbDone);
+
                                     builder.SetInsertPoint(bbDone);
                                     lfb.setLastBlock(bbDone);
                                 } else {
