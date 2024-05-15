@@ -518,7 +518,7 @@ namespace tuplex {
 
             BasicBlock* bbParseAsGeneralCaseRow = BasicBlock::Create(_env->getContext(), "parse_as_general_row", builder.GetInsertBlock()->getParent());
             BasicBlock* bbNormalCaseSuccess = BasicBlock::Create(_env->getContext(), "normal_row_found", builder.GetInsertBlock()->getParent());
-            BasicBlock* bbGeneralCaseSuccess = BasicBlock::Create(_env->getContext(), "general_row_found", builder.GetInsertBlock()->getParent());
+            BasicBlock* bbGeneralCaseSuccess = nullptr;
             BasicBlock* bbFallback = BasicBlock::Create(_env->getContext(), "fallback_row_found", builder.GetInsertBlock()->getParent());
 
             // // filter promotion? -> happens here.
@@ -596,6 +596,10 @@ namespace tuplex {
 #ifdef JSON_PARSER_TRACE_MEMORY
                     _env->printValue(builder, rc, "general row parsed.");
 #endif
+
+                    // create general case parse block:
+                    bbGeneralCaseSuccess = BasicBlock::Create(_env->getContext(), "general_row_found", builder.GetInsertBlock()->getParent());
+
                     builder.CreateBr(bbGeneralCaseSuccess);
 
                     // // old, but correct with long compile times:
@@ -676,6 +680,13 @@ namespace tuplex {
                         if(python::canUpcastType(normal_case_row_type, general_case_row_type)) {
                             logger().debug("found exception handler in JSON source task builder, serializing exceptions in general case format.");
 
+                            std::stringstream ss;
+                            ss<<"upcast is possible from normal -> general row type, emitting code for this with:\n";
+                            ss<<"normal row type:  "<<normal_case_row_type.desc()<<"\n";
+                            ss<<"general row type: "<<general_case_row_type.desc()<<"\n";
+
+                            logger().debug(ss.str());
+
                             FlattenedTuple upcasted_row(_env.get());
 
                             // if both are row type, check names are the same. Then because normal_case_row is given as
@@ -695,6 +706,8 @@ namespace tuplex {
 
                             // auto upcasted_row_serialized_size = upcasted_row.getSize(builder);
                             // _env->printValue(builder, upcasted_row_serialized_size, "serialized size of row AFTER UPCAST AND REORDER::");
+
+                            logger().debug("Serializing general case row as normal-case exception.");
 
                             // serialize as exception --> this connects already to freeStart.
                             serializeAsNormalCaseException(builder, userData, _inputOperatorID, rowNumber(builder), upcasted_row);
@@ -725,8 +738,9 @@ namespace tuplex {
                 builder.CreateBr(_freeStart);
             }
 
-            {
-                // 2. general case
+            if(bbGeneralCaseSuccess) {
+                // 2. general case (if desired)
+                logger().debug("Generating general-case row block");
                 builder.SetInsertPoint(bbGeneralCaseSuccess);
 
 #ifdef JSON_PARSER_TRACE_MEMORY
@@ -741,7 +755,7 @@ namespace tuplex {
 #endif
                 // in order to store an exception, need 8 bytes for each: rowNumber, ecCode, opID, eSize + the size of the row
                 general_size = builder.CreateAdd(general_size, _env->i64Const(4 * sizeof(int64_t)));
-
+                assert(general_case_row.flattenedTupleType().hash() >= 0); // capture that type has been defined.
                 serializeAsNormalCaseException(builder, userData, _inputOperatorID, rowNumber(builder), general_case_row);
 
                 incVar(builder, _generalMemorySizeVar, general_size);
@@ -1526,6 +1540,15 @@ namespace tuplex {
             // checks
             assert(row_no);
             assert(row_no->getType() == _env->i64Type());
+
+            auto expected_general_case_row_tuple_type = _generalCaseRowType.isTupleType() ? _generalCaseRowType : _generalCaseRowType.get_columns_as_tuple_type();
+
+            if(general_case_row.getTupleType() != expected_general_case_row_tuple_type) {
+                logger().error("Attempting to serialize normal case exception row, however row is"
+                               " not in general case row format.\nExpected general case row format: " + expected_general_case_row_tuple_type.desc() +
+                               "\nActual general case row format: " + general_case_row.getTupleType().desc());
+            }
+            assert(general_case_row.getTupleType() == expected_general_case_row_tuple_type);
 
 #ifdef JSON_PARSER_TRACE_MEMORY
             _env->printValue(builder, row_no, "row number: ");

@@ -967,6 +967,10 @@ namespace tuplex {
 
                     // special cases list and struct
                     if(type.isStructuredDictionaryType()) {
+#if LLVM_VERSION_MAJOR < 15
+                        assert(el.val && (el.val->getType()->isPointerTy() && el.val->getType()->getPointerElementType()->isStructTy()) || el.val->getType()->isStructTy());
+#endif
+
                         auto s_size = struct_dict_serialized_memory_size(*_env, builder, el.val, type).val;
 
                         // debug print:
@@ -1527,6 +1531,17 @@ namespace tuplex {
                 auto from = SerializableValue(val, size, is_null);
                 // _env->debugPrint(builder, "upcasting " + from_type.desc() + " -> " + to_type.desc() + " (col=" + std::to_string(i) + ")");
                 auto to = _env->upcastValue(builder, from, from_type, to_type);
+
+                // quick check:
+#ifndef NDEBUG
+                if(to_type.withoutOption().isStructuredDictionaryType()) {
+                    assert(to.val);
+                    if(!(to.val->getType()->isStructTy() || to.val->getType()->getPointerElementType()->isStructTy())) {
+                        throw std::runtime_error("invalid llvm type " + _env->getLLVMTypeName(to.val->getType()) + " for " + to_type.desc());
+                    }
+                }
+#endif
+
                 ft.assign(i, to.val, to.size, to.is_null);
             }
 

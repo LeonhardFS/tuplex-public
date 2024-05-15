@@ -3616,16 +3616,24 @@ namespace tuplex {
                         // special case deopt?
                         // do we need to deoptimize?
                         // this means pair.value_type must match return type, else it's directly a normal case failure
-                        if(pair.valueType != retType) {
+                        if(pair.valueType.withoutOption() != retType.withoutOption()) {
                             lfb.setLastBlock(builder.GetInsertBlock());
                             lfb.exitWithException(ExceptionCode::NORMALCASEVIOLATION, "value_type " + pair.valueType.desc() + " must match expected return type " + retType.desc() + " for structdict.get() for key=" + pair.key);
+                        }  else if(pair.valueType != retType && pair.valueType.withoutOption() == retType) {
+                            // TODO: need to deoptimize here, because NULL could be given, but retType expected.
+                            throw std::runtime_error("not implemented yet.");
                         } else {
+                            assert((pair.valueType == retType || pair.valueType == retType.withoutOption()));
                             // regular processing, no early deopt failure
                             //_env.printValue(builder, key.val, "key match for key=" + pair.key);
 
+                            // special case: set is_null simply to false, because value is present!
+                            if(pair.valueType == retType.withoutOption())
+                                builder.CreateStore(_env.i1Const(false), var.is_null);
+
                             if(pair.alwaysPresent) {
                                 // can simply load value, no further checks necessary. value type and ret type are the same
-                                assert(pair.valueType == retType);
+                                assert(pair.valueType == retType.withoutOption());
                                 access_path_t access_path;
                                 access_path.push_back(std::make_pair(pair.key, pair.keyType));
                                 auto val = struct_dict_load_value(_env, builder, caller.val, callerType, access_path);
