@@ -3,6 +3,7 @@
 //
 
 #include "TestUtils.h"
+#include "JsonStatistic.h"
 
 namespace tuplex {
     struct QueryConfiguration {
@@ -256,4 +257,34 @@ namespace tuplex {
                                      ss<<"_no_llvm_opt";
                                  return ss.str();
                              });
+
+
+    TEST(AllQueries, AllUniqueRowTypesFromSample) {
+        using namespace std;
+
+        string input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
+
+        auto uris = glob(input_pattern);
+        EXPECT_EQ(uris.size(), 11);
+
+        // parse all rows, and find unique row-types
+        std::vector<Row> rows;
+        cout<<"Found "<<pluralize(uris.size(), "file")<<endl;
+        for(auto path : uris) {
+            cout<<"-- parsing "<<path<<endl;
+            auto data = fileToString(path);
+            auto part_rows = parseRowsFromJSONStratified(data.c_str(), data.size(), nullptr, false,
+                                                         true, 99999999, 1, 1,
+                                                         1, {}, false);
+            std::copy(part_rows.begin(), part_rows.end(), std::back_inserter(rows));
+        }
+        cout<<"Got "<<pluralize(rows.size(), "row")<<" from all files."<<endl;
+
+        std::unordered_map<python::Type, size_t> type_counts;
+        for(auto row : rows) {
+            type_counts[row.getRowType()]++;
+        }
+
+        cout<<"Got "<<type_counts.size()<<" unique row types"<<endl;
+    }
 }
