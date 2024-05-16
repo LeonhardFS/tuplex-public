@@ -403,7 +403,9 @@ namespace tuplex {
     DataSet &Context::json(const std::string &pattern,
                            bool unwrap_first_level,
                            bool treat_heterogenous_lists_as_tuples,
-                           const SamplingMode& sm) {
+                           const SamplingMode& sm,
+                           const option<Schema>& normal_case_schema,
+                           const option<Schema>& general_case_schema) {
         using namespace std;
 
         Schema schema;
@@ -414,7 +416,9 @@ namespace tuplex {
                                                                                                     unwrap_first_level,
                                                                                                     treat_heterogenous_lists_as_tuples,
                                                                                                     _options,
-                                                                                                    sm)));
+                                                                                                    sm,
+                                                                                                    normal_case_schema,
+                                                                                                    general_case_schema)));
         auto op = ((FileInputOperator*)dsptr->_operator.get());
 
         // check whether files were found, else return empty dataset!

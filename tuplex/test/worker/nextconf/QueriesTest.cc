@@ -298,5 +298,56 @@ namespace tuplex {
         for(auto p : view_of_counts) {
             cout<<p.second<<"  "<<p.first.desc()<<endl;
         }
+
+        auto normal_case_row_type = view_of_counts[0].first;
+
+        string testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
+        auto id = 0;
+        auto output_path = "./local-exp/" + testName + "/" + std::to_string(id) + "/";
+
+        // check now with pipeline and set type.
+        ContextOptions co = ContextOptions::defaults();
+//        for(const auto& kv : exp_settings)
+//            if(startsWith(kv.first, "tuplex."))
+//                co.set(kv.first, kv.second);
+
+        // this allows large files to be processed without splitting.
+        co.set("tuplex.inputSplitSize", "20G");
+        co.set("tuplex.experimental.worker.workerBufferSize", "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
+
+        // create context according to settings
+        Context ctx(co);
+        runtime::init(co.RUNTIME_LIBRARY().toPath());
+
+        // start pipeline incl. output
+        auto repo_id_code = "def extract_repo_id(row):\n"
+                            "    if 2012 <= row['year'] <= 2014:\n"
+                            "        \n"
+                            "        if row['type'] == 'FollowEvent':\n"
+                            "            return row['payload']['target']['id']\n"
+                            "        \n"
+                            "        if row['type'] == 'GistEvent':\n"
+                            "            return row['payload']['id']\n"
+                            "        \n"
+                            "        repo = row.get('repository')\n"
+                            "        \n"
+                            "        if repo is None:\n"
+                            "            return None\n"
+                            "        return repo.get('id')\n"
+                            "    else:\n"
+                            "        return row['repo'].get('id')";
+
+        // remove output files if they exist
+        cout<<"Removing files (if they exist) from "<<output_path<<endl;
+        boost::filesystem::remove_all(output_path.c_str());
+
+        ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, Schema(Schema::MemoryLayout::ROW, normal_case_row_type))
+                .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
+                .withColumn("repo_id", UDF(repo_id_code))
+                .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
+                .withColumn("commits", UDF("lambda row: row['payload'].get('commits')"))
+                .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
+                .selectColumns(vector<string>{"type", "repo_id", "year", "number_of_commits"})
+                .tocsv(output_path);
     }
 }
