@@ -258,6 +258,11 @@ namespace tuplex {
                                  return ss.str();
                              });
 
+    auto sorted_view_of_values(const std::unordered_map<python::Type, size_t>& values){
+        std::vector<std::pair<python::Type, size_t>> view(values.begin(), values.end());
+        std::sort(view.begin(), view.end(), [](const auto& lhs, const auto& rhs) {return lhs.second < rhs.second; });
+        return view;
+    }
 
     TEST(AllQueries, AllUniqueRowTypesFromSample) {
         using namespace std;
@@ -272,19 +277,26 @@ namespace tuplex {
         cout<<"Found "<<pluralize(uris.size(), "file")<<endl;
         for(auto path : uris) {
             cout<<"-- parsing "<<path<<endl;
+            Timer timer;
             auto data = fileToString(path);
             auto part_rows = parseRowsFromJSONStratified(data.c_str(), data.size(), nullptr, false,
                                                          true, 99999999, 1, 1,
                                                          1, {}, false);
             std::copy(part_rows.begin(), part_rows.end(), std::back_inserter(rows));
+            cout<<"-- took "<<timer.time()<<"s"<<endl;
         }
         cout<<"Got "<<pluralize(rows.size(), "row")<<" from all files."<<endl;
-
+        EXPECT_EQ(rows.size(), 11 * 1200);
         std::unordered_map<python::Type, size_t> type_counts;
-        for(auto row : rows) {
+        for(const auto& row : rows) {
             type_counts[row.getRowType()]++;
         }
 
         cout<<"Got "<<type_counts.size()<<" unique row types"<<endl;
+        auto view_of_counts = sorted_view_of_values(type_counts);
+        std::reverse(view_of_counts.begin(), view_of_counts.end());
+        for(auto p : view_of_counts) {
+            cout<<p.second<<"  "<<p.first.desc()<<endl;
+        }
     }
 }

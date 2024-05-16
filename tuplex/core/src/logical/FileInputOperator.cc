@@ -299,9 +299,13 @@ namespace tuplex {
                                                    bool unwrap_first_level,
                                                    bool treat_heterogenous_lists_as_tuples,
                                                    const ContextOptions &co,
-                                                   const SamplingMode& sampling_mode) {
+                                                   const SamplingMode& sampling_mode,
+                                                   const option<Schema>& normal_case_schema,
+                                                   const option<Schema>& general_case_schema) {
         auto &logger = Logger::instance().logger("fileinputoperator");
 
+        if(normal_case_schema.has_value() || general_case_schema.has_value())
+            throw std::runtime_error("schema overwrite not yet supported in fromJSON.");
 
         auto f = new FileInputOperator();
         f->_fmt = FileFormat::OUTFMT_JSON;
