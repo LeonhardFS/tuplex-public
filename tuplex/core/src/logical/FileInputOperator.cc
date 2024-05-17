@@ -295,17 +295,14 @@ namespace tuplex {
                                      column_name_hints, index_based_type_hints, column_based_type_hints, sampling_mode);
     }
 
-    FileInputOperator* FileInputOperator::fromJSON(const std::string &pattern,
+    FileInputOperator *FileInputOperator::fromJSON(const std::string &pattern,
                                                    bool unwrap_first_level,
                                                    bool treat_heterogenous_lists_as_tuples,
                                                    const ContextOptions &co,
-                                                   const SamplingMode& sampling_mode,
-                                                   const option<Schema>& normal_case_schema,
-                                                   const option<Schema>& general_case_schema) {
+                                                   const SamplingMode &sampling_mode,
+                                                   const option<Schema> &normal_case_schema,
+                                                   const option<Schema> &general_case_schema) {
         auto &logger = Logger::instance().logger("fileinputoperator");
-
-        if(normal_case_schema.has_value() || general_case_schema.has_value())
-            throw std::runtime_error("schema overwrite not yet supported in fromJSON.");
 
         auto f = new FileInputOperator();
         f->_fmt = FileFormat::OUTFMT_JSON;
@@ -314,34 +311,39 @@ namespace tuplex {
         f->_samplingMode = sampling_mode;
         f->_samplingSize = co.SAMPLE_SIZE();
 
-       Timer timer;
-       f->detectFiles(pattern);
+        Timer timer;
+        f->detectFiles(pattern);
 
-        if(!f->_fileURIs.empty()) {
+        if (!f->_fileURIs.empty()) {
 
             std::vector<std::vector<std::string>> nameCollection;
-            std::vector<std::vector<std::string>>* namePtr = f->_json_unwrap_first_level ? &nameCollection : nullptr;
+            std::vector<std::vector<std::string>> *namePtr = f->_json_unwrap_first_level ? &nameCollection : nullptr;
 
             // fill sampling cache
             f->fillFileCache(sampling_mode);
             // now fill row cache (by parsing rows)
-            if(!co.USE_STRATIFIED_SAMPLING())
+            if (!co.USE_STRATIFIED_SAMPLING())
                 f->fillRowCache(sampling_mode, namePtr, co.SAMPLE_SIZE());
             else
-                f->fillRowCacheWithStratifiedSamples(sampling_mode, namePtr, co.SAMPLE_SIZE(), co.SAMPLE_STRATA_SIZE(), co.SAMPLE_SAMPLES_PER_STRATA());
+                f->fillRowCacheWithStratifiedSamples(sampling_mode, namePtr, co.SAMPLE_SIZE(), co.SAMPLE_STRATA_SIZE(),
+                                                     co.SAMPLE_SAMPLES_PER_STRATA());
 
-            // detect normal/general type
-            auto t = f->detectJsonTypesAndColumns(co, nameCollection);
-            python::Type normalcasetype = std::get<0>(t);
-            python::Type generalcasetype = std::get<1>(t);
+            // detect normal/general type if not given
+            std::tuple<python::Type, python::Type> t{python::Type::UNKNOWN, python::Type::UNKNOWN};
+            if(!normal_case_schema.has_value() || !general_case_schema.has_value())
+                t = f->detectJsonTypesAndColumns(co, nameCollection);
+
+            python::Type normalcasetype = normal_case_schema.value_or(Schema(Schema::MemoryLayout::ROW, std::get<0>(t))).getRowType();
+            python::Type generalcasetype = general_case_schema.value_or(Schema(Schema::MemoryLayout::ROW, std::get<1>(t))).getRowType();
 
             // make type more general (to cover potentially more!)
             generalcasetype = generalize_type(generalcasetype);
 
             // special case, no unwrap -> remove inner option.
-            if(!unwrap_first_level) {
-                if(generalcasetype.isTupleType())
-                    generalcasetype = python::Type::makeTupleType(std::vector<python::Type>({generalcasetype.parameters().front().withoutOption()}));
+            if (!unwrap_first_level) {
+                if (generalcasetype.isTupleType())
+                    generalcasetype = python::Type::makeTupleType(
+                            std::vector<python::Type>({generalcasetype.parameters().front().withoutOption()}));
                 else
                     generalcasetype = generalcasetype.withoutOption();
             }
@@ -353,8 +355,8 @@ namespace tuplex {
             // run row count estimation (required for cost-based optimizer)
             f->_estimatedRowCount = f->estimateSampleBasedRowCount();
 
-            if(PARAM_USE_ROW_TYPE) {
-                if(nameCollection.empty()) {
+            if (PARAM_USE_ROW_TYPE) {
+                if (nameCollection.empty()) {
                     logger.info("no samples given, setting type to empty row.");
                     f->_normalCaseRowType = python::Type::EMPTYROW;
                     f->_generalCaseRowType = python::Type::EMPTYROW;
@@ -377,13 +379,12 @@ namespace tuplex {
             f->_estimatedRowCount = 0;
             logger.warn("no input files found, can't infer type from given path: " + pattern);
 
-            if(PARAM_USE_ROW_TYPE) {
-                f->setOutputSchema(Schema(Schema::MemoryLayout::ROW, python::Type::EMPTYROW));
-            } else {
-                f->setOutputSchema(Schema(Schema::MemoryLayout::ROW, python::Type::EMPTYTUPLE));
-            }
+            auto default_type = PARAM_USE_ROW_TYPE ? python::Type::EMPTYROW : python::Type::EMPTYTUPLE;
 
+            f->_normalCaseRowType = normal_case_schema.value_or(Schema(Schema::MemoryLayout::ROW, default_type)).getRowType();
+            f->_generalCaseRowType = general_case_schema.value_or(Schema(Schema::MemoryLayout::ROW, default_type)).getRowType();
 
+            f->setOutputSchema(Schema(Schema::MemoryLayout::ROW, f->_generalCaseRowType));
         }
 
         // set defaults for possible projection pushdown...

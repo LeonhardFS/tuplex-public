@@ -828,6 +828,7 @@ namespace tuplex {
             throw std::runtime_error(err_msg);
         }
 
+
         if(value_type == python::Type::F64) {
             if(yyjson_is_num(j))
                 return Field(yyjson_get_real(j));
