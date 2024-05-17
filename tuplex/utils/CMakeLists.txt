@@ -141,7 +141,7 @@ set(UTILS_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${ZLIB_INCLUDE_DIRS}
         ${simdjson_INCLUDE_DIRS})
 set(UTILS_LIBRARIES Boost::filesystem Boost::thread Boost::system
-        Boost::system Boost::iostreams ${ZLIB_LIBRARIES} ${AWSSDK_LINK_LIBRARIES} simdjson::simdjson)
+        Boost::system Boost::iostreams ${ZLIB_LIBRARIES} ${AWSSDK_LINK_LIBRARIES} simdjson::simdjson yyjson)
 
 # object library
 add_dependencies(libutils ${UTILS_DEPENDENCIES})

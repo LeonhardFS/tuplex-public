@@ -84,7 +84,7 @@ FetchContent_MakeAvailable(lyra)
 
 FetchContent_Declare(yyjson
 GIT_REPOSITORY https://github.com/ibireme/yyjson
-GIT_TAG 0.8.0)
+GIT_TAG 0.9.0)
 FetchContent_MakeAvailable(yyjson)
 
 
