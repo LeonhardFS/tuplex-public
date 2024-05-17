@@ -349,5 +349,15 @@ namespace tuplex {
                 .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
                 .selectColumns(vector<string>{"type", "repo_id", "year", "number_of_commits"})
                 .tocsv(output_path);
+
+        // TODO: improve performance by reuse and get rid off nlohmann in struct_dict.
+
+        // TODO: implement support for setting schema in json.
+
+        // TODO: check that metrics match, i.e. total normal-case row count MUST match whichever type count is reported.
+        // --> don't care much about general-case row count.
+        // However, can quickly create a general-case by turning every struct-dict into a general dict.
+        // Then, the general count should work for ALL rows.
+        // TODO: ensure that this type works as normal-case for ALL files. --> this is a separate test.
     }
 }
