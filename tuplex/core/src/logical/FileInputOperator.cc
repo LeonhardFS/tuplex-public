@@ -330,8 +330,8 @@ namespace tuplex {
 
             // detect normal/general type if not given
             std::tuple<python::Type, python::Type> t{python::Type::UNKNOWN, python::Type::UNKNOWN};
-            if(!normal_case_schema.has_value() || !general_case_schema.has_value())
-                t = f->detectJsonTypesAndColumns(co, nameCollection);
+            // need to invoke always in order to fill sample cache.
+            t = f->detectJsonTypesAndColumns(co, nameCollection);
 
             python::Type normalcasetype = normal_case_schema.value_or(Schema(Schema::MemoryLayout::ROW, std::get<0>(t))).getRowType();
             python::Type generalcasetype = general_case_schema.value_or(Schema(Schema::MemoryLayout::ROW, std::get<1>(t))).getRowType();
