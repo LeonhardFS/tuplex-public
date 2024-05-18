@@ -111,6 +111,26 @@ namespace tuplex {
     inline SamplingMode perFileMode(const SamplingMode& mode) {
         return static_cast<SamplingMode>((mode & SamplingMode::FIRST_ROWS) | (mode & SamplingMode::LAST_ROWS) | (mode & SamplingMode::RANDOM_ROWS));
     }
+
+    inline SamplingMode normalizeSamplingMode(const SamplingMode& raw_mode) {
+        auto mode = raw_mode;
+
+        // do not normalize UNKNOWN.
+        if(SamplingMode::UNKNOWN == mode)
+            return mode;
+
+        // is no per-file mode present? --> add first rows by default.
+        if(!(mode & SamplingMode::FIRST_ROWS || mode & SamplingMode::LAST_ROWS || mode & SamplingMode::RANDOM_ROWS))
+            mode = mode | SamplingMode::FIRST_ROWS | SamplingMode::LAST_ROWS; // use from default mode
+
+        if(!(mode & SamplingMode::SINGLETHREADED || mode & SamplingMode::MULTITHREADED))
+            mode = mode | SamplingMode::MULTITHREADED;
+
+        if(!(mode & SamplingMode::ALL_FILES || mode & SamplingMode::FIRST_FILE || mode & SamplingMode::LAST_FILE || mode & SamplingMode::RANDOM_FILE))
+            mode = mode | SamplingMode::FIRST_FILE;
+
+        return mode;
+    }
 }
 
 #endif //TUPLEX_DEFS_H

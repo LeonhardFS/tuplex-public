@@ -10,6 +10,8 @@
 
 #include "Row.h"
 #include "JSONUtils.h"
+#include "Row.h"
+#include "JSONUtils.h"
 
 namespace tuplex {
 
@@ -84,6 +86,9 @@ namespace tuplex {
     }
 
     python::Type Row::getType(const int col) const {
+        if(_schema.getRowType().isRowType())
+            return _schema.getRowType().get_column_type(col);
+        assert(_schema.getRowType().isTupleType());
         return _schema.getRowType().parameters()[col];
     }
 
@@ -129,16 +134,7 @@ namespace tuplex {
     }
 
     python::Type Row::getRowType() const {
-        if(_values.empty())
-            return python::Type::EMPTYTUPLE; // bad case!
-
-        // get types of rows & return then tuple type
-        std::vector<python::Type> types;
-        types.reserve(_values.size());
-        for(const auto& el: _values)
-            types.push_back(el.getType());
-
-        return python::Type::makeTupleType(types);
+        return _schema.getRowType();
     }
 
     size_t Row::serializeToMemory(uint8_t *buffer, const size_t capacity) const {
@@ -500,5 +496,49 @@ namespace tuplex {
         }
 
         return python::Type::UNKNOWN;
+    }
+
+    Row Row::with_columns(const std::vector<std::string>& column_names) const {
+        assert(PARAM_USE_ROW_TYPE);
+
+        auto current_row_type = _schema.getRowType();
+        if(current_row_type.isTupleType()) {
+            if(column_names.size() != current_row_type.parameters().size()) {
+                std::stringstream ss;
+                ss<<"Can't create row type from tuple type, because tuple type has "<<pluralize(current_row_type.parameters().size(), "element")<<" but given are "<<pluralize(column_names.size(), "column name");
+                throw std::runtime_error(ss.str());
+            }
+
+            Row r(*this);
+            r._schema = Schema(_schema.getMemoryLayout(), python::Type::makeRowType(current_row_type.parameters(), column_names));
+            return r;
+        }
+
+        if(current_row_type.isRowType()) {
+            if(column_names.size() != current_row_type.get_column_count()) {
+                std::stringstream ss;
+                ss<<"Can't create row type from tuple type, because tuple type has "<<pluralize(current_row_type.get_column_count(), "element")<<" but given are "<<pluralize(column_names.size(), "column name");
+                throw std::runtime_error(ss.str());
+            }
+
+            Row r(*this);
+            r._schema = Schema(_schema.getMemoryLayout(), python::Type::makeRowType(current_row_type.get_columns_as_tuple_type().parameters(), column_names));
+            return r;
+        }
+
+        throw std::runtime_error("Error, internal row type is " + _schema.getRowType().desc() + " but must be tuple type or row type");
+    }
+
+    python::Type Row::row_type_from_values() const {
+        if(_values.empty())
+            return python::Type::EMPTYTUPLE; // bad case!
+
+        // get types of rows & return then tuple type
+        std::vector<python::Type> types;
+        types.reserve(_values.size());
+        for(const auto& el: _values)
+            types.push_back(el.getType());
+
+        return python::Type::makeTupleType(types);
     }
 }

@@ -49,6 +49,8 @@ namespace tuplex {
         // get length from values
         Serializer getSerializer() const;
         size_t getSerializedLength() const;
+
+        python::Type row_type_from_values() const;
     public:
         Row() : _serializedLength(0) {}
 
@@ -70,7 +72,7 @@ namespace tuplex {
         // new constructor using variadic templates
         template<typename... Targs> Row(Targs... Fargs) {
             vec_build(_values, Fargs...);
-            _schema = Schema(Schema::MemoryLayout::ROW, getRowType());
+            _schema = Schema(Schema::MemoryLayout::ROW, row_type_from_values());
             _serializedLength = getSerializedLength();
         }
 
@@ -89,7 +91,7 @@ namespace tuplex {
             _values[col] = f;
 
             // need to update type of row!
-            auto old_type = _schema.getRowType();
+            auto old_type = getRowType();
             auto types = old_type.parameters();
             if(types[col] != f.getType()) {
                 types[col] = f.getType();
@@ -188,12 +190,15 @@ namespace tuplex {
         static Row from_vector(const std::vector<Field>& fields) {
             Row row;
             row._values = fields;
-            row._schema = Schema(Schema::MemoryLayout::ROW, row.getRowType());
+            row._schema = Schema(Schema::MemoryLayout::ROW, row.row_type_from_values());
             row._serializedLength = row.getSerializedLength();
             return row;
         }
 
         Row upcastedRow(const python::Type& targetType) const;
+
+        // creates new Row with RowType
+        Row with_columns(const std::vector<std::string>& column_names) const;
 
 #ifdef BUILD_WITH_CEREAL
         // cereal serialization function

@@ -284,9 +284,17 @@ namespace tuplex {
             cout<<"-- parsing "<<path<<endl;
             Timer timer;
             auto data = fileToString(path);
-            auto part_rows = parseRowsFromJSONStratified(data.c_str(), data.size(), nullptr, false,
+            std::vector<std::vector<std::string>> out_column_names;
+            auto part_rows = parseRowsFromJSONStratified(data.c_str(), data.size(), &out_column_names, true,
                                                          true, 99999999, 1, 1,
                                                          1, {}, false);
+
+            cout<<"-- converting to row type (elapsed="<<timer.time()<<endl;
+            for(unsigned i = 0; i < part_rows.size(); ++i) {
+                auto row = part_rows[i];
+                part_rows[i] = row.with_columns(out_column_names[i]);
+            }
+
             std::copy(part_rows.begin(), part_rows.end(), std::back_inserter(rows));
             cout<<"-- took "<<timer.time()<<"s"<<endl;
         }
@@ -311,6 +319,12 @@ namespace tuplex {
         string testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
         auto id = 0;
         auto output_path = "./local-exp/" + testName + "/" + std::to_string(id) + "/";
+
+
+
+        // init interpreter
+        python::initInterpreter();
+        python::unlockGIL();
 
         // check now with pipeline and set type.
         ContextOptions co = ContextOptions::defaults();
@@ -359,6 +373,9 @@ namespace tuplex {
 
         auto result_row_count = csv_row_count(output_path);
         EXPECT_GT(result_row_count, 0);
+
+        python::lockGIL();
+        python::closeInterpreter();
 
         // TODO: improve performance by reuse and get rid off nlohmann in struct_dict. --> DONE.
 
