@@ -326,6 +326,8 @@ namespace tuplex {
         Timer timer;
         f->detectFiles(pattern);
 
+        std::vector<std::string> sample_column_names; // <-- store names of sample.
+
         if (!f->_fileURIs.empty()) {
 
             std::vector<std::vector<std::string>> nameCollection;
@@ -344,6 +346,9 @@ namespace tuplex {
             std::tuple<python::Type, python::Type> t{python::Type::UNKNOWN, python::Type::UNKNOWN};
             // need to invoke always in order to fill sample cache.
             t = f->detectJsonTypesAndColumns(co, nameCollection);
+
+            // save names from sample
+            sample_column_names = f->_columnNames;
 
             python::Type normalcasetype = normal_case_schema.value_or(Schema(Schema::MemoryLayout::ROW, std::get<0>(t))).getRowType();
             python::Type generalcasetype = general_case_schema.value_or(Schema(Schema::MemoryLayout::ROW, std::get<1>(t))).getRowType();
@@ -468,8 +473,38 @@ namespace tuplex {
         logger.debug("JSON - normal case type: " + f->_normalCaseRowType.desc());
         logger.debug("JSON - general case type: " + f->_generalCaseRowType.desc());
 
+        // need to adjust samples (fill in nulls etc.)
+        assert(!sample_column_names.empty()); // <-- should be valid...
+        f->adjustJsonSamples(sample_column_names, sample_column_names.size());
 
         return f;
+    }
+
+    void FileInputOperator::adjustJsonSamples(std::vector<std::string> assumed_column_names, size_t assumed_column_count) {
+
+        if(assumed_column_count != 0 && assumed_column_names.empty() && !_columnNames.empty())
+            assumed_column_names = _columnNames;
+
+        // check what normal case column names & general case column names are
+        auto normal_case_column_names = _normalCaseRowType.isRowType() ? _normalCaseRowType.get_column_names() : _columnNames;
+        auto general_case_column_names = _generalCaseRowType.isRowType() ? _generalCaseRowType.get_column_names() : _columnNames;
+
+        if(!vec_equal(normal_case_column_names, general_case_column_names) && (!_normalCaseRowType.isRowType() || !_generalCaseRowType.isRowType())) {
+            throw std::runtime_error("Both normal/general types must be of RowType.");
+        }
+
+        for(auto& row : _rowsSample) {
+            assert(row.getNumColumns() == assumed_column_count); // <-- this must hold.
+
+            // std::cout<<"row (before): "<<row.getRowType().desc()<<std::endl;
+
+            // are assumed_column_names given?
+            reorder_and_fill_missing_will_null(row, assumed_column_names, normal_case_column_names);
+
+
+            // each sample is usually assumed to be a tuple with column names
+            // std::cout<<"row (after): "<<row.getRowType().desc()<<std::endl;
+        }
     }
 
     void FileInputOperator::fillRowCache(SamplingMode mode, std::vector<std::vector<std::string>>* outNames, size_t sample_limit) {

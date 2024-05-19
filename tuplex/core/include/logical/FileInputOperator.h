@@ -113,6 +113,9 @@ namespace tuplex {
             return false;
         }
 
+        // goes over all stored JSON samples and makes sure they work with normal case / general case type by updating them.
+        void adjustJsonSamples(std::vector<std::string> assumed_column_names, size_t assumed_column_count);
+
     public:
         // helper function to project a schema
         inline python::Type projectRowType(const python::Type& rowType) const {

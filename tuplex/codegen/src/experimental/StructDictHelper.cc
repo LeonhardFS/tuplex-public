@@ -1891,10 +1891,6 @@ namespace tuplex {
 
 
                     if(src_always_present) {
-                        if(src_value_type.isListType()) {
-                            std::cout<<"found problematic item to store"<<std::endl;
-                        }
-
                         auto src_element = struct_dict_load_value(env, builder, src.val, src_type, dst_access_path);
 
 //                        if(src_value_type.isListType()) {

@@ -195,6 +195,10 @@ namespace tuplex {
             return row;
         }
 
+        inline std::vector<Field> to_vector() const {
+            return _values;
+        }
+
         Row upcastedRow(const python::Type& targetType) const;
 
         // creates new Row with RowType
@@ -241,6 +245,63 @@ namespace tuplex {
                                               bool independent_columns=true,
                                               bool use_nvo=true,
                                               const TypeUnificationPolicy& t_policy=TypeUnificationPolicy::defaultPolicy());
+
+    template<typename T> bool vec_set_eq(const std::vector<T>& lhs, const std::vector<T>& rhs) {
+        std::set<T> L(lhs.begin(), lhs.end());
+        std::set<T> R(rhs.begin(), rhs.end());
+
+        auto lsize = L.size();
+        auto rsize = R.size();
+
+        if(lsize != rsize)
+            return false;
+
+        // merge sets
+        for(auto el : rhs)
+            L.insert(el);
+        return L.size() == lsize;
+    }
+
+    inline void reorder_row(Row& row,
+                     const std::vector<std::string>& row_column_names,
+                     const std::vector<std::string>& dest_column_names) {
+
+        assert(row_column_names.size() == dest_column_names.size());
+        assert(vec_set_eq(row_column_names, dest_column_names)); // expensive check
+
+        // for each name, figure out where it has to be moved to!
+        std::unordered_map<unsigned, unsigned> map;
+        std::vector<Field> fields(row_column_names.size());
+        for(unsigned i = 0; i < row_column_names.size(); ++i) {
+            map[i] = indexInVector(row_column_names[i], dest_column_names);
+        }
+        for(unsigned i = 0; i < row_column_names.size(); ++i)
+            fields[map[i]] = row.get(i);
+        row = Row::from_vector(fields);
+    }
+
+    inline void reorder_and_fill_missing_will_null(Row& row, std::vector<std::string>& row_column_names, const std::vector<std::string>& dest_column_names) {
+        // check now which names are missing
+        std::vector<std::string> missing;
+        std::vector<std::string> ordered_row_column_names = row_column_names;
+        std::vector<std::string> ordered_dest_column_names = dest_column_names;
+        std::sort(ordered_row_column_names.begin(), ordered_row_column_names.end());
+        std::sort(ordered_dest_column_names.begin(), ordered_dest_column_names.end());
+        std::set_difference(ordered_row_column_names.begin(), ordered_row_column_names.end(),
+                            ordered_dest_column_names.begin(), ordered_dest_column_names.end(), std::back_inserter(missing));
+        if(!missing.empty()) {
+            auto fields = row.to_vector();
+            auto expanded_names = row_column_names;
+            for(const auto& name : missing) {
+                fields.push_back(Field::null());
+                expanded_names.push_back(name);
+            }
+            row = Row::from_vector(fields); // this sets the new type as well.
+            reorder_row(row, expanded_names, dest_column_names);
+            return;
+        }
+        reorder_row(row, row_column_names, dest_column_names);
+    }
 
 }
 #endif //TUPLEX_ROW_H
