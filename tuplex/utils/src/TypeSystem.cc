@@ -315,7 +315,7 @@ namespace python {
         // return registerOrGetType(name, AbstractType::TUPLE, args);
     }
 
-    Type TypeFactory::createOrGetStructuredDictType(const std::vector<std::pair<boost::any, python::Type>> &pairs) {
+    Type TypeFactory::createOrGetStructuredDictType(const std::vector<std::pair<boost::any, python::Type>> &pairs, bool is_sparse) {
         std::vector<StructEntry> kv_pairs;
         // for each pair, construct tuple (val_type, value) -> type
         for(auto pair : pairs) {
@@ -332,7 +332,7 @@ namespace python {
             kv_pair.alwaysPresent = true;
             kv_pairs.push_back(kv_pair);
         }
-        return createOrGetStructuredDictType(kv_pairs);
+        return createOrGetStructuredDictType(kv_pairs, is_sparse);
     }
 
     static std::vector<StructEntry> remove_bad_pairs(const std::vector<StructEntry>& kv_pairs) {
@@ -371,13 +371,13 @@ namespace python {
     }
 
 
-    Type TypeFactory::createOrGetStructuredDictType(const std::vector<StructEntry> &kv_pairs) {
+    Type TypeFactory::createOrGetStructuredDictType(const std::vector<StructEntry> &kv_pairs, bool is_sparse) {
 
         // Struct[] is empty dict
         if(kv_pairs.empty())
             return python::Type::EMPTYDICT;
 
-        std::string name = "Struct[";
+        std::string name = is_sparse ? "SparseStruct[" : "Struct[";
 
         // for each pair, construct tuple (val_type, value) -> type
         for(const auto& kv_pair : kv_pairs) {
@@ -399,7 +399,8 @@ namespace python {
             name += "]";
 
         // store as new type in type factory (@TODO)
-        auto t = registerOrGetType(name, AbstractType::STRUCTURED_DICTIONARY, {}, {}, {}, false, kv_pairs);
+        auto t = registerOrGetType(name, is_sparse ? AbstractType::SPARSE_STRUCTURED_DICTIONARY : AbstractType::STRUCTURED_DICTIONARY,
+                                   {}, {}, {}, false, kv_pairs);
         return t;
     }
 
@@ -568,6 +569,10 @@ namespace python {
 
     bool Type::isStructuredDictionaryType() const {
         return TypeFactory::instance().isStructuredDictionaryType(*this);
+    }
+
+    bool Type::isSparseStructuredDictionaryType() const {
+        return TypeFactory::instance().isSparseStructuredDictionaryType(*this);
     }
 
     bool Type::isRowType() const {
@@ -1187,12 +1192,12 @@ namespace python {
         return python::TypeFactory::instance().createOrGetListType(elementType);
     }
 
-    Type Type::makeStructuredDictType(const std::vector<std::pair<boost::any, python::Type>> &kv_pairs) {
-        return python::TypeFactory::instance().createOrGetStructuredDictType(kv_pairs);
+    Type Type::makeStructuredDictType(const std::vector<std::pair<boost::any, python::Type>> &kv_pairs, bool is_sparse) {
+        return python::TypeFactory::instance().createOrGetStructuredDictType(kv_pairs, is_sparse);
     }
 
-    Type Type::makeStructuredDictType(const std::vector<StructEntry> &kv_pairs) {
-        return python::TypeFactory::instance().createOrGetStructuredDictType(kv_pairs);
+    Type Type::makeStructuredDictType(const std::vector<StructEntry> &kv_pairs, bool is_sparse) {
+        return python::TypeFactory::instance().createOrGetStructuredDictType(kv_pairs, is_sparse);
     }
 
     Type Type::makeOptionType(const python::Type &type) {
@@ -1307,6 +1312,10 @@ namespace python {
         keywords["null"] = Type::NULLVALUE;
 
         return keywords;
+    }
+
+    bool TypeFactory::isSparseStructuredDictionaryType(const Type &type) {
+        return false;
     }
 
     bool tupleElementsHaveSameType(const python::Type& tupleType) {
@@ -2083,7 +2092,7 @@ namespace python {
                 // 3. don't push if the last pair is not filled out completely yet! -> i.e. a tuple type was encountered
 
                 bool push_new_pair = false;
-                if(!compoundStack.empty() && compoundStack.top() == "Struct"
+                if(!compoundStack.empty() && (compoundStack.top() == "Struct" || compoundStack.top() == "SparseStruct")
                    && (expressionStack.empty() || expressionStack.top().empty()))
                     push_new_pair = true;
 
@@ -2115,7 +2124,7 @@ namespace python {
                 }
 
                 // if in struct compound mode -> push pairs
-                if(!compoundStack.empty() && (compoundStack.top() == "Struct" || compoundStack.top() == "Row")) {
+                if(!compoundStack.empty() && (compoundStack.top() == "Struct" || compoundStack.top() == "SparseStruct" || compoundStack.top() == "Row")) {
                     // edit last pair.
                     assert(!kvStack.empty());
                     assert(!kvStack.top().empty());
@@ -2223,7 +2232,11 @@ namespace python {
                 } else if("Struct" == compound_type) {
                     auto kv_pairs = kvStack.top();
                     kvStack.pop();
-                    t = TypeFactory::instance().createOrGetStructuredDictType(kv_pairs);
+                    t = TypeFactory::instance().createOrGetStructuredDictType(kv_pairs, false);
+                } else if("SparseStruct" == compound_type) {
+                    auto kv_pairs = kvStack.top();
+                    kvStack.pop();
+                    t = TypeFactory::instance().createOrGetStructuredDictType(kv_pairs, true);
                 } else if("_Constant" == compound_type) {
                     auto underlying_type = topVec[0];
                     t = TypeFactory::instance().createOrGetConstantValuedType(underlying_type, json_constant_value);
@@ -2337,6 +2350,15 @@ namespace python {
                 kvStack.push({}); // new pair entry!
                 numOpenSqBrackets++;
                 pos += strlen("Struct[");
+            } else if(s.substr(pos, strlen("SparseStruct[")).compare("SparseStruct[") == 0) {
+                // it's a compound struct type made up of a bunch of other types
+                // need to decode pairs manually!
+                // i.e., what is the next token? -> if ] => then empty dict!
+                expressionStack.push(std::vector<python::Type>());
+                compoundStack.push("SparseStruct");
+                kvStack.push({}); // new pair entry!
+                numOpenSqBrackets++;
+                pos += strlen("SparseStruct[");
             } else if(s.substr(pos, strlen("Row[")).compare("Row[") == 0) {
                 // similar decode to "Struct"
                 expressionStack.push(std::vector<python::Type>());
@@ -2434,6 +2456,7 @@ namespace python {
                     return "Dict[" + keyType().encode() + "," + valueType().encode() + "]";
                 }
                 case TypeFactory::AbstractType::STRUCTURED_DICTIONARY:
+                case TypeFactory::AbstractType::SPARSE_STRUCTURED_DICTIONARY:
                 case TypeFactory::AbstractType::ROW: {
                     return entry_desc;
                 }

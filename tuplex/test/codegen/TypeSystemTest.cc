@@ -419,3 +419,25 @@ TEST(TypeSys, RowTypeUpcast) {
 
     EXPECT_TRUE(python::canUpcastType(minor, major));
 }
+
+TEST(TypeSys, SparseStruct) {
+    using namespace tuplex;
+    using namespace std;
+
+    auto t = python::Type::makeStructuredDictType({make_pair(Field(Tuple(20, 30)), python::Type::I64),
+                                          make_pair(Field(Tuple(Field(Tuple(20, 32)), 20, 30)), Field(Tuple(20, 3.4)).getType()),
+                                          make_pair("test", python::Type::STRING),
+                                          make_pair("world", python::Type::I64),
+                                          make_pair(42, python::Type::makeTupleType({
+                                                                                            python::Type::makeOptionType(python::Type::I64), python::Type::STRING
+                                                                                    }))
+                                         }, true);
+
+
+    auto encoded_type = t.encode();
+    EXPECT_TRUE(strStartsWith(encoded_type, "SparseStruct["));
+
+    auto decoded_type = python::Type::decode(encoded_type);
+    EXPECT_EQ(decoded_type, t);
+    EXPECT_EQ(decoded_type.encode(), encoded_type);
+}

@@ -123,6 +123,7 @@ namespace python {
         bool isFunctionType() const;
         bool isDictionaryType() const;
         bool isStructuredDictionaryType() const;
+        bool isSparseStructuredDictionaryType() const;
         bool isListType() const;
         bool isNumericType() const;
         bool isOptionType() const;
@@ -387,14 +388,14 @@ namespace python {
          * @param kv_pairs
          * @return type created
          */
-        static Type makeStructuredDictType(const std::vector<std::pair<boost::any, python::Type>>& kv_pairs);
+        static Type makeStructuredDictType(const std::vector<std::pair<boost::any, python::Type>>& kv_pairs, bool is_sparse=false);
 
         /*!
         * creates a (structured) dictionary with known keys.
         * @param kv_pairs
         * @return type created
         */
-        static Type makeStructuredDictType(const std::vector<StructEntry>& kv_pairs);
+        static Type makeStructuredDictType(const std::vector<StructEntry>& kv_pairs, bool is_sparse=false);
 
         /*!
          * enclose type as tuple if it is a primitive type, if it is a tuple type, return the type itself
@@ -531,6 +532,7 @@ namespace python {
             DICT_KEYS,
             DICT_VALUES,
             STRUCTURED_DICTIONARY,
+            SPARSE_STRUCTURED_DICTIONARY,
             LIST,
             CLASS,
             OPTION, // for nullable
@@ -648,8 +650,8 @@ namespace python {
         Type createOrGetDictValuesViewType(const Type& val);
         Type createOrGetListType(const Type& val);
 
-        Type createOrGetStructuredDictType(const std::vector<std::pair<boost::any, python::Type>>& kv_pairs);
-        Type createOrGetStructuredDictType(const std::vector<StructEntry>& kv_pairs);
+        Type createOrGetStructuredDictType(const std::vector<std::pair<boost::any, python::Type>>& kv_pairs, bool is_sparse);
+        Type createOrGetStructuredDictType(const std::vector<StructEntry>& kv_pairs, bool is_sparse);
 
         Type createOrGetTupleType(const std::initializer_list<Type> args);
         Type createOrGetTupleType(const TTuple<Type>& args);
@@ -683,6 +685,8 @@ namespace python {
         }
 
         std::string printAllTypes();
+
+        bool isSparseStructuredDictionaryType(const Type &type);
     };
 
 
