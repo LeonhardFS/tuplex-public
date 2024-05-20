@@ -9,6 +9,7 @@
 //--------------------------------------------------------------------------------------------------------------------//
 
 #include <logical/WithColumnOperator.h>
+#include "tracing/TraceRowObject.h"
 
 namespace tuplex {
     WithColumnOperator::WithColumnOperator(const std::shared_ptr<LogicalOperator>& parent, const std::vector <std::string>& columnNames,
@@ -262,9 +263,21 @@ namespace tuplex {
 //            Logger::instance().defaultLogger().debug(ss.str());
 //#endif
 
+            // // create Row object
+            // std::vector<PyObject*> items;
+            // for(unsigned i = 0; i < PyTuple_Size(rowObj); ++i) {
+            //     auto item = PyTuple_GET_ITEM(rowObj, i);
+            //     Py_XINCREF(item);
+            //     items.push_back(item);
+            // }
+            // Py_XDECREF(rowObj);
+            // rowObj = reinterpret_cast<PyObject*>(TraceRowObject::create(items, inputColumns()));
+            // auto pcr = python::callFunctionWithTraceObject(pFunc, rowObj);
 
+            // old:
             auto pcr = !inputColumns().empty() ? python::callFunctionWithDictEx(pFunc, rowObj, inputColumns()) :
                        python::callFunctionEx(pFunc, rowObj);
+
             ec = pcr.exceptionCode;
             auto pyobj_res = pcr.res;
 
@@ -280,7 +293,8 @@ namespace tuplex {
                     PyTuple_SetItem(rowObj, _columnToMapIndex, pyobj_res);
                 else {
                     // create a copy!
-                    assert(_columnToMapIndex == PyTuple_Size(rowObj));
+                    if(PyTuple_Check(rowObj))
+                        assert(_columnToMapIndex == PyTuple_Size(rowObj));
 
                     auto singleColObj = PyTuple_New(1);
                     PyTuple_SET_ITEM(singleColObj, 0, pyobj_res);

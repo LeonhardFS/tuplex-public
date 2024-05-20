@@ -158,6 +158,19 @@ namespace tuplex {
         return row_count;
     }
 
+    size_t csv_row_count_for_pattern(const std::string& pattern) {
+        using namespace std;
+        auto output_uris = glob(pattern);
+        cout<<"Found "<<pluralize(output_uris.size(), "output file")<<endl;
+        size_t total_row_count = 0;
+        for(auto path : output_uris) {
+            auto row_count = csv_row_count(path);
+            cout<<"-- file "<<path<<": "<<pluralize(row_count, "row")<<endl;
+            total_row_count += row_count;
+        }
+        return total_row_count;
+    }
+
     TEST_P(NextConfFullTestSuite, Github) {
         using namespace tuplex;
         using namespace std;
@@ -271,8 +284,8 @@ namespace tuplex {
 
         string input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
 
-        // for faster dev
-        input_pattern = "../resources/hyperspecialization/github_daily/2011-10-15.json.sample";
+//        // for faster dev
+//        input_pattern = "../resources/hyperspecialization/github_daily/2011-10-15.json.sample";
 
         auto uris = glob(input_pattern);
         //EXPECT_EQ(uris.size(), 11);
@@ -314,70 +327,80 @@ namespace tuplex {
 
         cout<<"Load took in total "<<loadTimer.time()<<"s"<<endl;
 
-        auto normal_case_row_type = view_of_counts[0].first;
+        for(unsigned id = 0; id < std::min(9989999ul, view_of_counts.size()); ++id) {
+            auto normal_case_row_type = view_of_counts[id].first;
 
-        string testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
-        auto id = 0;
-        auto output_path = "./local-exp/" + testName + "/" + std::to_string(id) + "/";
+            string testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
+            auto output_path = "./local-exp/" + testName + "/" + std::to_string(id) + "/";
 
 
 
-        // init interpreter
-        python::initInterpreter();
-        python::unlockGIL();
+            // init interpreter
+            python::initInterpreter();
+            python::unlockGIL();
 
-        // check now with pipeline and set type.
-        ContextOptions co = ContextOptions::defaults();
+            // check now with pipeline and set type.
+            ContextOptions co = ContextOptions::defaults();
 //        for(const auto& kv : exp_settings)
 //            if(startsWith(kv.first, "tuplex."))
 //                co.set(kv.first, kv.second);
 
-        // this allows large files to be processed without splitting.
-        co.set("tuplex.inputSplitSize", "20G");
-        co.set("tuplex.experimental.worker.workerBufferSize", "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
+            // this allows large files to be processed without splitting.
+            co.set("tuplex.inputSplitSize", "20G");
+            co.set("tuplex.experimental.worker.workerBufferSize", "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
 
-        // create context according to settings
-        Context ctx(co);
-        runtime::init(co.RUNTIME_LIBRARY().toPath());
+            // create context according to settings
+            Context ctx(co);
+            runtime::init(co.RUNTIME_LIBRARY().toPath());
 
-        // start pipeline incl. output
-        auto repo_id_code = "def extract_repo_id(row):\n"
-                            "    if 2012 <= row['year'] <= 2014:\n"
-                            "        \n"
-                            "        if row['type'] == 'FollowEvent':\n"
-                            "            return row['payload']['target']['id']\n"
-                            "        \n"
-                            "        if row['type'] == 'GistEvent':\n"
-                            "            return row['payload']['id']\n"
-                            "        \n"
-                            "        repo = row.get('repository')\n"
-                            "        \n"
-                            "        if repo is None:\n"
-                            "            return None\n"
-                            "        return repo.get('id')\n"
-                            "    else:\n"
-                            "        return row['repo'].get('id')";
+            // start pipeline incl. output
+            auto repo_id_code = "def extract_repo_id(row):\n"
+                                "    if 2012 <= row['year'] <= 2014:\n"
+                                "        \n"
+                                "        if row['type'] == 'FollowEvent':\n"
+                                "            return row['payload']['target']['id']\n"
+                                "        \n"
+                                "        if row['type'] == 'GistEvent':\n"
+                                "            return row['payload']['id']\n"
+                                "        \n"
+                                "        repo = row.get('repository')\n"
+                                "        \n"
+                                "        if repo is None:\n"
+                                "            return None\n"
+                                "        return repo.get('id')\n"
+                                "    else:\n"
+                                "        return row['repo'].get('id')";
 
-        // remove output files if they exist
-        cout<<"Removing files (if they exist) from "<<output_path<<endl;
-        boost::filesystem::remove_all(output_path.c_str());
+            // remove output files if they exist
+            cout<<"Removing files (if they exist) from "<<output_path<<endl;
+            boost::filesystem::remove_all(output_path.c_str());
 
-        ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, Schema(Schema::MemoryLayout::ROW, normal_case_row_type))
-                .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
-                .withColumn("repo_id", UDF(repo_id_code))
-                .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
-                .withColumn("commits", UDF("lambda row: row['payload'].get('commits')"))
-                .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
-                .selectColumns(vector<string>{"type", "repo_id", "year", "number_of_commits"})
-                .tocsv(output_path);
+            ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, Schema(Schema::MemoryLayout::ROW, normal_case_row_type))
+                    .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
+                    .withColumn("repo_id", UDF(repo_id_code))
+                    .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
+                    .withColumn("commits", UDF("lambda row: row['payload'].get('commits')"))
+                    .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
+                    .selectColumns(vector<string>{"type", "repo_id", "year", "number_of_commits"})
+                    .tocsv(output_path);
 
-        auto result_row_count = csv_row_count(output_path);
-        EXPECT_GT(result_row_count, 0);
+            auto result_row_count = csv_row_count_for_pattern(output_path + "*.csv");
+            EXPECT_EQ(result_row_count, 378); // result which is correct for all rows.
 
-        python::lockGIL();
-        python::closeInterpreter();
+            python::lockGIL();
+            python::closeInterpreter();
 
-        // TODO: improve performance by reuse and get rid off nlohmann in struct_dict. --> DONE.
+            if(result_row_count != 378) {
+                cerr<<"RUN id="<<id<<" failed, incorrect result, is: "<<result_row_count<<endl;
+                break;
+            }
+
+            cout<<"RUN "<<(id+1)<<"/"<<view_of_counts.size()<<" done."<<endl;
+        }
+
+
+
+        // TODO: improve performance by reuse and get rid off nlohmann in struct_dict. --> DONE.s
 
         // TODO: implement support for setting schema in json.
 

@@ -1578,6 +1578,71 @@ namespace python {
         return pcr;
     }
 
+    PythonCallResult callFunctionWithTraceObject(PyObject* function, PyObject* trace_oject) {
+        // make sure python interpreter is initialized
+        assert(Py_IsInitialized());
+        assert(holdsGIL());
+
+        assert(function);
+        assert(PyCallable_Check(function));
+        assert(!PyErr_Occurred());
+
+        PythonCallResult pcr;
+        auto pFuncName = PyObject_GetAttrString(function, "__name__");
+        assert(pFuncName);
+        auto pFuncCodeObj = PyObject_GetAttrString(function, "__code__");
+        assert(pFuncCodeObj);
+        // get file & firstlineno
+        auto pFuncFile = PyObject_GetAttrString(pFuncCodeObj, "co_filename");
+        assert(pFuncFile);
+        auto pFuncFirstLineNo = PyObject_GetAttrString(pFuncCodeObj, "co_firstlineno");
+        assert(pFuncFirstLineNo);
+        assert(pFuncName);
+        pcr.functionName = python::PyString_AsString(pFuncName);
+        pcr.functionFirstLineNo = PyLong_AsLong(pFuncFirstLineNo);
+        pcr.file = python::PyString_AsString(pFuncFile);
+        Py_XDECREF(pFuncName);
+        Py_XDECREF(pFuncCodeObj);
+        Py_XDECREF(pFuncFile);
+        Py_XDECREF(pFuncFirstLineNo);
+
+        // there are different ways to call a function
+        // either, the function has a single positional argument --> wrap in another tuple
+        // or multiple ones
+        size_t numPositionalArguments = python::pythonFunctionPositionalArgCount(function);
+        PyObject* args = nullptr;
+        PyObject* resObj = nullptr;
+        PyObject *type=nullptr, *value=nullptr, *traceback=nullptr;
+
+
+        // need to translate pArgs into args
+        if(numPositionalArguments > 1) {
+            // need to unwrap items.
+            throw std::runtime_error("not yet supported");
+        } else if(1 == numPositionalArguments) {
+            // exactly one argument!
+            args = PyTuple_New(1);
+            PyTuple_SET_ITEM(args, 0, trace_oject);
+        } else {
+            // 0 positional arguments?
+            // ==> i.e. constant expression
+            args = PyTuple_New(0); // call with no params
+        }
+
+        assert(args);
+        pcr.res = PyObject_CallObject(function, args);
+
+        // check whether exceptions are raised
+        // translate to Tuplex exception code & clear python error trace.
+        if(PyErr_Occurred())
+            tracebackAndClearError(pcr, function);
+
+        // decref if args != pArgs
+        Py_XDECREF(args);
+
+        return pcr;
+    }
+
 
     PythonCallResult callFunctionEx(PyObject* pFunc, PyObject* pArgs, PyObject* kwargs) {
         // make sure python interpreter is initialized

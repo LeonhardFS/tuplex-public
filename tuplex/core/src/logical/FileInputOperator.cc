@@ -505,6 +505,8 @@ namespace tuplex {
             // each sample is usually assumed to be a tuple with column names
             // std::cout<<"row (after): "<<row.getRowType().desc()<<std::endl;
         }
+
+        _columnNames = normal_case_column_names;
     }
 
     void FileInputOperator::fillRowCache(SamplingMode mode, std::vector<std::vector<std::string>>* outNames, size_t sample_limit) {
