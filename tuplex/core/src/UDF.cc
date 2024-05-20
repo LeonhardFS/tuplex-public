@@ -1989,8 +1989,10 @@ namespace tuplex {
         // add closure environment to tracer
         tv.setClosure(_ast.globals(), false);
 
-        for(auto args : sample)
+        for(auto args : sample) {
             tv.recordTrace(funcNode, args, _columnNames); // <-- note: column names here are fixed, with new RowType can also trace differing column names.
+        }
+
         // record the total number of samples (used to check in TypeAnnotatorVisitor if every sample corresponds to a normal case violation)
         funcNode->annotation().numTimesVisited = sample.size();
         addCompileErrors(tv.getCompileErrors());

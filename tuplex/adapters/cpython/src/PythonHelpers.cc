@@ -1176,22 +1176,35 @@ namespace python {
         // always return a tuple
         auto type = row.getRowType();
 
-        // row type is always a tuple type.
-        assert(type.isTupleType());
+        // row type is either tuple or row type
+        if(type.isTupleType()) {
+            assert(type.isTupleType());
 
-        if(type.parameters().size() == 1 && unpackPrimitives) {
-            // simple. primitive type stored
-            // unpack
-            return fieldToPython(row.get(0));
-        } else {
+            if(type.parameters().size() == 1 && unpackPrimitives) {
+                // simple. primitive type stored
+                // unpack
+                return fieldToPython(row.get(0));
+            } else {
+                // a tuple is stored
+                auto numElements = type.parameters().size();
+                auto tupleObj = PyTuple_New(numElements);
+                for(unsigned i = 0; i < numElements; ++i) {
+                    PyObject* field = fieldToPython(row.get(i));
+                    PyTuple_SetItem(tupleObj, i, field); // set steals reference, so inc by one
+                }
+                return tupleObj;
+            }
+        } else if(type.isRowType()) {
             // a tuple is stored
-            auto numElements = type.parameters().size();
+            auto numElements = type.get_column_count();
             auto tupleObj = PyTuple_New(numElements);
             for(unsigned i = 0; i < numElements; ++i) {
                 PyObject* field = fieldToPython(row.get(i));
                 PyTuple_SetItem(tupleObj, i, field); // set steals reference, so inc by one
             }
             return tupleObj;
+        } else {
+            throw std::runtime_error("invalid type, can only convert tuple or row type.");
         }
     }
 

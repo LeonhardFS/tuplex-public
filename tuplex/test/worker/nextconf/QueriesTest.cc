@@ -328,6 +328,9 @@ namespace tuplex {
         cout<<"Load took in total "<<loadTimer.time()<<"s"<<endl;
 
         for(unsigned id = 0; id < std::min(9989999ul, view_of_counts.size()); ++id) {
+
+            id = 11;
+
             auto normal_case_row_type = view_of_counts[id].first;
 
             string testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
