@@ -394,8 +394,17 @@ namespace tuplex {
             std::unordered_map<std::tuple<unsigned, unsigned>, unsigned> counts;
             for(const auto& row : rows) {
                 auto t = row.getRowType();
-                for(unsigned i = 0; i < t.parameters().size(); ++i) {
-                    counts[std::make_tuple(t.parameters()[i].hash(), i)]++;
+                if(t.isTupleType()) {
+                    for(unsigned i = 0; i < t.parameters().size(); ++i) {
+                        counts[std::make_tuple(t.parameters()[i].hash(), i)]++;
+                    }
+                } else {
+                    assert(t.isRowType());
+
+                    // TOOD: assume names are always in the same order...if not bug ahead!
+                    for(unsigned i = 0; i < t.get_column_count(); ++i) {
+                        counts[std::make_tuple(t.get_column_type(i).hash(), i)]++;
+                    }
                 }
             }
 

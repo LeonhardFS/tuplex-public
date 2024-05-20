@@ -1986,7 +1986,10 @@ namespace tuplex {
             size_t num_passing = 0;
             std::vector<Row> majRows;
             for(auto row: sample) {
-                if(python::canUpcastToRowType(deoptimizedType(row.getRowType()), deoptimizedType(majType))) {
+                auto row_tuple_type = row.getRowType();
+                if(row_tuple_type.isRowType())
+                    row_tuple_type = row_tuple_type.get_columns_as_tuple_type();
+                if(python::canUpcastToRowType(deoptimizedType(row_tuple_type), deoptimizedType(majType))) {
                     num_passing++;
                     majRows.push_back(row);
                 }
