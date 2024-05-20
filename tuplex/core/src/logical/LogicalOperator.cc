@@ -136,7 +136,7 @@ namespace tuplex {
         }
     }
 
-    std::vector<PyObject*> LogicalOperator::getPythonicSample(size_t num) {
+    std::tuple<std::vector<PyObject*>, std::vector<Row>> LogicalOperator::getPythonicSample(size_t num) {
         std::vector<PyObject*> v;
         auto rows = getSample(num);
         python::lockGIL();
@@ -144,7 +144,7 @@ namespace tuplex {
         for(const auto& r : rows)
             v.push_back(python::rowToPython(r, true));
         python::unlockGIL();
-        return v;
+        return std::make_pair(v, rows);
     }
 
     std::shared_ptr<LogicalOperator> LogicalOperator::remove() {

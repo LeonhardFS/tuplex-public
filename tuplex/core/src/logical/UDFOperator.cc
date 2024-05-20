@@ -97,12 +97,15 @@ namespace tuplex {
                 if(success && has_exception_in_output_type)
                     logger.debug("static retyping resulted in UDF producing exceptions. Try hinting with sample...");
                 Timer s_timer;
-                auto rows_sample = parent()->getPythonicSample(MAX_TYPE_SAMPLING_ROWS);
+                auto t_rows_sample = parent()->getPythonicSample(MAX_TYPE_SAMPLING_ROWS);
+                auto rows_sample = std::get<0>(t_rows_sample);
                 if(!rows_sample.empty()) {
                     logger.debug("retrieving pythonic sample took: " + std::to_string(s_timer.time()) + "s");
                     _udf.removeTypes(true);
                     success = _udf.hintSchemaWithSample(rows_sample,
-                                                        conf.row_type, true);
+                                                        std::get<1>(t_rows_sample),
+                                                        conf.row_type,
+                                                        true);
                 } else {
                     logger.info("could not retrieve sample, typing fails. Could do randomized typing.");
                 }
@@ -173,7 +176,7 @@ namespace tuplex {
                 auto rows_sample = parent()->getPythonicSample(MAX_TYPE_SAMPLING_ROWS);
                 logger.info("retrieving pythonic sample took: " + std::to_string(s_timer.time()) + "s");
                 _udf.removeTypes(false);
-                success = _udf.hintSchemaWithSample(rows_sample,
+                success = _udf.hintSchemaWithSample(std::get<0>(rows_sample), std::get<1>(rows_sample),
                                                     parentSchema.getRowType(), true);
                 if(success) {
                     if(_udf.getCompileErrors().empty() || _udf.getReturnError() != CompileError::COMPILE_ERROR_NONE) {
@@ -220,12 +223,13 @@ namespace tuplex {
                     // => general case rows thus get transferred to interpreter...
                     logger.debug("performing traced typing for UDF in operator " + name());
                     auto rows_sample = parent()->getPythonicSample(MAX_TYPE_SAMPLING_ROWS);
-                    if(rows_sample.empty()) {
+                    if(std::get<0>(rows_sample).empty()) {
                         logger.debug("operator " + name() + " can not deduce type by tracing sample as sample is empty.");
                         return Schema::UNKNOWN;
                     }
                     _udf.removeTypes(false);
-                    success = _udf.hintSchemaWithSample(rows_sample,
+                    success = _udf.hintSchemaWithSample(std::get<0>(rows_sample),
+                                        std::get<1>(rows_sample),
                                                         parentSchema.getRowType(), true);
 
                     // only exceptions?
@@ -236,7 +240,7 @@ namespace tuplex {
                             // check if output type is exception type -> this means sample produced only errors!
                             if(_udf.getOutputSchema().getRowType().isExceptionType()) {
                                 std::stringstream ss;
-                                ss<<"Sample of " + pluralize(rows_sample.size(), "row") + " produced only exceptions of type " +_udf.getOutputSchema().getRowType().desc() + ". Either increase sample size so rows producing no exceptions are in the majority, or change user-defined code.\n";
+                                ss<<"Sample of " + pluralize(std::get<0>(rows_sample).size(), "row") + " produced only exceptions of type " +_udf.getOutputSchema().getRowType().desc() + ". Either increase sample size so rows producing no exceptions are in the majority, or change user-defined code.\n";
 
                                 // produce a sample traceback for user feedback... -> this should probably go to python API display??
                                 // @TODO

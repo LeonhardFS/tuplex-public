@@ -1972,12 +1972,14 @@ namespace tuplex {
 
 
 
-    bool UDF::hintSchemaWithSample(const std::vector<PyObject *>& sample, const python::Type& inputRowType, bool acquireGIL) {
+    bool UDF::hintSchemaWithSample(const std::vector<PyObject *>& sample, const std::vector<Row>& original_sample_rows, const python::Type& inputRowType, bool acquireGIL) {
         auto& logger = Logger::instance().logger("type inference");
 
         TraceVisitor tv(inputRowType, _policy);
 
         auto funcNode = _ast.getFunctionAST();
+
+        assert(sample.size() == original_sample_rows.size());
 
         // trace all samples through AST and annotate
         // Note: it's the responsibility of the caller to only trace with an appropriate input schema...
@@ -1989,8 +1991,15 @@ namespace tuplex {
         // add closure environment to tracer
         tv.setClosure(_ast.globals(), false);
 
-        for(auto args : sample) {
-            tv.recordTrace(funcNode, args, _columnNames); // <-- note: column names here are fixed, with new RowType can also trace differing column names.
+        for(unsigned i = 0; i < sample.size(); ++i) {
+            if(original_sample_rows[i].getRowType().isRowType()) {
+                auto column_names = original_sample_rows[i].getRowType().get_column_names();
+                if(column_names.empty())
+                    column_names = _columnNames;
+                tv.recordTrace(funcNode, sample[i], column_names);
+            } else {
+                tv.recordTrace(funcNode, sample[i], _columnNames); // <-- note: column names here are fixed, with new RowType can also trace differing column names.
+            }
         }
 
         // record the total number of samples (used to check in TypeAnnotatorVisitor if every sample corresponds to a normal case violation)
