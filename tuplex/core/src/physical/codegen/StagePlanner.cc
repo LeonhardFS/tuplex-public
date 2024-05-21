@@ -581,7 +581,7 @@ namespace tuplex {
             return opt_ops;
         }
 
-        void StagePlanner::optimize() {
+        void StagePlanner::optimize(bool use_sample) {
             using namespace std;
 
             // clear checks
@@ -595,69 +595,77 @@ namespace tuplex {
             logger.debug(std::string("initial pipeline validation: ") + (validation_rc ? "ok" : "failed"));
 
             // step 1: retrieve sample from inputnode!
-            std::vector<Row> sample = fetchInputSample();
+            std::vector<Row> sample;
+            if(use_sample)
+                sample = fetchInputSample();
             std::vector<std::string> sample_columns = _inputNode ? _inputNode->columns() : std::vector<std::string>();
 
             // retype using sample, need to do this initially.
-            retypeOperators(sample, sample_columns);
+            retypeOperators(sample, sample_columns, use_sample);
 
             // check now whether filters can be promoted or not
             if(_useFilterPromo) {
+                if(!use_sample) {
+                    logger.debug("Skipping filter promotion, because use of sample is deactivated.");
+                } else {
+                    auto input_columns_before = _inputNode->columns();
 
-                auto input_columns_before = _inputNode->columns();
+                    promoteFilters();
 
-                promoteFilters();
+                    // want to redo typing if checks changed!
+                    if(_checks.end() != std::find_if(_checks.begin(),
+                                                     _checks.end(),
+                                                     [](const NormalCaseCheck& check) {
+                                                         return check.type == CheckType::CHECK_FILTER;
+                                                     })) {
+                        logger.info("retyping b.c. of promoted filter");
+                        auto input_type_before_promo = _inputNode->getOutputSchema().getRowType();
+                        sample = fetchInputSample();
+                        sample_columns = _inputNode ? _inputNode->columns() : std::vector<std::string>();
+                        retypeOperators(sample, sample_columns, use_sample);
 
-                // want to redo typing if checks changed!
-                if(_checks.end() != std::find_if(_checks.begin(),
-                                                 _checks.end(),
-                                                 [](const NormalCaseCheck& check) {
-                    return check.type == CheckType::CHECK_FILTER;
-                })) {
-                    logger.info("retyping b.c. of promoted filter");
-                    auto input_type_before_promo = _inputNode->getOutputSchema().getRowType();
-                    sample = fetchInputSample();
-                    sample_columns = _inputNode ? _inputNode->columns() : std::vector<std::string>();
-                    retypeOperators(sample, sample_columns);
+                        auto input_type_after_promo = _inputNode->getOutputSchema().getRowType();
+                        if(input_type_after_promo == input_type_before_promo) {
+                            logger.debug("input row type didn't change due to promoted filter.");
+                        } else {
+                            logger.debug("input row type changed:\nwas before: " + input_type_before_promo.desc() + "\nis now: " + input_type_after_promo.desc());
+                        }
 
-                    auto input_type_after_promo = _inputNode->getOutputSchema().getRowType();
-                    if(input_type_after_promo == input_type_before_promo) {
-                        logger.debug("input row type didn't change due to promoted filter.");
-                    } else {
-                        logger.debug("input row type changed:\nwas before: " + input_type_before_promo.desc() + "\nis now: " + input_type_after_promo.desc());
+                        // did column order change?
+                        if(!vec_equal(sample_columns, input_columns_before)) {
+                            std::stringstream ss;
+                            ss<<"input columns changed:\nbefore: "<<input_columns_before<<"\nafter: "<<sample_columns;
+                            logger.debug(ss.str());
+                        }
+
+                        logger.debug("filter promo done.");
                     }
-
-                    // did column order change?
-                    if(!vec_equal(sample_columns, input_columns_before)) {
-                        std::stringstream ss;
-                        ss<<"input columns changed:\nbefore: "<<input_columns_before<<"\nafter: "<<sample_columns;
-                        logger.debug(ss.str());
-                    }
-
-                    logger.debug("filter promo done.");
                 }
             }
 
 
             // perform sample based optimizations
             if(_useConstantFolding) {
-
-                // perform only when input op is present (could do later, but requires sample!)
-                if(_inputNode && _inputNode->type() == LogicalOperatorType::FILEINPUT) {
-                    logger.info("Performing constant folding optimization (sample size=" + std::to_string(sample.size()) + ")");
-                    optimized_operators = constantFoldingOptimization(sample);
-
-                    // overwrite internal operators to apply subsequent optimizations
-                    _inputNode = _inputNode ? optimized_operators.front() : nullptr;
-                    _operators = _inputNode ? vector<shared_ptr<LogicalOperator>>{optimized_operators.begin() + 1,
-                                                                                  optimized_operators.end()}
-                                            : optimized_operators;
-
-                    // run validation after applying constant folding
-                    validation_rc = validatePipeline();
-                    logger.debug(std::string("post-constant-folding pipeline validation: ") + (validation_rc ? "ok" : "failed"));
+                if(!use_sample) {
+                    logger.debug("Skipping constant-folding, because use of sample is deactivated.");
                 } else {
-                    logger.debug("skipping constant-folding optimization for stage");
+                    // perform only when input op is present (could do later, but requires sample!)
+                    if(_inputNode && _inputNode->type() == LogicalOperatorType::FILEINPUT) {
+                        logger.info("Performing constant folding optimization (sample size=" + std::to_string(sample.size()) + ")");
+                        optimized_operators = constantFoldingOptimization(sample);
+
+                        // overwrite internal operators to apply subsequent optimizations
+                        _inputNode = _inputNode ? optimized_operators.front() : nullptr;
+                        _operators = _inputNode ? vector<shared_ptr<LogicalOperator>>{optimized_operators.begin() + 1,
+                                                                                      optimized_operators.end()}
+                                                : optimized_operators;
+
+                        // run validation after applying constant folding
+                        validation_rc = validatePipeline();
+                        logger.debug(std::string("post-constant-folding pipeline validation: ") + (validation_rc ? "ok" : "failed"));
+                    } else {
+                        logger.debug("skipping constant-folding optimization for stage");
+                    }
                 }
             }
 
@@ -805,9 +813,15 @@ namespace tuplex {
             r_conf.columns = input_column_names;
             r_conf.remove_existing_annotations = true; // remove all annotations (except the column restore ones?)
 
+            if(extract_columns_from_type(r_conf.row_type) != r_conf.columns.size() && r_conf.row_type.isRowType() && !r_conf.row_type.get_column_names().empty())
+                r_conf.columns = r_conf.row_type.get_column_names();
+
+            // make sure all existing columns get a type, if the given columns are less than the current ones -> expand the column + type description.
+            //if(extract_columns_from_type())
+
             // perform quick sanity check
             if(!r_conf.columns.empty())
-                assert(r_conf.row_type.parameters().size() == r_conf.columns.size());
+                assert(extract_columns_from_type(r_conf.row_type) == r_conf.columns.size());
 
             if(!fop->retype(r_conf, true))
                 throw std::runtime_error("failed to retype " + fop->name() + " operator."); // for input operator, ignore Option[str] compatibility which is set per default
@@ -1948,7 +1962,7 @@ namespace tuplex {
         }
 
         bool StagePlanner::retypeOperators(const std::vector<Row>& sample,
-                                           const std::vector<std::string>& sample_columns) {
+                                           const std::vector<std::string>& sample_columns, bool use_sample) {
             auto& logger = Logger::instance().logger("specializing stage optimizer");
 
             // @TODO: stats on types for sample. Use this to retype!
@@ -1963,15 +1977,26 @@ namespace tuplex {
             //     std::cout<<keyval.second<<": "<<keyval.first<<std::endl;
             // }
 
-            if(sample.empty()) {
-                logger.info("got empty sample, skipping optimization.");
+            if(use_sample && sample.empty()) {
+                logger.info("Got empty sample, skipping optimization.");
                 return true;
             }
 
             // detect majority type
             // detectMajorityRowType(const std::vector<Row>& rows, double threshold, bool independent_columns)
-            auto majType = detectMajorityRowType(sample, _nc_threshold, true, _useNVO);
-            python::Type projectedMajType = majType;
+            python::Type majType=python::Type::UNKNOWN, projectedMajType=python::Type::UNKNOWN;
+            if(use_sample) {
+                logger.info("Detecting majority type using " + pluralize(sample.size(), "sample") + "with threshold=" + std::to_string(_nc_threshold));
+                majType = detectMajorityRowType(sample, _nc_threshold, true, _useNVO);
+                projectedMajType = majType;
+            } else {
+                majType = _inputNode->getOutputSchema().getRowType();
+                projectedMajType = majType;
+
+                // special case, fileinput operator -> use normal case?
+
+            }
+
 
             assert(majType.isTupleType());
             assert(projectedMajType.isTupleType());

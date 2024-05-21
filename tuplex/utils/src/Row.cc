@@ -112,24 +112,49 @@ namespace tuplex {
 
     std::string Row::toJsonString(const std::vector<std::string> &columns) const {
         std::stringstream ss;
-        if(columns.empty()) {
-            // use {}
-            ss<<"{}";
-        } else {
-            if(columns.size() != getNumColumns())
-                throw std::runtime_error("can not convert row to Json string, number of columns given ("
-                + std::to_string(columns.size()) + ") is different than stored number of fields ("
-                + std::to_string(getNumColumns()) + ")");
+        if(getRowType().isTupleType()) {
+            if(columns.empty()) {
+                // use {}
+                ss<<"{}";
+            } else {
+                if(columns.size() != getNumColumns())
+                    throw std::runtime_error("can not convert row to Json string, number of columns given ("
+                                             + std::to_string(columns.size()) + ") is different than stored number of fields ("
+                                             + std::to_string(getNumColumns()) + ")");
+
+                // use dictionary syntax
+                ss<<"{";
+                for(unsigned i = 0; i < getNumColumns(); ++i) {
+                    ss<<escape_for_json(columns[i])<<":"<<_values[i].toJsonString();
+                    if(i != getNumColumns() - 1)
+                        ss<<",";
+                }
+                ss<<"}";
+            }
+        } else if(getRowType().isRowType()) {
+            // check if columns exist
+            auto row_columns = getRowType().get_column_names();
+            if(row_columns.empty())
+                row_columns = columns;
+            if(row_columns.empty())
+                return "{}";
+            if(row_columns.size() != getNumColumns())
+                throw std::runtime_error("can not convert row of type " + getRowType().desc() + " to Json string, number of columns given ("
+                                         + std::to_string(row_columns.size()) + ") is different than stored number of fields ("
+                                         + std::to_string(getNumColumns()) + ")");
 
             // use dictionary syntax
             ss<<"{";
             for(unsigned i = 0; i < getNumColumns(); ++i) {
-                ss<<escape_for_json(columns[i])<<":"<<_values[i].toJsonString();
+                ss<<escape_for_json(row_columns[i])<<":"<<_values[i].toJsonString();
                 if(i != getNumColumns() - 1)
                     ss<<",";
             }
             ss<<"}";
+        } else {
+            throw std::runtime_error("Unsupported schema type " + getRowType().desc() + ", can not convert to Json string.");
         }
+
         return ss.str();
     }
 

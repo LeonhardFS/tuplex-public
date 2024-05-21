@@ -146,12 +146,13 @@ namespace tuplex {
                 }
             }
 
-            /*!
+             /*!
              * create optimized, specialized pipeline, i.e. first operator returned is the input operator.
              * The others are (possibly rearranged) operators. Operators are clones/copies of original operators. I.e.
              * planner is non-destructive.
+             * @param use_sample if true, then sample is used to carry out optimizations. Else, relies on the type of the first operator given (which may be a normal-case type).
              */
-            void optimize();
+            void optimize(bool use_sample=true);
 
             std::vector<NormalCaseCheck> checks() const {
                 return _checks;
@@ -277,7 +278,8 @@ namespace tuplex {
             std::vector<std::shared_ptr<LogicalOperator>> constantFoldingOptimization(const std::vector<Row>& sample);
 
             bool retypeOperators(const std::vector<Row>& sample,
-                                 const std::vector<std::string>& sample_columns);
+                                 const std::vector<std::string>& sample_columns,
+                                 bool use_sample);
 
             python::Type get_specialized_row_type(const std::shared_ptr<LogicalOperator>& inputNode, const DetectionStats& ds) const;
 
