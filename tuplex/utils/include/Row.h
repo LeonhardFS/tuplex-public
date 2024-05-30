@@ -296,8 +296,18 @@ namespace tuplex {
                 fields.push_back(Field::null());
                 expanded_names.push_back(name);
             }
-            row = Row::from_vector(fields); // this sets the new type as well.
-            reorder_row(row, expanded_names, dest_column_names);
+
+            // do not reorder, simply fill. This also projects out in case.
+            std::vector<Field> dest;
+            for(const auto& name : dest_column_names) {
+                auto idx = indexInVector(name, expanded_names);
+                if(idx >= 0)
+                    dest.push_back(fields[idx]);
+                else
+                    dest.push_back(Field::null());
+            }
+
+            row = Row::from_vector(dest);
             return;
         }
         reorder_row(row, row_column_names, dest_column_names);

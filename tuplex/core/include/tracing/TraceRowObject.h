@@ -122,6 +122,9 @@ skip_optional:
     if(!return_value) {
         return_value = default_value;
         Py_XINCREF(default_value);
+
+        // reset error, it's right now pointed to be a KeyError.
+        PyErr_Clear();
     }
 exit:
     return return_value;

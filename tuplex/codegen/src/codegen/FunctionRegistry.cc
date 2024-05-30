@@ -3186,6 +3186,26 @@ namespace tuplex {
                         assert(callerType.get_columns_as_tuple_type().parameters()[idx_in_columns] == retType);
                         return tuple_load_element(_env, builder, caller.val, callerType.get_columns_as_tuple_type(), idx_in_columns);
                     } else {
+
+                        // check if given key is contained within column names
+                        auto name_index = str_create_index_in_static_array(_env, builder, caller.val, callerType.get_column_names());
+
+                        auto name_contained = builder.CreateICmpSLT(name_index, _env.i64Const(0));
+
+                        // TODO: hash-table is fastest for lookup
+                        // use following structure for strings:
+                        // n-elements (statically known)
+                        // size/offset | ... | size/offset | str_1 | ... | str_n  // <-- save this serialized as global bytes.
+                        // then do hash(key) to get position. If position is 0 -> no entry.
+                        // use linear-probing.
+                        // when constructing hashmap, make sure there are not really any conflicts...
+                        // --> use fibonacci numbers for size.
+                        // this is quite some code to write...
+
+                        // simpler way: chain of if-statements for few keys (<3) prob. faster.
+                        // after that, hashmap wins!
+                        // --> can optimize with plan.
+
                         // not contained, except with KeyError or return optional field.
                         throw std::runtime_error("not yet implemented, need to throw key error or return default value");
                     }

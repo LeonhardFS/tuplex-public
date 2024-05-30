@@ -328,6 +328,10 @@ namespace tuplex {
         cout<<"Load took in total "<<loadTimer.time()<<"s"<<endl;
 
         for(unsigned id = 0; id < std::min(9989999ul, view_of_counts.size()); ++id) {
+            // test:
+            if(0 == id)
+                id = 11;
+
             auto normal_case_row_type = view_of_counts[id].first;
 
             string testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
@@ -375,6 +379,8 @@ namespace tuplex {
             cout<<"Removing files (if they exist) from "<<output_path<<endl;
             boost::filesystem::remove_all(output_path.c_str());
 
+            cout<<"Testing with normal-case row type: "<<normal_case_row_type.desc()<<endl;
+
             ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, Schema(Schema::MemoryLayout::ROW, normal_case_row_type))
                     .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
                     .withColumn("repo_id", UDF(repo_id_code))
@@ -409,5 +415,87 @@ namespace tuplex {
         // However, can quickly create a general-case by turning every struct-dict into a general dict.
         // Then, the general count should work for ALL rows.
         // TODO: ensure that this type works as normal-case for ALL files. --> this is a separate test.
+    }
+
+
+    TEST(AllQueries, SingleChallengingRetypeType) {
+
+        using namespace std;
+        using namespace tuplex;
+
+        auto encoded_type = "Row['created_at'->str,'payload'->Struct[(str,'shas'->List[(str,str,str,str,bool)]),(str,'size'->i64),(str,'ref'->str),(str,'head'->str)],'public'->bool,'type'->str,'url'->str,'actor'->str,'actor_attributes'->Struct[(str,'login'->str),(str,'type'->str),(str,'gravatar_id'->str),(str,'name'->str),(str,'company'->str),(str,'blog'->str),(str,'location'->str),(str,'email'->str)],'repository'->Struct[(str,'id'->i64),(str,'name'->str),(str,'full_name'->str),(str,'owner'->str),(str,'private'->bool),(str,'html_url'->str),(str,'description'->str),(str,'fork'->bool),(str,'url'->str),(str,'forks_url'->str),(str,'keys_url'->str),(str,'collaborators_url'->str),(str,'teams_url'->str),(str,'hooks_url'->str),(str,'issue_events_url'->str),(str,'events_url'->str),(str,'assignees_url'->str),(str,'branches_url'->str),(str,'tags_url'->str),(str,'blobs_url'->str),(str,'git_tags_url'->str),(str,'git_refs_url'->str),(str,'trees_url'->str),(str,'statuses_url'->str),(str,'languages_url'->str),(str,'stargazers_url'->str),(str,'contributors_url'->str),(str,'subscribers_url'->str),(str,'subscription_url'->str),(str,'commits_url'->str),(str,'git_commits_url'->str),(str,'comments_url'->str),(str,'issue_comment_url'->str),(str,'contents_url'->str),(str,'compare_url'->str),(str,'merges_url'->str),(str,'archive_url'->str),(str,'downloads_url'->str),(str,'issues_url'->str),(str,'pulls_url'->str),(str,'milestones_url'->str),(str,'notifications_url'->str),(str,'labels_url'->str),(str,'releases_url'->str),(str,'created_at'->str),(str,'updated_at'->str),(str,'pushed_at'->str),(str,'git_url'->str),(str,'ssh_url'->str),(str,'clone_url'->str),(str,'svn_url'->str),(str,'homepage'->null),(str,'size'->i64),(str,'stargazers_count'->i64),(str,'watchers_count'->i64),(str,'language'->str),(str,'has_issues'->bool),(str,'has_downloads'->bool),(str,'has_wiki'->bool),(str,'has_pages'->bool),(str,'forks_count'->i64),(str,'mirror_url'->null),(str,'open_issues_count'->i64),(str,'forks'->i64),(str,'open_issues'->i64),(str,'watchers'->i64),(str,'default_branch'->str),(str,'stargazers'->i64),(str,'master_branch'->str)]]";
+
+        auto normal_case_row_type = python::decodeType(encoded_type);
+
+        string input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
+
+        string testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
+        auto output_path = "./local-exp/" + testName + "/" + "output" + "/";
+
+        // init interpreter
+        python::initInterpreter();
+        python::unlockGIL();
+
+        // check now with pipeline and set type.
+        ContextOptions co = ContextOptions::defaults();
+
+        // this allows large files to be processed without splitting.
+        co.set("tuplex.inputSplitSize", "20G");
+        co.set("tuplex.experimental.worker.workerBufferSize", "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
+
+        // create context according to settings
+        Context ctx(co);
+        runtime::init(co.RUNTIME_LIBRARY().toPath());
+
+        // start pipeline incl. output
+        auto repo_id_code = "def extract_repo_id(row):\n"
+                            "    if 2012 <= row['year'] <= 2014:\n"
+                            "        \n"
+                            "        if row['type'] == 'FollowEvent':\n"
+                            "            return row['payload']['target']['id']\n"
+                            "        \n"
+                            "        if row['type'] == 'GistEvent':\n"
+                            "            return row['payload']['id']\n"
+                            "        \n"
+                            "        repo = row.get('repository')\n"
+                            "        \n"
+                            "        if repo is None:\n"
+                            "            return None\n"
+                            "        return repo.get('id')\n"
+                            "    else:\n"
+                            "        repo =  row.get('repo')\n"
+                            "        if repo:\n"
+                            "            return repo.get('id')\n"
+                            "        else:\n"
+                            "            return None\n";
+
+        // remove output files if they exist
+        cout<<"Removing files (if they exist) from "<<output_path<<endl;
+        boost::filesystem::remove_all(output_path.c_str());
+
+        cout<<"Testing with normal-case row type: "<<normal_case_row_type.desc()<<endl;
+
+        // debug:
+        ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, Schema(Schema::MemoryLayout::ROW, normal_case_row_type))
+                .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
+                .withColumn("repo_id", UDF(repo_id_code))
+                .selectColumns(vector<string>{"type", "repo_id", "year"})
+                .tocsv(output_path);
+
+        // original:
+        // ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, Schema(Schema::MemoryLayout::ROW, normal_case_row_type))
+        //         .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
+        //         .withColumn("repo_id", UDF(repo_id_code))
+        //         .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
+        //         .withColumn("commits", UDF("lambda row: row['payload'].get('commits')"))
+        //         .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
+        //         .selectColumns(vector<string>{"type", "repo_id", "year", "number_of_commits"})
+        //         .tocsv(output_path);
+
+        auto result_row_count = csv_row_count_for_pattern(output_path + "*.csv");
+        //EXPECT_EQ(result_row_count, 378); // result which is correct for all rows.
+
+        python::lockGIL();
+        python::closeInterpreter();
     }
 }
