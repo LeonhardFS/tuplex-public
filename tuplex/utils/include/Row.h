@@ -280,37 +280,67 @@ namespace tuplex {
         row = Row::from_vector(fields);
     }
 
+    template<typename T> inline std::vector<T> vec_set_difference(const std::vector<T>& lhs, const std::vector<T>& rhs) {
+        std::unordered_set<T> S_lhs(lhs.begin(), lhs.end());
+        std::unordered_set<T> S_rhs(rhs.begin(), rhs.end());
+
+        std::vector<T> v;
+        for(const auto& el : S_lhs) {
+            if(S_rhs.find(el) == S_rhs.end())
+                v.push_back(el);
+        }
+        return v;
+    }
+
     inline void reorder_and_fill_missing_will_null(Row& row, std::vector<std::string>& row_column_names, const std::vector<std::string>& dest_column_names) {
         // check now which names are missing
-        std::vector<std::string> missing;
-        std::vector<std::string> ordered_row_column_names = row_column_names;
-        std::vector<std::string> ordered_dest_column_names = dest_column_names;
-        std::sort(ordered_row_column_names.begin(), ordered_row_column_names.end());
-        std::sort(ordered_dest_column_names.begin(), ordered_dest_column_names.end());
-        std::set_difference(ordered_row_column_names.begin(), ordered_row_column_names.end(),
-                            ordered_dest_column_names.begin(), ordered_dest_column_names.end(), std::back_inserter(missing));
-        if(!missing.empty()) {
+        std::vector<std::string> missing_dest = vec_set_difference(dest_column_names, row_column_names);
+        auto missing_origin = vec_set_difference(row_column_names, dest_column_names);
+
+        // append to dest missing origing, and put them at the end.
+        auto expanded_dest_column_names = dest_column_names;
+        if(!missing_origin.empty())
+            std::copy(missing_origin.begin(), missing_origin.end(), std::back_inserter(expanded_dest_column_names));
+
+        if(!missing_dest.empty()) {
             auto fields = row.to_vector();
             auto expanded_names = row_column_names;
-            for(const auto& name : missing) {
+            for(const auto& name : missing_dest) {
                 fields.push_back(Field::null());
                 expanded_names.push_back(name);
             }
 
-            // do not reorder, simply fill. This also projects out in case.
-            std::vector<Field> dest;
-            for(const auto& name : dest_column_names) {
-                auto idx = indexInVector(name, expanded_names);
-                if(idx >= 0)
-                    dest.push_back(fields[idx]);
-                else
-                    dest.push_back(Field::null());
-            }
+            // checks:
+            assert(expanded_names.size() == expanded_dest_column_names.size());
+            assert(fields.size() == expanded_names.size());
 
-            row = Row::from_vector(dest);
+            row = Row::from_vector(fields); // this sets the new type as well.
+            reorder_row(row, expanded_names, expanded_dest_column_names);
+
+            if(PARAM_USE_ROW_TYPE)
+                row = row.with_columns(expanded_dest_column_names);
+
+
+            // // do not reorder, simply fill. This also projects out in case.
+            // std::vector<Field> dest;
+            // for(const auto& name : dest_column_names) {
+            //     auto idx = indexInVector(name, expanded_names);
+            //     if(idx >= 0)
+            //         dest.push_back(fields[idx]);
+            //     else
+            //         dest.push_back(Field::null());
+            // }
+            //
+            // row = Row::from_vector(dest);
             return;
         }
-        reorder_row(row, row_column_names, dest_column_names);
+
+        assert(row_column_names.size() == expanded_dest_column_names.size());
+        assert(row.getNumColumns() == row_column_names.size());
+        reorder_row(row, row_column_names, expanded_dest_column_names);
+
+        if(PARAM_USE_ROW_TYPE)
+            row = row.with_columns(expanded_dest_column_names);
     }
 
 }

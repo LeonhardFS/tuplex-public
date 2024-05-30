@@ -1732,6 +1732,13 @@ namespace tuplex {
 //                auto last_name = last_op->name();
 //            }
 
+            // set for file input operator (when no sample use) the normal-case to be true
+            if(!conf.use_sample) {
+                if(inputNode->type() == LogicalOperatorType::FILEINPUT) {
+                    std::dynamic_pointer_cast<FileInputOperator>(inputNode)->useNormalCase();
+                }
+            }
+
             // node need to find some smart way to QUICKLY detect whether the optimization can be applied or should be rather skipped...
             codegen::StagePlanner planner(inputNode, operators, conf.policy.normalCaseThreshold);
             planner.disableAll();
@@ -1808,11 +1815,15 @@ namespace tuplex {
                 // need to set codeGenerationContext.normalToGeneralMapping here as well!
                 // 2. specialize fast path (if desired)
                 codeGenerationContext.slowPathContext = getGeneralPathContext();
-                if(_conf.generateSpecializedNormalCaseCodePath)
+                if(_conf.generateSpecializedNormalCaseCodePath) {
+                    auto conf = _conf;
+                    conf.use_sample = false; // <-- per default set to false, only set to true if one of the sample requiring optimizations is active!
+                    if(conf.filterPromotion || conf.constantFoldingOptimization)
+                        conf.use_sample = true;
                     codeGenerationContext.fastPathContext = specializePipeline(codeGenerationContext.slowPathContext,
                                                                                codeGenerationContext.normalToGeneralMapping,
-                                                                               _conf);
-                else
+                                                                               conf);
+                } else
                     codeGenerationContext.fastPathContext = getGeneralPathContext();
 
                 // 3. fill in general case codepath context

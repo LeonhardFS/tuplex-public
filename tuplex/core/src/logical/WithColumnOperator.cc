@@ -248,8 +248,10 @@ namespace tuplex {
             // HACK: skip for pushdown.
             // this is bad, but let's get tplx208 done.
             if(!inputColumns().empty() && row.getNumColumns() != inputColumns().size()) {
-                std::cerr<<"HACK executed here, pls fix."<<std::endl;
-                continue;
+                 //std::cerr<<"HACK executed here, pls fix."<<std::endl;
+                 // tuple type does not support column mismatch...
+                 if(!row.getRowType().isRowType())
+                    continue;
             }
             Py_XINCREF(rowObj);
 
@@ -274,8 +276,13 @@ namespace tuplex {
             // rowObj = reinterpret_cast<PyObject*>(TraceRowObject::create(items, inputColumns()));
             // auto pcr = python::callFunctionWithTraceObject(pFunc, rowObj);
 
+            auto columns = row.getRowType().isRowType() ? row.getRowType().get_column_names() : inputColumns();
+            if(columns.empty())
+                columns = inputColumns();
+            auto num_input_columns = columns.size();
+
             // old:
-            auto pcr = !inputColumns().empty() ? python::callFunctionWithDictEx(pFunc, rowObj, inputColumns()) :
+            auto pcr = !inputColumns().empty() ? python::callFunctionWithDictEx(pFunc, rowObj, columns) :
                        python::callFunctionEx(pFunc, rowObj);
 
             ec = pcr.exceptionCode;
@@ -287,21 +294,37 @@ namespace tuplex {
                 Py_XDECREF(rowObj);
             } else {
                 assert(pyobj_res);
+                if(row.getRowType().isTupleType()) {
+                    // now perform adding or replacing column
+                    if(_columnToMapIndex < num_input_columns)
+                        PyTuple_SetItem(rowObj, _columnToMapIndex, pyobj_res);
+                    else {
+                        // create a copy!
+                        if(PyTuple_Check(rowObj))
+                            assert(_columnToMapIndex == PyTuple_Size(rowObj));
 
-                // now perform adding or replacing column
-                if(_columnToMapIndex < PyTuple_Size(rowObj))
-                    PyTuple_SetItem(rowObj, _columnToMapIndex, pyobj_res);
-                else {
-                    // create a copy!
-                    if(PyTuple_Check(rowObj))
-                        assert(_columnToMapIndex == PyTuple_Size(rowObj));
+                        auto singleColObj = PyTuple_New(1);
+                        PyTuple_SET_ITEM(singleColObj, 0, pyobj_res);
+                        rowObj = PySequence_Concat(rowObj, singleColObj);
+                    }
+                    auto res = python::pythonToRow(rowObj);
+                    vRes.push_back(res);
+                } else {
+                    // check what the column name is, and then replace accordingly.
+                    auto idx = indexInVector(_newColumn, columns);
+                    auto fields = row.to_vector();
+                    if(idx >= 0) {
+                        // replace
+                        fields[idx] = python::pythonToField(pyobj_res);
+                    } else {
+                        // append
+                        fields.push_back(python::pythonToField(pyobj_res));
+                        columns.push_back(_newColumn);
+                    }
 
-                    auto singleColObj = PyTuple_New(1);
-                    PyTuple_SET_ITEM(singleColObj, 0, pyobj_res);
-                    rowObj = PySequence_Concat(rowObj, singleColObj);
+                    auto res = Row::from_vector(fields).with_columns(columns);
+                    vRes.push_back(res);
                 }
-                auto res = python::pythonToRow(rowObj);
-                vRes.push_back(res);
             }
 
             Py_XDECREF(rowObj);

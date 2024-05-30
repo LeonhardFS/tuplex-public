@@ -28,6 +28,8 @@ namespace tuplex {
 
             size_t sampling_size; // re-sampling sample size
 
+            bool use_sample; // whether to use a sample, if false deactivates automatically any detection for filterPromotion / constantFolding.
+
             ExceptionSerializationMode exceptionSerializationMode;
 
             StageBuilderConfiguration() : policy(CompilePolicy()),
@@ -41,7 +43,8 @@ namespace tuplex {
                                           filterPromotion(false),
                                           pure_python_mode(false),
                                           exceptionSerializationMode(ExceptionSerializationMode::SERIALIZE_AS_GENERAL_CASE),
-                                          sampling_size(0) {}
+                                          sampling_size(0),
+                                          use_sample(true) {}
 
             // update with context option object
             inline void applyOptions(const ContextOptions& co) {

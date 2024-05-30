@@ -477,6 +477,25 @@ namespace tuplex {
         assert(!sample_column_names.empty()); // <-- should be valid...
         f->adjustJsonSamples(sample_column_names, sample_column_names.size());
 
+        // debug check:
+        // if rows have different number of columns, must use row type!
+#ifndef NDEBUG
+        size_t num_row_types = 0;
+        size_t min_column_count = 99999999;
+        size_t max_column_count = 0;
+        for(const auto& row: f->_rowsSample) {
+            num_row_types += row.getRowType().isRowType();
+            min_column_count = std::min(min_column_count, row.getNumColumns());
+            max_column_count = std::max(max_column_count, row.getNumColumns());
+        }
+
+        // different counts?
+        if(min_column_count != max_column_count) {
+            assert(num_row_types == f->_rowsSample.size()); // <-- all must be of row type.
+        }
+#endif
+
+
         return f;
     }
 
