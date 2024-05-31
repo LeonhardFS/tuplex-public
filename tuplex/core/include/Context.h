@@ -212,8 +212,7 @@ namespace tuplex {
                       bool unwrap_first_level=true,
                       bool treat_heterogenous_lists_as_tuples=true,
                       const SamplingMode& sm=DEFAULT_SAMPLING_MODE,
-                      const option<Schema>& normal_case_schema=option<Schema>::none,
-                      const option<Schema>& general_case_schema=option<Schema>::none);
+                      const std::unordered_map<std::string, python::Type>& column_based_type_hints={});
 
         /*!
          * reads text files with into memory. Type will be always string or Option[string]. Parsing is done using line delimiters \n and \r

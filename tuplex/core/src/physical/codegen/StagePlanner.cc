@@ -600,6 +600,12 @@ namespace tuplex {
                 sample = fetchInputSample();
             std::vector<std::string> sample_columns = _inputNode ? _inputNode->columns() : std::vector<std::string>();
 
+            // columns may change, reflect here.
+            if(use_sample && !sample.empty()) {
+                if(sample.front().getRowType().isRowType())
+                    sample_columns = sample.front().getRowType().get_column_names();
+            }
+
             // retype using sample, need to do this initially.
             retypeOperators(sample, sample_columns, use_sample);
 
@@ -820,8 +826,11 @@ namespace tuplex {
             //if(extract_columns_from_type())
 
             // perform quick sanity check
-            if(!r_conf.columns.empty())
-                assert(extract_columns_from_type(r_conf.row_type) == r_conf.columns.size());
+            if(!r_conf.columns.empty()) {
+                auto n_cols_row_type = extract_columns_from_type(r_conf.row_type);
+                auto n_cols_count = r_conf.columns.size();
+                assert(n_cols_row_type == n_cols_count);
+            }
 
             if(!fop->retype(r_conf, true))
                 throw std::runtime_error("failed to retype " + fop->name() + " operator."); // for input operator, ignore Option[str] compatibility which is set per default
@@ -1982,13 +1991,17 @@ namespace tuplex {
                 return true;
             }
 
+            auto projectedColumns = _inputNode->columns();
+
             // detect majority type
             // detectMajorityRowType(const std::vector<Row>& rows, double threshold, bool independent_columns)
             python::Type majType=python::Type::UNKNOWN, projectedMajType=python::Type::UNKNOWN;
-            if(use_sample) {
+            if(use_sample && !sample.empty()) {
                 logger.info("Detecting majority type using " + pluralize(sample.size(), "sample") + "with threshold=" + std::to_string(_nc_threshold));
                 majType = detectMajorityRowType(sample, _nc_threshold, true, _useNVO);
                 projectedMajType = majType;
+                if(sample.front().getRowType().isRowType()) // <-- samples should have same type.
+                    projectedColumns = sample.front().getRowType().get_column_names();
             } else {
                 majType = _inputNode->getOutputSchema().getRowType();
                 projectedMajType = majType;
@@ -2002,8 +2015,6 @@ namespace tuplex {
             assert(projectedMajType.isTupleType());
             size_t num_columns_before_pushdown = majType.parameters().size();
             size_t num_columns_after_pushdown = projectedMajType.parameters().size();
-
-            auto projectedColumns = _inputNode->columns();
 
 #ifndef NDEBUG
             // check how many rows adhere to the normal-case type.

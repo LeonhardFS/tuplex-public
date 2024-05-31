@@ -2238,6 +2238,20 @@ namespace tuplex {
 
         extern llvm::Function* createStringLenFunction(LLVMEnvironment& env);
 
+        /*!
+         * Given an array of strings v, for a given needle (and optional needle_size)
+         * @param env
+         * @param builder
+         * @param needle
+         * @param needle_size if nullptr, calls strlen(...) on needle
+         * @param v array of strings
+         * @return index, -1 if not found. Else, 0, ..., len(v)-1
+         */
+        extern llvm::Value* str_get_index_in_static_array(LLVMEnvironment& env,
+                                                          const codegen::IRBuilder& builder,
+                                                          llvm::Value* needle,
+                                                          llvm::Value* needle_size,
+                                                          const std::vector<std::string>& v);
     }
 }
 

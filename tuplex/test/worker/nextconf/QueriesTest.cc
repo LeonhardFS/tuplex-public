@@ -277,6 +277,19 @@ namespace tuplex {
         return view;
     }
 
+    inline std::unordered_map<std::string, python::Type> row_type_to_column_hints(const python::Type& row_type) {
+        assert(row_type.isRowType());
+
+        std::unordered_map<std::string, python::Type> m;
+
+        auto names = row_type.get_column_names();
+        auto types = row_type.get_column_types();
+        assert(names.size() == types.size());
+        for(unsigned i = 0; i < names.size(); ++i)
+            m[names[i]] = types[i];
+        return m;
+    }
+
     TEST(AllQueries, AllUniqueRowTypesFromSample) {
         using namespace std;
 
@@ -381,7 +394,7 @@ namespace tuplex {
 
             cout<<"Testing with normal-case row type: "<<normal_case_row_type.desc()<<endl;
 
-            ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, Schema(Schema::MemoryLayout::ROW, normal_case_row_type))
+            ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, row_type_to_column_hints(normal_case_row_type))
                     .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
                     .withColumn("repo_id", UDF(repo_id_code))
                     .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
@@ -476,7 +489,7 @@ namespace tuplex {
         cout<<"Testing with normal-case row type: "<<normal_case_row_type.desc()<<endl;
 
         // debug:
-        ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, Schema(Schema::MemoryLayout::ROW, normal_case_row_type))
+        ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, row_type_to_column_hints(normal_case_row_type))
                 .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
                 .withColumn("repo_id", UDF(repo_id_code))
                 .selectColumns(vector<string>{"type", "repo_id", "year"})

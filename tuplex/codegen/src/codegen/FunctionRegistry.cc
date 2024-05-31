@@ -3152,6 +3152,16 @@ namespace tuplex {
             auto key_type = argsTypes.front();
             auto deopt_key_type = deoptimizedType(key_type);
 
+            auto default_value = _env.dummyValue(builder, retType);
+            default_value.is_null = _env.i1Const(true);
+
+            auto key = args.front(); // <-- key value.
+
+            // if given, upcast to retType!
+            if(args.size() > 1) {
+                default_value = _env.upcastValue(builder, args[1], argsTypes[1], retType);
+            }
+
             // integer type?
             if(python::Type::I64 == deopt_key_type) {
                 throw std::runtime_error("integer access for Row.get not yet implemented");
@@ -3186,30 +3196,21 @@ namespace tuplex {
                         assert(callerType.get_columns_as_tuple_type().parameters()[idx_in_columns] == retType);
                         return tuple_load_element(_env, builder, caller.val, callerType.get_columns_as_tuple_type(), idx_in_columns);
                     } else {
-
-                        // check if given key is contained within column names
-                        auto name_index = str_create_index_in_static_array(_env, builder, caller.val, callerType.get_column_names());
-
-                        auto name_contained = builder.CreateICmpSLT(name_index, _env.i64Const(0));
-
-                        // TODO: hash-table is fastest for lookup
-                        // use following structure for strings:
-                        // n-elements (statically known)
-                        // size/offset | ... | size/offset | str_1 | ... | str_n  // <-- save this serialized as global bytes.
-                        // then do hash(key) to get position. If position is 0 -> no entry.
-                        // use linear-probing.
-                        // when constructing hashmap, make sure there are not really any conflicts...
-                        // --> use fibonacci numbers for size.
-                        // this is quite some code to write...
-
-                        // simpler way: chain of if-statements for few keys (<3) prob. faster.
-                        // after that, hashmap wins!
-                        // --> can optimize with plan.
-
-                        // not contained, except with KeyError or return optional field.
-                        throw std::runtime_error("not yet implemented, need to throw key error or return default value");
+                        // not contained, so return default value
+                        return default_value;
                     }
                 } else {
+
+                    if(deopt_key_type != python::Type::STRING) {
+                        throw std::runtime_error("row.get() not implemented for key type " + key_type.desc());
+                    }
+
+                    // check if given key is contained within column names
+                    auto name_index = str_get_index_in_static_array(_env, builder, key.val, key.size,
+                                                                    callerType.get_column_names());
+
+                    auto name_contained = builder.CreateICmpSLT(name_index, _env.i64Const(0));
+
                     // need to check explicitly against values & then perform type check of expected return type.
                     throw std::runtime_error("non constant string access not yet implemented for Row.get");
                 }

@@ -29,6 +29,7 @@
 
 #include <regex>
 #include <codegen/FlattenedTuple.h>
+#include <JSONUtils.h>
 
 using namespace llvm;
 
@@ -3082,6 +3083,55 @@ namespace tuplex {
                 builder.CreateMemSet(ptr, i8Const(0), tuple_size, 0);
 
             return ptr;
+        }
+
+        llvm::Function* generate_str_array_index_function(LLVMEnvironment& env, const std::vector<std::string>& v) {
+            // TODO: hash-table is fastest for lookup
+            // use following structure for strings:
+            // n-elements (statically known)
+            // size/offset | ... | size/offset | str_1 | ... | str_n  // <-- save this serialized as global bytes.
+            // then do hash(key) to get position. If position is 0 -> no entry.
+            // use linear-probing.
+            // when constructing hashmap, make sure there are not really any conflicts...
+            // --> use fibonacci numbers for size.
+            // this is quite some code to write...
+
+            // simpler way: chain of if-statements for few keys (<3) prob. faster.
+            // after that, hashmap wins!
+            // --> can optimize with plan.
+
+            // for now implement a faster/easier version
+            // basically generate a switch-case based on string length
+            // and then perform subsequent strcmp.
+
+            std::map<int, std::vector<std::string>> ordered_v;
+            for(auto name: v) {
+                ordered_v[name.size()].push_back(name);
+            }
+
+            return nullptr;
+        }
+
+        llvm::Value* str_get_index_in_static_array(LLVMEnvironment& env, const codegen::IRBuilder& builder,
+                                                      llvm::Value* needle, llvm::Value* needle_size,
+                                                      const std::vector<std::string>& v) {
+            if(v.empty())
+                return env.i64Const(-1);
+
+            // create helper function for v.
+            std::stringstream ss; ss<<"[";
+            for(auto str: v)
+                ss<<escape_for_json(str)<<",";
+            ss<<"]";
+            auto func_key = ss.str();
+            if(!env.functionCacheHasKey(func_key)) {
+                auto func = generate_str_array_index_function(env, v);
+                env.functionCacheSet(func_key, func);
+            }
+            auto func = env.functionCacheGet(func_key);
+            assert(func);
+
+            return builder.CreateCall(func, {needle, needle_size});
         }
     }
 }

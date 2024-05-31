@@ -292,7 +292,7 @@ namespace tuplex {
         return v;
     }
 
-    inline void reorder_and_fill_missing_will_null(Row& row, std::vector<std::string>& row_column_names, const std::vector<std::string>& dest_column_names) {
+    inline void reorder_and_fill_missing_will_null(Row& row, const std::vector<std::string>& row_column_names, const std::vector<std::string>& dest_column_names) {
         // check now which names are missing
         std::vector<std::string> missing_dest = vec_set_difference(dest_column_names, row_column_names);
         auto missing_origin = vec_set_difference(row_column_names, dest_column_names);
@@ -341,6 +341,20 @@ namespace tuplex {
 
         if(PARAM_USE_ROW_TYPE)
             row = row.with_columns(expanded_dest_column_names);
+    }
+
+    inline std::vector<std::string> reorder_and_expand_column_names(const std::vector<std::string>& row_column_names,
+                                                                    const std::vector<std::string>& dest_column_names) {
+        // check now which names are missing
+        std::vector<std::string> missing_dest = vec_set_difference(dest_column_names, row_column_names);
+        auto missing_origin = vec_set_difference(row_column_names, dest_column_names);
+
+        // append to dest missing origing, and put them at the end.
+        auto expanded_dest_column_names = dest_column_names;
+        if(!missing_origin.empty())
+            std::copy(missing_origin.begin(), missing_origin.end(), std::back_inserter(expanded_dest_column_names));
+
+        return expanded_dest_column_names;
     }
 
 }

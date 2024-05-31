@@ -404,8 +404,7 @@ namespace tuplex {
                            bool unwrap_first_level,
                            bool treat_heterogenous_lists_as_tuples,
                            const SamplingMode& sm,
-                           const option<Schema>& normal_case_schema,
-                           const option<Schema>& general_case_schema) {
+                           const std::unordered_map<std::string, python::Type>& column_based_type_hints) {
         using namespace std;
 
         Schema schema;
@@ -417,8 +416,7 @@ namespace tuplex {
                                                                                                     treat_heterogenous_lists_as_tuples,
                                                                                                     _options,
                                                                                                     sm,
-                                                                                                    normal_case_schema,
-                                                                                                    general_case_schema)));
+                                                                                                    column_based_type_hints)));
         auto op = ((FileInputOperator*)dsptr->_operator.get());
 
         // check whether files were found, else return empty dataset!

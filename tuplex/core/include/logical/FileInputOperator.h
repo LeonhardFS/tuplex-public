@@ -413,16 +413,7 @@ namespace tuplex {
                                            bool treat_heterogenous_lists_as_tuples,
                                            const ContextOptions& co,
                                            const SamplingMode& sampling_mode,
-                                           const option<Schema>& normal_case_schema,
-                                           const option<Schema>& general_case_schema);
-
-        static FileInputOperator *fromJSON(const std::string& pattern,
-                                           bool unwrap_first_level,
-                                           bool treat_heterogenous_lists_as_tuples,
-                                           const ContextOptions& co,
-                                           const SamplingMode& sampling_mode) {
-            return fromJSON(pattern, unwrap_first_level, treat_heterogenous_lists_as_tuples, co, sampling_mode, option<Schema>::none, option<Schema>::none);
-        }
+                                           const std::unordered_map<std::string, python::Type>& column_based_type_hints={});
 
 
         std::string name() const override {
