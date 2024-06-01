@@ -384,6 +384,11 @@ namespace tuplex {
     bool WithColumnOperator::retype(const RetypeConfiguration& conf) {
         auto input_row_type = conf.row_type;
 
+        // if output schema is unknown, need to infer directly.
+        if(getOutputSchema() == Schema::UNKNOWN) {
+            throw std::runtime_error("need to type directly.");
+        }
+
         assert(good());
 
         // save old schema

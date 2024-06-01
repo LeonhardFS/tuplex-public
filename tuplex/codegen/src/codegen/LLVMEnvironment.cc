@@ -2825,6 +2825,16 @@ namespace tuplex {
                 retVal.val = list_ptr;
                 retVal.size = i64Const(0);
                 retVal.is_null = i1Const(false);
+            } else if(type.isStructuredDictionaryType()) {
+                auto llvm_struct_type = getOrCreateStructuredDictType(type);
+                auto dict_ptr = CreateFirstBlockAlloca(builder, llvm_struct_type, "dummy_struct");
+                struct_dict_mem_zero(*this, builder, dict_ptr, type);
+                retVal.val = dict_ptr;
+                retVal.size = i64Const(0);
+                retVal.is_null = i1Const(false);
+            } else if(type.isOptionType()) {
+                retVal = dummyValue(builder, type.withoutOption());
+                retVal.is_null = i1Const(true);
             } else {
                 std::string err_msg = "Requested dummy for type " + type.desc() + " but not yet implemented";
                 Logger::instance().logger("codegen").error(err_msg);

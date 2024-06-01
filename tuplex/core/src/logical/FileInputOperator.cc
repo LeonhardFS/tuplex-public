@@ -368,6 +368,10 @@ namespace tuplex {
                     f->_normalCaseRowType = python::Type::EMPTYROW;
                     f->_generalCaseRowType = python::Type::EMPTYROW;
                 } else {
+
+                    normalcasetype = python::Type::makeRowType(normalcasetype.parameters(), sample_column_names);
+                    generalcasetype = python::Type::makeRowType(generalcasetype.parameters(), sample_column_names);
+
                     assert(normalcasetype.isRowType());
                     f->_normalCaseRowType = normalcasetype;
 
@@ -389,8 +393,58 @@ namespace tuplex {
             f->_generalCaseRowType = default_type;
         }
 
-        if(!column_based_type_hints.empty())
-            throw std::runtime_error("column based hints not yet supported in fromJSON");
+        if(!column_based_type_hints.empty()) {
+
+            // which columns are contained? which aren't?
+            std::unordered_map<std::string, python::Type> contained_hints;
+            std::map<std::string, python::Type> new_hints;
+            for(auto kv: column_based_type_hints) {
+                if(indexInVector(kv.first, f->_columnNames) >= 0)
+                    contained_hints[kv.first] = kv.second;
+                else
+                    new_hints[kv.first] = kv.second;
+            }
+            std::vector<std::string> new_columns;
+            for(auto kv: new_hints)
+                new_columns.push_back(kv.first);
+            std::sort(new_columns.begin(), new_columns.end());
+
+            auto n_col_types = f->_normalCaseRowType.isTupleType() ? f->_normalCaseRowType.parameters() : f->_normalCaseRowType.get_column_types();
+            auto g_col_types = f->_generalCaseRowType.isTupleType() ? f->_generalCaseRowType.parameters() : f->_generalCaseRowType.get_column_types();
+
+            std::vector<python::Type> dummy(new_columns.size(), python::Type::NULLVALUE);
+            // append new columns w. hints
+            std::copy(new_columns.begin(), new_columns.end(), std::back_inserter(f->_columnNames));
+            std::copy(dummy.begin(), dummy.end(), std::back_inserter(n_col_types));
+            std::copy(dummy.begin(), dummy.end(), std::back_inserter(g_col_types));
+
+            f->_indexBasedHints.clear();
+
+            // update existing types
+            for(auto kv : column_based_type_hints) {
+                auto idx = indexInVector(kv.first, f->_columnNames);
+                n_col_types[idx] = kv.second;
+                g_col_types[idx] = kv.second;
+
+                // param check
+                if(f->_normalCaseRowType.isRowType() && idx < f->_normalCaseRowType.get_column_count())
+                    assert(f->_normalCaseRowType.get_column_name(idx) == kv.first);
+                if(f->_generalCaseRowType.isRowType() && idx < f->_generalCaseRowType.get_column_count())
+                    assert(f->_generalCaseRowType.get_column_name(idx) == kv.first);
+
+                // convert to index based hints.
+                f->_indexBasedHints[idx] = kv.second;
+            }
+
+            // update types:
+            if(PARAM_USE_ROW_TYPE) {
+                f->_normalCaseRowType = python::Type::makeRowType(n_col_types, f->_columnNames);
+                f->_generalCaseRowType = python::Type::makeRowType(g_col_types, f->_columnNames);
+            } else {
+                f->_normalCaseRowType = python::Type::makeTupleType(n_col_types);
+                f->_generalCaseRowType = python::Type::makeTupleType(g_col_types);
+            }
+        }
 
         // adjust if normal-case / general-case column count differs.
         auto normal_case_column_count = extract_columns_from_type(f->_normalCaseRowType);

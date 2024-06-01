@@ -340,16 +340,11 @@ namespace tuplex {
 
         cout<<"Load took in total "<<loadTimer.time()<<"s"<<endl;
 
-        for(unsigned id = 0; id < std::min(9989999ul, view_of_counts.size()); ++id) {
-            // test:
-            if(0 == id)
-                id = 11;
-
+        for(unsigned id = 0; id < std::min(9999999ul, view_of_counts.size()); ++id) {
             auto normal_case_row_type = view_of_counts[id].first;
 
             string testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
             auto output_path = "./local-exp/" + testName + "/" + std::to_string(id) + "/";
-
 
 
             // init interpreter
@@ -488,25 +483,28 @@ namespace tuplex {
 
         cout<<"Testing with normal-case row type: "<<normal_case_row_type.desc()<<endl;
 
-        // debug:
-        ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, row_type_to_column_hints(normal_case_row_type))
-                .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
-                .withColumn("repo_id", UDF(repo_id_code))
-                .selectColumns(vector<string>{"type", "repo_id", "year"})
-                .tocsv(output_path);
-
-        // original:
-        // ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, Schema(Schema::MemoryLayout::ROW, normal_case_row_type))
+        // // debug:
+        // ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, row_type_to_column_hints(normal_case_row_type))
         //         .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
         //         .withColumn("repo_id", UDF(repo_id_code))
-        //         .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
+        //         .filter(UDF("lambda x: x['type'] == 'ForkEvent'"))
         //         .withColumn("commits", UDF("lambda row: row['payload'].get('commits')"))
         //         .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
         //         .selectColumns(vector<string>{"type", "repo_id", "year", "number_of_commits"})
         //         .tocsv(output_path);
 
+        // original:
+        ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, row_type_to_column_hints(normal_case_row_type))
+             .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
+             .withColumn("repo_id", UDF(repo_id_code))
+             .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
+             .withColumn("commits", UDF("lambda row: row['payload'].get('commits')"))
+             .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
+             .selectColumns(vector<string>{"type", "repo_id", "year", "number_of_commits"})
+             .tocsv(output_path);
+
         auto result_row_count = csv_row_count_for_pattern(output_path + "*.csv");
-        //EXPECT_EQ(result_row_count, 378); // result which is correct for all rows.
+        EXPECT_EQ(result_row_count, 378); // result which is correct for all rows.
 
         python::lockGIL();
         python::closeInterpreter();

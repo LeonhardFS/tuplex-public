@@ -92,10 +92,11 @@ namespace tuplex {
 
             // need to update type of row!
             auto old_type = getRowType();
-            auto types = old_type.parameters();
+            auto types = old_type.isTupleType() ? old_type.parameters() : old_type.get_column_types();
             if(types[col] != f.getType()) {
                 types[col] = f.getType();
-                _schema = Schema(_schema.getMemoryLayout(), python::Type::makeTupleType(types));
+                auto new_type = old_type.isTupleType() ? python::Type::makeTupleType(types) : python::Type::makeRowType(types, old_type.get_column_names());
+                _schema = Schema(_schema.getMemoryLayout(), new_type);
             }
 
             // update length, may change!
