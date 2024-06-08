@@ -139,7 +139,7 @@ namespace tuplex {
 
             {
                 std::stringstream err_stream;
-                if(!check_llvm_type(*_env, field_type, SerializableValue(value, size, is_null)), &err_stream) {
+                if(!check_llvm_type(*_env, field_type, SerializableValue(value, size, is_null), &err_stream)) {
                     throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + err_stream.str());
                 }
             }
