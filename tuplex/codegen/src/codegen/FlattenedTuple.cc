@@ -17,6 +17,9 @@
 
 namespace tuplex {
     namespace codegen {
+
+        bool check_llvm_type(LLVMEnvironment& env, const python::Type& type, const SerializableValue& v, std::ostream* os=nullptr);
+
         std::vector<python::Type> FlattenedTuple::getFieldTypes() const {
             return _tree.fieldTypes();
         }
@@ -128,9 +131,21 @@ namespace tuplex {
         }
 
         void FlattenedTuple::set(const codegen::IRBuilder& builder, const std::vector<int>& index, llvm::Value *value, llvm::Value *size, llvm::Value *is_null) {
-
             // is it a single value or a compound/tuple type?
             auto field_type = _tree.fieldType(index);
+
+#ifndef NDEBUG
+            // check in DEBUG mode that correct LLVM type is set to tuple.
+
+            {
+                std::stringstream err_stream;
+                if(!check_llvm_type(*_env, field_type, SerializableValue(value, size, is_null)), &err_stream) {
+                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + err_stream.str());
+                }
+            }
+#endif
+
+
             if(field_type.isTupleType() && field_type != python::Type::EMPTYTUPLE) {
                 // need to assign a subtree
 
@@ -1635,6 +1650,104 @@ namespace tuplex {
             }
 
             return upcasted_row;
+        }
+
+        bool check_llvm_type(LLVMEnvironment& env, const python::Type& type, const SerializableValue& v, std::ostream* os) {
+
+            std::stringstream err_stream;
+            bool rc = true;
+
+            if(type.isOptionType()) {
+                if(!v.is_null) {
+                    err_stream<<"is option type, but is_null is not set"<<std::endl;
+                    rc = false;
+                } else if(v.is_null->getType() != env.i1Type()) {
+                    err_stream<<"is option type, but is_null is not LLVM i1 type"<<std::endl;
+                    rc = false;
+                }
+            }
+
+            // check mapping:
+            auto mapped_llvm_type = env.pythonToLLVMType(type.withoutOption());
+            // for struct either struct or pointer to struct is ok
+            if(mapped_llvm_type->isStructTy()) {
+                if(!v.val) {
+                    err_stream<<"has type "<<type.desc()<<" but no val field set"<<std::endl;
+                    rc = false;
+                } else {
+                    bool type_mismatch = false;
+
+#if LLVM_VERSION_MAJOR < 15
+                    type_mismatch = v.val->getType() != mapped_llvm_type && v.val->getType() != mapped_llvm_type->getPointerTo();
+#else
+                    // ptr is ok, or if type == mapped_llvm_type
+                    type_mismatch = v.val->getType() != mapped_llvm_type && !v.val->getType()->isPointerTy();
+#endif
+
+                    if(type_mismatch) {
+                        err_stream<<"has type "<<type.desc()<<" which is mapped to LLVM type "<<env.getLLVMTypeName(mapped_llvm_type)<<" but set type of element is "<<env.getLLVMTypeName(v.val->getType())<<std::endl;
+                        rc = false;
+                    }
+
+                }
+            } else {
+                if(!type.withoutOption().isSingleValued()) {
+                    if(!v.val) {
+                        err_stream <<"has type " << type.desc() << " but no val field set"
+                                   << std::endl;
+                        rc = false;
+                    } else {
+                        if(v.val->getType() != mapped_llvm_type) {
+                            err_stream<<"has type "<<type.desc()<<" which is mapped to LLVM type "<<env.getLLVMTypeName(mapped_llvm_type)<<" but set type of element is "<<env.getLLVMTypeName(v.val->getType())<<std::endl;
+                            rc = false;
+                        }
+                    }
+                }
+
+                if(!type.withoutOption().isFixedSizeType()) {
+                    if(!v.size) {
+                        err_stream << "has type " << type.desc() << " but size field set"
+                                   << std::endl;
+                        rc = false;
+                    } else {
+                        if(v.size->getType() != env.i64Type()) {
+                            err_stream << "has type " << type.desc() << " but size field has LLVM type" << env.getLLVMTypeName(v.size->getType())<<" which should be i64"
+                                       << std::endl;
+                            rc = false;
+                        }
+                    }
+                }
+            }
+
+
+            if(os)
+                *os<<err_stream.str();
+
+            return rc;
+        }
+
+        bool FlattenedTuple::checkLLVMTypes() const {
+            std::stringstream err_stream;
+            bool rc = true;
+
+            // go through all types
+            int num_elements = _tree.numElements();
+            for(unsigned i = 0; i < num_elements; ++i) {
+                auto type = _tree.fieldType(i);
+                auto v = _tree.get(i);
+
+                std::stringstream v_err_stream;
+                if(!check_llvm_type(*_env, type, v, &v_err_stream)) {
+                    rc = false;
+                    err_stream<<"element #"<<i<<": "<<v_err_stream.str();
+                }
+            }
+
+#ifndef NDEBUG
+            Logger::instance().logger("codegen").error("Following errors were found in FlattenedTuple:\n" + err_stream.str());
+#endif
+
+            return rc;
         }
 
     }

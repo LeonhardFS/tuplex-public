@@ -513,6 +513,10 @@ namespace tuplex {
         logger.debug("JSON - normal case type: " + f->_normalCaseRowType.desc());
         logger.debug("JSON - general case type: " + f->_generalCaseRowType.desc());
 
+        // empty? no files found? proceed.
+        if(f->_estimatedRowCount == 0)
+            return f;
+
         // need to adjust samples (fill in nulls etc.)
         assert(!sample_column_names.empty()); // <-- should be valid...
         f->adjustJsonSamples(sample_column_names, sample_column_names.size());

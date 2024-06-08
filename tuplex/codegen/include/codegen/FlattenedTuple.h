@@ -171,6 +171,12 @@ namespace tuplex {
 
             inline python::Type fieldType(int index) const { return getFieldTypes()[index]; }
 
+            /*!
+             * checks whether internally stored LLVM types are correct.
+             * @return true/false
+             */
+            bool checkLLVMTypes() const;
+
             void print(const IRBuilder& builder) const;
 
             /*!

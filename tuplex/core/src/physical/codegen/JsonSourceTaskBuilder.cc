@@ -693,13 +693,16 @@ namespace tuplex {
                             // tuple type, convert general case to tuple type.
                             if(normal_case_row_type.isRowType() && general_case_row_type.isRowType()) {
                                 if(!vec_equal(normal_case_row_type.get_column_names(), general_case_row_type.get_column_names())) {
+                                    logger().debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " upcast and reorder row");
                                     upcasted_row = upcast_row_and_reorder(builder, normal_case_row, normal_case_row_type, general_case_row_type);
                                     general_case_row_type = general_case_row_type.get_columns_as_tuple_type();
                                 } else {
+                                    logger().debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " upcastTo (Row)");
                                     general_case_row_type = general_case_row_type.get_columns_as_tuple_type();
                                     upcasted_row = normal_case_row.upcastTo(builder, general_case_row_type);
                                 }
                             } else {
+                                logger().debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " upcastTo (tuple)");
                                 upcasted_row = normal_case_row.upcastTo(builder, general_case_row_type);
                             }
 
@@ -708,6 +711,11 @@ namespace tuplex {
                             // _env->printValue(builder, upcasted_row_serialized_size, "serialized size of row AFTER UPCAST AND REORDER::");
 
                             logger().debug("Serializing general case row as normal-case exception.");
+
+                            if(!upcasted_row.checkLLVMTypes()) {
+                                logger().error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " type issue within upcasted_row");
+                                exit(1);
+                            }
 
                             // serialize as exception --> this connects already to freeStart.
                             serializeAsNormalCaseException(builder, userData, _inputOperatorID, rowNumber(builder), upcasted_row);

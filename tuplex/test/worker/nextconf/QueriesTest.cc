@@ -178,7 +178,7 @@ namespace tuplex {
         auto test_conf = GetParam();
         auto it = std::find_if(g_configurations_to_test.begin(), g_configurations_to_test.end(), [&](const QueryConfiguration& conf) { return conf.name == test_conf.name; });
         ASSERT_NE(it, g_configurations_to_test.end());
-        auto id = std::distance(it, g_configurations_to_test.begin());
+        auto id = std::abs(std::distance(it, g_configurations_to_test.begin()));
         auto output_path = "./local-exp/" + testName + "/" + test_conf.name + "/" + std::to_string(id) + "/";
         auto input_pattern = test_conf.input_pattern;
         std::cout << "Performing test: " << test_conf.name << " with output path: "<<output_path<<std::endl;

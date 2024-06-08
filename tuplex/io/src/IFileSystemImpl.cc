@@ -24,6 +24,12 @@ namespace tuplex {
         // run glob over pattern
         auto uris = glob(pattern.toPath());
 
+        // check if directory, then return immediately.
+        if(uris.size() == 1) {
+            if(!uris.front().isFile()) // must be directory (or other) then.
+                return true;
+        }
+
         // manually go over files/dirs and call callback
         for(auto uri : uris) {
             auto vfs = VirtualFileSystem::fromURI(uri);
