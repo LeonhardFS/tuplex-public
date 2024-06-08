@@ -2812,7 +2812,7 @@ namespace tuplex {
                 retVal.val = f64Const(0.0);
                 retVal.size = i64Const(sizeof(double));
                 retVal.is_null = i1Const(false);
-            } else if (python::Type::STRING == type || type.isDictionaryType()) {
+            } else if (python::Type::STRING == type || (type.isDictionaryType() && !type.isStructuredDictionaryType())) {
                 // use empty string, DO NOT use nullptr.
                 retVal.val = strConst(builder, "");
                 retVal.size = i64Const(1);
@@ -2881,6 +2881,7 @@ namespace tuplex {
 
                 // need to create dummy value so LLVM works...
                 auto baseType = targetType.getReturnType();
+
                 auto tmp = dummyValue(builder, baseType);
                 return SerializableValue(tmp.val, tmp.size, i1Const(true));
             }

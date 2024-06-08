@@ -140,7 +140,9 @@ namespace tuplex {
             {
                 std::stringstream err_stream;
                 if(!check_llvm_type(*_env, field_type, SerializableValue(value, size, is_null), &err_stream)) {
-                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + err_stream.str());
+                    auto err_msg = std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + err_stream.str();
+                    Logger::instance().logger("codegen").debug(err_msg);
+                    throw std::runtime_error(err_msg);
                 }
             }
 #endif
