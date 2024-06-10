@@ -32,8 +32,8 @@ namespace tuplex {
                                                                 QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false, true, 378},
                                                                 QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true, false, 378},
                                                                 QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true, true, 378},
-                                                                QueryConfiguration{"benchmark", "/hot/data/github_daily/", false, true, 294195},
-                                                                QueryConfiguration{"benchmark", "/hot/data/github_daily/", true, true, 294195}});
+                                                                QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", false, true, 294195},
+                                                                QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", true, true, 294195}});
 
 // see https://github.com/google/googletest/blob/main/docs/advanced.md#specifying-names-for-value-parameterized-test-parameters
 
@@ -225,7 +225,12 @@ namespace tuplex {
                             "            return None\n"
                             "        return repo.get('id')\n"
                             "    else:\n"
-                            "        return row['repo'].get('id')";
+                            "        repo =  row.get('repo')\n"
+                            "        if repo:\n"
+                            "            return repo.get('id')\n"
+                            "        else:\n"
+                            "            return None\n";
+
 
         // remove output files if they exist
         cout<<"Removing files (if they exist) from "<<output_path<<endl;
@@ -381,7 +386,11 @@ namespace tuplex {
                                 "            return None\n"
                                 "        return repo.get('id')\n"
                                 "    else:\n"
-                                "        return row['repo'].get('id')";
+                                "        repo =  row.get('repo')\n"
+                                "        if repo:\n"
+                                "            return repo.get('id')\n"
+                                "        else:\n"
+                                "            return None\n";
 
             // remove output files if they exist
             cout<<"Removing files (if they exist) from "<<output_path<<endl;

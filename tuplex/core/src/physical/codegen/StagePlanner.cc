@@ -871,7 +871,16 @@ namespace tuplex {
                     case LogicalOperatorType::MAPCOLUMN:
                     case LogicalOperatorType::WITHCOLUMN:
                     case LogicalOperatorType::IGNORE: {
-                        assert(node->getInputSchema() != Schema::UNKNOWN);
+
+                        // if(node->getInputSchema() == Schema::UNKNOWN) {
+                        //
+                        //     Logger::instance().logger("codegen").debug(std::string(__FILE__) + ":" + std::to_string(__LINE__)
+                        //     + " node " + node->name() + " has invalid input schema, was it properly retyped?");
+                        //
+                        //     throw std::runtime_error("invalid node encountered.");
+                        // }
+
+                        // assert(node->getInputSchema() != Schema::UNKNOWN);
 
                         auto op = node->clone(false); // no need to clone with parents, b.c. assigned below.
                         auto oldInputType = op->getInputSchema().getRowType();
@@ -1997,7 +2006,7 @@ namespace tuplex {
             // detectMajorityRowType(const std::vector<Row>& rows, double threshold, bool independent_columns)
             python::Type majType=python::Type::UNKNOWN, projectedMajType=python::Type::UNKNOWN;
             if(use_sample && !sample.empty()) {
-                logger.info("Detecting majority type using " + pluralize(sample.size(), "sample") + "with threshold=" + std::to_string(_nc_threshold));
+                logger.info("Detecting majority type using " + pluralize(sample.size(), "sample") + " with threshold=" + std::to_string(_nc_threshold));
                 majType = detectMajorityRowType(sample, _nc_threshold, true, _useNVO);
                 projectedMajType = majType;
                 if(sample.front().getRowType().isRowType()) // <-- samples should have same type.

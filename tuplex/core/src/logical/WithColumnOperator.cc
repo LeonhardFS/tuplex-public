@@ -160,6 +160,12 @@ namespace tuplex {
         // get python type from UDF operator
         auto udf_ret_type = _udf.getAnnotatedAST().getReturnType();
 
+        // UDF not properly typed? ==> short route escape here.
+        if(python::Type::UNKNOWN == _udf.getAnnotatedAST().getReturnType()) {
+            Logger::instance().logger("codegen").debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " getOutputSchema() in withColumn operator returns UNKNOWN, because UDF has return type UNKNOWN.");
+            return Schema::UNKNOWN;
+        }
+
         auto in_schema = getInputSchema();
         if(Schema::UNKNOWN == in_schema)
             return Schema::UNKNOWN;
@@ -384,9 +390,14 @@ namespace tuplex {
     bool WithColumnOperator::retype(const RetypeConfiguration& conf) {
         auto input_row_type = conf.row_type;
 
-        // if output schema is unknown, need to infer directly.
+        // if output schema is unknown, need to infer directly, i.e. this may be caused by the UDF not being typed at all.
         if(getOutputSchema() == Schema::UNKNOWN) {
-            throw std::runtime_error("need to type directly.");
+            auto rc = UDFOperator::retype(conf);
+
+            if(!rc) {
+                Logger::instance().logger("codegen").debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " retype of withColumn operator failed, can not retype operator.");
+                return false;
+            }
         }
 
         assert(good());

@@ -1553,9 +1553,15 @@ namespace tuplex {
 #ifndef NDEBUG
                 if(to_type.withoutOption().isStructuredDictionaryType()) {
                     assert(to.val);
+#if LLVM_VERSION_MAJOR < 15
                     if(!(to.val->getType()->isStructTy() || to.val->getType()->getPointerElementType()->isStructTy())) {
                         throw std::runtime_error("invalid llvm type " + _env->getLLVMTypeName(to.val->getType()) + " for " + to_type.desc());
                     }
+#else
+                    if(!(to.val->getType()->isStructTy() || to.val->getType()->isPointerTy())) {
+                        throw std::runtime_error("invalid llvm type " + _env->getLLVMTypeName(to.val->getType()) + " for " + to_type.desc());
+                    }
+#endif
                 }
 #endif
 
