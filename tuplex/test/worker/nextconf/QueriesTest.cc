@@ -320,7 +320,7 @@ namespace tuplex {
                                                          true, 99999999, 1, 1,
                                                          1, {}, false);
 
-            cout<<"-- converting to row type (elapsed="<<timer.time()<<endl;
+            cout<<"-- converting to row type (elapsed="<<timer.time()<<")"<<endl;
             for(unsigned i = 0; i < part_rows.size(); ++i) {
                 auto row = part_rows[i];
                 part_rows[i] = row.with_columns(out_column_names[i]);
