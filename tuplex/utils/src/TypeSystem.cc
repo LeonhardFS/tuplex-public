@@ -631,7 +631,7 @@ namespace python {
             return false;
 
         auto type = _typeVec[it->second]._type;
-        return type == AbstractType::DICTIONARY || t == Type::EMPTYDICT || t == Type::GENERICDICT || type == AbstractType::STRUCTURED_DICTIONARY;
+        return type == AbstractType::DICTIONARY || t == Type::EMPTYDICT || t == Type::GENERICDICT || type == AbstractType::STRUCTURED_DICTIONARY || type == AbstractType::SPARSE_STRUCTURED_DICTIONARY;
     }
 
     bool TypeFactory::isStructuredDictionaryType(const Type& t) const {
@@ -835,7 +835,7 @@ namespace python {
 
 
         // is it a structured dict? -> same key type?
-        if(isStructuredDictionaryType()) {
+        if(isStructuredDictionaryType() || isSparseStructuredDictionaryType()) {
             // check pairs and whether they all have the same type, if not return pyobject
             auto& factory = TypeFactory::instance();
             factory._typeMapMutex.lock();
@@ -880,7 +880,7 @@ namespace python {
             return PYOBJECT;
 
         // is it a structured dict? -> same key type?
-        if(isStructuredDictionaryType()) {
+        if(isStructuredDictionaryType() || isSparseStructuredDictionaryType()) {
             // check pairs and whether they all have the same type, if not return pyobject
             auto& factory = TypeFactory::instance();
             factory._typeMapMutex.lock();

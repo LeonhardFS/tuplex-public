@@ -189,7 +189,7 @@ namespace tuplex {
                 assertFunctionDoesNotReturnGeneric(specializedFunctionType);
                 return true;
             }
-            // typer did not yield a result, hence try stored funciton types incl. upcasting
+            // typer did not yield a result, hence try stored function types incl. upcasting
             return findStoredTypedFunction(parameterType, specializedFunctionType);
         }
 

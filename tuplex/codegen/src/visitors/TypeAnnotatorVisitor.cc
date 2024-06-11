@@ -1471,16 +1471,15 @@ namespace tuplex {
             // special case: structured dict
             if(type.isStructuredDictionaryType()) {
                 typeStructuredDictSubscription(sub, type);
+            } else if(type.isSparseStructuredDictionaryType()) {
+                // special case: this here is similar to a StructDict. However, if key is not found emit NORMALCASEERROR instead of KeyError, because
+                // due to sparseness can't know whether not in deoptimized version the key was present.
+                typeStructuredDictSubscription(sub, type.makeNonSparse());
+                if(sub->getInferredType() == get_exception_type(ExceptionCode::KEYERROR))
+                    sub->setInferredType(get_exception_type(ExceptionCode::NORMALCASEVIOLATION));
             } else {
                 sub->setInferredType(type.valueType());
             }
-        } else if(type.isSparseStructuredDictionaryType()) {
-            // special case: this here is similar to a StructDict. However, if key is not found emit NORMALCASEERROR instead of KeyError, because
-            // due to sparseness can't know whether not in deoptimized version the key was present.
-            typeStructuredDictSubscription(sub, type.makeNonSparse());
-            if(sub->getInferredType() == get_exception_type(ExceptionCode::KEYERROR))
-                sub->setInferredType(get_exception_type(ExceptionCode::NORMALCASEVIOLATION));
-
         } else if(python::Type::EMPTYLIST == type) {
             // error("subscripting an empty list will always yield an IndexError. Please fix code");
             // sub->setInferredType(python::Type::UNKNOWN);

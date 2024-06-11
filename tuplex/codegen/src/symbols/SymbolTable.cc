@@ -596,8 +596,8 @@ namespace tuplex {
                 auto key_type = parameterType.parameters().front();
                 auto value_type = python::Type::UNKNOWN;
 
-                // check if return type can be determiend
-                if(callerType.isDictionaryType() && !callerType.isStructuredDictionaryType()) {
+                // check if return type can be determined
+                if(callerType.isDictionaryType() && !callerType.isStructuredDictionaryType() && !callerType.isSparseStructuredDictionaryType()) {
                     // compatible?
                     if(python::canUpcastType(key_type, callerType.keyType()))
                         value_type = callerType.valueType();
