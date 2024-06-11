@@ -720,7 +720,7 @@ namespace python {
     }
 
     std::vector<StructEntry> Type::get_struct_pairs() const {
-        assert(isStructuredDictionaryType());
+        assert(isStructuredDictionaryType() || isSparseStructuredDictionaryType());
         auto& factory = TypeFactory::instance();
 
         const std::lock_guard<std::mutex> lock(factory._typeMapMutex);
@@ -1314,8 +1314,14 @@ namespace python {
         return keywords;
     }
 
-    bool TypeFactory::isSparseStructuredDictionaryType(const Type &type) {
-        return false;
+    bool TypeFactory::isSparseStructuredDictionaryType(const Type &t) {
+        std::lock_guard<std::mutex> lock(_typeMapMutex);
+        auto it = _typeMap.find(t._hash);
+        if(it == _typeMap.end())
+            return false;
+
+        auto type = _typeVec[it->second]._type;
+        return type == AbstractType::SPARSE_STRUCTURED_DICTIONARY;
     }
 
     bool tupleElementsHaveSameType(const python::Type& tupleType) {
@@ -2568,5 +2574,10 @@ namespace python {
         // sort
         std::sort(v.begin(), v.end());
         return v;
+    }
+
+    Type Type::makeNonSparse() const {
+        assert(isSparseStructuredDictionaryType());
+        return python::Type::makeStructuredDictType(get_struct_pairs(), false);
     }
 }

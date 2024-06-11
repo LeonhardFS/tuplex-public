@@ -197,6 +197,8 @@ namespace python {
         Type elementType() const;
         Type underlying() const;
 
+        Type makeNonSparse() const;
+
         /*!
          * returns the underlying value of a constant type. Note that this the actual value (not a python string!)
          * @return the value as string.
@@ -491,10 +493,16 @@ namespace python {
     };
 
      struct StructEntry { // an entry of a structured dict
+
         std::string key; // the value of the key, represented as string
         Type keyType; // type required to decode the string key
         Type valueType; // type what to store under key
         bool alwaysPresent; // whether this (key,value) pair is always present or not. if true, use ->, else use =>
+
+         StructEntry(const std::string &_key, const Type& _key_type,
+                     const Type _value_type, bool _always_present=true):key(_key), keyType(_key_type), valueType(_value_type), alwaysPresent(_always_present) {
+
+         }
 
         inline bool isUndefined() const {
             return key.empty() && keyType == Type() && valueType == Type();
