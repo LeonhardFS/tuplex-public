@@ -271,6 +271,14 @@ namespace tuplex {
                     return std::make_tuple(general_context, match_context, compile_context);
                 }
             }
+
+            SerializableValue
+            createStructDictGetCall(LambdaFunctionBuilder &lfb, const IRBuilder &builder,
+                                    const SerializableValue &caller,
+                                    const python::Type &callerType,
+                                    const std::vector<tuplex::codegen::SerializableValue> &args,
+                                    const std::vector<python::Type> &argsTypes, const python::Type &retType,
+                                    MessageHandler &logger);
         };
 
         /*!

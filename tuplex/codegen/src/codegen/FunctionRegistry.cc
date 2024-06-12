@@ -3552,7 +3552,27 @@ namespace tuplex {
                 return createGenericDictGetCall(lfb, builder, caller, callerType, args, argsTypes, retType);
             }
 
-            // only certain dicts yet supported
+            if(callerType.isSparseStructuredDictionaryType()) {
+                throw std::runtime_error("not yet implemented");
+            }
+
+            if(callerType.isStructuredDictionaryType() || callerType == python::Type::EMPTYDICT)
+                return createStructDictGetCall(lfb, builder, caller, callerType, args, argsTypes, retType, logger);
+
+
+#warning "TODO: add code here AND change the typing to use constant type for .get function (to avoid costly tracing)"
+            throw std::runtime_error("not yet implemented");
+            return {};
+        }
+
+        SerializableValue
+        FunctionRegistry::createStructDictGetCall(LambdaFunctionBuilder &lfb, const IRBuilder &builder,
+                                                  const SerializableValue &caller,
+                                                  const python::Type &callerType,
+                                                  const std::vector<tuplex::codegen::SerializableValue> &args,
+                                                  const std::vector<python::Type> &argsTypes,
+                                                  const python::Type &retType,
+                                                  MessageHandler &logger) {// only certain dicts yet supported
             if(!callerType.isStructuredDictionaryType() && callerType != python::Type::EMPTYDICT)
                 throw std::runtime_error("Only struct dict or empty dict yet supported for dict.get. Requested " + callerType.desc() + ".get");
 
@@ -3562,12 +3582,12 @@ namespace tuplex {
                 if(1 == argsTypes.size()) {
                    if(python::Type::NULLVALUE == retType) {
                        return SerializableValue(nullptr,
-                                         nullptr,
-                                         _env.i1Const(true));
+                                                nullptr,
+                                                _env.i1Const(true));
                    } else {
                        return SerializableValue(_env.dummyValue(builder, retType).val,
-                                         _env.i64Const(0),
-                                         _env.i1Const(true));
+                                                _env.i64Const(0),
+                                                _env.i1Const(true));
                    }
                 } else {
                     throw std::runtime_error("only None as default supported yet for empty dict .get");
@@ -3578,7 +3598,7 @@ namespace tuplex {
             assert(callerType.isStructuredDictionaryType());
 
             // multiple options now.
-            // how many parameters are there?
+// how many parameters are there?
             if(1 == argsTypes.size()) {
                 // single, is result option type? if not need to perform output-type match or deoptimize with normal-case failure.
                 bool require_deoptimization = !retType.isOptionType();
@@ -3628,7 +3648,7 @@ namespace tuplex {
                         // check if key matches, if so load and return entry!
                         auto key_match = struct_pair_keys_equal(_env, builder, pair, key, key_type);
                         auto bbMatch = llvm::BasicBlock::Create(_env.getContext(), "key_match_pair" + std::to_string(pair_pos), func);
-                        auto bbNext = llvm::BasicBlock::Create(_env.getContext(), "key_check_pair" + std::to_string(pair_pos+1), func);
+                        auto bbNext = llvm::BasicBlock::Create(_env.getContext(), "key_check_pair" + std::to_string(pair_pos + 1), func);
                         builder.CreateCondBr(key_match, bbMatch, bbNext);
 
                         // handle match case, then proceed.
@@ -3761,10 +3781,6 @@ namespace tuplex {
             } else {
                 throw std::runtime_error("incompatible number of arguments " + std::to_string(argsTypes.size()) + " encountered for dict.get function");
             }
-
-#warning "TODO: add code here AND change the typing to use constant type for .get function (to avoid costly tracing)"
-            throw std::runtime_error("not yet implemented");
-            return {};
         }
 
         SerializableValue subscript_generic_dict(LLVMEnvironment& env,
