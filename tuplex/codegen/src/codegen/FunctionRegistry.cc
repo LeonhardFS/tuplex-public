@@ -3548,13 +3548,11 @@ namespace tuplex {
             // -> emit AttributeError, should be handled in blockgen
             assert(!callerType.isOptionType());
 
-            if(callerType == python::Type::GENERICDICT) {
+            if(callerType == python::Type::GENERICDICT)
                 return createGenericDictGetCall(lfb, builder, caller, callerType, args, argsTypes, retType);
-            }
 
-            if(callerType.isSparseStructuredDictionaryType()) {
-                throw std::runtime_error("not yet implemented");
-            }
+            if(callerType.isSparseStructuredDictionaryType())
+                return createSparseStructDictGetCall(lfb, builder, caller, callerType, args, argsTypes, retType, logger);
 
             if(callerType.isStructuredDictionaryType() || callerType == python::Type::EMPTYDICT)
                 return createStructDictGetCall(lfb, builder, caller, callerType, args, argsTypes, retType, logger);
@@ -3562,6 +3560,21 @@ namespace tuplex {
 
 #warning "TODO: add code here AND change the typing to use constant type for .get function (to avoid costly tracing)"
             throw std::runtime_error("not yet implemented");
+            return {};
+        }
+
+        SerializableValue FunctionRegistry::createSparseStructDictGetCall(tuplex::codegen::LambdaFunctionBuilder &lfb,
+                                                                          const tuplex::codegen::IRBuilder &builder,
+                                                                          const tuplex::codegen::SerializableValue &caller,
+                                                                          const python::Type &callerType,
+                                                                          const std::vector<tuplex::codegen::SerializableValue> &args,
+                                                                          const std::vector<python::Type> &argsTypes,
+                                                                          const python::Type &retType,
+                                                                          MessageHandler &logger) {
+            std::stringstream ss;
+            ss<<std::string(__FILE__)<<":"<<__LINE__<<" sparse struct dict call not yet implemented.\n";
+            throw std::runtime_error(ss.str());
+
             return {};
         }
 
@@ -3772,7 +3785,7 @@ namespace tuplex {
                     // _env.printValue(builder, ret_val.val, "value: ");
                     return ret_val; // test...
                 }
-
+                throw std::runtime_error("illegal");
 
             } else if(2 == argsTypes.size()) {
                 // upcast to default
@@ -3781,6 +3794,8 @@ namespace tuplex {
             } else {
                 throw std::runtime_error("incompatible number of arguments " + std::to_string(argsTypes.size()) + " encountered for dict.get function");
             }
+
+            return {};
         }
 
         SerializableValue subscript_generic_dict(LLVMEnvironment& env,

@@ -300,13 +300,21 @@ namespace tuplex {
 
         Timer loadTimer;
 
-        string input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
+        //string input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
+
+        // full data
+        string input_pattern = "/hot/data/github_daily/*.json";
+
+        // bad file:
+        input_pattern = "/hot/data/github_daily/2020-10-15.json";
 
 //        // for faster dev
 //        input_pattern = "../resources/hyperspecialization/github_daily/2011-10-15.json.sample";
 
         auto uris = glob(input_pattern);
         //EXPECT_EQ(uris.size(), 11);
+
+        std::stringstream stats_stream;
 
         // parse all rows, and find unique row-types
         std::vector<Row> rows;
@@ -326,6 +334,23 @@ namespace tuplex {
                 part_rows[i] = row.with_columns(out_column_names[i]);
             }
 
+            // count per file and add to output:
+            {
+                std::unordered_map<python::Type, size_t> type_counts;
+                for(const auto& row : part_rows) {
+                    type_counts[row.getRowType()]++;
+                }
+
+                for(auto kv : type_counts) {
+                    nlohmann::json j;
+                    j["path"] = path;
+                    j["type"] = kv.first.desc();
+                    j["type_count"] = kv.second;
+                    j["row_count"] = part_rows.size();
+                    stats_stream<<j.dump()<<endl;
+                }
+            }
+
             std::copy(part_rows.begin(), part_rows.end(), std::back_inserter(rows));
             cout<<"-- took "<<timer.time()<<"s"<<endl;
         }
@@ -342,6 +367,11 @@ namespace tuplex {
         for(auto p : view_of_counts) {
             cout<<p.second<<"  "<<p.first.desc()<<endl;
         }
+
+        // save to file (per_file_row_type_stats.ndjson)
+        string stats_file_path = "per_file_row_type_stats.ndjson";
+        cout<<"Saving per-file stats to "<<stats_file_path<<endl;
+        stringToFile(stats_file_path, stats_stream.str());
 
         cout<<"Load took in total "<<loadTimer.time()<<"s"<<endl;
 

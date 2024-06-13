@@ -279,6 +279,13 @@ namespace tuplex {
                                     const std::vector<tuplex::codegen::SerializableValue> &args,
                                     const std::vector<python::Type> &argsTypes, const python::Type &retType,
                                     MessageHandler &logger);
+            SerializableValue
+            createSparseStructDictGetCall(LambdaFunctionBuilder &lfb, const IRBuilder &builder,
+                                    const SerializableValue &caller,
+                                    const python::Type &callerType,
+                                    const std::vector<tuplex::codegen::SerializableValue> &args,
+                                    const std::vector<python::Type> &argsTypes, const python::Type &retType,
+                                    MessageHandler &logger);
         };
 
         /*!
