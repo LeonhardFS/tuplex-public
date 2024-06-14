@@ -803,6 +803,8 @@ namespace tuplex {
     }
 
     Field extract_field_from_json_with_type(yyjson_val* j, const python::Type& value_type) {
+        if(!j)
+            throw std::runtime_error("invalid j (is <nullptr>) in extract_field_from_json_with_type.");
         assert(j);
 
         // check what the value_type should be
@@ -1131,7 +1133,19 @@ namespace tuplex {
                             assert(it != entries.end());
                             auto parent_entry = *it;
                             auto parent_value_type = std::get<1>(parent_entry);
-                            nesting_ok = parent_value_type.isOptionType() && parent_value_type.getReturnType().isStructuredDictionaryType() && get_struct_dict_field_by_path(json_data, json_data_size, access_path, parent_value_type).isNull();
+
+                            auto parent_value = get_struct_dict_field_by_path(json_data, json_data_size, parent_path, parent_value_type);
+
+                            if(parent_value_type.isOptionType()) {
+                                // nesting ok if null or field exists
+
+                                if(parent_value.isNull()) {
+                                    nesting_ok = true;
+                                    break; // -> no need to continue.
+                                }
+                            }
+                            // also ok, because field could be retrieved.
+                            nesting_ok = true;
                         }
                     }
 
