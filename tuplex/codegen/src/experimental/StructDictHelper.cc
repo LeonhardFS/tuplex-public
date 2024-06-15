@@ -2025,5 +2025,25 @@ namespace tuplex {
                 }
             }
         }
+
+        // do not call on elements that are not present. failure!
+        llvm::Value* struct_pair_keys_equal(LLVMEnvironment& env,
+                                            const IRBuilder& builder,
+                                            const python::StructEntry& entry,
+                                            const SerializableValue& key,
+                                            const python::Type& key_type) {
+            // check key equality
+            if(entry.keyType != key_type)
+                return env.i1Const(false);
+
+            if(key_type == python::Type::STRING) {
+                auto key_value = str_value_from_python_raw_value(entry.key); // the actual value\
+                assert(key.val);
+                assert(key.val->getType() == env.i8ptrType());
+                return env.fixedSizeStringCompare(builder, key.val, key_value);
+            } else {
+                throw std::runtime_error("unsupported key type comparison for key type=" + key_type.desc());
+            }
+        }
     }
 }

@@ -183,6 +183,28 @@ namespace tuplex {
             }
         };
 
+        /*!
+         * Helper function to run dict.get() on StructuredDictionary.
+         * @param lfb
+         * @param env
+         * @param builder
+         * @param dict_type
+         * @param dict_ptr
+         * @param key_type
+         * @param key
+         * @param value_type_to_return
+         * @return
+         */
+        extern std::tuple<llvm::Value*, llvm::Value*, SerializableValue> struct_dict_get_by_key(LambdaFunctionBuilder &lfb,
+                                                                                                LLVMEnvironment& env,
+                                                                                                const IRBuilder &builder,
+                                                                                                const python::Type& dict_type,
+                                                                                                llvm::Value* dict_ptr,
+                                                                                                const python::Type& key_type,
+                                                                                                const SerializableValue& key,
+                                                                                                const python::Type& value_type_to_return
+        );
+
     }
 }
 

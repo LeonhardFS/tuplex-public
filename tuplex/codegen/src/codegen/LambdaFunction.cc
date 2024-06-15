@@ -9,6 +9,7 @@
 //--------------------------------------------------------------------------------------------------------------------//
 
 #include <codegen/LambdaFunction.h>
+#include <experimental/StructDictHelper.h>
 
 namespace tuplex {
     namespace codegen {
@@ -406,6 +407,206 @@ namespace tuplex {
             FlattenedTuple ft(_env);
             ft.init(_pyRetType);
             return ft.getLLVMType();
+        }
+
+        // struct_dict_get_by_key(lfb, _env, builder, callerType, caller.val, key_type, args.front(), retType)
+
+        std::tuple<llvm::Value*, llvm::Value*, SerializableValue> struct_dict_get_by_key(LambdaFunctionBuilder &lfb,
+                                                                                         LLVMEnvironment& env,
+                                                                                         const IRBuilder &builder,
+                                                                                         const python::Type& dict_type,
+                                                                                         llvm::Value* dict_ptr,
+                                                                                         const python::Type& key_type,
+                                                                                         const SerializableValue& key,
+                                                                                         const python::Type& value_type_to_return
+        ) {
+            auto& logger = Logger::instance().logger("codegen");
+
+            assert(dict_type.isStructuredDictionaryType());
+
+            // it's not a constant type, need to emit chain of checks... -> costly. Maybe its own function?
+            // for now, emit check
+
+            // get all pairs with same key type
+            std::vector<python::StructEntry> kv_pairs;
+            for(auto pair : dict_type.get_struct_pairs()) {
+                if(pair.keyType == key_type)
+                    kv_pairs.push_back(pair);
+            }
+
+            auto llvm_val_type = env.pythonToLLVMType(value_type_to_return.withoutOption());
+
+
+            logger.debug("Found " + pluralize(kv_pairs.size(), "pair") + " to perform .get on");
+            // if(kv_pairs.empty())
+            //     // trivial, return None
+            //     return SerializableValue(nullptr, nullptr, env.i1Const(true));
+
+            // last exit block
+            auto func = builder.GetInsertBlock()->getParent();
+            assert(func);
+            auto bbExit = llvm::BasicBlock::Create(env.getContext(), "dict_get_done", func);
+
+            // use variable for result and store default value (here null!)
+            SerializableValue var;
+
+            var.val = env.CreateFirstBlockAlloca(builder, llvm_val_type);
+            var.size = env.CreateFirstBlockAlloca(builder, env.i64Type());
+            var.is_null = env.CreateFirstBlockAlloca(builder, env.i1Type());
+
+            llvm::Value* var_key_found = env.CreateFirstBlockAlloca(builder, env.i1Type());
+            llvm::Value* var_is_present = env.CreateFirstBlockAlloca(builder, env.i1Type());
+
+            // null variable and set to default (here anyway null)
+            builder.CreateStore(env.nullConstant(llvm_val_type), var.val);
+            builder.CreateStore(env.i64Const(0), var.size);
+            builder.CreateStore(env.i1Const(true), var.is_null); // indicate None! -> default behavior.
+            builder.CreateStore(env.i1Const(true), var_is_present);
+
+
+            // not trivial, check all pairs (presence! and whether null!)
+
+            unsigned pair_pos = 0;
+            for(auto pair : kv_pairs) {
+                // check if key matches, if so load and return entry!
+                auto key_match = struct_pair_keys_equal(env, builder, pair, key, key_type);
+                auto bbMatch = llvm::BasicBlock::Create(env.getContext(), "key_match_pair" + std::to_string(pair_pos), func);
+                auto bbNext = llvm::BasicBlock::Create(env.getContext(), "key_check_pair" + std::to_string(pair_pos + 1), func);
+                builder.CreateCondBr(key_match, bbMatch, bbNext);
+
+                // handle match case, then proceed.
+                builder.SetInsertPoint(bbMatch);
+
+                builder.CreateStore(env.i1Const(true), var_key_found);
+
+                // special case deopt?
+                // do we need to deoptimize?
+                // this means pair.value_type must match return type, else it's directly a normal case failure
+                if(pair.valueType.withoutOption() != value_type_to_return.withoutOption()) {
+                    lfb.setLastBlock(builder.GetInsertBlock());
+                    lfb.exitWithException(ExceptionCode::NORMALCASEVIOLATION, "value_type " + pair.valueType.desc() +
+                                                                              " must match expected return type " + value_type_to_return.desc() + " for structdict.get() for key=" + pair.key);
+                }  else if(pair.valueType != value_type_to_return && pair.valueType.withoutOption() == value_type_to_return) {
+                    // TODO: need to deoptimize here, because NULL could be given, but value_type_to_return expected.
+                    throw std::runtime_error("not implemented yet.");
+                } else {
+                    assert((pair.valueType == value_type_to_return || pair.valueType == value_type_to_return.withoutOption()));
+                    // regular processing, no early deopt failure
+                    //_env.printValue(builder, key.val, "key match for key=" + pair.key);
+
+                    // special case: set is_null simply to false, because value is present!
+                    if(pair.valueType == value_type_to_return.withoutOption())
+                        builder.CreateStore(env.i1Const(false), var.is_null);
+
+                    if(pair.alwaysPresent) {
+                        // can simply load value, no further checks necessary. value type and ret type are the same
+                        assert(pair.valueType == value_type_to_return.withoutOption());
+                        access_path_t access_path;
+                        access_path.push_back(std::make_pair(pair.key, pair.keyType));
+
+                        builder.CreateStore(env.i1Const(true), var_is_present);
+
+                        auto val = struct_dict_load_value(env, builder, dict_ptr, dict_type, access_path);
+                        if(val.val)
+                            builder.CreateStore(val.val, var.val);
+                        if(val.size)
+                            builder.CreateStore(val.size, var.size);
+                        if(val.is_null)
+                            builder.CreateStore(val.is_null, var.is_null);
+                    } else {
+                        access_path_t access_path;
+                        access_path.push_back(std::make_pair(pair.key, pair.keyType));
+
+                        // check if element is present
+                        auto is_present = struct_dict_load_present(env, builder, dict_ptr, dict_type, access_path);
+                        builder.CreateStore(is_present, var_is_present);
+
+                        // if element is present, proceed to load & store element
+                        // if not, return default element if ok
+                        auto bbIsPresent = llvm::BasicBlock::Create(env.getContext(), "is_present_pair" + std::to_string(pair_pos), func);
+                        auto bbNotPresent = llvm::BasicBlock::Create(env.getContext(), "not_present_pair" + std::to_string(pair_pos), func);
+
+                        builder.CreateCondBr(is_present, bbIsPresent, bbNotPresent);
+
+                        // handle is present case (same like in pair.alwaysPresent)
+                        builder.SetInsertPoint(bbIsPresent);
+                        // _env.debugPrint(builder, "access path " + access_path_to_str(access_path) + " present.");
+                        auto val = struct_dict_load_value(env, builder, dict_ptr, dict_type, access_path);
+
+                        // special case: struct dict will be returned as pointer, do load struct to store.
+                        auto element_type = struct_dict_type_get_element_type(dict_type, access_path);
+                        if(element_type.isStructuredDictionaryType()) {
+                            assert(val.val->getType()->isPointerTy());
+                            auto llvm_element_type = env.getOrCreateStructuredDictType(element_type);
+                            val.val = builder.CreateLoad(llvm_element_type, val.val);
+                        }
+
+                        if(val.val)
+                            builder.CreateStore(val.val, var.val);
+                        if(val.size)
+                            builder.CreateStore(val.size, var.size);
+                        if(val.is_null)
+                            builder.CreateStore(val.is_null, var.is_null);
+                        bbIsPresent = builder.GetInsertBlock(); // <-- for connect, update to last block.
+
+                        // ----
+                        builder.SetInsertPoint(bbNotPresent);
+
+                        // special case, is return type option or not? if not, deoptimize...
+                        if(value_type_to_return.isOptionType()) {
+                            // _env.debugPrint(builder, "access path " + access_path_to_str(access_path) + " NOT present.");
+
+                            builder.CreateStore(env.i1Const(true), var.is_null);
+                            // bbNotPresent = builder.GetInsertBlock();
+
+                            // connect both to new block
+                            auto bbDone = llvm::BasicBlock::Create(env.getContext(), "presence_done_pair" + std::to_string(pair_pos), func);
+                            builder.SetInsertPoint(bbIsPresent);
+                            builder.CreateBr(bbDone);
+
+                            builder.SetInsertPoint(bbNotPresent);
+                            builder.CreateBr(bbDone);
+
+                            builder.SetInsertPoint(bbDone);
+                            lfb.setLastBlock(bbDone);
+                        } else {
+                            lfb.setLastBlock(builder.GetInsertBlock());
+                            lfb.exitWithException(ExceptionCode::NORMALCASEVIOLATION);
+
+                            // continue execution only on present path!
+                            builder.SetInsertPoint(bbIsPresent);
+                            lfb.setLastBlock(bbIsPresent);
+                        }
+                    }
+
+                    // match succeeded, b.c. it's unique can go directly to end!
+                    builder.CreateBr(bbExit);
+                }
+
+                // is it an always present pair? then safe to load.
+                builder.SetInsertPoint(bbNext);
+                pair_pos++;
+            }
+
+            // now in bbNext, i.e. last no match -> means key didn't match any.
+            // -> set is_present to false.
+            builder.CreateStore(env.i1Const(false), var_key_found);
+
+            // link to exit
+            builder.CreateBr(bbExit);
+            builder.SetInsertPoint(bbExit);
+            lfb.setLastBlock(builder.GetInsertBlock());
+
+            // load variable!
+            auto ret_val = SerializableValue(builder.CreateLoad(llvm_val_type, var.val),
+                                             builder.CreateLoad(builder.getInt64Ty(), var.size),
+                                             builder.CreateLoad(builder.getInt1Ty(), var.is_null));
+
+            auto is_present = builder.CreateLoad(builder.getInt1Ty(), var_is_present);
+
+            auto key_found = builder.CreateLoad(builder.getInt1Ty(), var_key_found);
+
+            return std::make_tuple(key_found, is_present, ret_val);
         }
     }
 }

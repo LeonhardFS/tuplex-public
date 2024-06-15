@@ -306,7 +306,7 @@ namespace tuplex {
         string input_pattern = "/hot/data/github_daily/*.json";
 
         // bad file:
-        input_pattern = "/hot/data/github_daily/2020-10-15.json";
+        // input_pattern = "/hot/data/github_daily/2020-10-15.json";
 
 //        // for faster dev
 //        input_pattern = "../resources/hyperspecialization/github_daily/2011-10-15.json.sample";
@@ -345,6 +345,7 @@ namespace tuplex {
                     nlohmann::json j;
                     j["path"] = path;
                     j["type"] = kv.first.desc();
+                    j["type_hash"] = kv.first.hash();
                     j["type_count"] = kv.second;
                     j["row_count"] = part_rows.size();
                     stats_stream<<j.dump()<<endl;
