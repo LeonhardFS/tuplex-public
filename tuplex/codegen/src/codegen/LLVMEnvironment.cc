@@ -306,7 +306,7 @@ namespace tuplex {
                         // store both value & size field
                         value_idx = values_to_store_so_far++;
                         size_idx = sizes_to_store_so_far++;
-                    } else if(element_type.isDictionaryType() && !element_type.isStructuredDictionaryType()) {
+                    } else if(element_type.isDictionaryType() && !element_type.isStructuredDictionaryType() && !element_type.isSparseStructuredDictionaryType()) {
                         // store both value & size field
                         assert(element_type != python::Type::EMPTYDICT);
                         value_idx = values_to_store_so_far++;
@@ -653,8 +653,8 @@ namespace tuplex {
                     memberTypes.push_back(i8ptrType()); // bool-array
                 llvm::ArrayRef<llvm::Type *> members(memberTypes);
                 retType = llvm::StructType::create(_context, members, "struct." + twine, false);
-            } else if(elementType.isStructuredDictionaryType()) {
-                auto llvm_element_type = elementType.isStructuredDictionaryType() ? getOrCreateStructuredDictType(elementType) : i8ptrType();
+            } else if(elementType.isStructuredDictionaryType() || elementType.isSparseStructuredDictionaryType()) {
+                auto llvm_element_type = getOrCreateStructuredDictType(elementType.makeNonSparse());
 
                 // pointer to the structured dict type!
                 std::vector<llvm::Type*> memberTypes;
@@ -995,7 +995,7 @@ namespace tuplex {
             if (!elementType.isFixedSizeType()) {
 
                 // struct and list are extra
-                if(elementType.isListType() || elementType.isStructuredDictionaryType()) {
+                if(elementType.isListType() || elementType.isStructuredDictionaryType() || elementType.isSparseStructuredDictionaryType()) {
                     size = i64Const(0);
                 } else {
                     size = builder.CreateExtractValue(tupleVal, {sizeOffset});
@@ -1092,14 +1092,14 @@ namespace tuplex {
             value = builder.CreateLoad(llvm_element_without_option_type, structValIdx);
 
             // size existing? ==> only for varlen types
-            if (!elementType.isFixedSizeType() && !elementType.isStructuredDictionaryType() && !elementType.isListType() && !elementType.isExceptionType()) {
+            if (!elementType.isFixedSizeType() && !elementType.isStructuredDictionaryType() && !elementType.isSparseStructuredDictionaryType() && !elementType.isListType() && !elementType.isExceptionType()) {
                 auto structSizeIdx = builder.CreateStructGEP(tuplePtr, llvm_tuple_type, sizeOffset);
                 size = builder.CreateLoad(i64Type(), structSizeIdx);
             } else {
                 // size from type
                 size = i64Size;
 
-                if(elementType.isListType() || elementType.isStructuredDictionaryType())
+                if(elementType.isListType() || elementType.isStructuredDictionaryType() || elementType.isSparseStructuredDictionaryType())
                     size = nullptr; // need to explicitly compute (costly)
             }
 
@@ -1195,7 +1195,7 @@ namespace tuplex {
                 auto llvm_val_to_store = value.val;
                 auto llvm_element_type = pythonToLLVMType(elementType);
                 // special case isStructDict or isListType b.c. they may be represented through a lazy pointer
-                if(elementType.isListType() || elementType.isStructuredDictionaryType()) {
+                if(elementType.isListType() || elementType.isStructuredDictionaryType() || elementType.isSparseStructuredDictionaryType()) {
 
                     // special case: list type of single-valued type. -> just store length as i64!
                     if(elementType.isListType() && elementType.elementType().isSingleValued()) {
@@ -1257,7 +1257,8 @@ namespace tuplex {
             // size existing? ==> only for varlen types
             if (!elementType.isFixedSizeType() &&
                 !elementType.isListType() &&
-                !elementType.isStructuredDictionaryType()) {
+                !elementType.isStructuredDictionaryType()
+                && ! elementType.isSparseStructuredDictionaryType()) {
                 auto structSizeIdx = builder.CreateStructGEP(tuplePtr, llvm_tuple_type, sizeOffset);
                 if (value.size)
                     builder.CreateStore(value.size, structSizeIdx, is_volatile);
@@ -1723,8 +1724,8 @@ namespace tuplex {
                 return Type::getInt8PtrTy(_context);
 
             if(t.isDictionaryType()) {
-                if(t.isStructuredDictionaryType()) {
-                    return getOrCreateStructuredDictType(t);
+                if(t.isStructuredDictionaryType() || t.isSparseStructuredDictionaryType()) {
+                    return getOrCreateStructuredDictType(t.makeNonSparse());
                 } else {
                     return Type::getInt8PtrTy(_context);
                 }
@@ -2812,7 +2813,7 @@ namespace tuplex {
                 retVal.val = f64Const(0.0);
                 retVal.size = i64Const(sizeof(double));
                 retVal.is_null = i1Const(false);
-            } else if (python::Type::STRING == type || (type.isDictionaryType() && !type.isStructuredDictionaryType())) {
+            } else if (python::Type::STRING == type || (type.isDictionaryType() && !type.isStructuredDictionaryType() && !type.isSparseStructuredDictionaryType())) {
                 // use empty string, DO NOT use nullptr.
                 retVal.val = strConst(builder, "");
                 retVal.size = i64Const(1);
@@ -2825,10 +2826,10 @@ namespace tuplex {
                 retVal.val = list_ptr;
                 retVal.size = i64Const(0);
                 retVal.is_null = i1Const(false);
-            } else if(type.isStructuredDictionaryType()) {
-                auto llvm_struct_type = getOrCreateStructuredDictType(type);
+            } else if(type.isStructuredDictionaryType() || type.isSparseStructuredDictionaryType()) {
+                auto llvm_struct_type = getOrCreateStructuredDictType(type.makeNonSparse());
                 auto dict_ptr = CreateFirstBlockAlloca(builder, llvm_struct_type, "dummy_struct");
-                struct_dict_mem_zero(*this, builder, dict_ptr, type);
+                struct_dict_mem_zero(*this, builder, dict_ptr, type.makeNonSparse());
                 retVal.val = dict_ptr;
                 retVal.size = i64Const(0);
                 retVal.is_null = i1Const(false);
@@ -3016,8 +3017,8 @@ namespace tuplex {
                 // special case: struct dict!
                 if(python::Type::EMPTYDICT == type) {
                     retVal.val = env.CreateFirstBlockAlloca(builder, env.getOrCreateEmptyDictType());
-                } else if(type.isStructuredDictionaryType()) {
-                    retVal.val = env.CreateFirstBlockAlloca(builder, env.getOrCreateStructuredDictType(type));
+                } else if(type.isStructuredDictionaryType() || type.isSparseStructuredDictionaryType()) {
+                    retVal.val = env.CreateFirstBlockAlloca(builder, env.getOrCreateStructuredDictType(type.makeNonSparse()));
                     struct_dict_mem_zero(env, builder, retVal.val, type);
                 } else {
                     // generic dict...

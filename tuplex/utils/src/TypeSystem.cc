@@ -2577,6 +2577,9 @@ namespace python {
     }
 
     Type Type::makeNonSparse() const {
+        if(isStructuredDictionaryType())
+            return *this;
+
         assert(isSparseStructuredDictionaryType());
         return python::Type::makeStructuredDictType(get_struct_pairs(), false);
     }

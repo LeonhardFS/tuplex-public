@@ -1387,15 +1387,15 @@ namespace tuplex {
 
             assert(json_item);
             assert(bbMismatch);
-            assert(dict_type.isStructuredDictionaryType());
+            assert(dict_type.isStructuredDictionaryType() || dict_type.isSparseStructuredDictionaryType());
 
             // there are two ways to check: 1.) all keys are always present -> check via number of keys!
             // 2.) not all keys are always present -> check via table (expensive check!)
-            assert(dict_type.isStructuredDictionaryType());
 
             auto bKeysetMatch = BasicBlock::Create(builder.getContext(), "keyset_match", builder.GetInsertBlock()->getParent());
 
-            if(dict_type.all_struct_pairs_always_present()) {
+            // the check for all pairs present together with count ONLY works for struct dict, not sparse struct dict
+            if(!dict_type.isSparseStructuredDictionaryType() && dict_type.all_struct_pairs_always_present()) {
                 // get number of keys
                 auto num_keys = numberOfKeysInObject(builder, json_item);
 
@@ -1456,7 +1456,7 @@ namespace tuplex {
 
             auto& logger = Logger::instance().logger("codegen");
             auto& ctx = _env.getContext();
-            assert(dict_type.isStructuredDictionaryType());
+            assert(dict_type.isStructuredDictionaryType() || dict_type.isSparseStructuredDictionaryType());
             assert(dict_ptr && dict_ptr->getType()->isPointerTy());
 
             for (const auto& kv_pair: dict_type.get_struct_pairs()) {
@@ -1466,7 +1466,7 @@ namespace tuplex {
                 auto key_value = str_value_from_python_raw_value(kv_pair.key); // it's an encoded value, but query here for the real key.
                 auto key = _env.strConst(builder, key_value);
 
-                if (kv_pair.valueType.isStructuredDictionaryType()) {
+                if (kv_pair.valueType.isStructuredDictionaryType() || kv_pair.valueType.isSparseStructuredDictionaryType()) {
                     //logger.debug("parsing nested dict: " +
                     //             json_access_path_to_string(access_path, kv_pair.valueType, kv_pair.alwaysPresent));
 
@@ -1492,7 +1492,7 @@ namespace tuplex {
                     if (include_maybe_structs && !kv_pair.alwaysPresent) {
 
                         // store presence into struct dict ptr
-                        struct_dict_store_present(_env, builder, dict_ptr, dict_ptr_type, access_path, is_object);
+                        struct_dict_store_present(_env, builder, dict_ptr, dict_ptr_type.makeNonSparse(), access_path, is_object);
                         // present if is_object == true
                         // --> as for value, use a dummy.
                         // entries.push_back(
