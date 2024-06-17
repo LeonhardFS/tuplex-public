@@ -44,7 +44,7 @@ namespace tuplex {
                 bool is_value_optional = std::get<1>(entry).isOptionType();
                 option_count += is_value_optional;
 
-                bool is_struct_type = std::get<1>(entry).isStructuredDictionaryType();
+                bool is_struct_type = std::get<1>(entry).isStructuredDictionaryType() || std::get<1>(entry).isSparseStructuredDictionaryType();
                 field_count += !is_struct_type; // only count non-struct dict fields. -> yet the nested struct types may change the maybe count for the bitmap!
             }
 
@@ -113,7 +113,7 @@ namespace tuplex {
                     value_type = value_type.getReturnType(); // option is handled above
 
                 // is it a struct type? => skip.
-                if (value_type.isStructuredDictionaryType())
+                if (value_type.isStructuredDictionaryType() || value_type.isSparseStructuredDictionaryType())
                     continue;
 
                 // // skip list
@@ -647,11 +647,14 @@ namespace tuplex {
             auto llvm_dict_type = env.getOrCreateStructuredDictType(dict_type);
 
             // is it not a struct dict? -> trivial, simple lookup.
-            bool is_struct_dict = element_type.isStructuredDictionaryType() || (element_type.isOptionType() && element_type.getReturnType().isStructuredDictionaryType());
+            bool is_struct_dict = element_type.isStructuredDictionaryType() || (element_type.isOptionType() && element_type.getReturnType().isStructuredDictionaryType()) ||
+                    element_type.isSparseStructuredDictionaryType() || (element_type.isOptionType() && element_type.getReturnType().isSparseStructuredDictionaryType());
+
             if(is_struct_dict) {
 
                 // this is a bit more involved. First, need to init new var for the subdict
                 auto element_type_wo_option = element_type.isOptionType() ? element_type.getReturnType() : element_type;
+                element_type_wo_option = element_type_wo_option.makeNonSparse();
                 auto llvm_element_type = env.getOrCreateStructuredDictType(element_type_wo_option);
                 auto element_ptr = env.CreateFirstBlockAlloca(builder, llvm_element_type);
                 struct_dict_mem_zero(env, builder, element_ptr, element_type_wo_option);

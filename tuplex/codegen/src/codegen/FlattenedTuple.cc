@@ -326,10 +326,10 @@ namespace tuplex {
                     } else if(type == python::Type::EMPTYDICT) {
                         throw std::runtime_error("Should not happen!");
                     } else if(type.isDictionaryType()) {
-                        if(type.isStructuredDictionaryType()) {
+                        if(type.isStructuredDictionaryType() || type.isSparseStructuredDictionaryType()) {
 
                             // deserialize from ptr
-                            auto dict_val = struct_dict_deserialize_from_memory(*_env, builder, ptr, type, true, isnull); // could set this to true...
+                            auto dict_val = struct_dict_deserialize_from_memory(*_env, builder, ptr, type.makeNonSparse(), true, isnull); // could set this to true...
 
                             // // print value:
                             // _env->debugPrint(builder, "-- DESERIALIZED " + type.desc() + " from memory:");
@@ -574,11 +574,11 @@ namespace tuplex {
                 if(fieldType.isDictionaryType() && fieldType != python::Type::EMPTYDICT) {
 
                     // serialize struct dict
-                    if(fieldType.isStructuredDictionaryType()) {
+                    if(fieldType.isStructuredDictionaryType() || fieldType.isSparseStructuredDictionaryType()) {
                         auto dict_type = types[i].withoutOption();
 
                         // struct dicts are a var field (ignore the special case here)
-                        size = struct_dict_serialized_memory_size(*_env, builder, field, dict_type).val;
+                        size = struct_dict_serialized_memory_size(*_env, builder, field, dict_type.makeNonSparse()).val;
 
                         // note: when null, don't serialize anything.
                         if(types[i].isOptionType())
@@ -855,12 +855,12 @@ namespace tuplex {
             || elementType == python::Type::GENERICDICT || elementType.isListType() || elementType == python::Type::PYOBJECT) {
 
                 // special case: struct dict
-                if(elementType.isStructuredDictionaryType()) {
+                if(elementType.isStructuredDictionaryType() || elementType.isSparseStructuredDictionaryType()) {
                     // either struct.dict or struct.dict* supported.
                     assert(val->getType()->isStructTy() ||
                           (val->getType()->isPointerTy() && LLVM_VERSION_MAJOR <= 15 && val->getType()->getPointerElementType()->isStructTy()));
                     if(val->getType()->isPointerTy()) {
-                        auto llvm_struct_type = _env->getOrCreateStructuredDictType(elementType);
+                        auto llvm_struct_type = _env->getOrCreateStructuredDictType(elementType.makeNonSparse());
                         // perform load!
                         val = builder.CreateLoad(llvm_struct_type, val);
                     }
@@ -983,12 +983,12 @@ namespace tuplex {
                 if(!type.isFixedSizeType()) {
 
                     // special cases list and struct
-                    if(type.isStructuredDictionaryType()) {
+                    if(type.isStructuredDictionaryType() || type.isSparseStructuredDictionaryType()) {
 #if LLVM_VERSION_MAJOR < 15
                         assert(el.val && (el.val->getType()->isPointerTy() && el.val->getType()->getPointerElementType()->isStructTy()) || el.val->getType()->isStructTy());
 #endif
 
-                        auto s_size = struct_dict_serialized_memory_size(*_env, builder, el.val, type).val;
+                        auto s_size = struct_dict_serialized_memory_size(*_env, builder, el.val, type.makeNonSparse()).val;
 
                         // debug print:
                         // _env->printValue(builder, s_size, "struct dict of " + type.desc() + " size is: ");
@@ -1316,8 +1316,8 @@ namespace tuplex {
                 if(val) {
 
                     // special type printing:
-                    if(t.withoutOption().isStructuredDictionaryType()) {
-                        struct_dict_print(*_env, builder, val, t.withoutOption());
+                    if(t.withoutOption().isStructuredDictionaryType() || t.withoutOption().isSparseStructuredDictionaryType()) {
+                        struct_dict_print(*_env, builder, val, t.withoutOption().makeNonSparse());
                     } else {
                         _env->debugPrint(builder, "  " + cellStr + "value: ", val);
                     }

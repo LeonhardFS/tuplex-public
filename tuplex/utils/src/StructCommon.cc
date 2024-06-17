@@ -222,19 +222,19 @@ namespace tuplex {
             vector<pair<string, python::Type>> access_path = prefix; // = prefix
             access_path.push_back(make_pair(kv_pair.key, kv_pair.keyType));
 
-            if (kv_pair.valueType.isStructuredDictionaryType()) {
+            if (kv_pair.valueType.isStructuredDictionaryType() || kv_pair.valueType.isSparseStructuredDictionaryType()) {
 
                 // special case: if include maybe structs as well, add entry. (should not get serialized)
                 if (include_maybe_structs && !kv_pair.alwaysPresent)
-                    entries.push_back(make_tuple(access_path, kv_pair.valueType, kv_pair.alwaysPresent));
+                    entries.push_back(make_tuple(access_path, kv_pair.valueType.makeNonSparse(), kv_pair.alwaysPresent));
 
                 // recurse using new prefix
-                flatten_recursive_helper(entries, kv_pair.valueType, access_path, include_maybe_structs);
-            } else if(kv_pair.valueType.isOptionType() && kv_pair.valueType.getReturnType().isStructuredDictionaryType()) {
+                flatten_recursive_helper(entries, kv_pair.valueType.makeNonSparse(), access_path, include_maybe_structs);
+            } else if(kv_pair.valueType.isOptionType() && (kv_pair.valueType.getReturnType().isStructuredDictionaryType() || kv_pair.valueType.getReturnType().isSparseStructuredDictionaryType())) {
                 entries.push_back(make_tuple(access_path, kv_pair.valueType, kv_pair.alwaysPresent));
 
                 // recurse element field!
-                flatten_recursive_helper(entries, kv_pair.valueType.getReturnType(), access_path, include_maybe_structs);
+                flatten_recursive_helper(entries, kv_pair.valueType.getReturnType().makeNonSparse(), access_path, include_maybe_structs);
             } else {
                 entries.push_back(make_tuple(access_path, kv_pair.valueType, kv_pair.alwaysPresent));
             }
@@ -361,7 +361,7 @@ namespace tuplex {
             }
 
             // special case: nested struct type!
-            if(value_type.isStructuredDictionaryType()) {
+            if(value_type.isStructuredDictionaryType() || value_type.isSparseStructuredDictionaryType()) {
                 indices[access_path] = std::make_tuple(bitmap_idx, maybe_idx, field_idx, size_idx);
                 continue; // --> skip, need to store only presence/bitmap info.
             }
@@ -600,7 +600,7 @@ namespace tuplex {
             }
             ss<<"]";
             return ss.str();
-        } else if(element_type.isStructuredDictionaryType()) {
+        } else if(element_type.isStructuredDictionaryType() || element_type.isSparseStructuredDictionaryType()) {
             std::stringstream ss;
             ss<<"[";
             auto ptr = buf + sizeof(int64_t);
@@ -612,7 +612,7 @@ namespace tuplex {
                 uint32_t size = info >> 32u;
 
                 // get start and decode
-                std::string str = decodeStructDictFromBinary(element_type, ptr + offset, size);
+                std::string str = decodeStructDictFromBinary(element_type.makeNonSparse(), ptr + offset, size);
                 ss<<str;
                 if(i != num_elements - 1)
                     ss<<",";
@@ -782,7 +782,7 @@ namespace tuplex {
             return Field(Tuple::from_vector(fields));
         }
 
-        if(value_type.isStructuredDictionaryType()) {
+        if(value_type.isStructuredDictionaryType() || value_type.isSparseStructuredDictionaryType()) {
             if(!j.is_object())
                 throw std::runtime_error(err_msg);
             return Field::from_str_data(j.dump(), value_type);
@@ -919,7 +919,7 @@ namespace tuplex {
             return Field(Tuple::from_vector(fields));
         }
 
-        if(value_type.isStructuredDictionaryType()) {
+        if(value_type.isStructuredDictionaryType() || value_type.isSparseStructuredDictionaryType()) {
             if(!yyjson_is_obj(j))
                 throw std::runtime_error(err_msg);
             size_t json_len = 0;

@@ -1111,7 +1111,7 @@ namespace tuplex {
             // checks
             assert(obj);
             assert(key);
-            assert(entry.valueType.isStructuredDictionaryType()); // --> this function doesn't support nested decode.
+            assert(entry.valueType.isStructuredDictionaryType() || entry.valueType.isSparseStructuredDictionaryType()); // --> this function doesn't support nested decode.
             assert(entry.keyType == python::Type::STRING); // --> JSON decode ONLY supports string keys.
 
             auto value_type = entry.valueType;
@@ -1119,7 +1119,10 @@ namespace tuplex {
 
             BasicBlock *bbDecodeItem = BasicBlock::Create(ctx, "decode_object", builder.GetInsertBlock()->getParent());
             BasicBlock *bbDecodeDone = BasicBlock::Create(ctx, "decode_done", builder.GetInsertBlock()->getParent());
-            auto stype = _env.getOrCreateStructuredDictType(entry.valueType);
+
+            auto struct_dict_type = entry.valueType.makeNonSparse();
+
+            auto stype = _env.getOrCreateStructuredDictType(struct_dict_type);
             auto value_item_var = _env.CreateFirstBlockAlloca(builder, stype); // <-- stored dict
             auto sub_object_var = addObjectVar(builder);  // <-- stores JsonObject*
             #ifdef JSON_PARSER_TRACE_MEMORY
@@ -1131,7 +1134,7 @@ namespace tuplex {
                                              _env.i8ptrType(), _env.i8ptrType()->getPointerTo(0));
 
                 // zero dict (for safety)
-                struct_dict_mem_zero(_env, builder, value_item_var, entry.valueType);
+                struct_dict_mem_zero(_env, builder, value_item_var, struct_dict_type);
 
                 auto rc_var = _env.CreateFirstBlockAlloca(builder, _env.i64Type());
 
@@ -1160,6 +1163,8 @@ namespace tuplex {
                 auto sub_object = builder.CreateLoad(_env.i8ptrType(), sub_object_var);
                 // recurse using new prefix
                 // --> similar to flatten_recursive_helper(entries, kv_pair.valueType, access_path, include_maybe_structs);
+
+                // use here original type (b.c. of key check)
                 decode(builder,
                        value_item_var,
                        entry.valueType,
@@ -1235,10 +1240,10 @@ namespace tuplex {
             entryB.valueType = entry.valueType.getReturnType(); // remove option
 
             // two cases: primitive field -> i.e., not a struct type
-            if(!entryB.valueType.isStructuredDictionaryType()) {
+            if(!entryB.valueType.isStructuredDictionaryType() && !entryB.valueType.isSparseStructuredDictionaryType()) {
                 std::tie(rcB, presentB, valueB) = decodePrimitiveFieldFromObject(builder, obj, key, entryB, bbSchemaMismatch);
             } else {
-                // or struct type
+                // or struct type (sparse/non-sparse)
                 std::tie(rcB, presentB, valueB) = decodeStructDictFieldFromObject(builder, obj, key, entryB, bbSchemaMismatch);
             }
 
@@ -1554,13 +1559,10 @@ namespace tuplex {
                     // }
 
                     // store!
-                    struct_dict_store_value(_env, builder, dict_ptr, dict_ptr_type, access_path, decoded_value.val);
-                    struct_dict_store_size(_env, builder, dict_ptr, dict_ptr_type, access_path, decoded_value.size);
-                    struct_dict_store_isnull(_env, builder, dict_ptr, dict_ptr_type, access_path, decoded_value.is_null);
-                    struct_dict_store_present(_env, builder, dict_ptr, dict_ptr_type, access_path, value_is_present);
-
-
-
+                    struct_dict_store_value(_env, builder, dict_ptr, dict_ptr_type.makeNonSparse(), access_path, decoded_value.val);
+                    struct_dict_store_size(_env, builder, dict_ptr, dict_ptr_type.makeNonSparse(), access_path, decoded_value.size);
+                    struct_dict_store_isnull(_env, builder, dict_ptr, dict_ptr_type.makeNonSparse(), access_path, decoded_value.is_null);
+                    struct_dict_store_present(_env, builder, dict_ptr, dict_ptr_type.makeNonSparse(), access_path, value_is_present);
 
                     // optimized store using if logic... --> beneficial?
 

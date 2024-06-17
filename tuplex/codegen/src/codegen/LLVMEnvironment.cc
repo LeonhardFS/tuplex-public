@@ -3019,7 +3019,7 @@ namespace tuplex {
                     retVal.val = env.CreateFirstBlockAlloca(builder, env.getOrCreateEmptyDictType());
                 } else if(type.isStructuredDictionaryType() || type.isSparseStructuredDictionaryType()) {
                     retVal.val = env.CreateFirstBlockAlloca(builder, env.getOrCreateStructuredDictType(type.makeNonSparse()));
-                    struct_dict_mem_zero(env, builder, retVal.val, type);
+                    struct_dict_mem_zero(env, builder, retVal.val, type.makeNonSparse());
                 } else {
                     // generic dict...
                     retVal.val = env.i8ptrConst(nullptr);
