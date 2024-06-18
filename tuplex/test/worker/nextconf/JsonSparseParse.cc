@@ -51,7 +51,8 @@ TEST(JsonSparseParse, SimpleJsonString) {
     JITCompiler jit;
 
     auto runtime_path = ContextOptions::defaults().RUNTIME_LIBRARY().toPath();
-    ASSERT_TRUE(runtime::init(runtime_path));
+    auto rc_runtime = runtime::init(runtime_path);
+    ASSERT_TRUE(rc_runtime);
 
 
     string parse_func_name = "parse_json_test";
@@ -71,9 +72,12 @@ TEST(JsonSparseParse, SimpleJsonString) {
 
         auto args = codegen::mapLLVMFunctionArgs(func, {"str", "str_size", "out_ptr", "out_ptr_size"});
 
+        env.printValue(builder, args["str"], "input str: ");
+        env.printValue(builder, args["str_size"], "input str size: ");
+
         codegen::FlattenedTuple ft(&env);
         ft.init(row_type);
-        auto var = ft.alloc(builder, "tuple");
+        auto var = env.CreateFirstBlockAlloca(builder, ft.getLLVMType());
         auto rc = builder.CreateCall(F_parse, {var, args["str"], args["str_size"]});
 
         env.printValue(builder, rc, "rc of json parse is: ");
@@ -94,17 +98,23 @@ TEST(JsonSparseParse, SimpleJsonString) {
     auto ir = env.getIR();
 
     // compile
-    EXPECT_TRUE(jit.compile(ir));
+    ASSERT_TRUE(jit.compile(ir));
+
+    python::initInterpreter();
 
     // get function
-    auto foo = reinterpret_cast<int64_t(*)(const char*, int64_t, uint8_t**,int64_t*)>(jit.getAddrOfSymbol("test_dummy"));
+    auto foo = reinterpret_cast<int64_t(*)(const char*, int64_t, uint8_t**,int64_t*)>(jit.getAddrOfSymbol(func_name));
 
     uint8_t* out_ptr = nullptr;
     int64_t out_size = 0;
     int64_t serialized_size = foo(test_data, strlen(test_data) + 1, &out_ptr, &out_size);
 
+    EXPECT_GT(serialized_size, 0);
+
     if(out_ptr)
         free(out_ptr);
+
+    python::closeInterpreter();
 
     cout<<"Hello world"<<endl;
 }
