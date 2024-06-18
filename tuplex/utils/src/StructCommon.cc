@@ -106,11 +106,10 @@ namespace tuplex {
 
     python::Type struct_dict_type_get_element_type(const python::Type& dict_type, const access_path_t& path) {
 
-        if(!dict_type.isStructuredDictionaryType())
+        if(!dict_type.isStructuredDictionaryType() && !dict_type.isSparseStructuredDictionaryType())
             return python::Type::UNKNOWN;
 
         // fetch the type
-        assert(dict_type.isStructuredDictionaryType());
         if(path.empty())
             return dict_type;
 

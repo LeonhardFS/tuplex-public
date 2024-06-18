@@ -601,7 +601,7 @@ namespace tuplex {
                         Value *outptr = builder.MovePtrByBytes(lastPtr, offset, "varoff");
 
                         // write actual data to outptr
-                        auto s_info = struct_dict_serialize_to_memory(*_env, builder, field, dict_type, outptr);
+                        auto s_info = struct_dict_serialize_to_memory(*_env, builder, field, dict_type.makeNonSparse(), outptr);
 
                         // _env->printValue(builder, s_info.size, "actually serialized size: ");
 

@@ -611,7 +611,7 @@ namespace tuplex {
                 assert(bitmap_idx >= 0);
                 auto llvm_dict_type = env.getOrCreateStructuredDictType(dict_type);
                 auto element_type_wo_option = element_type.isOptionType() ? element_type.getReturnType() : element_type;
-                auto llvm_element_type = env.getOrCreateStructuredDictType(element_type_wo_option);
+                auto llvm_element_type = env.getOrCreateStructuredDictType(element_type_wo_option.makeNonSparse());
                 auto name_wo_option = env.getLLVMTypeName(llvm_element_type);
 
                 // load is_null from original ptr
