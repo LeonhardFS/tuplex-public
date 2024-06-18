@@ -595,6 +595,10 @@ namespace tuplex {
 
         string input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
 
+        // full data
+        // input_pattern = "/hot/data/github_daily/*.json";
+        input_pattern = "/hot/data/github_daily/*2011*.json";
+
         string testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
         auto output_path = "./local-exp/" + testName + "/" + "output" + "/";
 
@@ -604,6 +608,8 @@ namespace tuplex {
 
         // check now with pipeline and set type.
         ContextOptions co = ContextOptions::defaults();
+
+        co.set("tuplex.backend", "worker");
 
         // this allows large files to be processed without splitting.
         co.set("tuplex.inputSplitSize", "20G");
