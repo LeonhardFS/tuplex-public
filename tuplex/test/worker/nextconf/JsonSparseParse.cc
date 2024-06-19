@@ -50,6 +50,10 @@ TEST(JsonSparseParse, SimpleJsonString) {
     codegen::LLVMEnvironment env;
     JITCompiler jit;
 
+    // init logger to only act with stdout sink
+    Logger::init({std::make_shared<spdlog::sinks::ansicolor_stdout_sink_mt>()});
+    Logger::instance().defaultLogger().info("global_init(): logging system initialized");
+
     auto runtime_path = ContextOptions::defaults().RUNTIME_LIBRARY().toPath();
     auto rc_runtime = runtime::init(runtime_path);
     ASSERT_TRUE(rc_runtime);
@@ -82,25 +86,31 @@ TEST(JsonSparseParse, SimpleJsonString) {
 
         env.printValue(builder, rc, "rc of json parse is: ");
 
-        ft = codegen::FlattenedTuple::fromLLVMStructVal(&env, builder, var, row_type);
-        auto serialized_size = ft.getSize(builder);
-
+//        ft = codegen::FlattenedTuple::fromLLVMStructVal(&env, builder, var, row_type);
+//        auto serialized_size = ft.getSize(builder);
+//
+        auto serialized_size = env.i64Const(8);
         auto ptr = env.cmalloc(builder, serialized_size);
+
         builder.CreateStore(serialized_size, args["out_ptr_size"]);
-        ft.serialize(builder, ptr);
+        //ft.serialize(builder, ptr);
         builder.CreateStore(ptr, args["out_ptr"]);
 
         builder.CreateRet(serialized_size);
     }
 
-    codegen::annotateModuleWithInstructionPrint(*env.getModule().get());
+
 
     auto ir = env.getIR();
 
+    llvm::LLVMContext context;
+    auto mod = codegen::stringToModule(context, ir);
+    codegen::annotateModuleWithInstructionPrint(*mod);
+
+    ir = codegen::moduleToString(*mod);
+
     // compile
     ASSERT_TRUE(jit.compile(ir));
-
-    python::initInterpreter();
 
     // get function
     auto foo = reinterpret_cast<int64_t(*)(const char*, int64_t, uint8_t**,int64_t*)>(jit.getAddrOfSymbol(func_name));
@@ -113,8 +123,6 @@ TEST(JsonSparseParse, SimpleJsonString) {
 
     if(out_ptr)
         free(out_ptr);
-
-    python::closeInterpreter();
 
     cout<<"Hello world"<<endl;
 }

@@ -6,6 +6,9 @@ cmake_minimum_required(VERSION 3.16 FATAL_ERROR)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 message(STATUS "Using language version: C++${CMAKE_CXX_STANDARD}")
+set(CMAKE_C_STANDARD 17)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+message(STATUS "Using language version: C${CMAKE_C_STANDARD}")
 
 # add cmake modules from cmake folder
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/")

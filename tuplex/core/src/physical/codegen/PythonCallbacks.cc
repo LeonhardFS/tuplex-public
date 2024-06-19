@@ -10,6 +10,7 @@
 
 #include <physical/codegen/PythonCallbacks.h>
 #include <jit/RuntimeInterface.h>
+#include <cstdio>
 
 #warning "TODO: create versions which allow for a) dictmode b) multiparam syntax... c) both?"
 
@@ -218,17 +219,33 @@ extern "C" void releasePythonFunction(uint8_t* pyobj) {
 
 extern "C" int debug_printf(const char* format, ...) {
 
-    char buffer[8192];
-    memset(buffer, 0, 8192);
+#define MAX_BUFFER_SIZE 8192
+
+    char buffer[MAX_BUFFER_SIZE];
+    memset(buffer, 0, MAX_BUFFER_SIZE);
     va_list args;
     va_start(args, format);
-    auto rc = vsprintf(buffer, format, args);
+
+    // C99 version
+    auto rc = vsnprintf(buffer, MAX_BUFFER_SIZE, format, args);
+
+//    // C17
+//#ifndef __STDC_VERSION__
+//#error "C17 required"
+//#endif
+//    static_assert(__STDC_VERSION__ > 201710L, "Requires C17 support");
+//    auto rc = vsnprintf_s(buffer, MAX_BUFFER_SIZE, format, args);
+
     va_end(args);
     auto s = strlen(buffer);
 
-    // trim
-    if(s > 1 && buffer[s-1] == '\n')
-        buffer[s-1] = '\0';
+//    // trim
+//    if(s > 1 && buffer[s-1] == '\n')
+//        buffer[s-1] = '\0';
+
+    printf("%s", buffer);
+
     Logger::instance().defaultLogger().debug(buffer);
+    Logger::instance().flushAll();
     return rc;
 }
