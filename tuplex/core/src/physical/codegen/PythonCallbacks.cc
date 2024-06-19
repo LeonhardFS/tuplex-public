@@ -245,6 +245,7 @@ extern "C" int debug_printf(const char* format, ...) {
 
     printf("%s", buffer);
 
+    // this here doesn't work...
     Logger::instance().defaultLogger().debug(buffer);
     Logger::instance().flushAll();
     return rc;

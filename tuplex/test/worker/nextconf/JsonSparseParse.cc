@@ -11,6 +11,14 @@ TEST(JsonSparseParse, SimpleJsonString) {
     using namespace tuplex;
     using namespace std;
 
+    auto& logger = Logger::instance().logger("");
+    logger.info("test");
+
+//    Logger::instance().reset();
+//    // init logger to only act with stdout sink
+//    Logger::instance().init({std::make_shared<spdlog::sinks::ansicolor_stdout_sink_mt>()});
+    Logger::instance().defaultLogger().info("global_init(): logging system initialized");
+
     auto test_data = "{\"type\":\"PushEvent\",\"public\":true,\"actor\":{\"gravatar_id\":\"19b0daa323b6af55864f706d8e25100e\",\"url\":\"https://api.github.com/users/MartinJKurz\",\"avatar_url\":\"https://secure.gravatar.com/avatar/19b0daa323b6af55864f706d8e25100e?d=%2Fimages%2Fgravatars%2Fgravatar-user-420.png\",\"id\":898159,\"login\":\"MartinJKurz\"},\"created_at\":\"2011-10-15T00:00:00Z\",\"payload\":{\"head\":\"4d8e6f13daec514ea2e075afeeb3d021afb7473e\",\"size\":1,\"push_id\":46262531,\"commits\":[{\"sha\":\"4d8e6f13daec514ea2e075afeeb3d021afb7473e\",\"author\":{\"name\":\"Martin J. Kurz\",\"email\":\"e7b16791bb505733357139208fac489d81c7842a@googlemail.com\"},\"url\":\"https://api.github.com/repos/MartinJKurz/invaders/commits/4d8e6f13daec514ea2e075afeeb3d021afb7473e\",\"message\":\"debug output, minor changes 2\"}],\"ref\":\"refs/heads/master\",\"legacy\":{\"head\":\"4d8e6f13daec514ea2e075afeeb3d021afb7473e\",\"size\":1,\"push_id\":46262531,\"shas\":[[\"4d8e6f13daec514ea2e075afeeb3d021afb7473e\",\"martin.j.kurz@googlemail.com\",\"debug output, minor changes 2\",\"Martin J. Kurz\"]],\"ref\":\"refs/heads/master\"}},\"id\":\"1492634118\",\"repo\":{\"url\":\"https://api.github.com/repos/MartinJKurz/invaders\",\"id\":2355143,\"name\":\"MartinJKurz/invaders\"}}";
 
     // // -> for Row['created_at'->str,
@@ -50,10 +58,6 @@ TEST(JsonSparseParse, SimpleJsonString) {
     codegen::LLVMEnvironment env;
     JITCompiler jit;
 
-    // init logger to only act with stdout sink
-    Logger::init({std::make_shared<spdlog::sinks::ansicolor_stdout_sink_mt>()});
-    Logger::instance().defaultLogger().info("global_init(): logging system initialized");
-
     auto runtime_path = ContextOptions::defaults().RUNTIME_LIBRARY().toPath();
     auto rc_runtime = runtime::init(runtime_path);
     ASSERT_TRUE(rc_runtime);
@@ -86,10 +90,20 @@ TEST(JsonSparseParse, SimpleJsonString) {
 
         env.printValue(builder, rc, "rc of json parse is: ");
 
-//        ft = codegen::FlattenedTuple::fromLLVMStructVal(&env, builder, var, row_type);
-//        auto serialized_size = ft.getSize(builder);
-//
-        auto serialized_size = env.i64Const(8);
+        // only deserialize if rc is 0
+        auto rc_ok = builder.CreateICmpEQ(rc, env.i64Const(0));
+        auto& ctx = builder.getContext();
+        auto bbOK = BasicBlock::Create(ctx, "parse_ok", func);
+        auto bbFailure = BasicBlock::Create(ctx, "parse_failed", func);
+        builder.CreateCondBr(rc_ok, bbOK, bbFailure);
+        builder.SetInsertPoint(bbFailure);
+        builder.CreateStore(env.i64Const(0), args["out_ptr_size"]);
+        builder.CreateRet(builder.CreateMul(env.i64Const(-1), rc));
+
+        builder.SetInsertPoint(bbOK);
+        ft = codegen::FlattenedTuple::fromLLVMStructVal(&env, builder, var, row_type);
+        auto serialized_size = ft.getSize(builder);
+
         auto ptr = env.cmalloc(builder, serialized_size);
 
         builder.CreateStore(serialized_size, args["out_ptr_size"]);
@@ -99,13 +113,11 @@ TEST(JsonSparseParse, SimpleJsonString) {
         builder.CreateRet(serialized_size);
     }
 
-
-
     auto ir = env.getIR();
 
     llvm::LLVMContext context;
     auto mod = codegen::stringToModule(context, ir);
-    codegen::annotateModuleWithInstructionPrint(*mod);
+    // codegen::annotateModuleWithInstructionPrint(*mod);
 
     ir = codegen::moduleToString(*mod);
 

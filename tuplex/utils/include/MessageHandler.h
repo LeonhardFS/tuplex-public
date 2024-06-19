@@ -32,6 +32,8 @@ public:
     MessageHandler& warn(const std::string& message);
     MessageHandler& info(const std::string& message);
     MessageHandler& debug(const std::string& message);
+
+    inline std::string name() const {return _name; }
 };
 
 #endif //TUPLEX_MESSAGEHANDLER_H
