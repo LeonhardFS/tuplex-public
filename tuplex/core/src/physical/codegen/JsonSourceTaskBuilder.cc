@@ -972,6 +972,8 @@ namespace tuplex {
                 std::vector<python::StructEntry> entries;
                 auto num_entries = std::min(columns.size(), row_type.parameters().size());
 
+                env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" parsing " + pluralize(num_entries, "column") + " from JSON.");
+
                 for(unsigned i = 0; i < num_entries; ++i) {
                     python::StructEntry entry;
                     entry.keyType = python::Type::STRING;
@@ -987,10 +989,12 @@ namespace tuplex {
                 }
                 auto dict_type = python::Type::makeStructuredDictType(entries);
 
+                env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" start parsing row into dictionary:");
+
                 // parse dictionary
                 auto dict = json_parseRowAsStructuredDict(env, builder, dict_type, parser, bbSchemaMismatch);
 
-                // env.debugPrint(builder, "-> start parse:");
+                 env.debugPrint(builder, "-> Loading dict elements:");
 
                 // fetch columns from dict and assign to tuple!
                 for(int i = 0; i < num_entries; ++i) {
@@ -1131,8 +1135,9 @@ namespace tuplex {
             BasicBlock* bMismatch = BasicBlock::Create(env.getContext(), "mismatch", F);
             IRBuilder builder(bMismatch);
             // free objects here
-
-            builder.CreateRet(env.i64Const(ecToI64(ExceptionCode::BADPARSE_STRING_INPUT)));
+            auto rc_mismatch = env.i64Const(ecToI64(ExceptionCode::BADPARSE_STRING_INPUT));
+            env.printValue(builder, rc_mismatch, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" mismatch in json_parse_row");
+            builder.CreateRet(rc_mismatch);
 
             // main and entry block.
             builder.SetInsertPoint(bEntry);

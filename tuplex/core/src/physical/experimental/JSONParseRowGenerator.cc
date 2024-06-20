@@ -1394,17 +1394,25 @@ namespace tuplex {
             assert(bbMismatch);
             assert(dict_type.isStructuredDictionaryType() || dict_type.isSparseStructuredDictionaryType());
 
+            // skip for sparsestruct
+            if(dict_type.isSparseStructuredDictionaryType())
+                return;
+
             // there are two ways to check: 1.) all keys are always present -> check via number of keys!
             // 2.) not all keys are always present -> check via table (expensive check!)
 
             auto bKeysetMatch = BasicBlock::Create(builder.getContext(), "keyset_match", builder.GetInsertBlock()->getParent());
 
             // the check for all pairs present together with count ONLY works for struct dict, not sparse struct dict
-            if(!dict_type.isSparseStructuredDictionaryType() && dict_type.all_struct_pairs_always_present()) {
+            if(dict_type.all_struct_pairs_always_present()) {
                 // get number of keys
                 auto num_keys = numberOfKeysInObject(builder, json_item);
 
                 auto keyset_match = builder.CreateICmpEQ(_env.i64Const(dict_type.get_struct_pairs().size()), num_keys);
+
+
+                _env.printValue(builder, num_keys, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" checking keys for type=" + dict_type.desc() + ", expected " + pluralize(dict_type.get_struct_pairs().size(), "key") + " -- has keys:");
+                _env.printValue(builder, keyset_match, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" passing keyset check: ");
 
                 // _env.printValue(builder, keyset_match, "keyset check (->): ");
 
@@ -1413,6 +1421,8 @@ namespace tuplex {
             } else {
                 auto kv_pairs = dict_type.get_struct_pairs();
                 auto& ctx = _env.getContext();
+
+                _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" pairwise keyset check for type=" + dict_type.desc() + ": ");
 
                 // perform check by generating appropriate constants
                 // this is the expensive key check.
@@ -1471,6 +1481,12 @@ namespace tuplex {
                 auto key_value = str_value_from_python_raw_value(kv_pair.key); // it's an encoded value, but query here for the real key.
                 auto key = _env.strConst(builder, key_value);
 
+                if(key_value == "payload") {
+                    std::cout<<"found element to debug"<<std::endl;
+                }
+
+                _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" level=" + std::to_string(level) + " decoding element " + key_value + "=" + kv_pair.valueType.desc() + " from JSON.");
+
                 if (kv_pair.valueType.isStructuredDictionaryType() || kv_pair.valueType.isSparseStructuredDictionaryType()) {
                     //logger.debug("parsing nested dict: " +
                     //             json_access_path_to_string(access_path, kv_pair.valueType, kv_pair.alwaysPresent));
@@ -1496,6 +1512,13 @@ namespace tuplex {
                     // special case: if include maybe structs as well, add entry. (should not get serialized)
                     if (include_maybe_structs && !kv_pair.alwaysPresent) {
 
+                        // technically we'd want to check here whether the value stored in item_var is nullptr (for key not found)
+                        // however, if the entry is not an object, there will be a (type) mismatch so this is equivalent to not present.
+
+                        _env.printValue(builder, is_object, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" level=" + std::to_string(level) + " element " + key_value + "=" + kv_pair.valueType.desc() + " present: ");
+                        _env.printValue(builder, rc, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" level=" + std::to_string(level) + " element " + key_value + " rc from JsonItem_getObject: ");
+                        _env.printValue(builder, builder.CreateLoad(_env.i8ptrType(), item_var), std::string(__FILE__) + ":" + std::to_string(__LINE__) +" level=" + std::to_string(level) + " element " + key_value + " item ptr from JsonItem_getObject: ");
+
                         // store presence into struct dict ptr
                         struct_dict_store_present(_env, builder, dict_ptr, dict_ptr_type.makeNonSparse(), access_path, is_object);
                         // present if is_object == true
@@ -1515,11 +1538,14 @@ namespace tuplex {
                     // create now some basic blocks to decode ON demand.
                     BasicBlock *bbDecodeItem = BasicBlock::Create(ctx, "decode_object", builder.GetInsertBlock()->getParent());
                     BasicBlock *bbDecodeDone = BasicBlock::Create(ctx, "next_item", builder.GetInsertBlock()->getParent());
+                    _env.printValue(builder, is_object, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" decode JsonObject: ");
                     builder.CreateCondBr(is_object, bbDecodeItem, bbDecodeDone);
 
                     builder.SetInsertPoint(bbDecodeItem);
                     // load item!
                     auto item = builder.CreateLoad(_env.i8ptrType(), item_var);
+
+                    _env.printValue(builder, item, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" decoding JsonObject for key=" + key_value + ": ");
 #ifdef JSON_PARSER_TRACE_MEMORY
                     // debug:
                     _env.printValue(builder, item, "associated with " + pointer2hex(item_var) + " in decode is: ");
@@ -1530,6 +1556,7 @@ namespace tuplex {
 
                     // keyset match?
                     if(generate_keyset_check) {
+                        _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" performing keycheck JsonObject for key=" + key_value + ": ");
                         perform_keyset_check(builder, kv_pair.valueType, builder.CreateLoad(_env.i8ptrType(), item_var), bbSchemaMismatch);
                     }
 
@@ -1557,6 +1584,10 @@ namespace tuplex {
                     //     std::cerr<<"skipping array store in final struct with type="<<kv_pair.valueType.desc()<<" for now."<<std::endl;
                     //     continue;
                     // }
+
+                    _env.printValue(builder, value_is_present, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" level=" + std::to_string(level) + " element " + key_value + "=" + kv_pair.valueType.desc() + " present: ");
+                    _env.printValue(builder, rc, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" level=" + std::to_string(level) + " element " + key_value + " rc from primitive field decode: ");
+
 
                     // store!
                     struct_dict_store_value(_env, builder, dict_ptr, dict_ptr_type.makeNonSparse(), access_path, decoded_value.val);
