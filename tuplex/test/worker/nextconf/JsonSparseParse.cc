@@ -71,12 +71,6 @@ TEST(JsonSparseParse, SimpleJsonString) {
     //  }
     //}
 
-    // // -> for Row['created_at'->str,
-    //        // 'type'->str,
-    //        // 'payload'->Struct['commits'->List[...], 'target'->Struct['id'->int64],'id'->int64],
-    //        // 'id'->Option[int64],
-    //        // 'repo'->Struct['id'->Option[int64]]]
-
     auto author_struct_type = python::Type::makeStructuredDictType({make_pair("name", python::Type::STRING), make_pair("email", python::Type::STRING)});
 
     auto commits_struct_type = python::Type::makeStructuredDictType({make_pair("sha", python::Type::STRING),

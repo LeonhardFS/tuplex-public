@@ -555,12 +555,6 @@ namespace tuplex {
         using namespace std;
         using namespace tuplex;
 
-        // // -> for Row['created_at'->str,
-        //        // 'type'->str,
-        //        // 'payload'->Struct['commits'->List[...], 'target'->Struct['id'->int64],'id'->int64],
-        //        // 'id'->Option[int64],
-        //        // 'repo'->Struct['id'->Option[int64]]]
-
         auto author_struct_type = python::Type::makeStructuredDictType({make_pair("name", python::Type::STRING), make_pair("email", python::Type::STRING)});
 
         auto commits_struct_type = python::Type::makeStructuredDictType({make_pair("sha", python::Type::STRING),
@@ -575,7 +569,7 @@ namespace tuplex {
                                                      "repo"};
 
         auto payload_entries = std::vector<python::StructEntry>{python::StructEntry("'commits'", python::Type::STRING, python::Type::makeListType(commits_struct_type), true),
-                                                                python::StructEntry("'target'", python::Type::STRING, python::Type::makeStructuredDictType({make_pair("id", python::Type::I64)}, true)),
+                                                                python::StructEntry("'target'", python::Type::STRING, python::Type::makeStructuredDictType({make_pair("id", python::Type::I64)}, true), false),
                                                                 python::StructEntry("'id'", python::Type::STRING, python::Type::I64, false)};
 
         auto column_types = std::vector<python::Type>{python::Type::STRING,
@@ -583,7 +577,7 @@ namespace tuplex {
                                                       python::Type::makeStructuredDictType(payload_entries, true),
                                                       python::Type::makeOptionType(python::Type::makeStructuredDictType({make_pair("id", python::Type::I64)}, true)),
                                                       python::Type::makeOptionType(python::Type::makeStructuredDictType({make_pair("id", python::Type::I64)}, true))
-                                                      };
+        };
 
 
 
