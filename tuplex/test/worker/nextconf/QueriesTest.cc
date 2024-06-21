@@ -589,9 +589,11 @@ namespace tuplex {
 
         string input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
 
+        input_pattern = "../resources/hyperspecialization/github_daily/*2011*.json.sample";
+
         // full data
         // input_pattern = "/hot/data/github_daily/*.json";
-        input_pattern = "/hot/data/github_daily/*2011*.json";
+//        input_pattern = "/hot/data/github_daily/*2011*.json";
 
         string testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
         auto output_path = "./local-exp/" + testName + "/" + "output" + "/";

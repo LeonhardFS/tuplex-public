@@ -19,7 +19,7 @@ TEST(JsonSparseParse, SimpleJsonString) {
 //    Logger::instance().init({std::make_shared<spdlog::sinks::ansicolor_stdout_sink_mt>()});
     Logger::instance().defaultLogger().info("global_init(): logging system initialized");
 
-    auto test_data = "{\"type\":\"PushEvent\",\"public\":true,\"actor\":{\"gravatar_id\":\"19b0daa323b6af55864f706d8e25100e\",\"url\":\"https://api.github.com/users/MartinJKurz\",\"avatar_url\":\"https://secure.gravatar.com/avatar/19b0daa323b6af55864f706d8e25100e?d=%2Fimages%2Fgravatars%2Fgravatar-user-420.png\",\"id\":898159,\"login\":\"MartinJKurz\"},\"created_at\":\"2011-10-15T00:00:00Z\",\"payload\":{\"head\":\"4d8e6f13daec514ea2e075afeeb3d021afb7473e\",\"size\":1,\"push_id\":46262531,\"commits\":[{\"sha\":\"4d8e6f13daec514ea2e075afeeb3d021afb7473e\",\"author\":{\"name\":\"Martin J. Kurz\",\"email\":\"e7b16791bb505733357139208fac489d81c7842a@googlemail.com\"},\"url\":\"https://api.github.com/repos/MartinJKurz/invaders/commits/4d8e6f13daec514ea2e075afeeb3d021afb7473e\",\"message\":\"debug output, minor changes 2\"}],\"ref\":\"refs/heads/master\",\"legacy\":{\"head\":\"4d8e6f13daec514ea2e075afeeb3d021afb7473e\",\"size\":1,\"push_id\":46262531,\"shas\":[[\"4d8e6f13daec514ea2e075afeeb3d021afb7473e\",\"martin.j.kurz@googlemail.com\",\"debug output, minor changes 2\",\"Martin J. Kurz\"]],\"ref\":\"refs/heads/master\"}},\"id\":\"1492634118\",\"repo\":{\"url\":\"https://api.github.com/repos/MartinJKurz/invaders\",\"id\":2355143,\"name\":\"MartinJKurz/invaders\"}}";
+    string test_data = "{\"type\":\"PushEvent\",\"public\":true,\"actor\":{\"gravatar_id\":\"19b0daa323b6af55864f706d8e25100e\",\"url\":\"https://api.github.com/users/MartinJKurz\",\"avatar_url\":\"https://secure.gravatar.com/avatar/19b0daa323b6af55864f706d8e25100e?d=%2Fimages%2Fgravatars%2Fgravatar-user-420.png\",\"id\":898159,\"login\":\"MartinJKurz\"},\"created_at\":\"2011-10-15T00:00:00Z\",\"payload\":{\"head\":\"4d8e6f13daec514ea2e075afeeb3d021afb7473e\",\"size\":1,\"push_id\":46262531,\"commits\":[{\"sha\":\"4d8e6f13daec514ea2e075afeeb3d021afb7473e\",\"author\":{\"name\":\"Martin J. Kurz\",\"email\":\"e7b16791bb505733357139208fac489d81c7842a@googlemail.com\"},\"url\":\"https://api.github.com/repos/MartinJKurz/invaders/commits/4d8e6f13daec514ea2e075afeeb3d021afb7473e\",\"message\":\"debug output, minor changes 2\"}],\"ref\":\"refs/heads/master\",\"legacy\":{\"head\":\"4d8e6f13daec514ea2e075afeeb3d021afb7473e\",\"size\":1,\"push_id\":46262531,\"shas\":[[\"4d8e6f13daec514ea2e075afeeb3d021afb7473e\",\"martin.j.kurz@googlemail.com\",\"debug output, minor changes 2\",\"Martin J. Kurz\"]],\"ref\":\"refs/heads/master\"}},\"id\":\"1492634118\",\"repo\":{\"url\":\"https://api.github.com/repos/MartinJKurz/invaders\",\"id\":2355143,\"name\":\"MartinJKurz/invaders\"}}";
 
     // {
     //  "type": "PushEvent",
@@ -71,6 +71,10 @@ TEST(JsonSparseParse, SimpleJsonString) {
     //  }
     //}
 
+    // Other test data (WatchEvent), doesn't even have any entries:
+    test_data = "{\"type\":\"WatchEvent\",\"public\":true,\"actor\":{\"gravatar_id\":\"3e9b0b47a98cdc664bcf58fa3ff5a758\",\"url\":\"https://api.github.com/users/chrismiles\",\"avatar_url\":\"https://secure.gravatar.com/avatar/3e9b0b47a98cdc664bcf58fa3ff5a758?d=%2Fimages%2Fgravatars%2Fgravatar-user-420.png\",\"id\":110112,\"login\":\"chrismiles\"},\"created_at\":\"2011-10-15T00:22:57Z\",\"payload\":{\"action\":\"started\"},\"id\":\"1492636479\",\"repo\":{\"url\":\"https://api.github.com/repos/robc/ShooterDemo\",\"id\":2561931,\"name\":\"robc/ShooterDemo\"}}";
+
+
     auto author_struct_type = python::Type::makeStructuredDictType({make_pair("name", python::Type::STRING), make_pair("email", python::Type::STRING)});
 
     auto commits_struct_type = python::Type::makeStructuredDictType({make_pair("sha", python::Type::STRING),
@@ -84,7 +88,7 @@ TEST(JsonSparseParse, SimpleJsonString) {
                                                  "repository",
                                                  "repo"};
 
-    auto payload_entries = std::vector<python::StructEntry>{python::StructEntry("'commits'", python::Type::STRING, python::Type::makeListType(commits_struct_type), true),
+    auto payload_entries = std::vector<python::StructEntry>{python::StructEntry("'commits'", python::Type::STRING, python::Type::makeListType(commits_struct_type), false),
                                                             python::StructEntry("'target'", python::Type::STRING, python::Type::makeStructuredDictType({make_pair("id", python::Type::I64)}, true), false),
                                                             python::StructEntry("'id'", python::Type::STRING, python::Type::I64, false)};
 
@@ -173,7 +177,7 @@ TEST(JsonSparseParse, SimpleJsonString) {
 
     uint8_t* out_ptr = nullptr;
     int64_t out_size = 0;
-    int64_t serialized_size = foo(test_data, strlen(test_data) + 1, &out_ptr, &out_size);
+    int64_t serialized_size = foo(test_data.c_str(), strlen(test_data.c_str()) + 1, &out_ptr, &out_size);
 
     EXPECT_GT(serialized_size, 0);
 

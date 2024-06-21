@@ -790,6 +790,8 @@ namespace tuplex {
                 auto size_var = _env->CreateFirstBlockAlloca(builder, _env->i64Type());
                 auto line = builder.CreateCall(Frow, {parser, size_var});
 
+                _env->printValue(builder, line, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " serializing row as bad parse exception: ");
+
                 // create badParse exception
                 // @TODO: throughput can be improved by using a single C++ function for all of this!
                 serializeBadParseException(builder, userData, _inputOperatorID, rowNumber(builder), line, builder.CreateLoad(builder.getInt64Ty(), size_var));
