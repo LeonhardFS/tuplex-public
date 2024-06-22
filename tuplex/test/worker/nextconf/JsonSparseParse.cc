@@ -62,15 +62,15 @@ namespace tuplex {
 
             auto args = codegen::mapLLVMFunctionArgs(func, {"str", "str_size", "out_ptr", "out_ptr_size"});
 
-            env.printValue(builder, args["str"], "input str: ");
-            env.printValue(builder, args["str_size"], "input str size: ");
+            // env.printValue(builder, args["str"], "input str: ");
+            // env.printValue(builder, args["str_size"], "input str size: ");
 
             codegen::FlattenedTuple ft(&env);
             ft.init(row_type);
             auto var = env.CreateFirstBlockAlloca(builder, ft.getLLVMType());
             auto rc = builder.CreateCall(F_parse, {var, args["str"], args["str_size"]});
 
-            env.printValue(builder, rc, "rc of json parse is: ");
+            // env.printValue(builder, rc, "rc of json parse is: ");
 
             // only deserialize if rc is 0
             auto rc_ok = builder.CreateICmpEQ(rc, env.i64Const(0));
@@ -239,6 +239,9 @@ TEST(JsonSparseParse, ParseAllLines) {
     string input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
     input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
 
+    // full data
+    input_pattern = "/hot/data/github_daily/*.json";
+
     auto output_uris = glob(input_pattern);
     logger.info("Found " + pluralize(output_uris.size(), "input path") + " to process.");
 
@@ -289,6 +292,7 @@ TEST(JsonSparseParse, ParseAllLines) {
 
             if(serialized_size < 0) {
                 std::cerr<<"Bad line ec="<<-serialized_size<<" ("<<row_number<<"): "<<line<<endl;
+                return false;
             }
 
             assert(serialized_size >= 0);

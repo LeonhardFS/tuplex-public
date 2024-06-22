@@ -1410,10 +1410,10 @@ namespace tuplex {
 
                 auto keyset_match = builder.CreateICmpEQ(_env.i64Const(dict_type.get_struct_pairs().size()), num_keys);
 
-
+#ifdef PRINT_JSON_TRACE_DETAILS
                 _env.printValue(builder, num_keys, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" checking keys for type=" + dict_type.desc() + ", expected " + pluralize(dict_type.get_struct_pairs().size(), "key") + " -- has keys:");
                 _env.printValue(builder, keyset_match, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" passing keyset check: ");
-
+#endif
                 // _env.printValue(builder, keyset_match, "keyset check (->): ");
 
                 builder.CreateCondBr(keyset_match, bKeysetMatch, bbMismatch);
@@ -1422,8 +1422,9 @@ namespace tuplex {
                 auto kv_pairs = dict_type.get_struct_pairs();
                 auto& ctx = _env.getContext();
 
+#ifdef PRINT_JSON_TRACE_DETAILS
                 _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" pairwise keyset check for type=" + dict_type.desc() + ": ");
-
+#endif
                 // perform check by generating appropriate constants
                 // this is the expensive key check.
                 // -> i.e. should be used to match only against general-case.

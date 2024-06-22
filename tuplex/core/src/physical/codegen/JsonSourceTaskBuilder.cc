@@ -998,7 +998,7 @@ namespace tuplex {
                 // parse dictionary
                 auto dict = json_parseRowAsStructuredDict(env, builder, dict_type, parser, bbSchemaMismatch);
 
-                 env.debugPrint(builder, "-> Loading dict elements:");
+                // env.debugPrint(builder, "-> Loading dict elements:");
 
                 // fetch columns from dict and assign to tuple!
                 for(int i = 0; i < num_entries; ++i) {
