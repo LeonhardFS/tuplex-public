@@ -53,6 +53,13 @@
 #include <spdlog/sinks/ostream_sink.h>
 
 namespace tuplex {
+
+    /*!
+     * constructs the (perfect) sparse Github row type to be shared across tests.
+     * @return
+     */
+    extern python::Type github_sparse_row_type();
+
     class TuplexTest : public ::testing::Test {
     protected:
         std::string testName;

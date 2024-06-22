@@ -1485,7 +1485,9 @@ namespace tuplex {
                     std::cout<<"found element to debug"<<std::endl;
                 }
 
+#ifdef PRINT_JSON_TRACE_DETAILS
                 _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" level=" + std::to_string(level) + " decoding element " + key_value + "=" + kv_pair.valueType.desc() + " from JSON.");
+#endif
 
                 if (kv_pair.valueType.isStructuredDictionaryType() || kv_pair.valueType.isSparseStructuredDictionaryType()) {
                     //logger.debug("parsing nested dict: " +
@@ -1515,9 +1517,11 @@ namespace tuplex {
                         // technically we'd want to check here whether the value stored in item_var is nullptr (for key not found)
                         // however, if the entry is not an object, there will be a (type) mismatch so this is equivalent to not present.
 
+#ifdef PRINT_JSON_TRACE_DETAILS
                         _env.printValue(builder, is_object, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" level=" + std::to_string(level) + " element " + key_value + "=" + kv_pair.valueType.desc() + " present: ");
                         _env.printValue(builder, rc, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" level=" + std::to_string(level) + " element " + key_value + " rc from JsonItem_getObject: ");
                         _env.printValue(builder, builder.CreateLoad(_env.i8ptrType(), item_var), std::string(__FILE__) + ":" + std::to_string(__LINE__) +" level=" + std::to_string(level) + " element " + key_value + " item ptr from JsonItem_getObject: ");
+#endif
 
                         // store presence into struct dict ptr
                         struct_dict_store_present(_env, builder, dict_ptr, dict_ptr_type.makeNonSparse(), access_path, is_object);
@@ -1538,14 +1542,17 @@ namespace tuplex {
                     // create now some basic blocks to decode ON demand.
                     BasicBlock *bbDecodeItem = BasicBlock::Create(ctx, "decode_object", builder.GetInsertBlock()->getParent());
                     BasicBlock *bbDecodeDone = BasicBlock::Create(ctx, "next_item", builder.GetInsertBlock()->getParent());
+#ifdef PRINT_JSON_TRACE_DETAILS
                     _env.printValue(builder, is_object, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" decode JsonObject: ");
+#endif
                     builder.CreateCondBr(is_object, bbDecodeItem, bbDecodeDone);
 
                     builder.SetInsertPoint(bbDecodeItem);
                     // load item!
                     auto item = builder.CreateLoad(_env.i8ptrType(), item_var);
-
+#ifdef PRINT_JSON_TRACE_DETAILS
                     _env.printValue(builder, item, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" decoding JsonObject for key=" + key_value + ": ");
+#endif
 #ifdef JSON_PARSER_TRACE_MEMORY
                     // debug:
                     _env.printValue(builder, item, "associated with " + pointer2hex(item_var) + " in decode is: ");
@@ -1556,7 +1563,9 @@ namespace tuplex {
 
                     // keyset match?
                     if(generate_keyset_check) {
+#ifdef PRINT_JSON_TRACE_DETAILS
                         _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" performing keycheck JsonObject for key=" + key_value + ": ");
+#endif
                         perform_keyset_check(builder, kv_pair.valueType, builder.CreateLoad(_env.i8ptrType(), item_var), bbSchemaMismatch);
                     }
 
@@ -1584,10 +1593,10 @@ namespace tuplex {
                     //     std::cerr<<"skipping array store in final struct with type="<<kv_pair.valueType.desc()<<" for now."<<std::endl;
                     //     continue;
                     // }
-
+#ifdef PRINT_JSON_TRACE_DETAILS
                     _env.printValue(builder, value_is_present, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" level=" + std::to_string(level) + " element " + key_value + "=" + kv_pair.valueType.desc() + " present: ");
                     _env.printValue(builder, rc, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" level=" + std::to_string(level) + " element " + key_value + " rc from primitive field decode: ");
-
+#endif
 
                     // store!
                     struct_dict_store_value(_env, builder, dict_ptr, dict_ptr_type.makeNonSparse(), access_path, decoded_value.val);

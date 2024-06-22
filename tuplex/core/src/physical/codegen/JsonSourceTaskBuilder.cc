@@ -974,8 +974,9 @@ namespace tuplex {
                 std::vector<python::StructEntry> entries;
                 auto num_entries = std::min(columns.size(), row_type.parameters().size());
 
+#ifdef PRINT_JSON_TRACE_DETAILS
                 env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" parsing " + pluralize(num_entries, "column") + " from JSON.");
-
+#endif
                 for(unsigned i = 0; i < num_entries; ++i) {
                     python::StructEntry entry;
                     entry.keyType = python::Type::STRING;
@@ -991,8 +992,9 @@ namespace tuplex {
                 }
                 auto dict_type = python::Type::makeStructuredDictType(entries);
 
+#ifdef PRINT_JSON_TRACE_DETAILS
                 env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" start parsing row into dictionary:");
-
+#endif
                 // parse dictionary
                 auto dict = json_parseRowAsStructuredDict(env, builder, dict_type, parser, bbSchemaMismatch);
 
