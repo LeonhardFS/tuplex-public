@@ -30,11 +30,10 @@ namespace tuplex {
 
         auto column_types = std::vector<python::Type>{python::Type::STRING,
                                                       python::Type::STRING,
-                                                      python::Type::makeStructuredDictType(payload_entries, true),
-                                                      python::Type::makeOptionType(python::Type::makeStructuredDictType(std::vector<python::StructEntry>{python::StructEntry("'id'", python::Type::STRING, python::Type::I64, false)})),
+                                                      python::Type::makeOptionType(python::Type::makeStructuredDictType(payload_entries, true)), // <-- PublicEvents have no payload.
+                                                      python::Type::makeOptionType(python::Type::makeStructuredDictType(std::vector<python::StructEntry>{python::StructEntry("'id'", python::Type::STRING, python::Type::I64, false)}, true)),
                                                       python::Type::makeOptionType(python::Type::makeStructuredDictType(std::vector<python::StructEntry>{python::StructEntry("'id'", python::Type::STRING, python::Type::I64, false)}, true)) // GistEvent have no repo id (instead a url)
         };
-
 
 
         auto sparse_row_type = python::Type::makeRowType(column_types, column_names);
@@ -170,6 +169,8 @@ TEST(JsonSparseParse, SingleStringJsonParse) {
 
     test_data = "{\"type\":\"GistEvent\",\"public\":true,\"actor\":{\"gravatar_id\":\"e2e776d3d6fbc6a6b7e4c692bd080595\",\"url\":\"https://api.github.com/users/aheckmann\",\"avatar_url\":\"https://secure.gravatar.com/avatar/e2e776d3d6fbc6a6b7e4c692bd080595?d=%2Fimages%2Fgravatars%2Fgravatar-user-420.png\",\"id\":166834,\"login\":\"aheckmann\"},\"created_at\":\"2011-10-15T00:00:17Z\",\"payload\":{\"action\":\"create\",\"gist\":{\"created_at\":\"2011-10-15T00:00:16Z\",\"comments\":0,\"public\":true,\"files\":{},\"updated_at\":\"2011-10-15T00:00:16Z\",\"git_push_url\":\"git@gist.github.com:1288718.git\",\"url\":\"https://api.github.com/gists/1288718\",\"id\":\"1288718\",\"git_pull_url\":\"git://gist.github.com/1288718.git\",\"description\":null,\"user\":{\"gravatar_id\":\"e2e776d3d6fbc6a6b7e4c692bd080595\",\"avatar_url\":\"https://secure.gravatar.com/avatar/e2e776d3d6fbc6a6b7e4c692bd080595?d=https://a248.e.akamai.net/assets.github.com%2Fimages%2Fgravatars%2Fgravatar-140.png\",\"url\":\"https://api.github.com/users/aheckmann\",\"id\":166834,\"login\":\"aheckmann\"},\"html_url\":\"https://gist.github.com/1288718\"},\"legacy\":{\"name\":\"gist: 1288718\",\"action\":\"create\",\"url\":\"https://gist.github.com/1288718\",\"id\":1288718,\"desc\":null}},\"id\":\"1492634145\",\"repo\":{\"url\":\"https://api.github.com/repos//\",\"name\":\"/\"}}";
 
+    test_data = "{\"created_at\":\"2013-10-15T00:03:17-07:00\",\"public\":true,\"type\":\"PublicEvent\",\"url\":\"https://github.com/BillyRen/Mayo_Project\",\"actor\":\"BillyRen\",\"actor_attributes\":{\"login\":\"BillyRen\",\"type\":\"User\",\"gravatar_id\":\"05d99abfd12b8c99a8d1e046c9dbade1\",\"name\":\"Chengbin(Billy) REN\",\"company\":\"Zhejiang University, China\",\"blog\":\"http://renchengbin.lofter.com\",\"location\":\"Hangzhou, China\",\"email\":\"e457824463f87b21e63dc32fe4f4ba457325a935@gmail.com\"},\"repository\":{\"id\":11428319,\"name\":\"Mayo_Project\",\"url\":\"https://github.com/BillyRen/Mayo_Project\",\"description\":\"\",\"watchers\":0,\"stargazers\":0,\"forks\":0,\"fork\":false,\"size\":398,\"owner\":\"BillyRen\",\"private\":false,\"open_issues\":0,\"has_issues\":true,\"has_downloads\":true,\"has_wiki\":true,\"created_at\":\"2013-07-15T09:51:23-07:00\",\"pushed_at\":\"2013-08-07T05:54:21-07:00\",\"master_branch\":\"master\"}}";
+
 
     auto sparse_row_type = github_sparse_row_type();
 
@@ -236,7 +237,7 @@ TEST(JsonSparseParse, ParseAllLines) {
     logger.info("Starting per-line parsing test::");
 
     string input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
-    input_pattern = "../resources/hyperspecialization/github_daily/*2011*.json.sample";
+    input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
 
     auto output_uris = glob(input_pattern);
     logger.info("Found " + pluralize(output_uris.size(), "input path") + " to process.");
