@@ -5,7 +5,7 @@
 #include <iostream>
 #include <vector>
 #include <simdjson.h>
-#include "timer.h"
+#include <Timer.h>
 #include <glob.h>
 #include <sstream>
 
@@ -21,8 +21,164 @@
 #include <any>
 #include <filesystem>
 
+int dirExists(const char *path)
+{
+    struct stat info;
+
+    if(stat( path, &info ) != 0)
+        return 0;
+    else if(info.st_mode & S_IFDIR)
+        return 1;
+    else
+        return 0;
+}
+
+std::vector<std::string> glob_pattern(const std::string &pattern) {
+    using namespace std;
+
+    // from https://stackoverflow.com/questions/8401777/simple-glob-in-c-on-unix-system
+    // glob struct resides on the stack
+    glob_t glob_result;
+    memset(&glob_result, 0, sizeof(glob_result));
+
+    // do the glob operation
+    int return_value = ::glob(pattern.c_str(), GLOB_TILDE | GLOB_MARK, NULL, &glob_result);
+    if(return_value != 0) {
+        globfree(&glob_result);
+
+        // special case, no match
+        if(GLOB_NOMATCH == return_value) {
+            std::cerr<<"did not find any files for pattern '" + pattern + "'"<<std::endl;
+            return {};
+        }
+
+        stringstream ss;
+        ss << "glob() failed with return_value " << return_value << endl;
+        throw std::runtime_error(ss.str());
+    }
+
+    // collect all the filenames into a std::list<std::string>
+    vector<std::string> uris;
+    for(size_t i = 0; i < glob_result.gl_pathc; ++i) {
+        uris.emplace_back(std::string(glob_result.gl_pathv[i]));
+    }
+
+    // cleanup
+    globfree(&glob_result);
+
+    // done
+    return uris;
+}
+
+std::string view_to_str(const std::string_view& v) {
+    return std::string(v.begin(), v.end());
+}
+
+std::string vec_to_string(const std::vector<std::string>& v) {
+    if(v.empty())
+        return "[]";
+    std::stringstream ss;
+    for(unsigned i = 0; i < v.size(); ++i) {
+        ss<<v[i];
+        if(i != v.size() - 1)
+            ss<<",";
+    }
+    return ss.str();
+}
+
+std::string replace_all(std::string str, const std::string &from, const std::string &to) {
+    size_t start_pos = 0;
+    while ((start_pos = str.find(from, start_pos)) != std::string::npos) {
+        str.replace(start_pos, from.length(), to);
+        start_pos += to.length(); // Handles case where 'to' is a substring of 'from'
+    }
+    return str;
+}
+
+std::tuple<int,int,double> process_path(const std::string& input_path, const std::string& output_path, const std::string& mode) {
+    using namespace std;
+//    Timer load_timer;
+//    // read file into memory
+//    uint8_t* buffer = nullptr;
+//    struct stat s;
+//    stat(input_path.c_str(), &s);
+//    cout<<"Found file "<<input_path<<" with size "<<s.st_size<<", loading to memory..."<<endl;
+//    buffer = new uint8_t[s.st_size + simdjson::SIMDJSON_PADDING];
+//
+//    FILE *pf = fopen(input_path.c_str(), "r");
+//    fread(buffer, s.st_size, 1, pf);
+//    fclose(pf);
+//    pf = nullptr;
+//    auto loading_time_in_s = load_timer.time();
+//
+//
+//    // select function to use
+//    auto functor = mode::best::process_pipeline;
+//
+//    if(mode == "best") {
+//        functor = mode::best::process_pipeline;
+//    } else if(mode == "cjson") {
+//        functor = mode::cjson::process_pipeline;
+//    } else if(mode == "cstruct") {
+//        functor = mode::load_to_condensed_c_struct::process_pipeline;
+//    } else if(mode == "yyjson") {
+//        functor = mode::yyjson::process_pipeline;
+//    } else {
+//        throw std::runtime_error("unsupported mode " + mode);
+//    }
+//
+//    // output file
+//    FILE *pfout = nullptr;
+//
+//    Timer timer;
+//    cout<<"Parsing file"<<endl;
+//    size_t row_count = 0;
+//    size_t output_row_count = 0;
+//    simdjson::dom::parser parser;
+//    simdjson::dom::document_stream stream;
+//    auto error = parser.parse_many((const char*)buffer,
+//                                   (size_t)s.st_size,
+//                                   std::min(simdjson::SIMDJSON_MAXSIZE_BYTES, (size_t)s.st_size)).get(stream);
+//    if (error) { /* do something */ }
+//    auto i = stream.begin();
+//    for(; i != stream.end(); ++i) {
+//        auto doc = *i;
+//        if (!doc.error()) {
+//            // std::cout << "got full document at " << i.current_index() << std::endl;
+//            //std::cout << i.source() << std::endl;
+//
+//            // process pipeline here based on simdjson doc:
+//            output_row_count += functor(&pfout, output_path, doc.value());
+//
+//
+//            row_count++;
+//        } else {
+//            std::cout << "got broken document at " << i.current_index() << std::endl;
+//            break;
+//        }
+//    }
+//    cout<<"Parsed "<<row_count<<" rows from file "<<input_path<<endl;
+//    cout<<"Wrote "<<output_row_count<<" output rows to "<<output_path<<endl;
+//    cout<<"Took "<<timer.time()<<"s to process"<<endl;
+//
+//    // lazy close file
+//    if(pfout) {
+//        fflush(pfout);
+//        fclose(pfout);
+//    }
+//
+//    delete [] buffer;
+
+    size_t row_count = 0;
+    size_t output_row_count = 0;
+    double loading_time_in_s = 0.0;
+
+    return make_tuple(row_count, output_row_count, loading_time_in_s);
+}
+
 int main(int argc, char* argv[]) {
     using namespace std;
+    using namespace tuplex;
 
 //    static_assert(false == SIMDJSON_THREADS_ENABLED, "threads disabled");
 
