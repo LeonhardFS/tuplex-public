@@ -1196,6 +1196,9 @@ add_subdirectory(runtime)
 add_subdirectory(adapters)
 add_subdirectory(worker)
 
+# temporary, test github pipeline out without full python config
+add_subdirectory(github)
+
 # can only build aws lambda on linux platform
 if(LINUX AND BUILD_WITH_AWS)
     # removed AWS lambda implementation, can be found on separate branch
