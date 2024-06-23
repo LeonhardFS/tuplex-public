@@ -555,45 +555,17 @@ namespace tuplex {
         using namespace std;
         using namespace tuplex;
 
-        auto author_struct_type = python::Type::makeStructuredDictType({make_pair("name", python::Type::STRING), make_pair("email", python::Type::STRING)});
 
-        auto commits_struct_type = python::Type::makeStructuredDictType({make_pair("sha", python::Type::STRING),
-                                                                         make_pair("author", author_struct_type),
-                                                                         make_pair("url", python::Type::STRING),
-                                                                         make_pair("message", python::Type::STRING)}, false);
-
-        auto column_names = std::vector<std::string>{"created_at",
-                                                     "type",
-                                                     "payload",
-                                                     "repository",
-                                                     "repo"};
-
-        auto payload_entries = std::vector<python::StructEntry>{python::StructEntry("'commits'", python::Type::STRING, python::Type::makeListType(commits_struct_type), true),
-                                                                python::StructEntry("'target'", python::Type::STRING, python::Type::makeStructuredDictType({make_pair("id", python::Type::I64)}, true), false),
-                                                                python::StructEntry("'id'", python::Type::STRING, python::Type::I64, false)};
-
-        auto column_types = std::vector<python::Type>{python::Type::STRING,
-                                                      python::Type::STRING,
-                                                      python::Type::makeStructuredDictType(payload_entries, true),
-                                                      python::Type::makeOptionType(python::Type::makeStructuredDictType({make_pair("id", python::Type::I64)}, true)),
-                                                      python::Type::makeOptionType(python::Type::makeStructuredDictType({make_pair("id", python::Type::I64)}, true))
-        };
-
-
-
-        auto sparse_row_type = python::Type::makeRowType(column_types, column_names);
+        auto sparse_row_type = github_sparse_row_type();
         auto encoded_type = sparse_row_type.encode();
         cout<<"sparse row type is: "<<encoded_type<<endl;
 
         auto normal_case_row_type = python::decodeType(encoded_type);
 
-        string input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
-
-        input_pattern = "../resources/hyperspecialization/github_daily/*2011*.json.sample";
+        string input_pattern = "../resources/hyperspecialization/github_daily/*2012*.json.sample";
 
         // full data
         // input_pattern = "/hot/data/github_daily/*.json";
-//        input_pattern = "/hot/data/github_daily/*2011*.json";
 
         string testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
         auto output_path = "./local-exp/" + testName + "/" + "output" + "/";

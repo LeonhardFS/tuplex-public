@@ -1126,6 +1126,14 @@ namespace tuplex {
 
             auto& logger = Logger::instance().logger("codegen");
 
+            {
+                std::stringstream ss;
+                ss<<std::string(__FILE__) + ":" + std::to_string(__LINE__)<<" ";
+                ss<<"Generating json_generateParseRowFunction name="<<name<<" for row_type="<<row_type.desc()<<" and columns="<<columns;
+                logger.debug(ss.str());
+            }
+
+
             FlattenedTuple ft(&env);
             assert(row_type.isTupleType());
             ft.init(row_type);
@@ -1140,7 +1148,7 @@ namespace tuplex {
             IRBuilder builder(bMismatch);
             // free objects here
             auto rc_mismatch = env.i64Const(ecToI64(ExceptionCode::BADPARSE_STRING_INPUT));
-            env.printValue(builder, rc_mismatch, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" mismatch in json_parse_row");
+            env.printValue(builder, rc_mismatch, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" mismatch in json_parse_row for row type " + row_type.desc());
             builder.CreateRet(rc_mismatch);
 
             // main and entry block.

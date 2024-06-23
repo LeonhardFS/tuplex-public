@@ -704,6 +704,25 @@ namespace codegen {
                                  const SerializableValue& idx_expr,
                                  ASTNode* idx_expr_node=nullptr);
 
+        /*!
+         * similar to subscriptStructDict, but handles sparse dict correctly.
+         * @param builder
+         * @param out_ret
+         * @param value_type
+         * @param value
+         * @param idx_expr_type
+         * @param idx_expr
+         * @param idx_expr_node
+         * @return
+         */
+        bool subscriptSparseStructDict(const IRBuilder &builder,
+                            SerializableValue *out_ret,
+                            const python::Type &value_type,
+                            const SerializableValue &value,
+                            const python::Type &idx_expr_type,
+                            const SerializableValue &idx_expr,
+                            ASTNode *idx_expr_node);
+
         bool subscriptRow(const IRBuilder &builder,
                                                  SerializableValue *out_ret,
                                                  const python::Type &value_type,

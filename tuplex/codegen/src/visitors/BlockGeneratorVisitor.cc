@@ -4185,6 +4185,15 @@ namespace tuplex {
                     }
                 }
 
+                if(value_type.isSparseStructuredDictionaryType()) {
+                    // special behavior compared to struct dict, i.e. if key is not found -> normal-case exception.
+                    SerializableValue ret;
+                    if(subscriptSparseStructDict(builder, &ret, value_type, value, index_type, index, sub->_expression.get())) {
+                        addInstruction(ret.val, ret.size, ret.is_null);
+                        return;
+                    }
+                }
+
                 // undefined
                 std::stringstream ss;
                 ss << "unsupported type encountered with [] operator.";
@@ -4391,6 +4400,54 @@ namespace tuplex {
             // load entry
             if(out_ret)
                 *out_ret = struct_dict_load_value(*_env, builder, value.val, value_type, path);
+            _lfb->setLastBlock(builder.GetInsertBlock());
+            return true;
+        }
+
+        bool BlockGeneratorVisitor::subscriptSparseStructDict(const tuplex::codegen::IRBuilder &builder,
+                                                              tuplex::codegen::SerializableValue *out_ret,
+                                                              const python::Type &value_type,
+                                                              const tuplex::codegen::SerializableValue &value,
+                                                              const python::Type &idx_expr_type,
+                                                              const tuplex::codegen::SerializableValue &idx_expr,
+                                                              tuplex::ASTNode *idx_expr_node) {
+            using namespace std;
+
+            assert(value_type.isSparseStructuredDictionaryType()); // -> what about the option stuff?
+
+            // can only subscript if a static key can be extracted (for now)
+            auto t_key_and_type = extractStaticKey(*_env, idx_expr_type, idx_expr, idx_expr_node);
+            auto key = std::get<0>(t_key_and_type);
+            auto key_type = std::get<1>(t_key_and_type);
+
+            if(key_type == python::Type::UNKNOWN || key.empty())
+                return false;
+
+            _logger.debug("extracted static key=" + key + " (" + key_type.desc() + ") from AST.");
+
+            // check if found in dict index type.
+            access_path_t path;
+            path.push_back(make_pair(key, key_type));
+            auto element_type = struct_dict_type_get_element_type(value_type.makeNonSparse(), path);
+            if(element_type == python::Type::UNKNOWN) {
+                _logger.debug("did not find entry under key=" + key + " in dict of type " + value_type.desc() + ".");
+                // generate key error
+                _lfb->exitWithException(ExceptionCode::NORMALCASEVIOLATION); // can not decide. So no definitive KeyError.
+                return true;
+            }
+
+            // ok, can access data -> do so by generating the appropriate instructions
+            // handle option...
+            assert(!element_type.isOptionType());
+
+            // is it a maybe field? => check if present. if not, key error
+            auto field_present = struct_dict_load_present(*_env, builder, value.val, value_type.makeNonSparse(), path);
+            _lfb->setLastBlock(builder.GetInsertBlock());
+            auto field_not_present = _env->i1neg(builder, field_present);
+            _lfb->addException(builder, ExceptionCode::NORMALCASEVIOLATION, field_not_present, "NormalCaseException on sparse struct dict [], element missing for key=" + key + " (" + key_type.desc() + ")");
+            // load entry
+            if(out_ret)
+                *out_ret = struct_dict_load_value(*_env, builder, value.val, value_type.makeNonSparse(), path);
             _lfb->setLastBlock(builder.GetInsertBlock());
             return true;
         }
