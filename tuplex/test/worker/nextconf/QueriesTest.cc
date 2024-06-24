@@ -562,6 +562,8 @@ namespace tuplex {
 
         auto normal_case_row_type = python::decodeType(encoded_type);
 
+        cout<<"Number of columns to decode with this type (at most): "<<normal_case_row_type.get_column_count()<<endl;
+
         string input_pattern = "../resources/hyperspecialization/github_daily/*2012*.json.sample";
 
         // full data
@@ -583,6 +585,8 @@ namespace tuplex {
         co.set("tuplex.experimental.worker.numWorkers", "0"); // <-- single worker.
         co.set("tuplex.inputSplitSize", "20G");
         co.set("tuplex.experimental.worker.workerBufferSize", "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
+
+        co.set("tuplex.resolveWithInterpreterOnly", "true");
 
         // create context according to settings
         Context ctx(co);
@@ -620,10 +624,8 @@ namespace tuplex {
          ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, row_type_to_column_hints(normal_case_row_type))
                  .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
                  .filter(UDF("lambda x: x['type'] == 'ForkEvent'"))
-                 .selectColumns(vector<string>{"type", "year"})
-//                 .withColumn("repo_id", UDF(repo_id_code))
-//                 .filter(UDF("lambda x: x['type'] == 'ForkEvent'"))
-//                 .selectColumns(vector<string>{"type", "year","repo_id"})
+                 .withColumn("repo_id", UDF(repo_id_code))
+                 .selectColumns(vector<string>{"type", "year","repo_id"})
                  .tocsv(output_path);
 
 //        // original:

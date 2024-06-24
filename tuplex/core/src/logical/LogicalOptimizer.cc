@@ -622,7 +622,7 @@ namespace tuplex {
         {
             std::stringstream ss;
             if(outputRowType.isRowType()) {
-                auto column_names =outputRowType.get_column_names();
+                auto column_names = outputRowType.get_column_names();
                 std::vector<std::string> req_column_names;
                 for(auto col_idx : requiredCols) {
                     if(col_idx < column_names.size())
@@ -938,8 +938,8 @@ namespace tuplex {
 
 #ifdef TRACE_LOGICAL_OPTIMIZATION
                 // info on columns + their types
-                cout<<"rewrite csv here with "<<ret<<endl;
-                cout<<"CSV columns before pushdown: "<<endl;
+                cout<<"rewrite "<<input_op->name()<<" here with "<<ret<<endl;
+                cout<<input_op->name()<<" columns before pushdown: "<<endl;
                 cout <<"names: " << input_op->columns() << endl;
                 cout <<"type: " << input_op->getOutputSchema().getRowType().desc() << endl;
 
