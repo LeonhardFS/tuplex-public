@@ -556,7 +556,7 @@ namespace tuplex {
 #ifdef JSON_PARSER_TRACE_MEMORY
             _env->debugPrint(builder, "try parsing as normal row...");
 #endif
-            // _env->debugPrint(builder, "parse normal case row");
+             _env->debugPrint(builder, "parse normal case row");
 
             // new: within its own LLVM function
             // parse here as normal row
@@ -564,9 +564,9 @@ namespace tuplex {
                                                                    _normalCaseRowType, normal_case_columns,
                                                                    unwrap_first_level, parser, bbParseAsGeneralCaseRow);
 
-#ifdef JSON_PARSER_TRACE_MEMORY
-            _env->printValue(builder, rc, "normal row parsed.");
-#endif
+//#ifdef JSON_PARSER_TRACE_MEMORY
+            _env->printValue(builder, rc, "normal row successfully parsed.");
+//#endif
             builder.CreateBr(bbNormalCaseSuccess);
 
             // // old:
@@ -613,9 +613,9 @@ namespace tuplex {
             {
                 // 1. normal case
                 builder.SetInsertPoint(bbNormalCaseSuccess);
-#ifdef JSON_PARSER_TRACE_MEMORY
+//#ifdef JSON_PARSER_TRACE_MEMORY
                  _env->debugPrint(builder, "processing as normal-case row...");
-#endif
+//#endif
                 // if pipeline exists, call pipeline on normal tuple!
                 if(pipeline()) {
                     auto processRowFunc = pipeline()->getFunction();
@@ -998,7 +998,7 @@ namespace tuplex {
                 // parse dictionary
                 auto dict = json_parseRowAsStructuredDict(env, builder, dict_type, parser, bbSchemaMismatch);
 
-                // env.debugPrint(builder, "-> Loading dict elements:");
+                 env.debugPrint(builder, "-> Loading dict elements:");
 
                 // fetch columns from dict and assign to tuple!
                 for(int i = 0; i < num_entries; ++i) {

@@ -580,6 +580,7 @@ namespace tuplex {
         co.set("tuplex.backend", "worker");
 
         // this allows large files to be processed without splitting.
+        co.set("tuplex.experimental.worker.numWorkers", "0"); // <-- single worker.
         co.set("tuplex.inputSplitSize", "20G");
         co.set("tuplex.experimental.worker.workerBufferSize", "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
 
@@ -618,9 +619,11 @@ namespace tuplex {
          // debug:
          ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, row_type_to_column_hints(normal_case_row_type))
                  .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
-                 .withColumn("repo_id", UDF(repo_id_code))
                  .filter(UDF("lambda x: x['type'] == 'ForkEvent'"))
-                 .selectColumns(vector<string>{"type", "year","repo_id"})
+                 .selectColumns(vector<string>{"type", "year"})
+//                 .withColumn("repo_id", UDF(repo_id_code))
+//                 .filter(UDF("lambda x: x['type'] == 'ForkEvent'"))
+//                 .selectColumns(vector<string>{"type", "year","repo_id"})
                  .tocsv(output_path);
 
 //        // original:

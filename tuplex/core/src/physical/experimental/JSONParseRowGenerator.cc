@@ -1320,6 +1320,12 @@ namespace tuplex {
             // special case: option => i.e. perform null check first. If it fails, decode element.
             if(value_type.isOptionType()) {
                 std::tie(rc, value) = decodeOption(builder, value_type, entry, obj, key, bbSchemaMismatch);
+
+#ifdef PRINT_JSON_TRACE_DETAILS
+                _env.printValue(builder, key, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" decoded option element with type=" + value_type.desc() + " from JSON for key=");
+                _env.printValue(builder, rc, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" decode rc=");
+#endif
+
             } else {
                 // decode non-option types
                 auto v_type = value_type;
@@ -1482,9 +1488,12 @@ namespace tuplex {
                 auto key_value = str_value_from_python_raw_value(kv_pair.key); // it's an encoded value, but query here for the real key.
                 auto key = _env.strConst(builder, key_value);
 
+#ifndef NDEBUG
                 if(key_value == "payload") {
                     std::cout<<"found element to debug"<<std::endl;
                 }
+#endif
+
 
 #ifdef PRINT_JSON_TRACE_DETAILS
                 _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" level=" + std::to_string(level) + " decoding element " + key_value + "=" + kv_pair.valueType.desc() + " from JSON.");

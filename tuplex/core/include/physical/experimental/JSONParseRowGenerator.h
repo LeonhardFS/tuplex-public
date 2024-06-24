@@ -12,7 +12,7 @@
 #include <experimental/StructDictHelper.h>
 #include <physical/experimental/JsonHelper.h>
 
-#define PRINT_JSON_TRA CE_DETAILS
+#define PRINT_JSON_TRACE_DETAILS
 
 namespace tuplex {
     namespace codegen {

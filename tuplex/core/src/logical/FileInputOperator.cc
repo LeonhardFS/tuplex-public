@@ -1659,6 +1659,43 @@ namespace tuplex {
         auto input_row_type = conf.row_type;
         bool is_projected_row_type = conf.is_projected;
 
+        // simpler way, create lookup maps (assume columns are always existing. Need to fix else).
+        std::set<std::string> all_column_names;
+        std::unordered_map<std::string, python::Type> conf_name_to_type_map;
+        std::unordered_map<std::string, python::Type> this_name_to_type_map;
+        for(unsigned i = 0; i < conf.columns.size(); ++i) {
+            auto name = conf.columns[i];
+            auto col_type = conf.row_type.isRowType() ? conf.row_type.get_column_type(name) : conf.row_type.parameters()[i];
+            all_column_names.insert(name);
+            conf_name_to_type_map[name] = col_type;
+        }
+
+        for(unsigned i = 0; i < columns().size(); ++i) {
+            auto name = columns()[i];
+            auto col_type = normalCaseSchema().getRowType().isRowType() ? normalCaseSchema().getRowType().get_column_type(name) : normalCaseSchema().getRowType().parameters()[i];
+            all_column_names.insert(name);
+            this_name_to_type_map[name] = col_type;
+        }
+
+        // debug:
+#ifndef NDEBUG
+        {
+            auto& logger = Logger::instance().logger("codegen");
+
+
+            // now check by printing everything:
+            std::stringstream ss;
+            ss<<"Performing file operator retype with:\n";
+            for(auto name : all_column_names) {
+                auto current_type = this_name_to_type_map.find(name) != this_name_to_type_map.end() ? this_name_to_type_map[name].desc() : "";
+                auto new_type = conf_name_to_type_map.find(name) != conf_name_to_type_map.end() ? conf_name_to_type_map[name].desc() : "";
+                ss<<"name= "<<name<<" current= "<<current_type<<" new= "<<new_type<<"\n";
+            }
+            logger.debug(ss.str());
+        }
+#endif
+
+
         // check that #columns corresponds to number of col types!
         if(!conf.columns.empty()) {
             assert(input_row_type.isTupleType());
@@ -1667,6 +1704,11 @@ namespace tuplex {
 
         assert(input_row_type.isTupleType());
         auto col_types = input_row_type.parameters();
+        auto col_names = conf.columns;
+
+        // check this is valid
+        assert(!col_names.empty() && col_types.size() == col_names.size());
+
         auto old_col_types = normalCaseSchema().getRowType().isRowType() ? normalCaseSchema().getRowType().get_column_types() : normalCaseSchema().getRowType().parameters();
         auto old_general_col_types = getOutputSchema().getRowType().isRowType() ? getOutputSchema().getRowType().get_column_types() : getOutputSchema().getRowType().parameters();
 
@@ -1733,14 +1775,20 @@ namespace tuplex {
         // type hints have precedence over sampling! I.e., include them here!
         for(const auto& kv : typeHints()) {
             auto idx = kv.first;
-            // are we having a projected type? then lookup in projection map!
-            auto m = projectionMap();
-            if(is_projected_row_type && !m.empty())
-                idx = m[idx]; // get projected index...
 
-            if(idx < col_types.size()) {
+            auto name = inputColumns()[idx];
+
+            // this here is buggy, use instead name search.
+            // // are we having a projected type? then lookup in projection map!
+            // auto m = projectionMap();
+            // if(is_projected_row_type && !m.empty())
+            //     idx = m[idx]; // get projected index...
+
+            idx = indexInVector(name, col_names);
+
+            if(idx >= 0 && idx < col_types.size()) {
                 col_types[idx] = kv.second;
-            } else
+            } else if(idx < 0)
                 logger.error("internal error, invalid type hint (with wrong index?)");
         }
 
