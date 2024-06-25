@@ -16,11 +16,7 @@ namespace tuplex {
 
     void LambdaAccessedColumnVisitor::visit(tuplex::NIfElse *node) {
         // annotation? stop visit then.
-        if(node->hasAnnotation()) {
-
-            // visit at all?
-            if(node->annotation().numTimesVisited == 0)
-                return;
+        if(node->hasAnnotation() && node->annotation().numTimesVisited > 0) {
 
             // visit cond
             node->_expression->accept(*this);
