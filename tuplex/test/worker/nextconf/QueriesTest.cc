@@ -652,7 +652,7 @@ namespace tuplex {
         python::closeInterpreter();
     }
 
-    TEST(AllQueries, GetAccessedColumnsInExtractRepoID) {
+    TEST(AllQueries, GetAccessedColumnsInExtractRepoIDWithStaticAnnotation) {
         using namespace tuplex;
         using namespace std;
 
@@ -688,9 +688,68 @@ namespace tuplex {
                                                    "(str,'url'->str),(str,'message'->str)]]),(str,'target'=>SparseStruct[(str,'id'->i64)]),(str,'id'=>i64)]],'created_at'->str,"
                                                    "'url'->Option[str],'type'->str,'actor'->Option[str],'public'->Option[bool],'repo'->Option[SparseStruct[(str,'id'=>i64)]],'year'->i64]");
 
+
+
+
         // TODO: make this work WITHOUT sample. Should be possible.
         bool hint_rc = false;
-        //hint_rc = udf.hintInputSchema(Schema(Schema::MemoryLayout::ROW, input_row_type));
+
+
+        hint_rc = udf.hintInputSchema(Schema(Schema::MemoryLayout::ROW, input_row_type));
+        ASSERT_TRUE(hint_rc);
+
+        // now check access, following columns should be (at most) in it:
+        // year, type, payload, repository, repo
+
+        LambdaAccessedColumnVisitor v;
+        udf.getAnnotatedAST().getFunctionAST()->accept(v);
+
+        auto acc_indices = v.getAccessedIndices();
+
+        for(auto idx: acc_indices) {
+            cout<<"Accessed column "<<input_row_type.get_column_names()[idx]<<endl;
+        }
+
+        EXPECT_EQ(acc_indices.size(), 5);
+    }
+
+    TEST(AllQueries, GetAccessedColumnsInExtractRepoIDWithTracedAnnotation) {
+        using namespace tuplex;
+        using namespace std;
+
+        auto repo_id_code = "def extract_repo_id(row):\n"
+                            "    if 2012 <= row['year'] <= 2014:\n"
+                            "        \n"
+                            "        if row['type'] == 'FollowEvent':\n"
+                            "            return row['payload']['target']['id']\n"
+                            "        \n"
+                            "        if row['type'] == 'GistEvent':\n"
+                            "            return row['payload']['id']\n"
+                            "        \n"
+                            "        repo = row.get('repository')\n"
+                            "        \n"
+                            "        if repo is None:\n"
+                            "            return None\n"
+                            "        return repo.get('id')\n"
+                            "    else:\n"
+                            "        repo =  row.get('repo')\n"
+                            "        if repo:\n"
+                            "            return repo.get('id')\n"
+                            "        else:\n"
+                            "            return None\n";
+
+        // extracting accessed columns (from row type) is tricky for the above UDF.
+        // In this test, check that .get(...) is supported.
+
+        UDF udf(repo_id_code);
+
+        auto input_row_type = python::Type::decode("Row['repository'->Option[SparseStruct[(str,'id'=>i64)]],'actor_attributes'->Option[Struct[(str,'blog'=>str),(str,'company'=>str),"
+                                                   "(str,'email'->str),(str,'gravatar_id'->str),(str,'location'=>str),(str,'login'->str),(str,'name'=>str),(str,'type'->str)]],"
+                                                   "'payload'->Option[SparseStruct[(str,'commits'=>List[Struct[(str,'sha'->str),(str,'author'->Struct[(str,'name'->str),(str,'email'->str)]),"
+                                                   "(str,'url'->str),(str,'message'->str)]]),(str,'target'=>SparseStruct[(str,'id'->i64)]),(str,'id'=>i64)]],'created_at'->str,"
+                                                   "'url'->Option[str],'type'->str,'actor'->Option[str],'public'->Option[bool],'repo'->Option[SparseStruct[(str,'id'=>i64)]],'year'->i64]");
+
+        bool hint_rc = false;
 
         python::initInterpreter();
 
@@ -733,6 +792,6 @@ namespace tuplex {
             cout<<"Accessed column "<<input_row_type.get_column_names()[idx]<<endl;
         }
 
-        EXPECT_LE(acc_indices.size(), 5);
+        EXPECT_EQ(acc_indices.size(), 2); // only repo and year due to tracing.
     }
 }

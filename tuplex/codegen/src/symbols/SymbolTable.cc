@@ -604,9 +604,54 @@ namespace tuplex {
                 }
 
                 // struct dict? => check if constant type is used, if so lookup!
-                if(callerType.isStructuredDictionaryType() && key_type.isConstantValued()) {
+                if((callerType.isStructuredDictionaryType() || callerType.isSparseStructuredDictionaryType()) && key_type.isConstantValued()) {
                     // todo, lookup const value
                     // -> get first tracing version going, then fix this here.
+
+#ifndef NDEBUG
+                    {
+                        std::stringstream ss;
+                        ss<<"dict.get with key="<<key_type.desc()<<" for callerType="<<callerType.desc()<<std::endl;
+                        auto& logger = Logger::instance().logger("codegen");
+                        logger.debug(ss.str());
+                    }
+#endif
+
+                    auto lookup_key = key_type.constant();
+
+                    auto kv_pairs = callerType.makeNonSparse().get_struct_pairs();
+                    auto it = std::find_if(kv_pairs.begin(), kv_pairs.end(), [&lookup_key](const python::StructEntry& entry) {
+                        return entry.key == escape_to_python_str(lookup_key);
+                    });
+
+                    auto default_value_type = python::Type::NULLVALUE;
+
+                    if(parameterType.parameters().size() == 2)
+                        default_value_type = parameterType.parameters()[1];
+
+                    if(it == kv_pairs.end()) {
+                        if(callerType.isStructuredDictionaryType()) {
+                            // not found -> hence return NULL or default value
+                            return python::Type::makeFunctionType(parameterType, default_value_type);
+                        } else {
+                            // can not decide for sparse struct whether element is contained or not, i.e. this would be normal-case violation.
+                            auto normal_case_except_type = python::TypeFactory::instance().getByName(
+                                    exceptionCodeToPythonClass(ExceptionCode::NORMALCASEVIOLATION));
+                            assert(normal_case_except_type != python::Type::UNKNOWN);
+                            return python::Type::makeFunctionType(parameterType, normal_case_except_type);
+                        }
+                    } else {
+                        // found type, return now depending on whether entry is present or not.
+                        const auto& entry = *it;
+                        auto ret_type = entry.valueType;
+                        if(!entry.alwaysPresent) {
+                            ret_type = unifyTypes(ret_type, default_value_type);
+                            if(ret_type == python::Type::UNKNOWN)
+                                ret_type = entry.valueType;
+                        }
+
+                        return python::Type::makeFunctionType(parameterType, ret_type);
+                    }
                 }
 
                 // multiple options: was a default argument provided or not?

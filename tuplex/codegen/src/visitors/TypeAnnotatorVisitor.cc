@@ -1203,13 +1203,6 @@ namespace tuplex {
     void TypeAnnotatorVisitor::typeStructuredDictSubscription(tuplex::NSubscription *sub, const python::Type &type) {
         assert(type.isStructuredDictionaryType());
 
-        // index by literal (or future: constant value?)
-#ifndef NDEBUG
-        Logger::instance().defaultLogger().info("add support for constant-valued types here as well...");
-        // maybe also normal-case speculation on struct type??
-        // --> could be done as well...
-#endif
-
         sub->setInferredType(python::Type::UNKNOWN);
 
         // is it homogenous in value type? -> simple decision, what to use as return type.
