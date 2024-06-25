@@ -4,6 +4,7 @@
 
 #include "TestUtils.h"
 #include "JsonStatistic.h"
+#include "tracing/LambdaAccessedColumnVisitor.h"
 
 namespace tuplex {
     struct QueryConfiguration {
@@ -564,7 +565,7 @@ namespace tuplex {
 
         cout<<"Number of columns to decode with this type (at most): "<<normal_case_row_type.get_column_count()<<endl;
 
-        string input_pattern = "../resources/hyperspecialization/github_daily/*2012*.json.sample";
+        string input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
 
         // full data
         // input_pattern = "/hot/data/github_daily/*.json";
@@ -639,9 +640,99 @@ namespace tuplex {
 //                .tocsv(output_path);
 
         auto result_row_count = csv_row_count_for_pattern(output_path + "*.csv");
-        EXPECT_EQ(result_row_count, 378); // result which is correct for all rows.
+
+        auto expected_row_count = 378;
+        // full data?
+        if(!strEndsWith(input_pattern, ".sample"))
+            expected_row_count = 294195; // full query result.
+
+        EXPECT_EQ(result_row_count, expected_row_count); // result which is correct for all rows.
 
         python::lockGIL();
         python::closeInterpreter();
+    }
+
+    TEST(AllQueries, GetAccessedColumnsInExtractRepoID) {
+        using namespace tuplex;
+        using namespace std;
+
+        auto repo_id_code = "def extract_repo_id(row):\n"
+                            "    if 2012 <= row['year'] <= 2014:\n"
+                            "        \n"
+                            "        if row['type'] == 'FollowEvent':\n"
+                            "            return row['payload']['target']['id']\n"
+                            "        \n"
+                            "        if row['type'] == 'GistEvent':\n"
+                            "            return row['payload']['id']\n"
+                            "        \n"
+                            "        repo = row.get('repository')\n"
+                            "        \n"
+                            "        if repo is None:\n"
+                            "            return None\n"
+                            "        return repo.get('id')\n"
+                            "    else:\n"
+                            "        repo =  row.get('repo')\n"
+                            "        if repo:\n"
+                            "            return repo.get('id')\n"
+                            "        else:\n"
+                            "            return None\n";
+
+        // extracting accessed columns (from row type) is tricky for the above UDF.
+        // In this test, check that .get(...) is supported.
+
+        UDF udf(repo_id_code);
+
+        auto input_row_type = python::Type::decode("Row['repository'->Option[SparseStruct[(str,'id'=>i64)]],'actor_attributes'->Option[Struct[(str,'blog'=>str),(str,'company'=>str),"
+                                                   "(str,'email'->str),(str,'gravatar_id'->str),(str,'location'=>str),(str,'login'->str),(str,'name'=>str),(str,'type'->str)]],"
+                                                   "'payload'->Option[SparseStruct[(str,'commits'=>List[Struct[(str,'sha'->str),(str,'author'->Struct[(str,'name'->str),(str,'email'->str)]),"
+                                                   "(str,'url'->str),(str,'message'->str)]]),(str,'target'=>SparseStruct[(str,'id'->i64)]),(str,'id'=>i64)]],'created_at'->str,"
+                                                   "'url'->Option[str],'type'->str,'actor'->Option[str],'public'->Option[bool],'repo'->Option[SparseStruct[(str,'id'=>i64)]],'year'->i64]");
+
+        // TODO: make this work WITHOUT sample. Should be possible.
+        bool hint_rc = false;
+        //hint_rc = udf.hintInputSchema(Schema(Schema::MemoryLayout::ROW, input_row_type));
+
+        python::initInterpreter();
+
+        // "repository"
+        // "actor_attributes"
+        // "payload"
+        // "created_at"
+        // "url"
+        // "type"
+        // "actor"
+        // "public"
+        // "repo"
+        // "year"
+        Row row_1(Field::null(), Field::null(), Field::null(), Field("2012-11-01"), Field::null(), "TestEvent","test", false,Field::null(), 1234);
+
+        ASSERT_EQ(row_1.getNumColumns(), input_row_type.get_column_count());
+
+        std::vector<Row> original_sample_rows;
+        original_sample_rows.push_back(row_1.with_columns(input_row_type.get_column_names()));
+        std::vector<PyObject*> sample;
+        for(const auto& row : original_sample_rows)
+            sample.push_back(python::rowToPython(row));
+
+        // use sample
+        udf.removeTypes();
+        hint_rc = udf.hintSchemaWithSample(sample, original_sample_rows, input_row_type);
+        python::closeInterpreter();
+
+        ASSERT_TRUE(hint_rc);
+
+        // now check access, following columns should be (at most) in it:
+        // year, type, payload, repository, repo
+
+        LambdaAccessedColumnVisitor v;
+        udf.getAnnotatedAST().getFunctionAST()->accept(v);
+
+        auto acc_indices = v.getAccessedIndices();
+
+        for(auto idx: acc_indices) {
+            cout<<"Accessed column "<<input_row_type.get_column_names()[idx]<<endl;
+        }
+
+        EXPECT_LE(acc_indices.size(), 5);
     }
 }

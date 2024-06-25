@@ -1915,9 +1915,11 @@ namespace tuplex {
         // in speculation mode?
         bool speculate = ifelse->annotation().numTimesVisited > 0 || (ifelse->_else && ifelse->_else->annotation().numTimesVisited > 0);
 
+#ifdef NDEBUG
         if("'FollowEvent' == row['type']" == dbg_cond && speculate) {
             std::cout<<"test found"<<std::endl;
         }
+#endif
 
         // backup name table, this is required to then deduce type conflicts:
         auto nameTable_before = _nameTable;
