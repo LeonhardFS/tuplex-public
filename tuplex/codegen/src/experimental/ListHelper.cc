@@ -922,6 +922,39 @@ namespace tuplex {
                 builder.CreateStore(value.val, idx_value);
                 builder.CreateStore(value.size, idx_size);
             } else if(elementType == python::Type::GENERICDICT) {
+#ifdef USE_YYJSON_INSTEAD
+                // pointer to the structured dict type!
+
+                auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
+                builder.CreateStore(env.i64Const(0), idx_capacity);
+
+                auto llvm_element_type = env.pythonToLLVMType(elementType);
+                auto ptr_values = builder.CreateStructLoad(llvm_list_type, list_ptr, 2);
+
+                auto target_idx = builder.CreateGEP(llvm_element_type, ptr_values, idx);
+
+                llvm::Value* element_as_ptr = nullptr;
+                // is element given as struct or pointer?
+                // => if pointer, assume it is a valid heap ptr.
+                if(value.val->getType()->isStructTy()) {
+                    // not given as pointer, hence alloc heap (!) pointer and store with this.
+                    element_as_ptr = env.CreateHeapAlloca(builder, llvm_element_type);
+
+                    // env.debugPrint(builder, "allocated new heap ptr for struct, value to store is: ");
+                    // struct_dict_print(env, builder, value, elementType);
+
+                    builder.CreateStore(value.val, element_as_ptr);
+                } else {
+                    element_as_ptr = value.val;
+                }
+
+                // env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " list_store_value into " + list_type.desc());
+                // struct_dict_print(env, builder, SerializableValue(element_as_ptr, nullptr), elementType);
+
+                // store into array
+                assert(element_as_ptr->getType()->getPointerTo() == target_idx->getType());
+                builder.CreateStore(element_as_ptr, target_idx, true);
+#else
                 // this is quite simple, store a HEAP allocated pointer.
                 auto idx_capacity = builder.CreateStructGEP(list_ptr, llvm_list_type, 0); assert(idx_capacity->getType() == env.i64ptrType());
                 builder.CreateStore(env.i64Const(0), idx_capacity);
@@ -936,6 +969,7 @@ namespace tuplex {
 
                 auto dict = value.val;
                 builder.CreateStore(dict, idx_value);
+#endif
             } else if(elementType.isStructuredDictionaryType()) {
                 // pointer to the structured dict type!
 
@@ -2882,6 +2916,7 @@ namespace tuplex {
                                                                     llvm_list_type->getStructElementType(3));
                 } else {
                     assert(elementType == python::Type::GENERICDICT);
+                    // also works in yyjson mode because pointer array alloc.
                     list_arr_malloc = builder.CreatePointerCast(env.malloc(builder, builder.CreateMul(num_elements, env.i64Const(8))),
                                                                 env.i8ptrType()->getPointerTo());
                 }

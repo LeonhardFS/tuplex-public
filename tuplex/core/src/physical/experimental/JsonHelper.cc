@@ -2,9 +2,9 @@
 // Created by leonhard on 9/23/22.
 //
 #include <physical/experimental/JsonHelper.h>
+#include <physical/experimental/yyjson_helper.h>
 #include <jit/RuntimeInterface.h>
 #include <jit/JITCompiler.h>
-
 
 namespace tuplex {
     namespace codegen {
@@ -835,7 +835,34 @@ namespace tuplex {
             return ret;
         }
 
+
+        void addYYJsonSymbolsToJIT(JITCompiler& jit) {
+            jit.registerSymbol("yyjson_mut_str", yyjson_mut_str);
+            jit.registerSymbol("yyjson_mut_obj_get", yyjson_mut_obj_get);
+            jit.registerSymbol("yyjson_mut_obj_put", yyjson_mut_obj_put);
+            jit.registerSymbol("yyjson_mut_is_num", yyjson_mut_is_num);
+            jit.registerSymbol("yyjson_mut_is_null", yyjson_mut_is_null);
+            jit.registerSymbol("yyjson_mut_is_obj", yyjson_mut_is_obj);
+            jit.registerSymbol("yyjson_mut_is_arr", yyjson_mut_is_arr);
+            jit.registerSymbol("yyjson_mut_is_str", yyjson_mut_is_str);
+            jit.registerSymbol("yyjson_mut_arr_size", yyjson_mut_arr_size);
+            jit.registerSymbol("yyjson_mut_arr_get", yyjson_mut_arr_get);
+            jit.registerSymbol("yyjson_is_array_of_objects", tuplex::yyjson_is_array_of_objects);
+            jit.registerSymbol("yyjson_mut_get_sint", yyjson_mut_get_sint);
+            jit.registerSymbol("yyjson_mut_get_bool", yyjson_mut_get_bool);
+            jit.registerSymbol("yyjson_mut_get_real", yyjson_get_real);
+            jit.registerSymbol("yyjson_mut_get_str", yyjson_get_str);
+            jit.registerSymbol("yyjson_init_doc", tuplex::yyjson_init_doc);
+            jit.registerSymbol("yyjson_mut_doc_get_root", yyjson_mut_doc_get_root);
+            jit.registerSymbol("yyjson_print_to_runtime_str", tuplex::yyjson_print_to_runtime_str);
+        }
+
         void addJsonSymbolsToJIT(JITCompiler& jit) {
+
+#ifdef USE_YYJSON_INSTEAD
+            addYYJsonSymbolsToJIT(jit);
+#endif
+
             // register symbols
             jit.registerSymbol("JsonParser_Init", JsonParser_init);
             jit.registerSymbol("JsonParser_Free", JsonParser_free);

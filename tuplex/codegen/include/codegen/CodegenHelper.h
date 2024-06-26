@@ -464,6 +464,22 @@ namespace tuplex {
                 }
             }
 
+            inline void CreateStructStore(llvm::Type* struct_type, llvm::Value* PtrOrValue, unsigned Idx, llvm::Value* V) const {
+                assert(PtrOrValue);
+                assert(V);
+                assert(Idx < struct_type->getStructNumElements());
+
+                if(PtrOrValue && PtrOrValue->getType()->isPointerTy()) {
+                    auto target = CreateStructGEP(PtrOrValue, struct_type, Idx);
+                    CreateStore(V, target);
+                } else if(PtrOrValue && PtrOrValue->getType()->isStructTy()) {
+                    assert(Idx < PtrOrValue->getType()->getStructNumElements());
+                    CreateInsertValue(PtrOrValue, V, std::vector<unsigned>(1, Idx));
+                } else {
+                    throw std::runtime_error("PtrOrValue is not pointer nor struct.");
+                }
+            }
+
             inline llvm::Value *CreateFCmpONE(llvm::Value *LHS, llvm::Value *RHS, const std::string &Name = "",
                                               llvm::MDNode *FPMathTag = nullptr) const {return get_or_throw().CreateFCmpONE(LHS, RHS, Name, FPMathTag); }
 
@@ -1719,6 +1735,10 @@ namespace tuplex {
          * @return number of 8 byte blocks
          */
         extern llvm::Value* calc_bitmap_size_in_64bit_blocks(const IRBuilder& builder, llvm::Value* num_elements);
+
+#ifdef USE_YYJSON_INSTEAD
+        extern llvm::Type* get_or_create_yyjson_shim_type(llvm::LLVMContext& ctx);
+#endif
     }
 }
 

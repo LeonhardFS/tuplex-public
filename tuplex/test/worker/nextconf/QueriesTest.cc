@@ -726,7 +726,7 @@ namespace tuplex {
         cout<<"Testing with normal-case row type: "<<normal_case_row_type.desc()<<endl;
 
         // original:
-        ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, row_type_to_column_hints(normal_case_row_type))
+        ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED)
                 .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
                 .withColumn("repo_id", UDF(repo_id_code))
                 .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.

@@ -3414,7 +3414,11 @@ namespace tuplex {
             assert(retType != python::Type::UNKNOWN && retType != python::Type::PYOBJECT);
 
             // caller is n i8* pointer holding a cJSON struct
+#ifdef USE_YYJSON_INSTEAD
+            assert(caller.val);
+#else
             assert(caller.val && caller.val->getType() == _env.i8ptrType());
+#endif
 
             // what is the key type?
             // --> so far, only support string keys.
@@ -3438,7 +3442,11 @@ namespace tuplex {
                 auto require_deoptimization = !retType.isOptionType();
 
                 // check if item is valid, if nullptr -> normal-case violation basically.
+#ifdef USE_YYJSON_INSTEAD
+                auto item_not_found = builder.CreateICmpEQ(_env.nullConstant(get_or_create_yyjson_shim_type(builder.getContext())->getPointerTo()), item);
+#else
                 auto item_not_found = builder.CreateICmpEQ(_env.i8nullptr(), item);
+#endif
 
                 if(require_deoptimization) {
                     if(retType != python::Type::NULLVALUE) {

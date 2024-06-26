@@ -666,8 +666,11 @@ namespace tuplex {
                 llvm::ArrayRef<llvm::Type *> members(memberTypes);
                 retType = llvm::StructType::create(_context, members, "struct." + twine, false);
             } else if(elementType == python::Type::GENERICDICT) {
+#ifdef USE_YYJSON_INSTEAD
+                auto llvm_element_type = get_or_create_yyjson_shim_type(_context)->getPointerTo(); // yyjson* (shim)
+#else
                 auto llvm_element_type = i8ptrType();
-
+#endif
                 // pointer to the structured dict type!
                 std::vector<llvm::Type*> memberTypes;
                 memberTypes.push_back(i64Type()); // array capacity
@@ -1727,7 +1730,11 @@ namespace tuplex {
                 if(t.isStructuredDictionaryType() || t.isSparseStructuredDictionaryType()) {
                     return getOrCreateStructuredDictType(t.makeNonSparse());
                 } else {
+#ifdef USE_YYJSON_INSTEAD
+                    return get_or_create_yyjson_shim_type(_context)->getPointerTo();
+#else
                     return Type::getInt8PtrTy(_context);
+#endif
                 }
             }
 
@@ -1787,7 +1794,7 @@ namespace tuplex {
                     return llvm::StructType::create(_context, members, "f64_opt", packed);
                 }
 
-                if (rt == python::Type::STRING || rt == python::Type::GENERICDICT || rt.isDictionaryType()) {
+                if (rt == python::Type::STRING) {
 
                     // this here results in an error.
                     // => fix this!
@@ -1798,6 +1805,16 @@ namespace tuplex {
 
                     // could theoretically also use nullptr?
                     return llvm::StructType::create(_context, members, "str_opt", packed);
+                }
+
+                if(rt == python::Type::GENERICDICT || rt.isDictionaryType()) {
+                    std::vector<llvm::Type*> member_types;
+                    member_types.push_back(pythonToLLVMType(rt));
+                    member_types.push_back(Type::getInt1Ty(_context));
+                    llvm::ArrayRef<llvm::Type *> members(member_types);
+
+                    // could theoretically also use nullptr?
+                    return llvm::StructType::create(_context, members, "dict_opt", packed);
                 }
 
                 if (rt.isListType()) {
@@ -2813,10 +2830,14 @@ namespace tuplex {
                 retVal.val = f64Const(0.0);
                 retVal.size = i64Const(sizeof(double));
                 retVal.is_null = i1Const(false);
-            } else if (python::Type::STRING == type || (type.isDictionaryType() && !type.isStructuredDictionaryType() && !type.isSparseStructuredDictionaryType())) {
+            } else if (python::Type::STRING == type) {
                 // use empty string, DO NOT use nullptr.
                 retVal.val = strConst(builder, "");
                 retVal.size = i64Const(1);
+                retVal.is_null = i1Const(false);
+            } else if(type.isDictionaryType() && !type.isStructuredDictionaryType() && !type.isSparseStructuredDictionaryType()) {
+                retVal.val = call_cjson_create_empty(builder);
+                retVal.size = i64Const(0);
                 retVal.is_null = i1Const(false);
             } else if(type.isListType()) {
                 // allocate list ptr and init with zero length!
@@ -3012,7 +3033,10 @@ namespace tuplex {
             } else if (python::Type::F64 == type) {
                 retVal.val = env.f64Const(0.0);
                 retVal.size = env.i64Const(sizeof(double));
-            } else if (python::Type::STRING == type || type.isDictionaryType()) {
+            } else if (python::Type::STRING == type) {
+                retVal.val = env.strConst(builder, "");
+                retVal.size = env.i64Const(1);
+            } else if(type.isDictionaryType()) {
 
                 // special case: struct dict!
                 if(python::Type::EMPTYDICT == type) {
@@ -3020,9 +3044,9 @@ namespace tuplex {
                 } else if(type.isStructuredDictionaryType() || type.isSparseStructuredDictionaryType()) {
                     retVal.val = env.CreateFirstBlockAlloca(builder, env.getOrCreateStructuredDictType(type.makeNonSparse()));
                     struct_dict_mem_zero(env, builder, retVal.val, type.makeNonSparse());
-                } else {
+                } else if(type.isDictionaryType()){
                     // generic dict...
-                    retVal.val = env.i8ptrConst(nullptr);
+                    retVal.val = call_cjson_create_empty(builder);
                     retVal.size = env.i64Const(0);
                 }
             } else if(python::Type::NULLVALUE == type) {

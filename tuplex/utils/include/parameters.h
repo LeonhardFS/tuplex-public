@@ -5,6 +5,9 @@
 #ifndef TUPLEX_PARAMETERS_H
 #define TUPLEX_PARAMETERS_H
 
+// uncomment following line to use yyjson library instead of (slow cJSON) library
+#define USE_YYJSON_INSTEAD
+
 namespace tuplex {
     // use row type to push down compute (should become standard)
     static const bool PARAM_USE_ROW_TYPE=true;

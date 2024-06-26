@@ -53,6 +53,10 @@
 
 #include <llvm/Support/ManagedStatic.h>
 
+#ifdef USE_YYJSON_INSTEAD
+#include <yyjson.h>
+#endif
+
 namespace tuplex {
     namespace codegen {
         // global var because often only references are passed around.
@@ -1094,6 +1098,53 @@ namespace tuplex {
             return j;
         }
 
+#ifdef USE_YYJSON_INSTEAD
+        // yyjson uses a doc to store a couple values.
+        // These structures are detailed in https://github.com/ibireme/yyjson/blob/master/doc/DataStructure.md.
+        // Practically this means, that when replacing cjson_obj with yyjson, an indirection struct holding a pointer to
+        // both the doc, and the current object needs to be used.
+        // LLVM may optimize parts of this away.
+        // In addition, yyjson memory management needs to be intercepted when calling init/reset stage.
+        llvm::Type* get_or_create_yyjson_shim_type(llvm::LLVMContext& ctx) {
+            using namespace llvm;
+            std::vector<llvm::Type*> member_types(2, i8ptrType(ctx)); // first is doc, second current obj
+            auto stype = llvm::StructType::get(ctx, member_types);
+            stype->setName("yyjson");
+            return stype;
+        }
+
+        llvm::Type* get_or_create_yyjson_shim_type(const IRBuilder& builder) {
+            return get_or_create_yyjson_shim_type(builder.getContext());
+        }
+
+        llvm::Value* get_yyjson_doc(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            return builder.CreateStructLoadOrExtract(get_or_create_yyjson_shim_type(builder), cjson_obj, 0);
+        }
+
+        llvm::Value* get_yyjson_mut_obj(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            return builder.CreateStructLoadOrExtract(get_or_create_yyjson_shim_type(builder), cjson_obj, 1);
+        }
+
+        void set_yyjson_mut_obj(const IRBuilder& builder, llvm::Value* cjson_obj, llvm::Value* yyjson_obj) {
+            builder.CreateStructStore(get_or_create_yyjson_shim_type(builder), cjson_obj, 1, yyjson_obj);
+        }
+
+        void set_yyjson_mut_doc(const IRBuilder& builder, llvm::Value* cjson_obj, llvm::Value* yyjson_doc) {
+            builder.CreateStructStore(get_or_create_yyjson_shim_type(builder), cjson_obj, 0, yyjson_doc);
+        }
+
+        llvm::Value* yy_key_string(const IRBuilder& builder, llvm::Value* yy_doc, llvm::Value* str) {
+            // can safely use yyjson_mut_str here, because pointers backing strings will be read-only in Tuplex.
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+            auto& ctx = mod->getContext();
+            auto func = getOrInsertFunction(mod, "yyjson_mut_str", i8ptrType(ctx), i8ptrType(ctx), i8ptrType(ctx));
+
+            return builder.CreateCall(func, {yy_doc, str});
+        }
+#endif
+
+
         llvm::Value* call_cjson_getitem(const IRBuilder& builder, llvm::Value* cjson_obj, llvm::Value* key) {
             assert(cjson_obj);
             assert(key);
@@ -1101,12 +1152,25 @@ namespace tuplex {
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+#ifdef USE_YYJSON_INSTEAD
+            auto func = getOrInsertFunction(mod, "yyjson_mut_obj_get", i8ptrType(ctx), i8ptrType(ctx), i8ptrType(ctx));
+
+            auto yyjson_obj = get_yyjson_mut_obj(builder, cjson_obj);
+            yyjson_obj = builder.CreateCall(func, {yyjson_obj, key});
+            set_yyjson_mut_obj(builder, cjson_obj, yyjson_obj);
+
+            // return nullptr if not found.
+            auto null_i8ptr = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(i8ptrType(ctx)));
+            auto null_pointer = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(get_or_create_yyjson_shim_type(ctx)->getPointerTo()));
+
+            return builder.CreateSelect(builder.CreateICmpEQ(yyjson_obj, null_i8ptr), null_pointer, cjson_obj);
+#else
             auto func = getOrInsertFunction(mod, "cJSON_GetObjectItemCaseSensitive", llvm::Type::getInt8PtrTy(ctx, 0),
                                             llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt8PtrTy(ctx, 0));
 
             return builder.CreateCall(func, {cjson_obj, key});
+#endif
         }
 
         llvm::Value* call_cjson_object_set_item(const IRBuilder& builder, llvm::Value* cjson_obj, llvm::Value* key, llvm::Value* cjson_item) {
@@ -1119,9 +1183,24 @@ namespace tuplex {
             auto& ctx = mod->getContext();
             auto ptr_type = i8ptrType(ctx);
 
-            auto func = getOrInsertFunction(mod, "cJSON_AddItemToObject", ptr_type, ptr_type, ptr_type, ptr_type);
+#ifdef USE_YYJSON_INSTEAD
+            // note: argument for key is not char* but instead a key, which must be created via yyjson_mut_str
 
+            // also note that str is not copied for yyjson_mut_str -> we can steal string b.c. in tuplex lifetime is per row
+            auto yy_doc = get_yyjson_doc(builder, cjson_obj);
+            auto yy_key = yy_key_string(builder, yy_doc, key);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_obj_put", ctypeToLLVM<bool>(ctx), i8ptrType(ctx),
+                                            i8ptrType(ctx), i8ptrType(ctx));
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+            auto yy_item = get_yyjson_mut_obj(builder, cjson_item);
+
+            builder.CreateCall(func, {yy_obj, yy_key, yy_item});
+            return cjson_obj;
+#else
+            auto func = getOrInsertFunction(mod, "cJSON_AddItemToObject", ptr_type, ptr_type, ptr_type, ptr_type);
             return builder.CreateCall(func, {cjson_obj, key, cjson_item});
+#endif
         }
 
 
@@ -1131,12 +1210,22 @@ namespace tuplex {
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_is_num", ctypeToLLVM<bool>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt1Ty(ctx));
+#else
+
             auto func = getOrInsertFunction(mod, "cJSON_IsNumber", ctypeToLLVM<cJSON_AS4CPP_bool>(ctx),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_obj}), llvm::Type::getInt1Ty(ctx));
+#endif
         }
 
         llvm::Value* call_cjson_isnull(const IRBuilder& builder, llvm::Value* cjson_obj) {
@@ -1145,12 +1234,21 @@ namespace tuplex {
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_is_null", ctypeToLLVM<bool>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt1Ty(ctx));
+#else
             auto func = getOrInsertFunction(mod, "cJSON_IsNull", ctypeToLLVM<cJSON_AS4CPP_bool>(ctx),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_obj}), llvm::Type::getInt1Ty(ctx));
+#endif
         }
 
         llvm::Value* call_cjson_isobject(const IRBuilder& builder, llvm::Value* cjson_obj) {
@@ -1159,12 +1257,21 @@ namespace tuplex {
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_is_obj", ctypeToLLVM<bool>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt1Ty(ctx));
+#else
             auto func = getOrInsertFunction(mod, "cJSON_IsObject", ctypeToLLVM<cJSON_AS4CPP_bool>(ctx),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_obj}), llvm::Type::getInt1Ty(ctx));
+#endif
         }
 
         llvm::Value* call_cjson_isarray(const IRBuilder& builder, llvm::Value* cjson_obj) {
@@ -1173,12 +1280,21 @@ namespace tuplex {
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_is_arr", ctypeToLLVM<bool>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt1Ty(ctx));
+#else
             auto func = getOrInsertFunction(mod, "cJSON_IsArray", ctypeToLLVM<cJSON_AS4CPP_bool>(ctx),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_obj}), llvm::Type::getInt1Ty(ctx));
+#endif
         }
 
         llvm::Value* call_cjson_getarraysize(const IRBuilder& builder, llvm::Value* cjson_array) {
@@ -1187,29 +1303,55 @@ namespace tuplex {
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_array);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_arr_size", ctypeToLLVM<size_t>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt64Ty(ctx));
+#else
             auto func = getOrInsertFunction(mod, "cJSON_GetArraySize", ctypeToLLVM<int>(ctx),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_array}), llvm::Type::getInt64Ty(ctx));
+#endif
         }
 
         SerializableValue get_cjson_array_item(const IRBuilder& builder, llvm::Value* cjson_array, llvm::Value* idx) {
-
             assert(cjson_array);
             assert(builder.GetInsertBlock());
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_doc = get_yyjson_doc(builder, cjson_array);
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_array);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_arr_get", i8ptrType(ctx), i8ptrType(ctx), ctypeToLLVM<size_t>(ctx));
+
+            auto yy_ret_item = builder.CreateCall(func, {yy_obj, idx});
+
+            // alloc new obj struct and fill with doc & returned object
+
+            auto ctor_builder = builder.firstBlockBuilder(false); // insert at beginning.
+            auto yy_ret_val = ctor_builder.CreateAlloca(get_or_create_yyjson_shim_type(builder), 0, nullptr, "yy_retval");
+
+            set_yyjson_mut_doc(builder, yy_ret_val, yy_doc); // <-- this may lead to modificaitons if subdict is returned, this should be correct. dict.copy() creates deep copy of elements.
+            set_yyjson_mut_obj(builder, yy_ret_val, yy_ret_item);
+            return {yy_ret_val, nullptr, nullptr};
+#else
             auto func = getOrInsertFunction(mod, "cJSON_GetArrayItem", llvm::Type::getInt8PtrTy(ctx, 0),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0), ctypeToLLVM<int>(ctx));
 
             auto item = builder.CreateCall(func, {cjson_array, builder.CreateZExtOrTrunc(idx,
                                                                                                               ctypeToLLVM<int>(ctx))});
             return {item, nullptr, nullptr};
+#endif
         }
 
         llvm::Value* call_cjson_isstring(const IRBuilder& builder, llvm::Value* cjson_obj) {
@@ -1218,12 +1360,21 @@ namespace tuplex {
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_is_str", ctypeToLLVM<bool>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt1Ty(ctx));
+#else
             auto func = getOrInsertFunction(mod, "cJSON_IsString", ctypeToLLVM<cJSON_AS4CPP_bool>(ctx),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_obj}), llvm::Type::getInt1Ty(ctx));
+#endif
         }
 
         [[maybe_unused]] llvm::Value* call_cjson_is_list_of_generic_dicts(const IRBuilder& builder, llvm::Value* cjson_obj) {
@@ -1233,20 +1384,61 @@ namespace tuplex {
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            auto func = getOrInsertFunction(mod, "yyjson_is_array_of_objects", ctypeToLLVM<bool>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt1Ty(ctx));
+#else
             auto func = getOrInsertFunction(mod, "cJSON_IsArrayOfObjects", ctypeToLLVM<cJSON_AS4CPP_bool>(ctx),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_obj}), llvm::Type::getInt1Ty(ctx));
+#endif
         }
 
         llvm::Value* get_cjson_as_integer(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            // in yyjson, can directly return integer
+            assert(cjson_obj);
+            assert(builder.GetInsertBlock());
+            assert(builder.GetInsertBlock()->getParent());
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+            auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_get_sint", ctypeToLLVM<int64_t>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            return builder.CreateCall(func, {yy_obj});
+#else
             auto float_val = get_cjson_as_float(builder, cjson_obj);
             return builder.CreateFPToSI(float_val, llvm::Type::getInt64Ty(builder.getContext()));
+#endif
         }
 
         llvm::Value* get_cjson_as_boolean(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            assert(cjson_obj);
+            assert(builder.GetInsertBlock());
+            assert(builder.GetInsertBlock()->getParent());
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+            auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_get_bool", ctypeToLLVM<bool>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt64Ty(ctx));
+#else
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
 
@@ -1254,6 +1446,7 @@ namespace tuplex {
             auto func = getOrInsertFunction(mod, "cJSON_IsTrue", llvm::Type::getInt64Ty(ctx), llvm::Type::getInt8PtrTy(ctx, 0));
 
             return builder.CreateCall(func, {cjson_obj});
+#endif
         }
 
         llvm::Value* get_cjson_as_float(const IRBuilder& builder, llvm::Value* cjson_obj) {
@@ -1262,12 +1455,21 @@ namespace tuplex {
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_get_real", ctypeToLLVM<double>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            return builder.CreateCall(func, {yy_obj});
+#else
             auto func = getOrInsertFunction(mod, "cJSON_GetNumberValue", llvm::Type::getDoubleTy(ctx),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
             return builder.CreateCall(func, {cjson_obj});
+#endif
         }
 
         SerializableValue get_cjson_as_string_value(const IRBuilder& builder, llvm::Value* cjson_obj) {
@@ -1276,13 +1478,21 @@ namespace tuplex {
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_get_str", ctypeToLLVM<const char*>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            auto str_pointer = builder.CreateCall(func, {yy_obj});
+#else
             auto func = getOrInsertFunction(mod, "cJSON_GetStringValue", llvm::Type::getInt8PtrTy(ctx, 0),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
             auto str_pointer = builder.CreateCall(func, {cjson_obj});
-
+#endif
             auto str_len = builder.CreateCall(strlen_prototype(ctx, mod), {str_pointer});
             auto str_size = builder.CreateAdd(str_len, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, 1)));
             return {str_pointer, str_size};
@@ -1294,8 +1504,20 @@ namespace tuplex {
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+#ifdef USE_YYJSON_INSTEAD
+
+            auto func = getOrInsertFunction(mod, "yyjson_print_to_runtime_str", llvm::Type::getInt8PtrTy(ctx, 0),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt64PtrTy(ctx, 0));
+
+            auto first_builder = builder.firstBlockBuilder(false);
+            auto str_size_var = first_builder.CreateAlloca(llvm::Type::getInt64Ty(ctx), 0, nullptr);
+
+            auto str = builder.CreateCall(func, {cjson_obj, str_size_var});
+            auto str_size = builder.CreateLoad(llvm::Type::getInt64Ty(ctx), str_size_var);
+            return {str, str_size};
+#else
+
             auto func = getOrInsertFunction(mod, "cJSON_PrintUnformatted", llvm::Type::getInt8PtrTy(ctx, 0),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
@@ -1304,6 +1526,7 @@ namespace tuplex {
             auto str_len = builder.CreateCall(strlen_prototype(ctx, mod), {str_pointer});
             auto str_size = builder.CreateAdd(str_len, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, 1)));
             return {str_pointer, str_size};
+#endif
         }
 
         llvm::Value* call_cjson_create_empty(const IRBuilder& builder) {
@@ -1311,12 +1534,30 @@ namespace tuplex {
             assert(mod);
 
             auto& ctx = mod->getContext();
-            auto func = getOrInsertFunction(mod, "cJSON_CreateObject", llvm::Type::getInt8PtrTy(ctx, 0));
+#ifdef USE_YYJSON_INSTEAD
 
+            // this is a custom function, which sets up also the runtime allocator to be used within yyjson.
+            auto func_doc_init = getOrInsertFunction(mod, "yyjson_init_doc", i8ptrType(ctx));
+            auto func_doc_get_root = getOrInsertFunction(mod, "yyjson_mut_doc_get_root", i8ptrType(ctx), i8ptrType(ctx));
+            auto yy_doc = builder.CreateCall(func_doc_init);
+            auto yy_root_item = builder.CreateCall(func_doc_get_root, {yy_doc});
+
+            auto ctor_builder = builder.firstBlockBuilder(false); // insert at beginning.
+            auto yy_ret_val = ctor_builder.CreateAlloca(get_or_create_yyjson_shim_type(builder), 0, nullptr, "yy_retval");
+
+            set_yyjson_mut_doc(builder, yy_ret_val, yy_doc); // <-- this may lead to modificaitons if subdict is returned, this should be correct. dict.copy() creates deep copy of elements.
+            set_yyjson_mut_obj(builder, yy_ret_val, yy_root_item);
+            return yy_ret_val;
+#else
+            auto func = getOrInsertFunction(mod, "cJSON_CreateObject", llvm::Type::getInt8PtrTy(ctx, 0));
             return builder.CreateCall(func, {});
+#endif
         }
 
         extern llvm::Value* call_simdjson_to_cjson_object(const IRBuilder& builder, llvm::Value* json_item) {
+#ifdef USE_YYJSON_INSTEAD
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented in yyjson mode.");
+#endif
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
 
@@ -1328,6 +1569,9 @@ namespace tuplex {
         }
 
         extern llvm::Value* call_cjson_type_as_str(const IRBuilder& builder, llvm::Value* cjson_obj) {
+#ifdef USE_YYJSON_INSTEAD
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented in yyjson mode.");
+#endif
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
 
@@ -1338,6 +1582,9 @@ namespace tuplex {
         }
 
         extern llvm::Value* call_cjson_parse(const IRBuilder& builder, llvm::Value* str_ptr) {
+#ifdef USE_YYJSON_INSTEAD
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented in yyjson mode.");
+#endif
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
             auto& ctx = mod->getContext();
@@ -1347,6 +1594,9 @@ namespace tuplex {
         }
 
         SerializableValue call_cjson_to_string(const IRBuilder& builder, llvm::Value* cjson_obj) {
+#ifdef USE_YYJSON_INSTEAD
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented in yyjson mode.");
+#endif
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
             auto& ctx = mod->getContext();
@@ -1387,6 +1637,9 @@ namespace tuplex {
         }
 
         llvm::Value* call_cjson_from_value(const IRBuilder& builder, const SerializableValue& value, const python::Type& type) {
+#ifdef USE_YYJSON_INSTEAD
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented in yyjson mode.");
+#endif
             // converts value to cJSON value.
             using namespace llvm;
 
