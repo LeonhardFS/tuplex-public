@@ -40,7 +40,11 @@ def extract_repo_id(row):
             return None
         return repo.get('id')
     else:
-        return row['repo'].get('id')
+        repo = row.get('repo')
+        if repo:
+            return repo.get('id')
+        else:
+            return None
 
 def human_readable_size(size, decimal_places=2):
     for unit in ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB']:

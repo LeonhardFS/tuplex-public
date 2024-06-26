@@ -12,15 +12,14 @@ BASE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd $BASE_DIR
 
 BUILD_DIR=$BASE_DIR/build
+
+echo $BUILD_DIR
 mkdir -p $BUILD_DIR
-TUPLEX_DIR=$BUILD_DIR../../../../tuplex
-cd $BUILD_DIR && cmake -DCMAKE_BUILD_TYPE=Release -DSKIP_AWS_TESTS=ON -DBUILD_WITH_ORC=ON -DAWS_S3_TEST_BUCKET='tuplex-test' -DLLVM_ROOT_DIR=/opt/llvm-16.0.6 --build $TUPLEX_DIR
-exit 0
+TUPLEX_DIR=$BUILD_DIR/../../../../../tuplex
+cd $BUILD_DIR && cmake -DCMAKE_BUILD_TYPE=Release -DSKIP_AWS_TESTS=ON -DBUILD_WITH_ORC=ON -DAWS_S3_TEST_BUCKET='tuplex-test' -DLLVM_ROOT_DIR=/opt/llvm-16.0.6 $TUPLEX_DIR && make -j$(nproc) tuplex_github && cd ..
 
 
-cd c++_baseline && mkdir -p build && cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && make -j$(nproc) && cd ../..
-
-PROG=./c++_baseline/build/cc_github
+PROG=.//build/dist/bin/tuplex_github
 INPUT_PATTERN='/hot/data/github_daily/*.json'
 ${PROG} --help
 
