@@ -34,4 +34,4 @@ set(SRCS main.cc)
 
 # linking
 add_executable(tuplex_github ${SRCS})
-target_link_libraries(tuplex_github simdjson lyra ${AWSSDK_LINK_LIBRARIES} libutils)
+target_link_libraries(tuplex_github simdjson lyra ${AWSSDK_LINK_LIBRARIES} libio libutils libcore libcodegen libcpythonadapter)

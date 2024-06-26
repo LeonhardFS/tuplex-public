@@ -79,8 +79,10 @@ namespace tuplex {
         auto str_ptr = yyjson_mut_val_write_opts(val, 0, &alc, &str_len, err_ptr);
 
 #ifndef NDEBUG
-        if(err_ptr) {
+        if(err_ptr && err_ptr->code != YYJSON_WRITE_SUCCESS) {
             std::cerr<<"yyjson write error: ["<<err_ptr->code<<"]  "<<err_ptr->msg<<std::endl;
+
+            exit(1);
         }
 #endif
 

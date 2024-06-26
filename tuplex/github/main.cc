@@ -21,6 +21,11 @@
 #include <any>
 #include <filesystem>
 
+
+// Tuplex specific files
+#include <TypeSystem.h>
+#include <Context.h>
+
 int dirExists(const char *path)
 {
     struct stat info;
@@ -176,6 +181,132 @@ std::tuple<int,int,double> process_path(const std::string& input_path, const std
     return make_tuple(row_count, output_row_count, loading_time_in_s);
 }
 
+namespace tuplex {
+
+    python::Type github_sparse_row_type() {
+        using namespace std;
+
+        auto author_struct_type = python::Type::makeStructuredDictType({make_pair("name", python::Type::STRING), make_pair("email", python::Type::STRING)});
+
+        auto commits_struct_type = python::Type::makeStructuredDictType({make_pair("sha", python::Type::STRING),
+                                                                         make_pair("author", author_struct_type),
+                                                                         make_pair("url", python::Type::STRING),
+                                                                         make_pair("message", python::Type::STRING)}, false);
+
+        auto column_names = std::vector<std::string>{"created_at",
+                                                     "type",
+                                                     "payload",
+                                                     "repository",
+                                                     "repo"};
+
+        auto payload_entries = std::vector<python::StructEntry>{python::StructEntry("'commits'", python::Type::STRING, python::Type::makeListType(commits_struct_type), false),
+                                                                python::StructEntry("'target'", python::Type::STRING, python::Type::makeStructuredDictType({make_pair("id", python::Type::I64)}, true), false),
+                                                                python::StructEntry("'id'", python::Type::STRING, python::Type::I64, false)};
+
+        auto column_types = std::vector<python::Type>{python::Type::STRING,
+                                                      python::Type::STRING,
+                                                      python::Type::makeOptionType(python::Type::makeStructuredDictType(payload_entries, true)), // <-- PublicEvents have no payload.
+                                                      python::Type::makeOptionType(python::Type::makeStructuredDictType(std::vector<python::StructEntry>{python::StructEntry("'id'", python::Type::STRING, python::Type::I64, false)}, true)),
+                                                      python::Type::makeOptionType(python::Type::makeStructuredDictType(std::vector<python::StructEntry>{python::StructEntry("'id'", python::Type::STRING, python::Type::I64, false)}, true)) // GistEvent have no repo id (instead a url)
+        };
+
+
+        auto sparse_row_type = python::Type::makeRowType(column_types, column_names);
+
+        return sparse_row_type;
+    }
+
+    inline std::unordered_map<std::string, python::Type> row_type_to_column_hints(const python::Type& row_type) {
+        assert(row_type.isRowType());
+
+        std::unordered_map<std::string, python::Type> m;
+
+        auto names = row_type.get_column_names();
+        auto types = row_type.get_column_types();
+        assert(names.size() == types.size());
+        for(unsigned i = 0; i < names.size(); ++i)
+            m[names[i]] = types[i];
+        return m;
+    }
+
+    std::tuple<int,int,double> process(const std::string& input_pattern, const std::string& output_path) {
+        using namespace std;
+
+        auto sparse_row_type = github_sparse_row_type();
+        auto encoded_type = sparse_row_type.encode();
+        cout<<"sparse row type is: "<<encoded_type<<endl;
+
+        // init interpreter
+        python::initInterpreter();
+        python::unlockGIL();
+
+        // check now with pipeline and set type.
+        ContextOptions co = ContextOptions::defaults();
+
+        co.set("tuplex.backend", "worker");
+
+        // this allows large files to be processed without splitting.
+        co.set("tuplex.experimental.worker.numWorkers", "0"); // <-- single worker.
+        co.set("tuplex.inputSplitSize", "20G");
+        co.set("tuplex.experimental.worker.workerBufferSize", "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
+
+        co.set("tuplex.resolveWithInterpreterOnly", "true");
+
+        // create context according to settings
+        Context ctx(co);
+//        runtime::init(co.RUNTIME_LIBRARY().toPath());
+
+        // start pipeline incl. output
+        auto repo_id_code = "def extract_repo_id(row):\n"
+                            "    if 2012 <= row['year'] <= 2014:\n"
+                            "        \n"
+                            "        if row['type'] == 'FollowEvent':\n"
+                            "            return row['payload']['target']['id']\n"
+                            "        \n"
+                            "        if row['type'] == 'GistEvent':\n"
+                            "            return row['payload']['id']\n"
+                            "        \n"
+                            "        repo = row.get('repository')\n"
+                            "        \n"
+                            "        if repo is None:\n"
+                            "            return None\n"
+                            "        return repo.get('id')\n"
+                            "    else:\n"
+                            "        repo =  row.get('repo')\n"
+                            "        if repo:\n"
+                            "            return repo.get('id')\n"
+                            "        else:\n"
+                            "            return None\n";
+
+        // remove output files if they exist
+        cout<<"Removing files (if they exist) from "<<output_path<<endl;
+        boost::filesystem::remove_all(output_path.c_str());
+
+        cout<<"Testing with normal-case row type: "<<sparse_row_type.desc()<<endl;
+        // original:
+        ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, row_type_to_column_hints(sparse_row_type))
+                .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
+                .withColumn("repo_id", UDF(repo_id_code))
+                .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
+                .withColumn("commits", UDF("lambda row: row['payload'].get('commits')"))
+                .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
+                .selectColumns(vector<string>{"type", "repo_id", "year", "number_of_commits"})
+                .tocsv(output_path);
+
+        python::lockGIL();
+        python::closeInterpreter();
+
+        size_t row_count = 0;
+        size_t output_row_count = 0;
+        double loading_time_in_s = 0.0;
+
+        return make_tuple(row_count, output_row_count, loading_time_in_s);
+    }
+
+
+}
+
+
 int main(int argc, char* argv[]) {
     using namespace std;
     using namespace tuplex;
@@ -184,10 +315,10 @@ int main(int argc, char* argv[]) {
 
     // parse arguments
     string input_pattern;
-    string output_path = "local-output";
+    string output_path = "local-output/tuplex-sparse";
     string mode = "best";
     string result_path;
-    std::vector<std::string> supported_modes{"best", "cjson", "cstruct", "yyjson"};
+    std::vector<std::string> supported_modes{"best"};
     bool show_help = false;
 
     // construct CLI
@@ -221,7 +352,7 @@ int main(int argc, char* argv[]) {
 
 
     Timer timer;
-    cout<<"starting C++ baseline::"<<endl;
+    cout<<"starting C++ coded Tuplex version with SparseStruct dictionaries::"<<endl;
     cout<<"Pipeline will process: "<<input_pattern<<" -> "<<output_path<<endl;
     cout<<timer.time()<<"s "<<"Globbing files from "<<input_pattern<<endl;
     auto paths = glob_pattern(input_pattern);
@@ -240,16 +371,23 @@ int main(int argc, char* argv[]) {
     cout<<timer.time()<<"s "<<"saving output to "<<output_path<<endl;
 
     std::stringstream ss;
-    for(unsigned i = 0; i < paths.size(); ++i) {
-        auto path = paths[i];
-        cout<<"Processing path "<<(i+1)<<"/"<<paths.size()<<endl;
-        Timer path_timer;
-        auto part_path = output_path + "/part_" + std::to_string(i) + ".csv";
-        int input_row_count=0,output_row_count=0;
-        double loading_time = 0.0;
-        std::tie(input_row_count, output_row_count, loading_time) = process_path(path, part_path, mode);
-        ss<<mode<<","<<path<<","<<part_path<<","<<path_timer.time()<<","<<loading_time<<",$$STUB$$,"<<input_row_count<<","<<output_row_count<<"\n";
-    }
+    // Tuplex does globbing automatically, need to decode JSON later.
+//    for(unsigned i = 0; i < paths.size(); ++i) {
+//        auto path = paths[i];
+//        cout<<"Processing path "<<(i+1)<<"/"<<paths.size()<<endl;
+//        Timer path_timer;
+//        auto part_path = output_path + "/part_" + std::to_string(i) + ".csv";
+//        int input_row_count=0,output_row_count=0;
+//        double loading_time = 0.0;
+//        std::tie(input_row_count, output_row_count, loading_time) = process_path(path, part_path, mode);
+//        ss<<mode<<","<<path<<","<<part_path<<","<<path_timer.time()<<","<<loading_time<<",$$STUB$$,"<<input_row_count<<","<<output_row_count<<"\n";
+//    }
+    cout<<"Processing paths for pattern "<<input_pattern<<endl;
+    Timer path_timer;
+    int input_row_count=0,output_row_count=0;
+    double loading_time = 0.0;
+    std::tie(input_row_count, output_row_count, loading_time) = tuplex::process(input_pattern, output_path);
+    ss<<mode<<","<<input_pattern<<","<<input_pattern<<","<<path_timer.time()<<","<<loading_time<<",$$STUB$$,"<<input_row_count<<","<<output_row_count<<"\n";
 
     auto csv = "mode,input_path,output_path,time_in_s,loading_time_in_s,total_time_in_s,input_row_count,output_row_count\n" + ss.str();
 
