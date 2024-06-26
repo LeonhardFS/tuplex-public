@@ -1513,7 +1513,9 @@ namespace tuplex {
             auto first_builder = builder.firstBlockBuilder(false);
             auto str_size_var = first_builder.CreateAlloca(llvm::Type::getInt64Ty(ctx), 0, nullptr);
 
-            auto str = builder.CreateCall(func, {cjson_obj, str_size_var});
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            auto str = builder.CreateCall(func, {yy_obj, str_size_var});
             auto str_size = builder.CreateLoad(llvm::Type::getInt64Ty(ctx), str_size_var);
             return {str, str_size};
 #else
@@ -1596,10 +1598,11 @@ namespace tuplex {
             auto first_builder = builder.firstBlockBuilder(false);
             auto str_size_var = first_builder.CreateAlloca(llvm::Type::getInt64Ty(ctx), 0, nullptr);
 
-            auto str = builder.CreateCall(func, {cjson_obj, str_size_var});
-            auto str_size = builder.CreateLoad(llvm::Type::getInt64Ty(ctx), str_size_var);
-            return str;
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
 
+            auto str = builder.CreateCall(func, {yy_obj, str_size_var});
+            // auto str_size = builder.CreateLoad(llvm::Type::getInt64Ty(ctx), str_size_var);
+            return str;
 #else
             auto func = getOrInsertFunction(mod, "cJSON_TypeAsString", llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt8PtrTy(ctx, 0));
 
@@ -1608,15 +1611,32 @@ namespace tuplex {
         }
 
         extern llvm::Value* call_cjson_parse(const IRBuilder& builder, llvm::Value* str_ptr) {
-#ifdef USE_YYJSON_INSTEAD
-            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented in yyjson mode.");
-#endif
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
             auto& ctx = mod->getContext();
-            auto func = getOrInsertFunction(mod, "cJSON_Parse", llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt8PtrTy(ctx, 0));
+#ifdef USE_YYJSON_INSTEAD
 
+            auto ctor_builder = builder.firstBlockBuilder(false); // insert at beginning.
+            auto yy_ret_val = ctor_builder.CreateAlloca(get_or_create_yyjson_shim_type(builder), 0, nullptr, "yy_retval");
+
+            auto func_doc_get_root = getOrInsertFunction(mod, "yyjson_mut_doc_get_root", i8ptrType(ctx), i8ptrType(ctx));
+
+            auto func_parse = getOrInsertFunction(mod, "yyjson_mut_parse", i8ptrType(ctx), i8ptrType(ctx), llvm::Type::getInt64Ty(ctx));
+
+            auto func_strlen = strlen_prototype(ctx, mod);
+            auto str_size = builder.CreateAdd(builder.CreateCall(func_strlen, {str_ptr}), llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, 1)));
+
+            auto yy_doc = builder.CreateCall(func_parse, {str_ptr, str_size});
+            auto yy_root_object = builder.CreateCall(func_doc_get_root, {yy_doc});
+
+            set_yyjson_mut_doc(builder, yy_ret_val, yy_doc); // <-- this may lead to modificaitons if subdict is returned, this should be correct. dict.copy() creates deep copy of elements.
+            set_yyjson_mut_obj(builder, yy_ret_val, yy_root_object);
+            return yy_ret_val;
+#else
+
+            auto func = getOrInsertFunction(mod, "cJSON_Parse", llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt8PtrTy(ctx, 0));
             return builder.CreateCall(func, {str_ptr});
+#endif
         }
 
         SerializableValue call_cjson_to_string(const IRBuilder& builder, llvm::Value* cjson_obj) {

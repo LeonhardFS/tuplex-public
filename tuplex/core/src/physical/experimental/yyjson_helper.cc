@@ -130,4 +130,29 @@ namespace tuplex {
         *out_size = s.length() + 1;
         return (char*)ptr;
     }
+
+    yyjson_mut_doc* yyjson_mut_parse(const char* str, int64_t str_size) {
+        yyjson_alc alc;
+        yyjson_set_runtime_alc(&alc);
+
+#ifndef NDEBUG
+        yyjson_read_err err;
+        auto err_ptr = &err;
+#else
+        yyjson_read_err* err_ptr = nullptr;
+#endif
+
+        auto yy_doc = yyjson_read_opts(const_cast<char*>(str), str_size, 0, nullptr, err_ptr);
+
+#ifndef NDEBUG
+        if(err_ptr) {
+            std::cerr<<"yyjson write error: ["<<err_ptr->code<<"]  "<<err_ptr->msg<<std::endl;
+        }
+#endif
+
+        auto yy_mut_doc = yyjson_doc_mut_copy(yy_doc, &alc);
+        yyjson_doc_free(yy_doc);
+
+        return yy_mut_doc;
+    }
 }

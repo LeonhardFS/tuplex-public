@@ -857,6 +857,7 @@ namespace tuplex {
             jit.registerSymbol("yyjson_print_to_runtime_str", tuplex::yyjson_print_to_runtime_str);
             jit.registerSymbol("JsonItem_to_yyjson_mut_doc", tuplex::JsonItem_to_yyjson_mut_doc);
             jit.registerSymbol("yyjson_type_as_runtime_str", tuplex::yyjson_type_as_runtime_str);
+            jit.registerSymbol("yyjson_mut_parse", tuplex::yyjson_mut_parse);
         }
 
         void addJsonSymbolsToJIT(JITCompiler& jit) {

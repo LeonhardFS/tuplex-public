@@ -18,5 +18,7 @@ namespace tuplex {
     extern char* yyjson_type_as_runtime_str(yyjson_mut_val* val, int64_t* out_size);
 
     extern yyjson_mut_doc* JsonItem_to_yyjson_mut_doc(codegen::JsonItem* item);
+
+    extern yyjson_mut_doc* yyjson_mut_parse(const char* str, int64_t str_size);
 }
 #endif //TUPLEX_YYJSON_HELPER_H
