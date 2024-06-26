@@ -185,7 +185,8 @@ namespace tuplex {
             auto& ctx = builder.getContext();
 
             // make default empty dict for generic dict
-            auto dict_ptr = _env.CreateFirstBlockAlloca(builder, _env.i8ptrType());
+            auto llvm_generic_dict_type = _env.pythonToLLVMType(python::Type::GENERICDICT);
+            auto dict_ptr = _env.CreateFirstBlockAlloca(builder, llvm_generic_dict_type);
 
             // store now before calling parse default value
             builder.CreateStore(call_cjson_create_empty(builder), dict_ptr);
@@ -224,7 +225,7 @@ namespace tuplex {
             rc = builder.CreateLoad(builder.getInt64Ty(), rc_var); // <-- error
 
             SerializableValue v;
-            v.val = builder.CreateLoad(_env.i8ptrType(), dict_ptr);
+            v.val = builder.CreateLoad(llvm_generic_dict_type, dict_ptr);
 
             return make_tuple(rc, v);
         }

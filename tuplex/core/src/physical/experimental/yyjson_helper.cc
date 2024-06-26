@@ -69,7 +69,7 @@ namespace tuplex {
         yyjson_write_err err;
         auto err_ptr = &err;
 #else
-        yykson_write_err* err_ptr = nullptr;
+        yyjson_write_err* err_ptr = nullptr;
 #endif
 
         // consider using for flags YYJSON_WRITE_ALLOW_INF_AND_NAN
@@ -86,5 +86,48 @@ namespace tuplex {
 
         *out_size = str_len + 1;
         return str_ptr;
+    }
+
+    yyjson_mut_doc* JsonItem_to_yyjson_mut_doc(codegen::JsonItem* item) {
+        // TODO: could optimize this, for now go indirection route of dump/unparse
+        std::stringstream ss;
+        ss<<item->o;
+        auto json_line = ss.str();
+
+        yyjson_alc alc;
+        yyjson_set_runtime_alc(&alc);
+
+#ifndef NDEBUG
+        yyjson_read_err err;
+        auto err_ptr = &err;
+#else
+        yyjson_read_err* err_ptr = nullptr;
+#endif
+
+        auto yy_doc = yyjson_read_opts(const_cast<char*>(json_line.c_str()), json_line.size(), 0, nullptr, err_ptr);
+
+#ifndef NDEBUG
+        if(err_ptr) {
+            std::cerr<<"yyjson write error: ["<<err_ptr->code<<"]  "<<err_ptr->msg<<std::endl;
+        }
+#endif
+
+        auto yy_mut_doc = yyjson_doc_mut_copy(yy_doc, &alc);
+        yyjson_doc_free(yy_doc);
+
+        return yy_mut_doc;
+    }
+
+    char* yyjson_type_as_runtime_str(yyjson_mut_val* val, int64_t* out_size) {
+        std::string s;
+
+        // TOOD:
+        s = "NOT YET IMPLEMENTED";
+
+        auto ptr = runtime::rtmalloc(s.length() + 1);
+        memcpy(ptr, s.c_str(), s.length() + 1);
+
+        *out_size = s.length() + 1;
+        return (char*)ptr;
     }
 }
