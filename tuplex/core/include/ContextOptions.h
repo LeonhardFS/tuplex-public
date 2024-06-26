@@ -105,6 +105,8 @@ namespace tuplex {
         bool EXPERIMENTAL_FORCE_BAD_PARSE_EXCEPT_FORMAT() const { return stringToBool(_store.at("tuplex.experimental.forceBadParseExceptFormat")); }
         size_t EXPERIMENTAL_WORKER_BUFFER_SIZE() const { return memStringToSize(_store.at( "tuplex.experimental.worker.workerBufferSize")); }
 
+        bool EXPERIMENTAL_USE_GENERIC_DICTS() const { return stringToBool(_store.at("tuplex.experimental.useGenericDicts"));}
+
         bool EXPERIMENTAL_TRACE_EXECUTION() const { return stringToBool(_store.at("tuplex.experimental.traceExecution")); }
 
         size_t EXPERIMENTAL_WORKER_BACKEND_NUM_WORKERS() const {return std::stoi(_store.at("tuplex.experimental.worker.numWorkers")); }

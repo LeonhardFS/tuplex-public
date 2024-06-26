@@ -1574,171 +1574,171 @@ namespace tuplex {
             return func;
         }
 
-        static inline llvm::Function* cJSONCreateObject_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
-            using namespace llvm;
-
-            FunctionType *functionType = llvm::FunctionType::get(llvm::Type::getInt8PtrTy(ctx, 0), false);
-
-#if LLVM_VERSION_MAJOR < 9
-            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_CreateObject", functionType));
-#else
-            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_CreateObject", functionType).getCallee());
-#endif
-            // func->addAttribute(1U, Attribute::NoAlias);
-            return func;
-        }
-
-        static inline llvm::Function* cJSONDetachItemViaPointer_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
-            using namespace llvm;
-
-            auto ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
-            FunctionType *functionType = llvm::FunctionType::get(ptr_type, {ptr_type, ptr_type}, false);
-
-#if LLVM_VERSION_MAJOR < 9
-            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_DetachItemViaPointer", functionType));
-#else
-            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_DetachItemViaPointer", functionType).getCallee());
-#endif
-            // func->addAttribute(1U, Attribute::NoAlias);
-            return func;
-        }
-
-        static inline llvm::Function* cJSONGetArraySize_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
-            using namespace llvm;
-
-            auto ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
-            auto int_type = llvm::Type::getInt64Ty(ctx);
-            FunctionType *functionType = llvm::FunctionType::get(int_type, {ptr_type}, false);
-
-#if LLVM_VERSION_MAJOR < 9
-            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_GetArraySize", functionType));
-#else
-            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_GetArraySize", functionType).getCallee());
-#endif
-            // func->addAttribute(1U, Attribute::NoAlias);
-            return func;
-        }
-
-        static inline llvm::Function* cJSONPrintUnformatted_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
-            using namespace llvm;
-
-            auto ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
-            FunctionType *functionType = llvm::FunctionType::get(ptr_type, {ptr_type}, false);
-
-#if LLVM_VERSION_MAJOR < 9
-            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_PrintUnformatted", functionType));
-#else
-            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_PrintUnformatted", functionType).getCallee());
-#endif
-            // func->addAttribute(1U, Attribute::NoAlias);
-            return func;
-        }
-
-        static inline llvm::Function* cJSONParse_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
-            using namespace llvm;
-
-            auto ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
-            FunctionType *functionType = llvm::FunctionType::get(ptr_type, {ptr_type}, false);
-
-#if LLVM_VERSION_MAJOR < 9
-            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_Parse", functionType));
-#else
-            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_Parse", functionType).getCallee());
-#endif
-            // func->addAttribute(1U, Attribute::NoAlias);
-            return func;
-        }
-
-        static inline llvm::Function* cJSONCreateNumber_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
-            using namespace llvm;
-            auto ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
-            auto double_type = llvm::Type::getDoubleTy(ctx);
-            FunctionType *functionType = llvm::FunctionType::get(ptr_type, {double_type}, false);
-
-#if LLVM_VERSION_MAJOR < 9
-            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_CreateNumber", functionType));
-#else
-            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_CreateNumber", functionType).getCallee());
-#endif
-            return func;
-        }
-
-        static inline llvm::Function* cJSONCreateString_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
-            using namespace llvm;
-            auto ptr_type = Type::getInt8PtrTy(ctx, 0);
-            FunctionType *functionType = llvm::FunctionType::get(ptr_type, {ptr_type}, false);
-
-#if LLVM_VERSION_MAJOR < 9
-            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_CreateString", functionType));
-#else
-            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_CreateString", functionType).getCallee());
-#endif
-
-            // func->addAttribute(1U, Attribute::NoAlias);
-            return func;
-        }
-
-        static inline llvm::Function* cJSONCreateBool_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
-            using namespace llvm;
-            auto ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
-
-            // the function type here is wrong.
-            // a bool is in C++ not necessarily a byte physically
-            // => the compiler chooses the representation
-            // ==> use char for explicit bool representation
-            FunctionType *functionType = llvm::FunctionType::get(ptr_type, {Type::getInt64Ty(ctx)}, false);
-            // check https://llvm.org/devmtg/2017-02-04/Restrict-Qualified-Pointers-in-LLVM.pdf why noalias doesn't work here.
-
-#if LLVM_VERSION_MAJOR < 9
-            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_CreateBool", functionType));
-#else
-            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_CreateBool", functionType).getCallee());
-#endif
-            return func;
-        }
-
-        static inline llvm::Function* cJSONAddItemToObject_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
-            using namespace llvm;
-            auto ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
-            FunctionType *functionType = llvm::FunctionType::get(ptr_type, {ptr_type, ptr_type, ptr_type}, false);
-
-#if LLVM_VERSION_MAJOR < 9
-            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_AddItemToObject", functionType));
-#else
-            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_AddItemToObject", functionType).getCallee());
-#endif
-            // func->addAttribute(1U, Attribute::NoAlias);
-            return func;
-        }
-
-        static inline llvm::Function* cJSONGetObjectItem_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
-            using namespace llvm;
-            auto ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
-            FunctionType *functionType = llvm::FunctionType::get(ptr_type, {ptr_type, ptr_type}, false);
-
-#if LLVM_VERSION_MAJOR < 9
-            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_GetObjectItemCaseSensitive", functionType));
-#else
-            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_GetObjectItemCaseSensitive", functionType).getCallee());
-#endif
-            // func->addAttribute(1U, Attribute::NoAlias);
-            return func;
-        }
-
-        static inline llvm::Function* cJSONIsTrue_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
-            using namespace llvm;
-            FunctionType *functionType = llvm::FunctionType::get(llvm::Type::getInt64Ty(ctx), {llvm::Type::getInt8PtrTy(ctx, 0)},
-                                                                 false);
-
-#if LLVM_VERSION_MAJOR < 9
-            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_IsTrue", functionType));
-#else
-            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_IsTrue", functionType).getCallee());
-#endif
-
-            // func->addAttribute(1U, Attribute::NoAlias);
-            return func;
-        }
+//        static inline llvm::Function* cJSONCreateObject_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
+//            using namespace llvm;
+//
+//            FunctionType *functionType = llvm::FunctionType::get(llvm::Type::getInt8PtrTy(ctx, 0), false);
+//
+//#if LLVM_VERSION_MAJOR < 9
+//            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_CreateObject", functionType));
+//#else
+//            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_CreateObject", functionType).getCallee());
+//#endif
+//            // func->addAttribute(1U, Attribute::NoAlias);
+//            return func;
+//        }
+//
+//        static inline llvm::Function* cJSONDetachItemViaPointer_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
+//            using namespace llvm;
+//
+//            auto ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
+//            FunctionType *functionType = llvm::FunctionType::get(ptr_type, {ptr_type, ptr_type}, false);
+//
+//#if LLVM_VERSION_MAJOR < 9
+//            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_DetachItemViaPointer", functionType));
+//#else
+//            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_DetachItemViaPointer", functionType).getCallee());
+//#endif
+//            // func->addAttribute(1U, Attribute::NoAlias);
+//            return func;
+//        }
+//
+//        static inline llvm::Function* cJSONGetArraySize_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
+//            using namespace llvm;
+//
+//            auto ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
+//            auto int_type = llvm::Type::getInt64Ty(ctx);
+//            FunctionType *functionType = llvm::FunctionType::get(int_type, {ptr_type}, false);
+//
+//#if LLVM_VERSION_MAJOR < 9
+//            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_GetArraySize", functionType));
+//#else
+//            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_GetArraySize", functionType).getCallee());
+//#endif
+//            // func->addAttribute(1U, Attribute::NoAlias);
+//            return func;
+//        }
+//
+//        static inline llvm::Function* cJSONPrintUnformatted_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
+//            using namespace llvm;
+//
+//            auto ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
+//            FunctionType *functionType = llvm::FunctionType::get(ptr_type, {ptr_type}, false);
+//
+//#if LLVM_VERSION_MAJOR < 9
+//            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_PrintUnformatted", functionType));
+//#else
+//            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_PrintUnformatted", functionType).getCallee());
+//#endif
+//            // func->addAttribute(1U, Attribute::NoAlias);
+//            return func;
+//        }
+//
+//        static inline llvm::Function* cJSONParse_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
+//            using namespace llvm;
+//
+//            auto ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
+//            FunctionType *functionType = llvm::FunctionType::get(ptr_type, {ptr_type}, false);
+//
+//#if LLVM_VERSION_MAJOR < 9
+//            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_Parse", functionType));
+//#else
+//            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_Parse", functionType).getCallee());
+//#endif
+//            // func->addAttribute(1U, Attribute::NoAlias);
+//            return func;
+//        }
+//
+//        static inline llvm::Function* cJSONCreateNumber_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
+//            using namespace llvm;
+//            auto ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
+//            auto double_type = llvm::Type::getDoubleTy(ctx);
+//            FunctionType *functionType = llvm::FunctionType::get(ptr_type, {double_type}, false);
+//
+//#if LLVM_VERSION_MAJOR < 9
+//            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_CreateNumber", functionType));
+//#else
+//            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_CreateNumber", functionType).getCallee());
+//#endif
+//            return func;
+//        }
+//
+//        static inline llvm::Function* cJSONCreateString_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
+//            using namespace llvm;
+//            auto ptr_type = Type::getInt8PtrTy(ctx, 0);
+//            FunctionType *functionType = llvm::FunctionType::get(ptr_type, {ptr_type}, false);
+//
+//#if LLVM_VERSION_MAJOR < 9
+//            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_CreateString", functionType));
+//#else
+//            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_CreateString", functionType).getCallee());
+//#endif
+//
+//            // func->addAttribute(1U, Attribute::NoAlias);
+//            return func;
+//        }
+//
+//        static inline llvm::Function* cJSONCreateBool_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
+//            using namespace llvm;
+//            auto ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
+//
+//            // the function type here is wrong.
+//            // a bool is in C++ not necessarily a byte physically
+//            // => the compiler chooses the representation
+//            // ==> use char for explicit bool representation
+//            FunctionType *functionType = llvm::FunctionType::get(ptr_type, {Type::getInt64Ty(ctx)}, false);
+//            // check https://llvm.org/devmtg/2017-02-04/Restrict-Qualified-Pointers-in-LLVM.pdf why noalias doesn't work here.
+//
+//#if LLVM_VERSION_MAJOR < 9
+//            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_CreateBool", functionType));
+//#else
+//            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_CreateBool", functionType).getCallee());
+//#endif
+//            return func;
+//        }
+//
+//        static inline llvm::Function* cJSONAddItemToObject_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
+//            using namespace llvm;
+//            auto ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
+//            FunctionType *functionType = llvm::FunctionType::get(ptr_type, {ptr_type, ptr_type, ptr_type}, false);
+//
+//#if LLVM_VERSION_MAJOR < 9
+//            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_AddItemToObject", functionType));
+//#else
+//            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_AddItemToObject", functionType).getCallee());
+//#endif
+//            // func->addAttribute(1U, Attribute::NoAlias);
+//            return func;
+//        }
+//
+//        static inline llvm::Function* cJSONGetObjectItem_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
+//            using namespace llvm;
+//            auto ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
+//            FunctionType *functionType = llvm::FunctionType::get(ptr_type, {ptr_type, ptr_type}, false);
+//
+//#if LLVM_VERSION_MAJOR < 9
+//            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_GetObjectItemCaseSensitive", functionType));
+//#else
+//            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_GetObjectItemCaseSensitive", functionType).getCallee());
+//#endif
+//            // func->addAttribute(1U, Attribute::NoAlias);
+//            return func;
+//        }
+//
+//        static inline llvm::Function* cJSONIsTrue_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
+//            using namespace llvm;
+//            FunctionType *functionType = llvm::FunctionType::get(llvm::Type::getInt64Ty(ctx), {llvm::Type::getInt8PtrTy(ctx, 0)},
+//                                                                 false);
+//
+//#if LLVM_VERSION_MAJOR < 9
+//            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_IsTrue", functionType));
+//#else
+//            auto func = cast<Function>(mod->getOrInsertFunction("cJSON_IsTrue", functionType).getCallee());
+//#endif
+//
+//            // func->addAttribute(1U, Attribute::NoAlias);
+//            return func;
+//        }
 
         static inline llvm::Function* pcre2Compile_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
             using namespace llvm;

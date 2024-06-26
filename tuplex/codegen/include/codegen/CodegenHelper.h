@@ -1670,6 +1670,7 @@ namespace tuplex {
 
         // cJSON helper functions (for easier access)
         extern llvm::Value* call_cjson_getitem(const IRBuilder& builder, llvm::Value* cjson_obj, llvm::Value* key);
+        extern llvm::Value* call_cjson_object_set_item(const IRBuilder& builder, llvm::Value* cjson_obj, llvm::Value* key, llvm::Value* cjson_item);
         extern llvm::Value* call_cjson_isnumber(const IRBuilder& builder, llvm::Value* cjson_obj);
         extern llvm::Value* call_cjson_isnull(const IRBuilder& builder, llvm::Value* cjson_obj);
         extern llvm::Value* call_cjson_isstring(const IRBuilder& builder, llvm::Value* cjson_obj);
@@ -1677,6 +1678,7 @@ namespace tuplex {
         extern llvm::Value* call_cjson_isarray(const IRBuilder& builder, llvm::Value* cjson_obj);
         extern llvm::Value* get_cjson_as_integer(const IRBuilder& builder, llvm::Value* cjson_obj);
         extern llvm::Value* get_cjson_as_float(const IRBuilder& builder, llvm::Value* cjson_obj);
+        extern llvm::Value* get_cjson_as_boolean(const IRBuilder& builder, llvm::Value* cjson_obj);
         extern SerializableValue get_cjson_as_string_value(const IRBuilder& builder, llvm::Value* cjson_obj);
 
         extern llvm::Value* call_cjson_create_empty(const IRBuilder& builder);
@@ -1691,6 +1693,18 @@ namespace tuplex {
 
         extern llvm::Value* call_cjson_getarraysize(const IRBuilder& builder, llvm::Value* cjson_array);
         extern SerializableValue get_cjson_array_item(const IRBuilder& builder, llvm::Value* cjson_array, llvm::Value* idx);
+
+        /*!
+         * Converts a cJSON value into a LLVM object of type type. DOES NOT PERFORM TYPE CHECKING.
+         * @param builder
+         * @param cjson_obj
+         * @param type
+         * @return Serializable Value in LLVM IR.
+         */
+        extern SerializableValue get_value_from_cjson(const IRBuilder& builder, llvm::Value* cjson_obj, const python::Type& type);
+
+        extern llvm::Value* call_cjson_from_value(const IRBuilder& builder, const SerializableValue& value, const python::Type& type);
+
 
         // extended cjson function to check homogeneity of list
         [[maybe_unused]] extern llvm::Value* call_cjson_is_list_of_generic_dicts(const IRBuilder& builder, llvm::Value* cjson_obj);

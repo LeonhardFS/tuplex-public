@@ -165,9 +165,9 @@ namespace tuplex {
                                                               const std::shared_ptr<IteratorInfo> &iteratorInfo);
 
             SerializableValue createDictConstructor(LambdaFunctionBuilder& lfb, const codegen::IRBuilder& builder, python::Type argsType, const std::vector<tuplex::codegen::SerializableValue> &args);
-            void getValueFromcJSON(const codegen::IRBuilder& builder, llvm::Value *cjson_val, python::Type retType,
-                                   llvm::Value *retval,
-                                   llvm::Value *retsize);
+//            void getValueFromcJSON(const codegen::IRBuilder& builder, llvm::Value *cjson_val, python::Type retType,
+//                                   llvm::Value *retval,
+//                                   llvm::Value *retsize);
             SerializableValue createCJSONPopCall(LambdaFunctionBuilder& lfb,
                                             const codegen::IRBuilder& builder,
                                             const SerializableValue& caller,

@@ -41,6 +41,7 @@ namespace tuplex {
         // JSON fields
         bool _json_unwrap_first_level;
         bool _json_treat_heterogeneous_lists_as_tuples;
+        bool _json_use_generic_dicts; // whether to use generic dicts instead of structured dicts
 
         // general fields for managing both cases & projections
         std::vector<std::string> _null_values;
@@ -637,6 +638,7 @@ namespace tuplex {
 
             obj["jsonUnwrap"] = _json_unwrap_first_level;
             obj["jsonTuples"] = _json_treat_heterogeneous_lists_as_tuples;
+            obj["jsonGenericDict"] = _json_use_generic_dicts;
 
             obj["samplingMode"] = (int)_samplingMode;
             obj["samplingSize"] = _samplingSize;
@@ -672,6 +674,7 @@ namespace tuplex {
 
             fop->_json_unwrap_first_level = obj["jsonUnwrap"].get<bool>();
             fop->_json_treat_heterogeneous_lists_as_tuples = obj["jsonTuples"].get<bool>();
+            fop->_json_use_generic_dicts = obj["jsonGenericDict"] = obj["jsonGenericDict"].get<bool>();
             for(const auto& uri : obj["uris"])
                 fop->_fileURIs.push_back(uri.get<std::string>());
             fop->_sizes = obj["sizes"].get<std::vector<size_t>>();
@@ -707,6 +710,7 @@ namespace tuplex {
                     _null_values,
                     _json_unwrap_first_level,
                     _json_treat_heterogeneous_lists_as_tuples,
+                    _json_use_generic_dicts,
                     _columnNames,
                     _columnsToSerialize,
                     _indexBasedHints,
@@ -728,6 +732,7 @@ namespace tuplex {
                 _null_values,
                 _json_unwrap_first_level,
                 _json_treat_heterogeneous_lists_as_tuples,
+                _json_use_generic_dicts,
                 _columnNames,
                 _columnsToSerialize,
                 _indexBasedHints,

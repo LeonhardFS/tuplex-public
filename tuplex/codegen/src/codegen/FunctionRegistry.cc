@@ -67,9 +67,7 @@ namespace tuplex {
                 // simple constant
                 return SerializableValue(_env.i64Const(argType.parameters().size()), i64Size);
             } else if (argType.isDictionaryType() || argType == python::Type::GENERICDICT) {
-                auto obj_size = builder.CreateCall(
-                        cJSONGetArraySize_prototype(_env.getContext(), _env.getModule().get()),
-                        {args.front().val});
+                auto obj_size = call_cjson_getarraysize(builder, args.front().val);
                 return SerializableValue(obj_size, i64Size);
             } else if(argType.isListType() || argType == python::Type::GENERICLIST) {
                 if(argType == python::Type::EMPTYLIST) {
@@ -190,8 +188,8 @@ namespace tuplex {
 
             // constructor:
             if(args.empty()) {
-                auto emptydict = builder.CreateCall(cJSONCreateObject_prototype(_env.getContext(), _env.getModule().get()), {});
-                auto dictsize = _env.i64Const(sizeof(cJSON));
+                auto emptydict = call_cjson_create_empty(builder);
+                auto dictsize = _env.i64Const(3); // 3 for "{}"
                 return SerializableValue(emptydict, dictsize);
             }
 
@@ -199,44 +197,44 @@ namespace tuplex {
             return SerializableValue();
         }
 
-        void FunctionRegistry::getValueFromcJSON(const codegen::IRBuilder& builder, llvm::Value* cjson_val, python::Type retType,
-                llvm::Value* retval, llvm::Value* retsize) {
-            llvm::Value *val, *size;
-            if(retType == python::Type::BOOLEAN) {
-                // BOOL: in type
-                auto isTrue = builder.CreateCall(
-                        cJSONIsTrue_prototype(_env.getContext(), _env.getModule().get()),
-                        {cjson_val});
-                val = _env.upcastToBoolean(builder, builder.CreateICmpEQ(isTrue, _env.i64Const(1)));
-                size = _env.i64Const(8);;
-            }
-            else if(retType == python::Type::STRING) {
-                // STRING: 32 bytes offset
-                auto valaddr = builder.MovePtrByBytes(cjson_val, _env.i64Const(32));
-                auto valptr = builder.CreatePointerCast(valaddr, llvm::Type::getInt64PtrTy(_env.getContext()));
-                auto valload = builder.CreateLoad(_env.i64Type(), valptr);
-                val = builder.CreateCast(llvm::Instruction::CastOps::IntToPtr, valload, _env.i8ptrType());
-                auto len = builder.CreateCall(strlen_prototype(_env.getContext(), _env.getModule().get()), {val});
-                size = builder.CreateAdd(len, _env.i64Const(1));
-            }
-            else if(retType == python::Type::I64) {
-                // Integer: 40 bytes offset
-                auto valaddr = builder.MovePtrByBytes(cjson_val, _env.i64Const(40));
-                auto valptr = builder.CreatePointerCast(valaddr, llvm::Type::getInt64PtrTy(_env.getContext()));
-                val = builder.CreateLoad(llvm::Type::getInt64Ty(_env.getContext()), valptr);
-                size = _env.i64Const(8);
-            }
-            else if(retType == python::Type::F64) {
-                // Double: 48 bytes offset
-                auto valaddr = builder.MovePtrByBytes(cjson_val, _env.i64Const(48));
-                auto valptr = builder.CreatePointerCast(valaddr, llvm::Type::getDoublePtrTy(_env.getContext()));
-                val = builder.CreateLoad(llvm::Type::getDoubleTy(_env.getContext()), valptr);
-                size = _env.i64Const(8);
-            }
-            else throw "Invalid return type for dict.pop(): " + retType.desc();
-            builder.CreateStore(val, retval);
-            builder.CreateStore(size, retsize);
-        }
+//        void FunctionRegistry::getValueFromcJSON(const codegen::IRBuilder& builder, llvm::Value* cjson_val, python::Type retType,
+//                llvm::Value* retval, llvm::Value* retsize) {
+//            llvm::Value *val, *size;
+//            if(retType == python::Type::BOOLEAN) {
+//                // BOOL: in type
+//                auto is_true = get_cjson_as_boolean(builder, cjson_val);
+//                val = _env.upcastToBoolean(builder, builder.CreateICmpEQ(is_true, _env.i64Const(1)));
+//                size = _env.i64Const(8);;
+//            }
+//            else if(retType == python::Type::STRING) {
+////                // STRING: 32 bytes offset
+////                auto valaddr = builder.MovePtrByBytes(cjson_val, _env.i64Const(32));
+////                auto valptr = builder.CreatePointerCast(valaddr, llvm::Type::getInt64PtrTy(_env.getContext()));
+////                auto valload = builder.CreateLoad(_env.i64Type(), valptr);
+////                val = builder.CreateCast(llvm::Instruction::CastOps::IntToPtr, valload, _env.i8ptrType());
+////                auto len = builder.CreateCall(strlen_prototype(_env.getContext(), _env.getModule().get()), {val});
+////                size = builder.CreateAdd(len, _env.i64Const(1));
+//                get_cjson_as_string_value(builder, cjson_val);
+//            }
+//            else if(retType == python::Type::I64) {
+////                // Integer: 40 bytes offset
+////                auto valaddr = builder.MovePtrByBytes(cjson_val, _env.i64Const(40));
+////                auto valptr = builder.CreatePointerCast(valaddr, llvm::Type::getInt64PtrTy(_env.getContext()));
+////                val = builder.CreateLoad(llvm::Type::getInt64Ty(_env.getContext()), valptr);
+////                size = _env.i64Const(8);
+//                get_cjson_as_integer(builder, cjson_val);
+//            }
+//            else if(retType == python::Type::F64) {
+//                // Double: 48 bytes offset
+//                auto valaddr = builder.MovePtrByBytes(cjson_val, _env.i64Const(48));
+//                auto valptr = builder.CreatePointerCast(valaddr, llvm::Type::getDoublePtrTy(_env.getContext()));
+//                val = builder.CreateLoad(llvm::Type::getDoubleTy(_env.getContext()), valptr);
+//                size = _env.i64Const(8);
+//            }
+//            else throw "Invalid return type for dict.pop(): " + retType.desc();
+//            builder.CreateStore(val, retval);
+//            builder.CreateStore(size, retsize);
+//        }
 
         // TODO: probably need to use cJSON_DetachItemFromObjectCaseSensistive to make sure pop deletes the item - then we need to recalculate the serialized size
         SerializableValue FunctionRegistry::createCJSONPopCall(LambdaFunctionBuilder& lfb,
@@ -245,104 +243,113 @@ namespace tuplex {
                                                           const std::vector<tuplex::codegen::SerializableValue> &args,
                                                           const std::vector<python::Type> &argsTypes,
                                                           const python::Type& retType) {
-            assert(args.size() == 1 || args.size() == 2);
-            if(args.size() == 2) assert(argsTypes[1] == retType);
-            auto key = dictionaryKey(_env.getContext(), _env.getModule().get(), builder, args[0].val, argsTypes[0], retType);
-            if(key == nullptr) return SerializableValue();
 
-            auto cjson_val = builder.CreateCall(
-                    cJSONGetObjectItem_prototype(_env.getContext(), _env.getModule().get()), {caller.val, key});
-
-            // blocks
-            auto keyExistBlock = llvm::BasicBlock::Create(_env.getContext(), "keyexists", builder.GetInsertBlock()->getParent());
-            auto keyDNEBlock = llvm::BasicBlock::Create(_env.getContext(), "keydne", builder.GetInsertBlock()->getParent());
-            auto retBlock = llvm::BasicBlock::Create(_env.getContext(), "retblock", builder.GetInsertBlock()->getParent());
-            // local variables
-            auto retsize = builder.CreateAlloca(builder.getInt64Ty(), 0, nullptr);
-            llvm::Value* retval = nullptr;
-            llvm::Type* llvm_retval_type = nullptr;
-            // allocate retval properly
-            if(retType == python::Type::BOOLEAN) llvm_retval_type = _env.getBooleanType();
-            else if(retType == python::Type::STRING) llvm_retval_type = _env.i8ptrType();
-            else if(retType == python::Type::I64) llvm_retval_type = _env.i64Type();
-            else if(retType == python::Type::F64) llvm_retval_type = _env.doubleType();
-            else throw "Invalid return type for dict.pop(): " + retType.desc();
-
-            assert(llvm_retval_type);
-            retval = builder.CreateAlloca(llvm_retval_type, 0, nullptr);
-
-            auto keyExists = builder.CreateIsNotNull(cjson_val);
-            builder.CreateCondBr(keyExists, keyExistBlock, keyDNEBlock);
-
-            builder.SetInsertPoint(keyExistBlock);
-            getValueFromcJSON(builder, cjson_val, retType, retval, retsize);
-            builder.CreateBr(retBlock);
-
-            builder.SetInsertPoint(keyDNEBlock);
-            if(args.size() == 1) {
-                lfb.addException(builder, ExceptionCode::KEYERROR, llvm::ConstantInt::get(_env.getContext(), llvm::APInt(1, 1)), "KeyError on CJSONPOPCall");
-            }
-            else if(args.size() == 2) {
-                builder.CreateStore(args[1].val, retval);
-                builder.CreateStore(args[1].size, retsize);
-            }
-            builder.CreateBr(retBlock);
-
-            builder.SetInsertPoint(retBlock);
-            auto ret = SerializableValue(builder.CreateLoad(llvm_retval_type, retval), builder.CreateLoad(_env.i64Type(), retsize));
-            lfb.setLastBlock(retBlock);
-            return ret;
+            throw std::runtime_error("not yet supported");
+            return {};
+//            assert(args.size() == 1 || args.size() == 2);
+//            if(args.size() == 2) assert(argsTypes[1] == retType);
+//            auto key = dictionaryKey(_env.getContext(), _env.getModule().get(), builder, args[0].val, argsTypes[0], retType);
+//            if(key == nullptr) return SerializableValue();
+//
+//            auto cjson_val = call_cjson_getitem(builder, caller.val, key);
+//
+//            // blocks
+//            auto keyExistBlock = llvm::BasicBlock::Create(_env.getContext(), "keyexists", builder.GetInsertBlock()->getParent());
+//            auto keyDNEBlock = llvm::BasicBlock::Create(_env.getContext(), "keydne", builder.GetInsertBlock()->getParent());
+//            auto retBlock = llvm::BasicBlock::Create(_env.getContext(), "retblock", builder.GetInsertBlock()->getParent());
+//            // local variables
+//            auto retsize = builder.CreateAlloca(builder.getInt64Ty(), 0, nullptr);
+//            llvm::Value* retval = nullptr;
+//            llvm::Type* llvm_retval_type = nullptr;
+//            // allocate retval properly
+//            if(retType == python::Type::BOOLEAN) llvm_retval_type = _env.getBooleanType();
+//            else if(retType == python::Type::STRING) llvm_retval_type = _env.i8ptrType();
+//            else if(retType == python::Type::I64) llvm_retval_type = _env.i64Type();
+//            else if(retType == python::Type::F64) llvm_retval_type = _env.doubleType();
+//            else throw "Invalid return type for dict.pop(): " + retType.desc();
+//
+//            assert(llvm_retval_type);
+//            retval = builder.CreateAlloca(llvm_retval_type, 0, nullptr);
+//
+//            auto keyExists = builder.CreateIsNotNull(cjson_val);
+//            builder.CreateCondBr(keyExists, keyExistBlock, keyDNEBlock);
+//
+//            builder.SetInsertPoint(keyExistBlock);
+//
+//
+//
+//            getValueFromcJSON(builder, cjson_val, retType, retval, retsize);
+//            builder.CreateBr(retBlock);
+//
+//            builder.SetInsertPoint(keyDNEBlock);
+//            if(args.size() == 1) {
+//                lfb.addException(builder, ExceptionCode::KEYERROR, llvm::ConstantInt::get(_env.getContext(), llvm::APInt(1, 1)), "KeyError on CJSONPOPCall");
+//            }
+//            else if(args.size() == 2) {
+//                builder.CreateStore(args[1].val, retval);
+//                builder.CreateStore(args[1].size, retsize);
+//            }
+//            builder.CreateBr(retBlock);
+//
+//            builder.SetInsertPoint(retBlock);
+//            auto ret = SerializableValue(builder.CreateLoad(llvm_retval_type, retval), builder.CreateLoad(_env.i64Type(), retsize));
+//            lfb.setLastBlock(retBlock);
+//            return ret;
         }
 
         SerializableValue FunctionRegistry::createCJSONPopItemCall(LambdaFunctionBuilder &lfb, const codegen::IRBuilder &builder, const SerializableValue &caller,
                                             const python::Type &retType) {
-            // local variables
-            auto retsize = builder.CreateAlloca(builder.getInt64Ty(), 0, nullptr);
-            llvm::Value *retval = nullptr;
-            // allocate retval properly
-            llvm::Type* retval_llvm_type = nullptr;
-            if (retType.parameters()[1] == python::Type::BOOLEAN)
-                retval_llvm_type = _env.getBooleanType();
-            else if (retType.parameters()[1] == python::Type::STRING)
-                retval_llvm_type = _env.i8ptrType();
-            else if (retType.parameters()[1] == python::Type::I64)
-                retval_llvm_type = _env.i64Type();
-            else if (retType.parameters()[1] == python::Type::F64)
-                retval_llvm_type =_env.doubleType();
-            else throw std::runtime_error("Invalid return type for dict.pop(): " + retType.parameters()[1].desc());
-
-            retval = _env.CreateFirstBlockAlloca(builder,retval_llvm_type);
-
-            // retrieve child pointer
-            auto valobjaddr = builder.MovePtrByBytes(caller.val, _env.i64Const(16));
-            auto valobjptr = builder.CreatePointerCast(valobjaddr, llvm::Type::getInt64PtrTy(_env.getContext()));
-            auto valobjload = builder.CreateLoad(_env.i64Type(), valobjptr);
-            auto valobj = builder.CreateCast(llvm::Instruction::CastOps::IntToPtr, valobjload,
-                                             _env.i8ptrType()); // child pointer
-            auto nonempty_dict = builder.CreateIsNull(valobj);
-            lfb.addException(builder, ExceptionCode::KEYERROR, nonempty_dict, "KeyError on CJSONPopItemCall");
-
-            // there is a value to return
-            builder.CreateCall(cJSONDetachItemViaPointer_prototype(_env.getContext(), _env.getModule().get()),
-                               {caller.val, valobj});
-            getValueFromcJSON(builder, valobj, retType.parameters()[1], retval, retsize);
-            // get key of removed item
-            auto keyaddr = builder.MovePtrByBytes(valobj, _env.i64Const(56));
-            auto keyptr = builder.CreatePointerCast(keyaddr, llvm::Type::getInt64PtrTy(_env.getContext()));
-            auto keyload = builder.CreateLoad(_env.i64Type(), keyptr);
-            auto keystr = builder.CreateCast(llvm::Instruction::CastOps::IntToPtr, keyload,
-                                          _env.i8ptrType()); // key string
-            auto key = dictionaryKeyCast(_env.getContext(), _env.getModule().get(), builder, keystr, retType.parameters()[0]);
-            // create tuple (key, val)
-            FlattenedTuple ft(&_env);
-            ft.init(retType);
-            ft.setElement(builder, 0, key.val, key.size, key.is_null);
-            ft.setElement(builder, 1, builder.CreateLoad(retval_llvm_type, retval), builder.CreateLoad(builder.getInt64Ty(), retsize), nullptr); // non-null result!
-
-            auto ret = ft.getLoad(builder);
-            assert(ret->getType()->isStructTy());
-            auto size = ft.getSize(builder);
-            return SerializableValue(ret, size);
+            throw std::runtime_error("not yet supported");
+//            // local variables
+//            auto retsize = builder.CreateAlloca(builder.getInt64Ty(), 0, nullptr);
+//            llvm::Value *retval = nullptr;
+//            // allocate retval properly
+//            llvm::Type* retval_llvm_type = nullptr;
+//            if (retType.parameters()[1] == python::Type::BOOLEAN)
+//                retval_llvm_type = _env.getBooleanType();
+//            else if (retType.parameters()[1] == python::Type::STRING)
+//                retval_llvm_type = _env.i8ptrType();
+//            else if (retType.parameters()[1] == python::Type::I64)
+//                retval_llvm_type = _env.i64Type();
+//            else if (retType.parameters()[1] == python::Type::F64)
+//                retval_llvm_type =_env.doubleType();
+//            else throw std::runtime_error("Invalid return type for dict.pop(): " + retType.parameters()[1].desc());
+//
+//            retval = _env.CreateFirstBlockAlloca(builder,retval_llvm_type);
+//
+//            // retrieve child pointer
+//            auto valobjaddr = builder.MovePtrByBytes(caller.val, _env.i64Const(16));
+//            auto valobjptr = builder.CreatePointerCast(valobjaddr, llvm::Type::getInt64PtrTy(_env.getContext()));
+//            auto valobjload = builder.CreateLoad(_env.i64Type(), valobjptr);
+//            auto valobj = builder.CreateCast(llvm::Instruction::CastOps::IntToPtr, valobjload,
+//                                             _env.i8ptrType()); // child pointer
+//            auto nonempty_dict = builder.CreateIsNull(valobj);
+//            lfb.addException(builder, ExceptionCode::KEYERROR, nonempty_dict, "KeyError on CJSONPopItemCall");
+//
+//            // there is a value to return
+//            builder.CreateCall(cJSONDetachItemViaPointer_prototype(_env.getContext(), _env.getModule().get()),
+//                               {caller.val, valobj});
+//
+//            call_cjson_get_and_remove(builder, caller.val); // TODO implement, fix this here.
+//
+//            getValueFromcJSON(builder, valobj, retType.parameters()[1], retval, retsize);
+//            // get key of removed item
+//            auto keyaddr = builder.MovePtrByBytes(valobj, _env.i64Const(56));
+//            auto keyptr = builder.CreatePointerCast(keyaddr, llvm::Type::getInt64PtrTy(_env.getContext()));
+//            auto keyload = builder.CreateLoad(_env.i64Type(), keyptr);
+//            auto keystr = builder.CreateCast(llvm::Instruction::CastOps::IntToPtr, keyload,
+//                                          _env.i8ptrType()); // key string
+//            auto key = dictionaryKeyCast(_env.getContext(), _env.getModule().get(), builder, keystr, retType.parameters()[0]);
+//            // create tuple (key, val)
+//            FlattenedTuple ft(&_env);
+//            ft.init(retType);
+//            ft.setElement(builder, 0, key.val, key.size, key.is_null);
+//            ft.setElement(builder, 1, builder.CreateLoad(retval_llvm_type, retval), builder.CreateLoad(builder.getInt64Ty(), retsize), nullptr); // non-null result!
+//
+//            auto ret = ft.getLoad(builder);
+//            assert(ret->getType()->isStructTy());
+//            auto size = ft.getSize(builder);
+//            return SerializableValue(ret, size);
         }
 
         SerializableValue FunctionRegistry::createFloatCast(tuplex::codegen::LambdaFunctionBuilder &lfb,
@@ -3543,6 +3550,71 @@ namespace tuplex {
             return {};
         }
 
+        namespace codegen {
+            SerializableValue return_either_of_two_values(tuplex::codegen::LambdaFunctionBuilder& lfb, LLVMEnvironment& env, const tuplex::codegen::IRBuilder &builder, llvm::Value* return_first_value, const python::Type& common_return_type,
+                                                             SerializableValue first_value,
+                                                             const python::Type& first_value_type,
+                                                             SerializableValue second_value,
+                                                             const python::Type& second_value_type) {
+                // first check that both first and second value type can be upcast to common type
+                if(!python::canUpcastType(first_value_type, common_return_type)) {
+                    std::stringstream ss;
+                    ss<<std::string(__FILE__)<<":"<<__LINE__<<" Can not upcast first value of type="<<first_value_type.desc()<<" to target type="<<common_return_type.desc();
+                    throw std::runtime_error(ss.str());
+                }
+
+                if(!python::canUpcastType(second_value_type, common_return_type)) {
+                    std::stringstream ss;
+                    ss<<std::string(__FILE__)<<":"<<__LINE__<<" Can not upcast second value of type="<<second_value_type.desc()<<" to target type="<<common_return_type.desc();
+                    throw std::runtime_error(ss.str());
+                }
+
+                // check if upcast is necessary
+                first_value = env.upcastValue(builder, first_value, first_value_type, common_return_type);
+                second_value = env.upcastValue(builder, second_value, second_value_type, common_return_type);
+
+                // create using select nodes because both are present
+                SerializableValue ret;
+
+                if(first_value.val) {
+
+                    // Check special case for struct related types where one may be a pointer, and one not. In that case, load values
+                    if(first_value.val->getType()->isStructTy() && second_value.val->getType()->isPointerTy()) {
+                        second_value.val = builder.CreateLoad(first_value.val->getType(), second_value.val);
+                    }
+
+                    if(first_value.val->getType()->isPointerTy() && second_value.val->getType()->isStructTy()) {
+                        first_value.val = builder.CreateLoad(second_value.val->getType(), first_value.val);
+                    }
+
+                    assert(second_value.val);
+
+                    assert(first_value.val->getType() == second_value.val->getType());
+
+                    ret.val = builder.CreateSelect(return_first_value, first_value.val, second_value.val);
+                }
+
+                if(first_value.size) {
+                    assert(second_value.size);
+
+                    assert(first_value.size->getType() == env.i64Type() && second_value.size->getType() == env.i64Type());
+
+                    ret.size = builder.CreateSelect(return_first_value, first_value.size, second_value.size);
+                }
+
+                if(first_value.is_null) {
+                    assert(second_value.is_null);
+
+                    assert(first_value.is_null->getType() == env.i1Type() && second_value.is_null->getType() == env.i1Type());
+                    ret.is_null = builder.CreateSelect(return_first_value, first_value.is_null, second_value.is_null);
+                }
+
+                return ret;
+            }
+        }
+
+
+
         SerializableValue FunctionRegistry::createSparseStructDictGetCall(tuplex::codegen::LambdaFunctionBuilder &lfb,
                                                                           const tuplex::codegen::IRBuilder &builder,
                                                                           const tuplex::codegen::SerializableValue &caller,
@@ -3565,8 +3637,40 @@ namespace tuplex {
             // can only decide .get if key is present, therefore code paths for argsTypes.size() == 1 and argsTypes.size() == 2 is the same
             auto key_type = argsTypes.front();
 
+            auto default_return_value = args.size() == 2 ? args[1] : SerializableValue(nullptr, nullptr, _env.i1Const(true));
+            auto default_return_type = argsTypes.size() == 2 ? argsTypes[1] : python::Type::NULLVALUE;
 
             if(key_type.isConstantValued()) {
+
+                auto lookup_key = key_type.constant();
+
+                auto kv_pairs = callerType.makeNonSparse().get_struct_pairs();
+                auto it = std::find_if(kv_pairs.begin(), kv_pairs.end(), [&lookup_key](const python::StructEntry& entry) {
+                    return entry.key == escape_to_python_str(lookup_key);
+                });
+
+                if(it == kv_pairs.end()) {
+                    // no key, however for sparse-struct can't decide whether this is a key error or not.
+                    lfb.exitNormalCase();
+                } else {
+                    const auto& entry = *it;
+
+                    access_path_t access_path{make_pair(entry.key, entry.keyType)};
+
+                    auto ret_val = struct_dict_load_value(_env, builder, caller.val, callerType.makeNonSparse(), access_path);
+
+                    // always present or not? If not always present, perform presence check -> turn into default value if applicable.
+                    if(!entry.alwaysPresent) {
+                        auto is_present = struct_dict_load_present(_env, builder, caller.val, callerType.makeNonSparse(), access_path);
+                        return codegen::return_either_of_two_values(lfb, _env, builder, is_present, retType, ret_val,
+                                                                    entry.valueType, default_return_value, default_return_type);
+                    }
+
+                    // load now element (which can be done directly without runtime lookup)
+                    return ret_val;
+                }
+
+
                 std::stringstream ss;
                 ss<<std::string(__FILE__)<<":"<<__LINE__<<" sparse struct dict call not yet implemented for key_type=" + key_type.desc() + ".\n";
                 throw std::runtime_error(ss.str());
@@ -3585,7 +3689,7 @@ namespace tuplex {
                 auto key_not_found = _env.i1neg(builder, key_found);
                 lfb.addException(builder, ExceptionCode::NORMALCASEVIOLATION, key_not_found, "Sparse dict " + callerType.desc() + " dict.get() could not decide whether key is or is not present in deoptimized struct type.");
 
-                return ret_val;
+                return codegen::return_either_of_two_values(lfb, _env, builder, is_present, retType, ret_val, retType, default_return_value, default_return_type);
             }
         }
 

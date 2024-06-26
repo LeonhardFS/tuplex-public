@@ -1081,7 +1081,7 @@ namespace tuplex {
             if (python::Type::EMPTYDICT == elementType) {
                 // create empty dict (i.e. i8* pointer with cJSON)
                 // note, this could be directly done as str const!
-                auto ret = builder.CreateCall(cJSONCreateObject_prototype(ctx, _module.get()), {});
+                auto ret = call_cjson_create_empty(builder);
                 assert(ret->getType()->isPointerTy());
                 auto size = call_cjson_to_string(builder, ret).size;
                 return SerializableValue{ret, size, isnull};

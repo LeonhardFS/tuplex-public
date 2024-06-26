@@ -1109,6 +1109,22 @@ namespace tuplex {
             return builder.CreateCall(func, {cjson_obj, key});
         }
 
+        llvm::Value* call_cjson_object_set_item(const IRBuilder& builder, llvm::Value* cjson_obj, llvm::Value* key, llvm::Value* cjson_item) {
+            // basically cjson_obj[key] = cjson_item
+            // return cjson_obj.
+
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+
+            auto& ctx = mod->getContext();
+            auto ptr_type = i8ptrType(ctx);
+
+            auto func = getOrInsertFunction(mod, "cJSON_AddItemToObject", ptr_type, ptr_type, ptr_type, ptr_type);
+
+            return builder.CreateCall(func, {cjson_obj, key, cjson_item});
+        }
+
+
         llvm::Value* call_cjson_isnumber(const IRBuilder& builder, llvm::Value* cjson_obj) {
             assert(cjson_obj);
             assert(builder.GetInsertBlock());
@@ -1230,6 +1246,16 @@ namespace tuplex {
             return builder.CreateFPToSI(float_val, llvm::Type::getInt64Ty(builder.getContext()));
         }
 
+        llvm::Value* get_cjson_as_boolean(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+
+            auto& ctx = mod->getContext();
+            auto func = getOrInsertFunction(mod, "cJSON_IsTrue", llvm::Type::getInt64Ty(ctx), llvm::Type::getInt8PtrTy(ctx, 0));
+
+            return builder.CreateCall(func, {cjson_obj});
+        }
+
         llvm::Value* get_cjson_as_float(const IRBuilder& builder, llvm::Value* cjson_obj) {
             assert(cjson_obj);
             assert(builder.GetInsertBlock());
@@ -1314,7 +1340,8 @@ namespace tuplex {
         extern llvm::Value* call_cjson_parse(const IRBuilder& builder, llvm::Value* str_ptr) {
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-            auto func = cJSONParse_prototype(builder.getContext(), mod);
+            auto& ctx = mod->getContext();
+            auto func = getOrInsertFunction(mod, "cJSON_Parse", llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt8PtrTy(ctx, 0));
 
             return builder.CreateCall(func, {str_ptr});
         }
@@ -1323,7 +1350,7 @@ namespace tuplex {
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
             auto& ctx = mod->getContext();
-            auto f_print = cJSONPrintUnformatted_prototype(ctx, mod);
+            auto f_print = getOrInsertFunction(mod, "cJSON_PrintUnformatted", llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt8PtrTy(ctx, 0));
             auto f_strlen = strlen_prototype(ctx, mod);
 
             SerializableValue v;
@@ -1357,6 +1384,106 @@ namespace tuplex {
 
             return builder.CreateMul(num_bitmap_fields, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, sizeof(uint64_t))));
 
+        }
+
+        llvm::Value* call_cjson_from_value(const IRBuilder& builder, const SerializableValue& value, const python::Type& type) {
+            // converts value to cJSON value.
+            using namespace llvm;
+
+            assert(builder.GetInsertBlock());
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+            auto& ctx = mod->getContext();
+            auto i8ptrtype = llvm::Type::getInt8PtrTy(ctx, 0);
+
+            if(type.isOptionType()) {
+                // nested -> if null, convert to Json null
+                // else, recursively call.
+                auto func = builder.GetInsertBlock()->getParent();
+
+                auto bbIsNull = BasicBlock::Create(ctx, "cjson_encode_is_null", func);
+                auto bbIsNotNull = BasicBlock::Create(ctx, "cjson_encode_is_not_null", func);
+                auto bbDone = BasicBlock::Create(ctx, "cjson_encode_done", func);
+
+                builder.CreateCondBr(value.is_null, bbIsNull, bbIsNotNull);
+                builder.SetInsertPoint(bbIsNull);
+                auto null_value = call_cjson_from_value(builder, {}, python::Type::NULLVALUE);
+                builder.CreateBr(bbDone);
+
+                builder.SetInsertPoint(bbIsNotNull);
+                auto non_null_value = call_cjson_from_value(builder, value, type.withoutOption());
+                builder.CreateBr(bbDone);
+
+                auto phi = builder.CreatePHI(i8ptrtype, 2);
+                phi->addIncoming(null_value, bbIsNull);
+                phi->addIncoming(non_null_value, bbIsNotNull);
+                return phi;
+            }
+
+
+            // regular, primitive types.
+            if(python::Type::NULLVALUE == type) {
+                auto func = getOrInsertFunction(mod, "cJSON_CreateNull", i8ptrtype);
+                return builder.CreateCall(func);
+            }
+
+            if(python::Type::BOOLEAN == type) {
+                auto func = getOrInsertFunction(mod, "cJSON_CreateBool", i8ptrtype, ctypeToLLVM<cJSON_bool>(ctx));
+                auto v = builder.CreateZExtOrTrunc(value.val, ctypeToLLVM<cJSON_bool>(ctx));
+                return builder.CreateCall(func, {v});
+            }
+
+            if(python::Type::I64 == type) {
+                // this is bad in cJSON. bad API mixing double and integer.
+                auto func = getOrInsertFunction(mod, "cJSON_CreateNumber", i8ptrtype, ctypeToLLVM<double>(ctx));
+                auto v = builder.CreateSIToFP(value.val, ctypeToLLVM<double>(ctx));
+                return builder.CreateCall(func, {v});
+            }
+
+            if(python::Type::F64 == type) {
+                // this is bad in cJSON. bad API mixing double and integer.
+                auto func = getOrInsertFunction(mod, "cJSON_CreateNumber", i8ptrtype, ctypeToLLVM<double>(ctx));
+                return builder.CreateCall(func, {value.val});
+            }
+
+            if(python::Type::STRING == type) {
+                auto func = getOrInsertFunction(mod, "cJSON_CreateString", i8ptrtype, i8ptrtype);
+                return builder.CreateCall(func, {value.val});
+            }
+
+            std::stringstream ss;
+            ss<<__FILE__<<":"<<__LINE__<<" Unsupported value of type "<<type.desc()<<" can't get converted to cJSON value.";
+            throw std::runtime_error(ss.str());
+        }
+
+        SerializableValue get_value_from_cjson(const IRBuilder& builder, llvm::Value* cjson_obj, const python::Type& type) {
+            // use primitive conversion functions directly.
+
+            auto& ctx = builder.getContext();
+
+            // option: check if is null or not
+
+            auto i64_8bytes = llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, 8));
+
+            if(type == python::Type::NULLVALUE) {
+                return SerializableValue(nullptr, nullptr, llvm::ConstantInt::get(llvm::Type::getInt1Ty(ctx), llvm::APInt(1, 1)));
+            }
+
+            if(type == python::Type::BOOLEAN) {
+                return SerializableValue(get_cjson_as_boolean(builder, cjson_obj), i64_8bytes);
+            }
+
+            if(type == python::Type::I64) {
+                return SerializableValue(get_cjson_as_integer(builder, cjson_obj), i64_8bytes);
+            }
+
+            if(type == python::Type::STRING) {
+                return get_cjson_as_string_value(builder, cjson_obj);
+            }
+
+            std::stringstream ss;
+            ss<<__FILE__<<":"<<__LINE__<<" Unsupported value of type "<<type.desc()<<" can't retrieve value from cJSON value.";
+            throw std::runtime_error(ss.str());
         }
     }
 }

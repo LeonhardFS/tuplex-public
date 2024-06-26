@@ -62,8 +62,11 @@ namespace tuplex {
     }
 
 
-    FileInputOperator::FileInputOperator() : _fmt(FileFormat::OUTFMT_UNKNOWN), _json_unwrap_first_level(false),
-                                             _json_treat_heterogeneous_lists_as_tuples(true), _header(false),
+    FileInputOperator::FileInputOperator() : _fmt(FileFormat::OUTFMT_UNKNOWN),
+                                             _json_unwrap_first_level(false),
+                                             _json_treat_heterogeneous_lists_as_tuples(true),
+                                             _json_use_generic_dicts(false),
+                                             _header(false),
                                              _sampling_time_s(0.0), _quotechar('\0'),
                                              _delimiter('\0'), _samplingMode(SamplingMode::UNKNOWN),
                                              _isRowSampleProjected(false),
@@ -314,6 +317,7 @@ namespace tuplex {
         f->_fmt = FileFormat::OUTFMT_JSON;
         f->_json_unwrap_first_level = unwrap_first_level; //! set here for detect to work.
         f->_json_treat_heterogeneous_lists_as_tuples = treat_heterogenous_lists_as_tuples;
+        f->_json_use_generic_dicts = co.EXPERIMENTAL_USE_GENERIC_DICTS();
         f->_samplingMode = normalizeSamplingMode(sampling_mode);
         f->_samplingSize = co.SAMPLE_SIZE();
 
@@ -854,7 +858,9 @@ namespace tuplex {
                                          const std::unordered_map<size_t, python::Type>& index_based_type_hints,
                                          const std::unordered_map<std::string, python::Type>& column_based_type_hints,
                                          const SamplingMode& sampling_mode) :
-            _null_values(null_values), _sampling_time_s(0.0), _samplingMode(normalizeSamplingMode(sampling_mode)), _samplingSize(co.SAMPLE_SIZE()), _cachePopulated(false), _estimatedRowCount(0), _json_unwrap_first_level(false), _json_treat_heterogeneous_lists_as_tuples(false) {
+            _null_values(null_values), _sampling_time_s(0.0), _samplingMode(normalizeSamplingMode(sampling_mode)), _samplingSize(co.SAMPLE_SIZE()),
+            _cachePopulated(false), _estimatedRowCount(0),
+            _json_unwrap_first_level(false), _json_treat_heterogeneous_lists_as_tuples(false), _json_use_generic_dicts(false) {
         auto &logger = Logger::instance().logger("fileinputoperator");
         _fmt = FileFormat::OUTFMT_CSV;
 
@@ -1396,7 +1402,8 @@ namespace tuplex {
                                                                                    _sampling_time_s(other._sampling_time_s),
                                                                                    _samplingSize(other._samplingSize),
                                                                                    _json_unwrap_first_level(other._json_unwrap_first_level),
-                                                                                   _json_treat_heterogeneous_lists_as_tuples(other._json_treat_heterogeneous_lists_as_tuples) {
+                                                                                   _json_treat_heterogeneous_lists_as_tuples(other._json_treat_heterogeneous_lists_as_tuples),
+                                                                                   _json_use_generic_dicts(other._json_use_generic_dicts) {
         // copy members for logical operator
         LogicalOperator::copyMembers(&other);
         LogicalOperator::setDataSet(other.getDataSet());
@@ -2134,6 +2141,8 @@ namespace tuplex {
         auto& logger = Logger::instance().logger("logical");
         std::vector<Row> v;
         assert(mode & SamplingMode::FIRST_ROWS || mode & SamplingMode::LAST_ROWS || mode & SamplingMode::RANDOM_ROWS);
+
+        auto PARAM_USE_GENERIC_DICT = _json_use_generic_dicts;
 
         if(0 == uri_size || uri == URI::INVALID) {
             logger.debug("empty file, can't obtain sample from it");
