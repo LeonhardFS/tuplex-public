@@ -570,6 +570,8 @@ namespace tuplex {
         // full data
          input_pattern = "/hot/data/github_daily/*.json";
 
+        input_pattern = "../resources/hyperspecialization/single_fork_event.json";
+
         string testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
         auto output_path = "./local-exp/" + testName + "/" + "output" + "/";
 
@@ -638,6 +640,10 @@ namespace tuplex {
                 .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
                 .selectColumns(vector<string>{"type", "repo_id", "year", "number_of_commits"})
                 .tocsv(output_path);
+
+        auto output = fileToString(output_path);
+        std::cout<<"output::\n"<<output<<std::endl;
+
 
         auto result_row_count = csv_row_count_for_pattern(output_path + "*.csv");
 
