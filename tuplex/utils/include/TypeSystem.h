@@ -197,7 +197,7 @@ namespace python {
         Type elementType() const;
         Type underlying() const;
 
-        Type makeNonSparse() const;
+        Type makeNonSparse(bool recurse=true) const;
 
         /*!
          * returns the underlying value of a constant type. Note that this the actual value (not a python string!)

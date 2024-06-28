@@ -2576,11 +2576,18 @@ namespace python {
         return v;
     }
 
-    Type Type::makeNonSparse() const {
+    Type Type::makeNonSparse(bool recurse) const {
         if(isStructuredDictionaryType())
             return *this;
 
         assert(isSparseStructuredDictionaryType());
-        return python::Type::makeStructuredDictType(get_struct_pairs(), false);
+        if(!recurse)
+            return python::Type::makeStructuredDictType(get_struct_pairs(), false);
+
+        auto kv_pairs = get_struct_pairs();
+        for(auto& p : kv_pairs)
+            if(p.valueType.isSparseStructuredDictionaryType())
+                p = StructEntry(p.key, p.keyType, p.valueType.makeNonSparse(true), p.alwaysPresent);
+        return python::Type::makeStructuredDictType(kv_pairs, false);
     }
 }

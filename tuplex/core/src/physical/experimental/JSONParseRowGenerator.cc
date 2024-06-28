@@ -1207,10 +1207,10 @@ namespace tuplex {
 
             // special case: element to decode is struct type
             llvm::Value* null_struct = nullptr;
-            if(element_type.isStructuredDictionaryType()) {
-                auto llvm_element_type = _env.getOrCreateStructuredDictType(element_type);
+            if(element_type.isStructuredDictionaryType() || element_type.isSparseStructuredDictionaryType()) {
+                auto llvm_element_type = _env.getOrCreateStructuredDictType(element_type.makeNonSparse());
                 auto null_struct_var = _env.CreateFirstBlockAlloca(builder, llvm_element_type);
-                struct_dict_mem_zero(_env, builder, null_struct_var, element_type);
+                struct_dict_mem_zero(_env, builder, null_struct_var, element_type.makeNonSparse());
                 null_struct = builder.CreateLoad(llvm_element_type, null_struct_var);
             }
 
@@ -1227,13 +1227,18 @@ namespace tuplex {
 
             // --- decode null ---
             builder.SetInsertPoint(bbDecodeIsNull);
-            // _env.debugPrint(builder, "found null value for key=" + entry.key);
+
+#ifdef PRINT_JSON_TRACE_DETAILS
+            _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " found null value for key=" + entry.key);
+#endif
             bbValueIsNull = builder.GetInsertBlock();
             builder.CreateBr(bbDecoded);
 
             // --- decode value ---
             builder.SetInsertPoint(bbDecodeNonNull);
-            // _env.debugPrint(builder, "found " + entry.valueType.getReturnType().desc() + " value for key=" + entry.key);
+#ifdef PRINT_JSON_TRACE_DETAILS
+             _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " found " + entry.valueType.getReturnType().desc() + " value for key=" + entry.key);
+#endif
             llvm::Value* rcB = nullptr;
             llvm::Value* presentB = nullptr;
             SerializableValue valueB;
@@ -1261,7 +1266,7 @@ namespace tuplex {
             valueA.is_null = _env.i1Const(true); // valueA is null
             if(valueB.val) {
 
-                if(!entryB.valueType.isStructuredDictionaryType())
+                if(!entryB.valueType.isStructuredDictionaryType() && !entryB.valueType.isSparseStructuredDictionaryType())
                     valueA.val = _env.nullConstant(valueB.val->getType());
                 else {
                     assert(null_struct);
@@ -1338,6 +1343,12 @@ namespace tuplex {
                     std::tie(rc, value) = decodeBoolean(builder, obj, key);
                 } else if (v_type == python::Type::I64) {
                     std::tie(rc, value) = decodeI64(builder, obj, key);
+
+#ifdef PRINT_JSON_TRACE_DETAILS
+                    _env.printValue(builder, rc, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " decoded i64 with rc: ");
+                    _env.printValue(builder, value.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " decoded i64 with value: ");
+#endif
+
                 } else if (v_type == python::Type::F64) {
                     std::tie(rc, value) = decodeF64(builder, obj, key);
                 } else if (v_type == python::Type::NULLVALUE) {
@@ -1503,6 +1514,11 @@ namespace tuplex {
                 if (kv_pair.valueType.isStructuredDictionaryType() || kv_pair.valueType.isSparseStructuredDictionaryType()) {
                     //logger.debug("parsing nested dict: " +
                     //             json_access_path_to_string(access_path, kv_pair.valueType, kv_pair.alwaysPresent));
+
+#ifdef PRINT_JSON_TRACE_DETAILS
+                    _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " parse nested dict for: " + json_access_path_to_string(access_path, kv_pair.valueType, kv_pair.alwaysPresent));
+#endif
+
 
                     // check if an object exists under the given key.
                     auto F = getOrInsertFunction(_env.getModule().get(), "JsonItem_getObject", _env.i64Type(),

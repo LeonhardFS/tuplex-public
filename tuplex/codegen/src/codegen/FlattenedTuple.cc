@@ -1268,19 +1268,36 @@ namespace tuplex {
                 std::tie(bitmap_idx, present_idx, field_idx, size_idx) = indices.at(access_path);
 
                 // check if element is
+                auto& ctx = builder.getContext();
+                auto func = builder.GetInsertBlock()->getParent();
+                auto bbElementDone = llvm::BasicBlock::Create(ctx, "element_done", func);
+                auto path_str = access_path_to_str(access_path);
                 if(!always_present) {
-                    throw std::runtime_error("presence not yet supported in struct_dict_print");
-                } else {
-                    // always present.
-                    // can load value directly
-                    auto element_value = struct_dict_load_value(env, builder, dict_ptr, dict_type, access_path);
-                    env.printValue(builder, element_value.val, "\t -- value of " + key + " (" + value_type.desc() + "): ");
-                    if(element_value.size)
-                        env.printValue(builder, element_value.size, "\t -- size of " + key + " (" + value_type.desc() + "): ");
-                    if(element_value.is_null) {
-                        assert(element_value.is_null->getType() == env.i1Type());
-                        env.printValue(builder, element_value.val, "\t -- is_null of " + key + " (" + value_type.desc() + "): ");
-                    }
+                    auto bbElementPresent = llvm::BasicBlock::Create(ctx, "element_present", func);
+                    auto bbElementNotPresent = llvm::BasicBlock::Create(ctx, "element_not_present", func);
+                    auto is_present = struct_dict_load_present(env, builder, dict_ptr, dict_type, access_path);
+                    builder.CreateCondBr(is_present, bbElementPresent, bbElementNotPresent);
+                    builder.SetInsertPoint(bbElementNotPresent);
+                    env.debugPrint(builder, "\t -- " + path_str + " not present. ");
+                    builder.CreateBr(bbElementDone);
+                    builder.SetInsertPoint(bbElementPresent);
+                }
+
+                // always present.
+                // can load value directly
+                auto element_value = struct_dict_load_value(env, builder, dict_ptr, dict_type, access_path);
+                if(element_value.val)
+                    env.printValue(builder, element_value.val, "\t -- " + path_str + " value of " + key + " (" + value_type.desc() + "): ");
+                if(element_value.size)
+                    env.printValue(builder, element_value.size, "\t -- " + path_str + " size of " + key + " (" + value_type.desc() + "): ");
+                if(element_value.is_null) {
+                    assert(element_value.is_null->getType() == env.i1Type());
+                    env.printValue(builder, element_value.val, "\t -- " + path_str + " is_null of " + key + " (" + value_type.desc() + "): ");
+                }
+
+                if(!always_present) {
+                    builder.CreateBr(bbElementDone);
+                    builder.SetInsertPoint(bbElementDone);
                 }
 
 //

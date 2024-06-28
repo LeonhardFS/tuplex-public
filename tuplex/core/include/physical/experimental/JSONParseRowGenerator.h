@@ -12,7 +12,7 @@
 #include <experimental/StructDictHelper.h>
 #include <physical/experimental/JsonHelper.h>
 
-// #define PRINT_JSON_TRACE_DETAILS
+#define PRINT_JSON_TRACE_DETAILS
 
 namespace tuplex {
     namespace codegen {
@@ -117,8 +117,19 @@ namespace tuplex {
                 // set insert to after init block
                 builder.SetInsertPoint(_afterInitBlock);
 
+#ifdef PRINT_JSON_TRACE_DETAILS
+                _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " -- start parse of type=" + _rowType.desc());
+#endif
+
                 // decode everything -> entries can be then used to store to a struct!
                 decode(builder, row_var, _rowType, object, _badParseBlock, _rowType, {}, true, true);
+
+#ifdef PRINT_JSON_TRACE_DETAILS
+                _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " -- end parse of type=" + _rowType.desc());
+                _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " parse result:");
+                struct_dict_print(_env, builder, {row_var, nullptr, nullptr}, _rowType);
+                _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " --------- ");
+#endif
 
                 // generate free blocks and update builder
                 auto lastFreeBlock = generateFreeAllVars(builder.GetInsertBlock());
