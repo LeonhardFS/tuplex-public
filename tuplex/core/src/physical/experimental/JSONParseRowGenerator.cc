@@ -1252,6 +1252,9 @@ namespace tuplex {
                 // or struct type (sparse/non-sparse)
                 std::tie(rcB, presentB, valueB) = decodeStructDictFieldFromObject(builder, obj, key, entryB, bbSchemaMismatch);
             }
+#ifdef PRINT_JSON_TRACE_DETAILS
+            _env.printValue(builder, presentB, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " decoded field for key=" + entry.key + " as present:");
+#endif
 
             bbValueIsNotNull = builder.GetInsertBlock(); // <-- this is the block from where to jump to bbDecoded (phi entry block)
             builder.CreateBr(bbDecoded);
