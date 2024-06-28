@@ -568,9 +568,7 @@ namespace tuplex {
         string input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
 
         // full data
-         input_pattern = "/hot/data/github_daily/*.json";
-
-        input_pattern = "../resources/hyperspecialization/single_fork_event.json";
+        input_pattern = "/hot/data/github_daily/*.json";
 
         string testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
         auto output_path = "./local-exp/" + testName + "/" + "output" + "/";
@@ -653,6 +651,96 @@ namespace tuplex {
             expected_row_count = 294195; // full query result.
 
         EXPECT_EQ(result_row_count, expected_row_count); // result which is correct for all rows.
+
+        python::lockGIL();
+        python::closeInterpreter();
+    }
+
+    TEST(AllQueries, SparseTypeSingleRow) {
+
+        using namespace std;
+        using namespace tuplex;
+
+        auto sparse_row_type = github_sparse_row_type();
+        auto encoded_type = sparse_row_type.encode();
+        cout<<"sparse row type is: "<<encoded_type<<endl;
+
+        auto normal_case_row_type = python::decodeType(encoded_type);
+
+        cout<<"Number of columns to decode with this type (at most): "<<normal_case_row_type.get_column_count()<<endl;
+
+        string input_pattern = "../resources/hyperspecialization/single_fork_event.json";
+
+        string testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
+        auto output_path = "./local-exp/" + testName + "/" + "output" + "/";
+
+        // init interpreter
+        python::initInterpreter();
+        python::unlockGIL();
+
+        // check now with pipeline and set type.
+        ContextOptions co = ContextOptions::defaults();
+
+        co.set("tuplex.backend", "worker");
+
+        // this allows large files to be processed without splitting.
+        co.set("tuplex.experimental.worker.numWorkers", "0"); // <-- single worker.
+        co.set("tuplex.inputSplitSize", "20G");
+        co.set("tuplex.experimental.worker.workerBufferSize", "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
+
+        co.set("tuplex.resolveWithInterpreterOnly", "true");
+
+        // create context according to settings
+        Context ctx(co);
+        runtime::init(co.RUNTIME_LIBRARY().toPath());
+
+        // start pipeline incl. output
+        auto repo_id_code = "def extract_repo_id(row):\n"
+                            "    if 2012 <= row['year'] <= 2014:\n"
+                            "        \n"
+                            "        if row['type'] == 'FollowEvent':\n"
+                            "            return row['payload']['target']['id']\n"
+                            "        \n"
+                            "        if row['type'] == 'GistEvent':\n"
+                            "            return row['payload']['id']\n"
+                            "        \n"
+                            "        repo = row.get('repository')\n"
+                            "        \n"
+                            "        if repo is None:\n"
+                            "            return None\n"
+                            "        return repo.get('id')\n"
+                            "    else:\n"
+                            "        repo =  row.get('repo')\n"
+                            "        if repo:\n"
+                            "            return repo.get('id')\n"
+                            "        else:\n"
+                            "            return None\n";
+
+        // remove output files if they exist
+        cout<<"Removing files (if they exist) from "<<output_path<<endl;
+        boost::filesystem::remove_all(output_path.c_str());
+
+        cout<<"Testing with normal-case row type: "<<normal_case_row_type.desc()<<endl;
+
+        ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, row_type_to_column_hints(normal_case_row_type))
+                .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
+                .withColumn("repo_id", UDF(repo_id_code))
+                .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
+                .withColumn("commits", UDF("lambda row: row['payload'].get('commits')"))
+                .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
+                .selectColumns(vector<string>{"type", "repo_id", "year", "number_of_commits"})
+                .tocsv(output_path);
+
+        auto output_file_path = output_path + "part0.csv.csv";
+        ASSERT_TRUE(fileExists(output_file_path));
+
+        auto output = fileToString(output_file_path);
+        std::cout<<"output::\n"<<output<<std::endl;
+
+
+        auto result_row_count = csv_row_count_for_pattern(output_path + "*.csv");
+
+        EXPECT_EQ(result_row_count, 1);
 
         python::lockGIL();
         python::closeInterpreter();
