@@ -150,12 +150,11 @@ namespace tuplex {
         if(file_offset)
             *file_offset = range_start;
 
-        // determine sample size
-        if (range_size >= sampleSize)
-            sampleSize = core::floorToMultiple(std::min(sampleSize, range_size), 16ul);
-        else {
-            sampleSize = core::ceilToMultiple(std::min(sampleSize, range_size), 16ul);
-        }
+        // make sample size multiple
+        sampleSize = core::ceilToMultiple(std::min(sampleSize, range_size), 16ul);
+
+        if(sampleSize > range_size)
+            sampleSize = range_size;
 
         if(0 == sampleSize)
             return "";
@@ -183,10 +182,8 @@ namespace tuplex {
                 break;
         }
 
-        assert(sampleSize % 16 == 0); // needs to be divisible by 16...
-
         // memory must be at least 16
-        auto nbytes_sample = sampleSize + 16 + 1;
+        auto nbytes_sample = core::ceilToMultiple(sampleSize + 16 + 1, 16ul);
         aligned_string sample(nbytes_sample, '\0');
         assert(sample.capacity() > 16 && sample.size() > 16);
 
@@ -198,8 +195,11 @@ namespace tuplex {
         // read contents
         size_t bytesRead = 0;
         vf->readOnly(ptr, sampleSize, &bytesRead); // use read-only here to speed up sampling
-        auto end = ptr + sampleSize;
-        ptr[sampleSize] = 0; // important!
+        auto end = ptr + bytesRead;
+
+        // memset to 0 after bytesRead for 16 bytes
+        assert(bytesRead + 16 < nbytes_sample);
+        std::memset(ptr + bytesRead, 0, 16ul);
 
         Logger::instance().defaultLogger().info(
                 "sampled " + uri.toString() + " on " + sizeToMemString(sampleSize));
@@ -2197,7 +2197,7 @@ namespace tuplex {
         // check file sampling modes & then load the samples accordingly
         if(m & SamplingMode::FIRST_ROWS && sample_limit > 0) {
             auto sample = loadSample(_samplingSize, uri, uri_size, SamplingMode::FIRST_ROWS, true);
-            auto sample_length = std::min(sample.size() - 1, strlen(sample.c_str()));
+            auto sample_length = std::min(sample.size() - 1, strlen(sample.c_str()) + 1);
 
             size_t start_offset = 0;
             // range start != 0?
@@ -2228,7 +2228,7 @@ namespace tuplex {
             // the smaller of remaining and sample size!
             size_t file_offset = 0;
             auto sample = loadSample(_samplingSize, uri, uri_size, SamplingMode::LAST_ROWS, true, &file_offset);
-            auto sample_length = std::min(sample.size() - 1, strlen(sample.c_str()));
+            auto sample_length = std::min(sample.size() - 1, strlen(sample.c_str()) + 1);
             size_t offset = 0;
             if(!v.empty()) {
                 if(range_size < 2 * sampling_size) {
