@@ -2407,6 +2407,11 @@ namespace python {
             *end_position = pos;
         assert(expressionStack.size() > 0);
         assert(expressionStack.top().size() > 0);
+
+        // check bracket counts are back to 0
+        if(numOpenParentheses != numClosedParentheses || numOpenBrackets != numClosedBrackets || numOpenSqBrackets != numClosedSqBrackets)
+            throw std::runtime_error("Unbalanced ( [ or { count.");
+
         return expressionStack.top().front();
     }
 

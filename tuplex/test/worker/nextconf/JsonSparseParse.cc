@@ -208,6 +208,56 @@ TEST(JsonSparseParse, SingleStringJsonParse) {
         free(out_ptr);
 }
 
+TEST(JsonSparseParse, TestOptionalNestedSparseDict) {
+    using namespace tuplex;
+    using namespace std;
+
+    string test_data = "{\"repository\":{\"id\":1300192,\"watchers\":10486,\"private\":false,\"created_at\":\"2011-01-27T11:30:43-08:00\"},\"created_at\":\"2012-10-15T00:00:17-07:00\"}";
+    test_data = "{\"repository\":{\"id\":1300192}}";
+
+    // create simple parse type:
+    auto encoded_type = "Row['repository'->Option[SparseStruct[(str,'id'=>i64)]]]";
+    auto sparse_row_type = python::Type::decode(encoded_type);
+
+    ASSERT_TRUE(sparse_row_type.isRowType());
+
+    codegen::LLVMEnvironment env;
+    JITCompiler jit;
+
+    auto runtime_path = ContextOptions::defaults().RUNTIME_LIBRARY().toPath();
+    auto rc_runtime = runtime::init(runtime_path);
+    ASSERT_TRUE(rc_runtime);
+
+    auto func_name = generate_line_parse_function(env, sparse_row_type);
+
+    auto ir = env.getIR();
+
+    llvm::LLVMContext context;
+    auto mod = codegen::stringToModule(context, ir);
+    // codegen::annotateModuleWithInstructionPrint(*mod);
+
+    ir = codegen::moduleToString(*mod);
+
+    // compile
+    ASSERT_TRUE(jit.compile(ir));
+
+    // get function
+    auto foo = reinterpret_cast<int64_t(*)(const char*, int64_t, uint8_t**,int64_t*)>(jit.getAddrOfSymbol(func_name));
+
+    uint8_t* out_ptr = nullptr;
+    int64_t out_size = 0;
+    int64_t serialized_size = foo(test_data.c_str(), strlen(test_data.c_str()) + 1, &out_ptr, &out_size);
+
+    EXPECT_GT(serialized_size, 0); // make sure no exception happened.
+
+    auto row = Row::fromMemory(Schema(Schema::MemoryLayout::ROW, sparse_row_type), out_ptr, serialized_size);
+
+    cout<<"row:\n"<<row.toPythonString()<<endl;
+
+    if(out_ptr)
+        free(out_ptr);
+}
+
 
 size_t json_call_per_row(const std::string& path, std::function<bool(size_t row_number, const std::string& line)> f) {
     using namespace std;

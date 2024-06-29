@@ -737,10 +737,10 @@ namespace tuplex {
         auto output = fileToString(output_file_path);
         std::cout<<"output::\n"<<output<<std::endl;
 
-
-        auto result_row_count = csv_row_count_for_pattern(output_path + "*.csv");
-
-        EXPECT_EQ(result_row_count, 1);
+        auto output_lines = splitToLines(output);
+        ASSERT_EQ(output_lines.size(), 2);
+        EXPECT_EQ(output_lines[0], "type,repo_id,year,number_of_commits");
+        EXPECT_EQ(output_lines[1], "ForkEvent,1300192,2012,0");
 
         python::lockGIL();
         python::closeInterpreter();
