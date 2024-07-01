@@ -3670,17 +3670,16 @@ namespace tuplex {
 
                     auto ret_val = struct_dict_load_value(_env, builder, caller.val, callerType.makeNonSparse(), access_path);
 
-                    _env.debugPrint(builder, "sparse_struct.get for path " + access_path_to_str(access_path));
-
-                    if(ret_val.val) {
-                        _env.printValue(builder, ret_val.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " sparse_struct.get for path " + access_path_to_str(access_path) + " value: ");
-                    }
+                    // _env.debugPrint(builder, "sparse_struct.get for path " + access_path_to_str(access_path));
+                    // if(ret_val.val) {
+                    //     _env.printValue(builder, ret_val.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " sparse_struct.get for path " + access_path_to_str(access_path) + " value: ");
+                    // }
 
                     // always present or not? If not always present, perform presence check -> turn into default value if applicable.
                     if(!entry.alwaysPresent) {
                         auto is_present = struct_dict_load_present(_env, builder, caller.val, callerType.makeNonSparse(), access_path);
 
-                        _env.printValue(builder, is_present, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " sparse_struct.get for path " + access_path_to_str(access_path) + ", is value present: ");
+                        // _env.printValue(builder, is_present, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " sparse_struct.get for path " + access_path_to_str(access_path) + ", is value present: ");
 
                         return codegen::return_either_of_two_values(lfb, _env, builder, is_present, retType, ret_val,
                                                                     entry.valueType, default_return_value, default_return_type);
