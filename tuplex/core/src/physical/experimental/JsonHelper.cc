@@ -336,6 +336,47 @@ namespace tuplex {
             return ecToI64(ExceptionCode::SUCCESS);
         }
 
+        uint64_t JsonItem_getObjectOrNull(JsonItem *item, const char *key, JsonItem **out) {
+            assert(item);
+            assert(key);
+            assert(out);
+
+            // free if set
+            if(out) {
+                JsonItem* ptr = *out;
+                if(nullptr != ptr) {
+                    JsonItem_Free(ptr);
+                    *out = nullptr;
+                }
+            }
+
+            simdjson::error_code error;
+            // on demand
+            // simdjson::ondemand::object o;
+            // dom
+            simdjson::dom::object o;
+
+            // check if null
+            if(item->o[key].is_null()) {
+                *out = nullptr;
+                return ecToI64(ExceptionCode::NULLERROR); // <-- use nullerror, but is actually ok.
+            }
+
+            item->o[key].get_object().tie(o, error);
+            if (error)
+                return translate_simdjson_error(error);
+
+            // ONLY allocate if ok. else, leave how it is.
+            auto obj = new JsonItem();
+#ifdef JSON_PARSER_TRACE_MEMORY
+            traced_items.push_back(obj);
+            printf("Allocated object pointer in JsonItem_getObject [%p]\n", obj);
+#endif
+            obj->o = o;
+            *out = obj;
+            return ecToI64(ExceptionCode::SUCCESS);
+        }
+
         uint64_t JsonItem_getArray(JsonItem *item, const char *key, JsonArray **out) {
             assert(item);
             assert(key);
@@ -879,6 +920,7 @@ namespace tuplex {
             jit.registerSymbol("JsonItem_Free", JsonItem_Free);
             jit.registerSymbol("JsonItem_getStringAndSize", JsonItem_getStringAndSize);
             jit.registerSymbol("JsonItem_getObject", JsonItem_getObject);
+            jit.registerSymbol("JsonItem_getObjectOrNull", JsonItem_getObjectOrNull);
             jit.registerSymbol("JsonItem_getDouble", JsonItem_getDouble);
             jit.registerSymbol("JsonItem_getInt", JsonItem_getInt);
             jit.registerSymbol("JsonItem_getBoolean", JsonItem_getBoolean);

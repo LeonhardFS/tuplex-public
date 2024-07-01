@@ -1149,11 +1149,12 @@ namespace tuplex {
                 is_present = builder.CreateICmpNE(rc, _env.i64Const(
                         ecToI64(ExceptionCode::KEYERROR))); // element is present iff not key error
 
-                // // debug print:
-                // _env.printValue(builder, rc, "rc for getObject: ");
-                // _env.printValue(builder, is_object, "is object for key=" + entry.key);
-                // _env.printValue(builder, is_present, "object present for key=" + entry.key);
-
+#ifdef PRINT_JSON_TRACE_DETAILS
+                 // debug print:
+                 _env.printValue(builder, rc, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " rc for getObject: ");
+                 _env.printValue(builder, is_object, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " is object for key=" + entry.key);
+                 _env.printValue(builder, is_present, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " object present for key=" + entry.key);
+#endif
                 // --> only decode IFF is_ok (i.e., present and no type error (it's not an array or so)).
                 builder.CreateCondBr(is_object, bbDecodeItem, bbDecodeDone);
             }
@@ -1178,6 +1179,14 @@ namespace tuplex {
             assert(is_present);
             assert(rc);
             value.val = builder.CreateLoad(stype, value_item_var); // <-- loads struct!
+
+#ifdef PRINT_JSON_TRACE_DETAILS
+            // loading may be problematic, print instead??
+            auto dict_type = entry.valueType.makeNonSparse();
+            _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + "Value of struct dict after Load:");
+            struct_dict_print(_env, builder, value, dict_type);
+#endif
+
             return make_tuple(rc, is_present, value);
         }
 
@@ -1251,6 +1260,14 @@ namespace tuplex {
             } else {
                 // or struct type (sparse/non-sparse)
                 std::tie(rcB, presentB, valueB) = decodeStructDictFieldFromObject(builder, obj, key, entryB, bbSchemaMismatch);
+
+#ifdef PRINT_JSON_TRACE_DETAILS
+                // loading may be problematic, print instead??
+                auto dict_type = entryB.valueType.makeNonSparse();
+                _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " stuct dict successfully decoded, this is:");
+                struct_dict_print(_env, builder, valueB, dict_type);
+#endif
+
             }
 #ifdef PRINT_JSON_TRACE_DETAILS
             _env.printValue(builder, presentB, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " decoded field for key=" + entry.key + " as present:");
@@ -1301,6 +1318,15 @@ namespace tuplex {
             phi->addIncoming(rcA, bbValueIsNull);
             phi->addIncoming(rcB, bbValueIsNotNull);
             rc = phi;
+
+#ifdef PRINT_JSON_TRACE_DETAILS
+            // loading may be problematic, print instead??
+            auto dict_type = entry.valueType.withoutOption().makeNonSparse();
+            if(dict_type.isStructuredDictionaryType()) {
+                _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Returning following value:: ");
+                struct_dict_print(_env, builder, value, dict_type);
+            }
+#endif
 
             return std::make_tuple(rc, value);
         }
@@ -1514,9 +1540,12 @@ namespace tuplex {
                 _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" level=" + std::to_string(level) + " decoding element " + key_value + "=" + kv_pair.valueType.desc() + " from JSON.");
 #endif
 
-                if (kv_pair.valueType.isStructuredDictionaryType() || kv_pair.valueType.isSparseStructuredDictionaryType()) {
+                if (kv_pair.valueType.withoutOption().isStructuredDictionaryType() || kv_pair.valueType.withoutOption().isSparseStructuredDictionaryType()) {
                     //logger.debug("parsing nested dict: " +
                     //             json_access_path_to_string(access_path, kv_pair.valueType, kv_pair.alwaysPresent));
+
+                    bool has_option = kv_pair.valueType.isOptionType();
+                    auto value_type_without_option = kv_pair.valueType.withoutOption();
 
 #ifdef PRINT_JSON_TRACE_DETAILS
                     _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " parse nested dict for: " + json_access_path_to_string(access_path, kv_pair.valueType, kv_pair.alwaysPresent));
@@ -1524,7 +1553,9 @@ namespace tuplex {
 
 
                     // check if an object exists under the given key.
-                    auto F = getOrInsertFunction(_env.getModule().get(), "JsonItem_getObject", _env.i64Type(),
+                    auto F = has_option ? getOrInsertFunction(_env.getModule().get(), "JsonItem_getObjectOrNull", _env.i64Type(),
+                                                              _env.i8ptrType(),
+                                                              _env.i8ptrType(), _env.i8ptrType()->getPointerTo(0)) : getOrInsertFunction(_env.getModule().get(), "JsonItem_getObject", _env.i64Type(),
                                                  _env.i8ptrType(),
                                                  _env.i8ptrType(), _env.i8ptrType()->getPointerTo(0));
                     auto item_var = addObjectVar(builder);
@@ -1538,8 +1569,16 @@ namespace tuplex {
                     // create call, recurse only if ok!
                     llvm::Value *rc = builder.CreateCall(F, {object, key, item_var});
 
+                    llvm::Value* is_null = has_option ? builder.CreateICmpEQ(rc, _env.i64Const(
+                            ecToI64(ExceptionCode::NULLERROR))) : _env.i1Const(false);
+
                     auto is_object = builder.CreateICmpEQ(rc, _env.i64Const(
                             ecToI64(ExceptionCode::SUCCESS))); // <-- indicates successful parse
+
+                    // special case: has option -> store null explicitly
+                    if(has_option) {
+                        struct_dict_store_isnull(_env, builder, dict_ptr, dict_ptr_type.makeNonSparse(), access_path, is_null);
+                    }
 
                     // special case: if include maybe structs as well, add entry. (should not get serialized)
                     if (include_maybe_structs && !kv_pair.alwaysPresent) {
@@ -1548,13 +1587,17 @@ namespace tuplex {
                         // however, if the entry is not an object, there will be a (type) mismatch so this is equivalent to not present.
 
 #ifdef PRINT_JSON_TRACE_DETAILS
+                        _env.printValue(builder, is_null, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" level=" + std::to_string(level) + " element " + key_value + "=" + kv_pair.valueType.desc() + " isnull: ");
                         _env.printValue(builder, is_object, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" level=" + std::to_string(level) + " element " + key_value + "=" + kv_pair.valueType.desc() + " present: ");
                         _env.printValue(builder, rc, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" level=" + std::to_string(level) + " element " + key_value + " rc from JsonItem_getObject: ");
                         _env.printValue(builder, builder.CreateLoad(_env.i8ptrType(), item_var), std::string(__FILE__) + ":" + std::to_string(__LINE__) +" level=" + std::to_string(level) + " element " + key_value + " item ptr from JsonItem_getObject: ");
 #endif
 
                         // store presence into struct dict ptr
-                        struct_dict_store_present(_env, builder, dict_ptr, dict_ptr_type.makeNonSparse(), access_path, is_object);
+                        auto is_present = is_object;
+                        if(has_option)
+                            is_present = builder.CreateOr(is_object, is_null); // both ok for presence.
+                        struct_dict_store_present(_env, builder, dict_ptr, dict_ptr_type.makeNonSparse(), access_path, is_present);
                         // present if is_object == true
                         // --> as for value, use a dummy.
                         // entries.push_back(
@@ -1589,14 +1632,14 @@ namespace tuplex {
 #endif
                     // recurse using new prefix
                     // --> similar to flatten_recursive_helper(entries, kv_pair.valueType, access_path, include_maybe_structs);
-                    decode(builder, dict_ptr, dict_ptr_type, item, bbSchemaMismatch, kv_pair.valueType, access_path, include_maybe_structs, generate_keyset_check, level + 1);
+                    decode(builder, dict_ptr, dict_ptr_type, item, bbSchemaMismatch, value_type_without_option, access_path, include_maybe_structs, generate_keyset_check, level + 1);
 
                     // keyset match?
                     if(generate_keyset_check) {
 #ifdef PRINT_JSON_TRACE_DETAILS
                         _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" performing keycheck JsonObject for key=" + key_value + ": ");
 #endif
-                        perform_keyset_check(builder, kv_pair.valueType, builder.CreateLoad(_env.i8ptrType(), item_var), bbSchemaMismatch);
+                        perform_keyset_check(builder, value_type_without_option, builder.CreateLoad(_env.i8ptrType(), item_var), bbSchemaMismatch);
                     }
 
                     builder.CreateBr(bbDecodeDone); // where ever builder is, continue to decode done for this item.
@@ -1609,6 +1652,11 @@ namespace tuplex {
                     //     std::cerr<<"skipping array decode with type="<<kv_pair.valueType.desc()<<" for now."<<std::endl;
                     //     continue;
                     // }
+
+                    // make sure without option it's not a struct dict type
+                    auto value_type_without_option = kv_pair.valueType.withoutOption();
+                    assert(!value_type_without_option.isStructuredDictionaryType() && !value_type_without_option.isSparseStructuredDictionaryType());
+
 
                     // basically get the entry for the kv_pair.
                     // logger.debug("generating code to decode " + json_access_path_to_string(access_path, kv_pair.valueType, kv_pair.alwaysPresent));

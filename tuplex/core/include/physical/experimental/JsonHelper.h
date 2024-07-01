@@ -87,6 +87,8 @@ namespace tuplex {
         extern "C" uint64_t JsonItem_getString(JsonItem *item, const char *key, char **out);
         extern "C" uint64_t JsonItem_getStringAndSize(JsonItem *item, const char *key, char **out, int64_t *size);
         extern "C" uint64_t JsonItem_getObject(JsonItem *item, const char *key, JsonItem **out);
+        // returns NULLERROR if null encountered, and sets out to nullptr.
+        extern "C" uint64_t JsonItem_getObjectOrNull(JsonItem *item, const char *key, JsonItem **out);
         extern "C" uint64_t JsonItem_getArray(JsonItem *item, const char *key, JsonArray **out);
         extern "C" void JsonArray_Free(JsonArray* arr);
         extern "C" uint64_t JsonArray_Size(JsonArray* arr);
