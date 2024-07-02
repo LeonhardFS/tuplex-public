@@ -387,12 +387,41 @@ int main(int argc, char* argv[]) {
     int input_row_count=0,output_row_count=0;
     double loading_time = 0.0;
     std::tie(input_row_count, output_row_count, loading_time) = tuplex::process(input_pattern, output_path);
-    ss<<mode<<","<<input_pattern<<","<<input_pattern<<","<<path_timer.time()<<","<<loading_time<<",$$STUB$$,"<<input_row_count<<","<<output_row_count<<"\n";
+
+    double total_time_in_s = timer.time();
+    cout<<"Took "<<total_time_in_s<<"s in total"<<endl;
+
+    // start output to CSV, wrangle worker_app.json file.
+    auto worker_json = "worker_app_job.json";
+    if(fileExists(worker_json)) {
+        cout<<"Found "<<worker_json<<" to wrangle."<<endl;
+
+        // load file using JSON
+        auto worker_json_data = fileToString(URI(worker_json));
+        nlohmann::json j_root = nlohmann::json::parse(worker_json_data);
+        auto mode_across_files = "tuplex-c++-sparse";
+        double total_time_sum_in_s = 0.0;
+        for (auto j: j_root["responses"]) {
+            auto output_row_count = j["stats"]["output"]["normal"].get<size_t>();
+            auto input_row_count = j["stats"]["input"]["total_input_row_count"].get<size_t>();
+
+            auto path = j["request"][0].get<std::string>();
+
+            auto path_time = j["stats"]["request_total_time"].get<double>();
+
+            total_time_sum_in_s += path_time;
+            ss<<mode_across_files<<","<<path<<","<<","<<path_time<<","<<","<<",$$STUB$$,"<<input_row_count<<","<<output_row_count<<"\n";
+        }
+
+        cout<<"\ntotal time (sum) in s: "<<total_time_sum_in_s<<"s (vs. reported "<<total_time_in_s<<"s"<<")"<<endl;
+    } else {
+        ss<<mode<<","<<input_pattern<<","<<input_pattern<<","<<path_timer.time()<<","<<loading_time<<",$$STUB$$,"<<input_row_count<<","<<output_row_count<<"\n";
+    }
+
 
     auto csv = "mode,input_path,output_path,time_in_s,loading_time_in_s,total_time_in_s,input_row_count,output_row_count\n" + ss.str();
 
     // replace $$STUB$$ with total time
-    double total_time_in_s = timer.time();
     csv = replace_all(csv, "$$STUB$$", std::to_string(total_time_in_s));
     cout<<"per-file stats in CSV format::\n"<<csv<<"\n"<<endl;
 

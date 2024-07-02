@@ -18,9 +18,11 @@ mkdir -p $BUILD_DIR
 TUPLEX_DIR=$BUILD_DIR/../../../../../tuplex
 # Unix
 LLVM_DIR=/opt/llvm-16.0.6
+cd $BUILD_DIR && cmake -DCMAKE_BUILD_TYPE=Release -DSKIP_AWS_TESTS=ON -DBUILD_WITH_ORC=ON -DAWS_S3_TEST_BUCKET='tuplex-test' -DLLVM_ROOT_DIR=$LLVM_DIR $TUPLEX_DIR && make -j$(nproc) tuplex_github && cd ..
+
 # mac os
-LLVM_DIR=/usr/local/Cellar/llvm/16.0.3
-cd $BUILD_DIR && cmake -DPYTHON3_VERSION=3.11 -DCMAKE_BUILD_TYPE=Release -DSKIP_AWS_TESTS=ON -DBUILD_WITH_ORC=ON -DAWS_S3_TEST_BUCKET='tuplex-test' -DLLVM_ROOT_DIR=$LLVM_DIR $TUPLEX_DIR && make -j$(nproc) tuplex_github && cd ..
+#LLVM_DIR=/usr/local/Cellar/llvm/16.0.3
+#cd $BUILD_DIR && cmake -DPYTHON3_VERSION=3.11 -DCMAKE_BUILD_TYPE=Release -DSKIP_AWS_TESTS=ON -DBUILD_WITH_ORC=ON -DAWS_S3_TEST_BUCKET='tuplex-test' -DLLVM_ROOT_DIR=$LLVM_DIR $TUPLEX_DIR && make -j$(nproc) tuplex_github && cd ..
 
 
 PROG=./build/dist/bin/tuplex_github
@@ -36,14 +38,14 @@ run_benchmarks() {
 }
 
 # Run python baseline experiment once (to compare)
-python3.11 runtuplex-new.py --mode python --input-pattern "/hot/data/github_daily/*.json" --output-path "./local-exp/python-baseline/github/output" --scratch-dir "./local-exp/scratch" --result-path "./local-exp/python-baseline/github/results.ndjson"
+python3 runtuplex-new.py --mode python --input-pattern "/hot/data/github_daily/*.json" --output-path "./local-exp/python-baseline/github/output" --scratch-dir "./local-exp/scratch" --result-path "./local-exp/python-baseline/github/results.ndjson"
 
 # run all benchmarks once
 run_benchmarks
 
 ## Validating results
 echo ">>> Validating python baseline vs. C++ (best)"
-python3.11 validate.py "./local-exp/python-baseline/github/output" "./local-exp/tuplex-c++/github/best/output"
+python3 validate.py "./local-exp/python-baseline/github/output" "./local-exp/tuplex-c++/github/best/output"
 
 echo "validation succeeded!"
 

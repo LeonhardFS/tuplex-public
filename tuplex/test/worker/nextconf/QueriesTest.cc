@@ -984,4 +984,39 @@ namespace tuplex {
 
         EXPECT_EQ(acc_indices.size(), 2); // only repo and year due to tracing.
     }
+
+    TEST(AllQUeries, WrangleJsonToCSV) {
+        using namespace std;
+
+        auto worker_json = "/home/leonhards/projects/2nd-copy/benchmarks/nextconf/hyperspecialization/github/worker_app_job.json";
+
+        std::stringstream ss;
+
+        if(fileExists(worker_json)) {
+            cout << "Found " << worker_json << " to wrangle." << endl;
+            auto mode_across_files = "tuplex-c++";
+
+            // load file using JSON
+            auto worker_json_data = fileToString(URI(worker_json));
+            nlohmann::json j_root = nlohmann::json::parse(worker_json_data);
+            double total_time_sum_in_s = 0.0;
+            for (auto j: j_root["responses"]) {
+                auto output_row_count = j["stats"]["output"]["normal"].get<size_t>();
+                auto input_row_count = j["stats"]["input"]["total_input_row_count"].get<size_t>();
+
+                auto path = j["request"][0].get<std::string>();
+
+                auto path_time = j["stats"]["request_total_time"].get<double>();
+
+                total_time_sum_in_s += path_time;
+                ss<<mode_across_files<<","<<path<<","<<","<<path_time<<","<<","<<",$$STUB$$,"<<input_row_count<<","<<output_row_count<<"\n";
+            }
+
+            auto csv = "mode,input_path,output_path,time_in_s,loading_time_in_s,total_time_in_s,input_row_count,output_row_count\n" + ss.str();
+
+            cout<<"CSV generated::\n\n"<<csv<<endl;
+
+            cout<<"\ntotal time (sum) in s: "<<total_time_sum_in_s<<"s"<<endl;
+        }
+    }
 }
