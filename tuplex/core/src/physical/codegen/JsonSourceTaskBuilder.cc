@@ -564,9 +564,9 @@ namespace tuplex {
                                                                    _normalCaseRowType, normal_case_columns,
                                                                    unwrap_first_level, parser, bbParseAsGeneralCaseRow);
 
-#ifdef JSON_PARSER_TRACE_MEMORY
-            _env->printValue(builder, rc, "normal row successfully parsed.");
-#endif
+//#ifdef JSON_PARSER_TRACE_MEMORY
+            _env->printValue(builder, rc,  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " normal row successfully parsed.");
+//#endif
             builder.CreateBr(bbNormalCaseSuccess);
 
             // // old:

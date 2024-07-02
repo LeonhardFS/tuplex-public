@@ -821,15 +821,25 @@ namespace tuplex {
 
         cout<<"Testing with normal-case row type: "<<normal_case_row_type.desc()<<endl;
 
-        // original:
+        // debug:
         ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED)
                 .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
-                .withColumn("repo_id", UDF(repo_id_code))
-                .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
-                .withColumn("commits", UDF("lambda row: row['payload'].get('commits')"))
-                .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
-                .selectColumns(vector<string>{"type", "repo_id", "year", "number_of_commits"})
+//                .withColumn("repo_id", UDF(repo_id_code))
+//                .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
+//                .withColumn("commits", UDF("lambda row: row['payload'].get('commits')"))
+//                .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
+                .selectColumns(vector<string>{"type", "year"})
                 .tocsv(output_path);
+
+//        // original:
+//        ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED)
+//                .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
+//                .withColumn("repo_id", UDF(repo_id_code))
+//                .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
+//                .withColumn("commits", UDF("lambda row: row['payload'].get('commits')"))
+//                .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
+//                .selectColumns(vector<string>{"type", "repo_id", "year", "number_of_commits"})
+//                .tocsv(output_path);
 
         auto result_row_count = csv_row_count_for_pattern(output_path + "*.csv");
 

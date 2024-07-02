@@ -232,6 +232,7 @@ namespace tuplex {
             v.val = builder.CreateLoad(llvm_generic_dict_type, dict_ptr);
 
             _env.printValue(builder, rc, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " generic dict decode done.");
+            _env.printValue(builder, call_cjson_to_string(builder, v.val).val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " decoded dictionary:");
 
             return make_tuple(rc, v);
         }
