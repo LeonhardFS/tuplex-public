@@ -777,6 +777,8 @@ namespace tuplex {
 
         co.set("tuplex.backend", "worker");
 
+        co.set("tuplex.experimental.traceExecution", "true");
+
         // this allows large files to be processed without splitting.
         co.set("tuplex.experimental.worker.numWorkers", "0"); // <-- single worker.
         co.set("tuplex.inputSplitSize", "20G");

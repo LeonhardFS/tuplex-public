@@ -601,6 +601,8 @@ namespace tuplex {
             return _syms;
         }
 
+        void annotateModulesWithTraceInformation();
+
     private:
         /*!
          * creates a new TransformStage with generated code
@@ -800,6 +802,8 @@ namespace tuplex {
         static void compileCodePathToObjectFile(StageCodePath& path, const std::string& target_triple, const std::string& cpu);
 
         void registerCodePathSymbols(JITCompiler &jit, const StageCodePath &path) const;
+
+        void annotatePathWithTraceInformation(StageCodePath& path);
     };
 }
 #endif //TUPLEX_TRANSFORMSTAGE_H

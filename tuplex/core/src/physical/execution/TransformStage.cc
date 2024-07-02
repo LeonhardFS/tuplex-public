@@ -1448,4 +1448,30 @@ namespace tuplex {
         path.code = std::string(object_code.begin(), object_code.end());
         path.codeFormat = codegen::CodeFormat::OBJECT_CODE;
     }
+
+
+    void TransformStage::annotatePathWithTraceInformation(StageCodePath& path) {
+        // skip non-existing path
+        if(path.code.empty())
+            return;
+
+        // skip opt for non llvm IR formats
+        if(path.codeFormat != codegen::CodeFormat::LLVM_IR_BITCODE && path.codeFormat != codegen::CodeFormat::LLVM_IR)
+            return;
+
+        llvm::LLVMContext ctx;
+        auto mod = path.codeFormat == codegen::CodeFormat::LLVM_IR_BITCODE ? codegen::bitCodeToModule(ctx, path.code) : codegen::stringToModule(ctx, path.code);
+
+        codegen::annotateModuleWithInstructionPrint(*mod);
+
+        if(path.codeFormat == codegen::CodeFormat::LLVM_IR_BITCODE)
+            path.code = codegen::moduleToBitCodeString(*mod);
+        else
+            path.code = codegen::moduleToString(*mod);
+    }
+
+    void TransformStage::annotateModulesWithTraceInformation() {
+        annotatePathWithTraceInformation(_fastCodePath);
+        annotatePathWithTraceInformation(_slowCodePath);
+    }
 }

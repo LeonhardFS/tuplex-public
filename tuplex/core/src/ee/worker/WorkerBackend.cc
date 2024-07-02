@@ -47,6 +47,11 @@ namespace tuplex {
             logger().info(ss.str());
         }
 
+        // trace execution? mostly for debugging purposes.
+        if(_options.EXPERIMENTAL_TRACE_EXECUTION()) {
+            stage.annotateModulesWithTraceInformation();
+        }
+
         // now convert to object file if format is bitcode (or ir)
         if(_options.EXPERIMENTAL_INTERCHANGE_CODE_VIA_OBJECT_FILES()) {
             Timer timer;
