@@ -1439,10 +1439,6 @@ namespace tuplex {
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt64Ty(ctx));
 #else
-            auto mod = builder.GetInsertBlock()->getParent()->getParent();
-            assert(mod);
-
-            auto& ctx = mod->getContext();
             auto func = getOrInsertFunction(mod, "cJSON_IsTrue", llvm::Type::getInt64Ty(ctx), llvm::Type::getInt8PtrTy(ctx, 0));
 
             return builder.CreateCall(func, {cjson_obj});
