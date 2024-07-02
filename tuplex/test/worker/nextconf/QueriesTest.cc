@@ -824,11 +824,11 @@ namespace tuplex {
         // debug:
         ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED)
                 .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
-//                .withColumn("repo_id", UDF(repo_id_code))
+                .withColumn("repo_id", UDF(repo_id_code))
 //                .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
 //                .withColumn("commits", UDF("lambda row: row['payload'].get('commits')"))
 //                .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
-                .selectColumns(vector<string>{"type", "year"})
+                .selectColumns(vector<string>{"type", "year", "repo_id"})
                 .tocsv(output_path);
 
 //        // original:
