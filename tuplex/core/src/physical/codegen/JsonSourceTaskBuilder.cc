@@ -734,22 +734,22 @@ namespace tuplex {
                         // pipeline ok, continue with normal processing
                         builder.SetInsertPoint(bNext);
 #ifndef NDEBUG
-                        _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Pipeline returned successfully, processing next row.");
+                        // _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Pipeline returned successfully, processing next row.");
 #endif
                     }
                 }
 
                  // serialized size (as is)
 #ifndef NDEBUG
-                _env->printValue(builder, builder.CreateLoad(builder.getInt64Ty(), _normalRowCountVar),
-                                 std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Computing size of current normal_case_row, row number: ");
+                //_env->printValue(builder, builder.CreateLoad(builder.getInt64Ty(), _normalRowCountVar),
+                //                 std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Computing size of current normal_case_row, row number: ");
 #endif
 
                  auto normal_size = normal_case_row.getSize(builder);
                  incVar(builder, _normalMemorySizeVar, normal_size);
 
 #ifndef NDEBUG
-                 _env->printValue(builder, normal_size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " normal rows has size: ");
+                 // _env->printValue(builder, normal_size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " normal rows has size: ");
 #endif
 
                 // _env->debugPrint(builder, "got normal-case row!");

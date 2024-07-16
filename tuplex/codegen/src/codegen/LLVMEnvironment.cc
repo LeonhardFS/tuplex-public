@@ -1205,13 +1205,12 @@ namespace tuplex {
 #ifdef USE_YYJSON_INSTEAD
                 represented_as_lazy_pointer = represented_as_lazy_pointer || elementType == python::Type::GENERICDICT;
 
-                if(elementType == python::Type::GENERICDICT) {
-                    // special case: value comes as yyjson*
-
-                    auto json_str = call_cjson_to_string(builder, llvm_val_to_store);
-                    printValue(builder, json_str.size, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" setTupleElement GENERIC DICT with size: ");
-                    printValue(builder, json_str.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" setTupleElement GENERIC DICT with value: ");
-                }
+                // if(elementType == python::Type::GENERICDICT) {
+                //     // special case: value comes as yyjson*
+                //     auto json_str = call_cjson_to_string(builder, llvm_val_to_store);
+                //     printValue(builder, json_str.size, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" setTupleElement GENERIC DICT with size: ");
+                //     printValue(builder, json_str.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" setTupleElement GENERIC DICT with value: ");
+                // }
 #endif
 
                 if(represented_as_lazy_pointer) {

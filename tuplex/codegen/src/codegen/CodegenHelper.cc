@@ -1175,7 +1175,7 @@ namespace tuplex {
 
             auto yyjson_obj = get_yyjson_mut_obj(builder, cjson_obj);
 
-            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_getitem");
+            // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_getitem");
 
             auto yy_doc = get_yyjson_doc(builder, cjson_obj);
             auto yy_ret_item = builder.CreateCall(func, {yyjson_obj, key});
@@ -1412,7 +1412,7 @@ namespace tuplex {
             auto func = getOrInsertFunction(mod, "yyjson_mut_is_str", ctypeToLLVM<bool>(ctx),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
-            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_isstring");
+            // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_isstring");
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt1Ty(ctx));
 #else
@@ -1536,7 +1536,7 @@ namespace tuplex {
             auto func = getOrInsertFunction(mod, "yyjson_mut_get_str", ctypeToLLVM<const char*>(ctx),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
-            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_get_string");
+            // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_get_string");
 
             auto str_pointer = builder.CreateCall(func, {yy_obj});
 #else
@@ -1567,7 +1567,7 @@ namespace tuplex {
 
             auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
 
-            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_as_runtime_str");
+            // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_as_runtime_str");
 
             auto str = builder.CreateCall(func, {yy_obj, str_size_var});
             auto str_size = builder.CreateLoad(llvm::Type::getInt64Ty(ctx), str_size_var);
@@ -1602,7 +1602,7 @@ namespace tuplex {
             auto ctor_builder = builder.firstBlockBuilder(false); // insert at beginning.
             auto yy_ret_val = ctor_builder.CreateAlloca(llvm_type, 0, nullptr, "yy_retval");
 
-            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_create_empty");
+            // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_create_empty");
 
             set_yyjson_mut_doc(builder, yy_ret_val, yy_doc); // <-- this may lead to modificaitons if subdict is returned, this should be correct. dict.copy() creates deep copy of elements.
             set_yyjson_mut_obj(builder, yy_ret_val, yy_root_item);
@@ -1631,7 +1631,7 @@ namespace tuplex {
             auto llvm_type = get_or_create_yyjson_shim_type(builder);
             auto yy_ret_val = ctor_builder.CreateAlloca(llvm_type, 0, nullptr, "yy_retval");
 
-            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_simdjson_to_yyjson");
+            // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_simdjson_to_yyjson");
 
             set_yyjson_mut_doc(builder, yy_ret_val, yy_doc); // <-- this may lead to modificaitons if subdict is returned, this should be correct. dict.copy() creates deep copy of elements.
             set_yyjson_mut_obj(builder, yy_ret_val, yy_root_item);

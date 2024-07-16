@@ -4147,13 +4147,13 @@ namespace tuplex {
                     if(subscriptStructDict(builder, &ret, value_type, value, index_type, index, sub->_expression.get())) {
 
 #ifndef NDEBUG
-                        _env->debugPrint(builder, "Subscripting struct.dict of type " + value_type.desc() + " yielding result type " + sub->getInferredType().desc() + ", result is: ");
-                        if(ret.is_null)
-                            _env->printValue(builder, ret.is_null,  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result is_null: ");
-                        if(ret.val)
-                            _env->printValue(builder, ret.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result value: ");
-                        if(ret.size)
-                            _env->printValue(builder, ret.size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result size: ");
+                        // _env->debugPrint(builder, "Subscripting struct.dict of type " + value_type.desc() + " yielding result type " + sub->getInferredType().desc() + ", result is: ");
+                        // if(ret.is_null)
+                        //     _env->printValue(builder, ret.is_null,  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result is_null: ");
+                        // if(ret.val)
+                        //     _env->printValue(builder, ret.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result value: ");
+                        // if(ret.size)
+                        //     _env->printValue(builder, ret.size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result size: ");
 #endif
 
                         _lfb->setLastBlock(builder.GetInsertBlock());
@@ -4169,19 +4169,19 @@ namespace tuplex {
                     if(subscriptRow(builder, &ret, value_type, value, index_type, index, sub->_expression.get())) {
 
 #ifndef NDEBUG
-                        _env->debugPrint(builder, "Subscripting Row yielding result type " + sub->getInferredType().desc() + ", result is: ");
-                        if(sub->getInferredType().withoutOption().isStructuredDictionaryType()) {
-                            if(ret.is_null)
-                                _env->printValue(builder, ret.is_null,  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result is_null: ");
-                            struct_dict_print(*_env, builder, ret, sub->getInferredType().withoutOption());
-                        } else {
-                            if(ret.is_null)
-                                _env->printValue(builder, ret.is_null,  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result is_null: ");
-                            if(ret.val)
-                                _env->printValue(builder, ret.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result value: ");
-                            if(ret.size)
-                                _env->printValue(builder, ret.size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result size: ");
-                        }
+                       // _env->debugPrint(builder, "Subscripting Row yielding result type " + sub->getInferredType().desc() + ", result is: ");
+                       // if(sub->getInferredType().withoutOption().isStructuredDictionaryType()) {
+                       //     if(ret.is_null)
+                       //         _env->printValue(builder, ret.is_null,  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result is_null: ");
+                       //     struct_dict_print(*_env, builder, ret, sub->getInferredType().withoutOption());
+                       // } else {
+                       //     if(ret.is_null)
+                       //         _env->printValue(builder, ret.is_null,  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result is_null: ");
+                       //     if(ret.val)
+                       //         _env->printValue(builder, ret.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result value: ");
+                       //     if(ret.size)
+                       //         _env->printValue(builder, ret.size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result size: ");
+                       // }
 #endif
                         _lfb->setLastBlock(builder.GetInsertBlock());
                         addInstruction(ret.val, ret.size, ret.is_null);

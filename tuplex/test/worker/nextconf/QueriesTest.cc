@@ -708,8 +708,7 @@ namespace tuplex {
 
         // test with true/false.
         // use explicitly generic dicts instead of sparse type.
-//        for(auto generic_dict_value : std::vector<std::string>{"true", "false"}) {
-        for(auto generic_dict_value : std::vector<std::string>{"true"}) {
+        for(auto generic_dict_value : std::vector<std::string>{"false", "true"}) {
             co.set("tuplex.experimental.useGenericDicts", generic_dict_value);
 
             // create context according to settings
