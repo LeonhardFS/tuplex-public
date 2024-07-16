@@ -740,6 +740,10 @@ namespace tuplex {
             ASSERT_EQ(output_lines.size(), 2);
             EXPECT_EQ(output_lines[0], "type,actor_type");
             EXPECT_EQ(output_lines[1], "ForkEvent,User");
+
+            // TODO: check using metrics what the counts are re normal row count etc.
+            // -> save the JSON basically within metrics.
+            // check that here it is a single normal row each.
         }
 
         python::lockGIL();
