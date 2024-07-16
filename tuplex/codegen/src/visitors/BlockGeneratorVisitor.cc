@@ -3874,8 +3874,9 @@ namespace tuplex {
                 return {};
             }
 
-            auto cjson_val = call_cjson_getitem(builder, value.val, key);
-            auto item_not_found = call_cjson_is_null_object(builder, cjson_val);
+            llvm::Value* item_found = nullptr;
+            auto cjson_val = call_cjson_getitem(builder, value.val, key, &item_found);
+            auto item_not_found = _env->i1neg(builder, item_found);
 
             // throw a keyerror if it is an invalid key
             _lfb->addException(builder, ExceptionCode::KEYERROR, item_not_found, "KeyError for subscriptCJSON");

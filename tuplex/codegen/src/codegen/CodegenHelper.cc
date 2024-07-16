@@ -1162,7 +1162,7 @@ namespace tuplex {
 #endif
         }
 
-        llvm::Value* call_cjson_getitem(const IRBuilder& builder, llvm::Value* cjson_obj, llvm::Value* key) {
+        llvm::Value* call_cjson_getitem(const IRBuilder& builder, llvm::Value* cjson_obj, llvm::Value* key, llvm::Value** out_item_found) {
             assert(cjson_obj);
             assert(key);
             assert(builder.GetInsertBlock());
@@ -1177,14 +1177,23 @@ namespace tuplex {
 
             codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_getitem");
 
-            yyjson_obj = builder.CreateCall(func, {yyjson_obj, key});
-            set_yyjson_mut_obj(builder, cjson_obj, yyjson_obj);
+            auto yy_doc = get_yyjson_doc(builder, cjson_obj);
+            auto yy_ret_item = builder.CreateCall(func, {yyjson_obj, key});
 
-            // return nullptr if not found.
+            // alloc and then return object
+            auto ctor_builder = builder.firstBlockBuilder(false); // insert at beginning.
+            auto llvm_type = get_or_create_yyjson_shim_type(builder);
+            auto yy_ret_val = ctor_builder.CreateAlloca(llvm_type, 0, nullptr, "yy_retval");
+
+            // output whether item is found.
             auto null_i8ptr = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(i8ptrType(ctx)));
-            auto null_pointer = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(get_or_create_yyjson_shim_type(ctx)->getPointerTo()));
+            if(out_item_found) {
+                *out_item_found = builder.CreateICmpNE(yyjson_obj, null_i8ptr);
+            }
 
-            return builder.CreateSelect(builder.CreateICmpEQ(yyjson_obj, null_i8ptr), null_pointer, cjson_obj);
+            set_yyjson_mut_doc(builder, yy_ret_val, yy_doc);
+            set_yyjson_mut_obj(builder, yy_ret_val, yy_ret_item);
+            return builder.CreateLoad(llvm_type, yy_ret_val);
 #else
             auto func = getOrInsertFunction(mod, "cJSON_GetObjectItemCaseSensitive", llvm::Type::getInt8PtrTy(ctx, 0),
                                             llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt8PtrTy(ctx, 0));
@@ -1373,11 +1382,12 @@ namespace tuplex {
             // alloc new obj struct and fill with doc & returned object
 
             auto ctor_builder = builder.firstBlockBuilder(false); // insert at beginning.
-            auto yy_ret_val = ctor_builder.CreateAlloca(get_or_create_yyjson_shim_type(builder), 0, nullptr, "yy_retval");
+            auto llvm_type = get_or_create_yyjson_shim_type(builder);
+            auto yy_ret_val = ctor_builder.CreateAlloca(llvm_type, 0, nullptr, "yy_retval");
 
             set_yyjson_mut_doc(builder, yy_ret_val, yy_doc); // <-- this may lead to modificaitons if subdict is returned, this should be correct. dict.copy() creates deep copy of elements.
             set_yyjson_mut_obj(builder, yy_ret_val, yy_ret_item);
-            return {yy_ret_val, nullptr, nullptr};
+            return {builder.CreateLoad(llvm_type, yy_ret_val), nullptr, nullptr};
 #else
             auto func = getOrInsertFunction(mod, "cJSON_GetArrayItem", llvm::Type::getInt8PtrTy(ctx, 0),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0), ctypeToLLVM<int>(ctx));
@@ -1588,14 +1598,15 @@ namespace tuplex {
             auto yy_doc = builder.CreateCall(func_doc_init);
             auto yy_root_item = builder.CreateCall(func_doc_get_root, {yy_doc});
 
+            auto llvm_type = get_or_create_yyjson_shim_type(builder);
             auto ctor_builder = builder.firstBlockBuilder(false); // insert at beginning.
-            auto yy_ret_val = ctor_builder.CreateAlloca(get_or_create_yyjson_shim_type(builder), 0, nullptr, "yy_retval");
+            auto yy_ret_val = ctor_builder.CreateAlloca(llvm_type, 0, nullptr, "yy_retval");
 
             codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_create_empty");
 
             set_yyjson_mut_doc(builder, yy_ret_val, yy_doc); // <-- this may lead to modificaitons if subdict is returned, this should be correct. dict.copy() creates deep copy of elements.
             set_yyjson_mut_obj(builder, yy_ret_val, yy_root_item);
-            return yy_ret_val;
+            return builder.CreateLoad(llvm_type, yy_ret_val);
 #else
             auto func = getOrInsertFunction(mod, "cJSON_CreateObject", llvm::Type::getInt8PtrTy(ctx, 0));
             return builder.CreateCall(func, {});
@@ -1617,13 +1628,14 @@ namespace tuplex {
             auto yy_root_item = builder.CreateCall(func_doc_get_root, {yy_doc});
 
             auto ctor_builder = builder.firstBlockBuilder(false); // insert at beginning.
-            auto yy_ret_val = ctor_builder.CreateAlloca(get_or_create_yyjson_shim_type(builder), 0, nullptr, "yy_retval");
+            auto llvm_type = get_or_create_yyjson_shim_type(builder);
+            auto yy_ret_val = ctor_builder.CreateAlloca(llvm_type, 0, nullptr, "yy_retval");
 
             codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_simdjson_to_yyjson");
 
             set_yyjson_mut_doc(builder, yy_ret_val, yy_doc); // <-- this may lead to modificaitons if subdict is returned, this should be correct. dict.copy() creates deep copy of elements.
             set_yyjson_mut_obj(builder, yy_ret_val, yy_root_item);
-            return yy_ret_val;
+            return builder.CreateLoad(llvm_type, yy_ret_val);
 #else
 
             auto func = getOrInsertFunction(mod, "JsonItem_to_cJSON", llvm::Type::getInt8PtrTy(ctx, 0),
@@ -1665,7 +1677,8 @@ namespace tuplex {
 #ifdef USE_YYJSON_INSTEAD
 
             auto ctor_builder = builder.firstBlockBuilder(false); // insert at beginning.
-            auto yy_ret_val = ctor_builder.CreateAlloca(get_or_create_yyjson_shim_type(builder), 0, nullptr, "yy_retval");
+            auto llvm_type = get_or_create_yyjson_shim_type(builder);
+            auto yy_ret_val = ctor_builder.CreateAlloca(llvm_type, 0, nullptr, "yy_retval");
 
             auto func_doc_get_root = getOrInsertFunction(mod, "yyjson_mut_doc_get_root", i8ptrType(ctx), i8ptrType(ctx));
 
@@ -1681,7 +1694,7 @@ namespace tuplex {
 
             set_yyjson_mut_doc(builder, yy_ret_val, yy_doc); // <-- this may lead to modificaitons if subdict is returned, this should be correct. dict.copy() creates deep copy of elements.
             set_yyjson_mut_obj(builder, yy_ret_val, yy_root_object);
-            return yy_ret_val;
+            return builder.CreateLoad(llvm_type, yy_ret_val);
 #else
 
             auto func = getOrInsertFunction(mod, "cJSON_Parse", llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt8PtrTy(ctx, 0));

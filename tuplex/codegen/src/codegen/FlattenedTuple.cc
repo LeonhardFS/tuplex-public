@@ -1003,7 +1003,7 @@ namespace tuplex {
 #ifdef USE_YYJSON_INSTEAD
                         auto& ctx = builder.getContext();
                         auto llvm_type = el.val->getType();
-                        assert(llvm_type == get_or_create_yyjson_shim_type(ctx)->getPointerTo());
+                        assert(llvm_type == get_or_create_yyjson_shim_type(ctx));
 #endif
                         // could store size explicitly to avoid the formatting call here...
                         auto f = call_cjson_to_string(builder, el.val);

@@ -1685,10 +1685,7 @@ namespace tuplex {
         }
 
         // cJSON helper functions (for easier access)
-        extern llvm::Value* call_cjson_getitem(const IRBuilder& builder, llvm::Value* cjson_obj, llvm::Value* key);
-
-        // checks whether item (i.e. from call_cjson_getitem) is equivalent to nullptr
-        extern llvm::Value* call_cjson_is_null_object(const IRBuilder& builder, llvm::Value* cjson_obj);
+        extern llvm::Value* call_cjson_getitem(const IRBuilder& builder, llvm::Value* cjson_obj, llvm::Value* key, llvm::Value** out_item_found=nullptr);
 
         extern llvm::Value* call_cjson_object_set_item(const IRBuilder& builder, llvm::Value* cjson_obj, llvm::Value* key, llvm::Value* cjson_item);
         extern llvm::Value* call_cjson_isnumber(const IRBuilder& builder, llvm::Value* cjson_obj);

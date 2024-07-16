@@ -1203,7 +1203,8 @@ namespace tuplex {
 
                 // special case yyjson, now a struct is used as well.
 #ifdef USE_YYJSON_INSTEAD
-                //represented_as_lazy_pointer = represented_as_lazy_pointer || elementType == python::Type::GENERICDICT;
+                represented_as_lazy_pointer = represented_as_lazy_pointer || elementType == python::Type::GENERICDICT;
+
                 if(elementType == python::Type::GENERICDICT) {
                     // special case: value comes as yyjson*
 
@@ -1746,7 +1747,7 @@ namespace tuplex {
                     return getOrCreateStructuredDictType(t.makeNonSparse());
                 } else {
 #ifdef USE_YYJSON_INSTEAD
-                    return get_or_create_yyjson_shim_type(_context)->getPointerTo();
+                    return get_or_create_yyjson_shim_type(_context);
 #else
                     return Type::getInt8PtrTy(_context);
 #endif

@@ -3432,7 +3432,8 @@ namespace tuplex {
 
             // retrieve object for key
             // call: c
-            auto item = call_cjson_getitem(builder, caller.val, args.front().val);
+            llvm::Value* item_found = nullptr;
+            auto item = call_cjson_getitem(builder, caller.val, args.front().val, &item_found);
 
 
             // handle cases of deoptimization (i.e., ret-type not considered option type)
@@ -3442,7 +3443,7 @@ namespace tuplex {
                 auto require_deoptimization = !retType.isOptionType();
 
                 // check if item is valid, if nullptr -> normal-case violation basically.
-                auto item_not_found = call_cjson_is_null_object(builder, item);
+                auto item_not_found = _env.i1neg(builder, item_found);
 
                 if(require_deoptimization) {
                     if(retType != python::Type::NULLVALUE) {
@@ -3791,8 +3792,9 @@ namespace tuplex {
 
             if(key_type == python::Type::STRING) {
                 // only string key so far supported.
-                auto item = call_cjson_getitem(builder, value.val, key.val);
-                auto item_not_found = call_cjson_is_null_object(builder, item);
+                llvm::Value* item_found = nullptr;
+                auto item = call_cjson_getitem(builder, value.val, key.val, &item_found);
+                auto item_not_found = env.i1neg(builder, item_found);
 
                 // debug:
                 auto dict_as_str = call_cjson_to_string(builder, value.val);
@@ -3817,6 +3819,10 @@ namespace tuplex {
                 } else if(python::Type::STRING == expected_return_type) {
                     auto is_string = call_cjson_isstring(builder, item);
                     auto is_not_string = env.i1neg(builder, is_string);
+
+                    auto item_as_str = call_cjson_to_string(builder, item);
+                    env.printValue(builder, item_as_str.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " generic dict subscript yielding string got element: ");
+
                     lfb.addException(builder, ExceptionCode::NORMALCASEVIOLATION, is_not_string, "expected return type " + expected_return_type.desc() + " but item is not string");
 
                     return get_cjson_as_string_value(builder, item);
