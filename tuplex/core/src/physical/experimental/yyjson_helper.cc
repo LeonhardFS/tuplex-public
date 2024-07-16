@@ -65,6 +65,19 @@ namespace tuplex {
         yyjson_set_runtime_alc(&alc);
         size_t str_len = 0;
 
+
+#ifndef NDEBUG
+        if(!val) {
+            // nullptr
+            char null_msg[] = "<yyjson nullptr>";
+            auto nulL_size = strlen(null_msg) + 1;
+            *out_size = nulL_size;
+            auto str_ptr = (char*)runtime::rtmalloc(nulL_size);
+            memcpy(str_ptr, null_msg, nulL_size);
+            return str_ptr;
+        }
+#endif
+
 #ifndef NDEBUG
         yyjson_write_err err;
         auto err_ptr = &err;

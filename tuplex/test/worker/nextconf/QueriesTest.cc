@@ -704,11 +704,12 @@ namespace tuplex {
 
         co.set("tuplex.resolveWithInterpreterOnly", "true");
 
-        co.set("tuplex.experimental.traceExecution", "true");
+        // co.set("tuplex.experimental.traceExecution", "true");
 
         // test with true/false.
         // use explicitly generic dicts instead of sparse type.
-        for(auto generic_dict_value : std::vector<std::string>{"true", "false"}) {
+//        for(auto generic_dict_value : std::vector<std::string>{"true", "false"}) {
+        for(auto generic_dict_value : std::vector<std::string>{"true"}) {
             co.set("tuplex.experimental.useGenericDicts", generic_dict_value);
 
             // create context according to settings
@@ -740,8 +741,6 @@ namespace tuplex {
             ASSERT_EQ(output_lines.size(), 2);
             EXPECT_EQ(output_lines[0], "type,actor_type");
             EXPECT_EQ(output_lines[1], "ForkEvent,User");
-
-            break;
         }
 
         python::lockGIL();

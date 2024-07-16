@@ -3794,6 +3794,12 @@ namespace tuplex {
                 auto item = call_cjson_getitem(builder, value.val, key.val);
                 auto item_not_found = call_cjson_is_null_object(builder, item);
 
+                // debug:
+                auto dict_as_str = call_cjson_to_string(builder, value.val);
+                env.printValue(builder, dict_as_str.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript dict: ");
+                env.printValue(builder, key.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript dict with key: ");
+                env.printValue(builder, item_not_found, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript dict item not found: ");
+
                 lfb.addException(builder, ExceptionCode::KEYERROR, item_not_found, "KeyError for generic dict []");
 
                 if(python::Type::GENERICDICT == expected_return_type) {
