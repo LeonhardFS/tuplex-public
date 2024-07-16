@@ -845,19 +845,10 @@ namespace tuplex {
         using namespace std;
         using namespace tuplex;
 
-
-        auto sparse_row_type = github_sparse_row_type();
-        auto encoded_type = sparse_row_type.encode();
-        cout<<"sparse row type is: "<<encoded_type<<endl;
-
-        auto normal_case_row_type = python::decodeType(encoded_type);
-
-        cout<<"Number of columns to decode with this type (at most): "<<normal_case_row_type.get_column_count()<<endl;
-
         string input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
 
         // full data
-        input_pattern = "/hot/data/github_daily/*.json";
+        // input_pattern = "/hot/data/github_daily/*.json";
 
         string testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
         auto output_path = "./local-exp/" + testName + "/" + "output" + "/";
@@ -912,8 +903,6 @@ namespace tuplex {
         // remove output files if they exist
         cout<<"Removing files (if they exist) from "<<output_path<<endl;
         boost::filesystem::remove_all(output_path.c_str());
-
-        cout<<"Testing with normal-case row type: "<<normal_case_row_type.desc()<<endl;
 
         // debug:
         ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED)
