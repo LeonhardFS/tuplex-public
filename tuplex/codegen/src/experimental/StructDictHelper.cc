@@ -1985,7 +1985,7 @@ namespace tuplex {
             flatten_recursive_helper(entries, dict_type, {});
             auto indices = struct_dict_load_indices(dict_type);
 
-            env.debugPrint(builder, "Printing contents of value of type " + dict_type.desc() + " (" + pluralize(entries.size(), "field"));
+            env.debugPrint(builder, "Printing contents of value of type " + dict_type.desc() + " (" + pluralize(entries.size(), "field") + "):");
             for (auto entry: entries) {
                 auto access_path = std::get<0>(entry);
                 auto value_type = std::get<1>(entry);
@@ -2002,7 +2002,7 @@ namespace tuplex {
                 llvm::BasicBlock* bbShow = nullptr;
                 if(!is_always_present) {
                     auto item_present = struct_dict_load_present(env, builder, v.val, dict_type, access_path);
-                    env.printValue(builder, item_present, json_access_path_to_string(access_path, value_type, is_always_present) + " is present: ");
+                    env.printValue(builder, item_present, "  -- " + json_access_path_to_string(access_path, value_type, is_always_present) + " is present: ");
 
                     auto& ctx = builder.GetInsertBlock()->getContext();
                     bbPresenceDone = llvm::BasicBlock::Create(ctx, "struct_dict_presence_done", builder.GetInsertBlock()->getParent());

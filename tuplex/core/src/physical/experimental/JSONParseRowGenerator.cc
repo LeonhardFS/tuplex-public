@@ -1328,10 +1328,12 @@ namespace tuplex {
 
 #ifdef PRINT_JSON_TRACE_DETAILS
             // loading may be problematic, print instead??
-            auto dict_type = entry.valueType.withoutOption().makeNonSparse();
-            if(dict_type.isStructuredDictionaryType()) {
-                _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Returning following value:: ");
-                struct_dict_print(_env, builder, value, dict_type);
+            if(entry.valueType.withoutOption().isSparseStructuredDictionaryType() || entry.valueType.withoutOption().isStructuredDictionaryType()) {
+                auto dict_type = entry.valueType.withoutOption().makeNonSparse();
+                if(dict_type.isStructuredDictionaryType()) {
+                    _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Returning following value:: ");
+                    struct_dict_print(_env, builder, value, dict_type);
+                }
             }
 #endif
 

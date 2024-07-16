@@ -1000,6 +1000,11 @@ namespace tuplex {
                         assert(l_size && l_size->getType() == _env->i64Type());
                         s = builder.CreateAdd(s, l_size);
                     } else if(type.isDictionaryType()) {
+#ifdef USE_YYJSON_INSTEAD
+                        auto& ctx = builder.getContext();
+                        auto llvm_type = el.val->getType();
+                        assert(llvm_type == get_or_create_yyjson_shim_type(ctx)->getPointerTo());
+#endif
                         // could store size explicitly to avoid the formatting call here...
                         auto f = call_cjson_to_string(builder, el.val);
                         s = builder.CreateAdd(s, f.size);
@@ -1069,6 +1074,14 @@ namespace tuplex {
 
                 int val_idx=-1, size_idx=-1, bitmap_idx=-1;
                 std::tie(val_idx, size_idx, bitmap_idx) = indices;
+
+//#ifdef USE_YYJSON_INSTEAD
+//                // explicitly initialize to avoid errors.
+//                if(_flattenedTupleType.parameters()[i].withoutOption().isDictionaryType()) {
+//                    auto null_constant = _env->nullConstant(llvmType->getStructElementType(val_idx));
+//                    builder.CreateStructStore(llvmType, tuple_ptr, val_idx, null_constant);
+//                }
+//#endif
 
                 // explit null initialization of data, uncomment to perform
                 // if(val_idx >= 0) {

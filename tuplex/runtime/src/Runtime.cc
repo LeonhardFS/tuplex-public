@@ -826,6 +826,17 @@ char* strJoin(const char *base_str, int64_t base_str_size, int64_t num_words, co
 
 extern "C" char* quoteForCSV(const char *str, int64_t size, int64_t* new_size, char separator, char quotechar) {
 
+#ifndef NDEBUG
+    if(!str) {
+      char ret[] = "<null>";
+      auto dest_size = strlen(ret) + 1;
+      auto ret_ptr = (char*)rtmalloc(dest_size);
+      memcpy(ret_ptr, ret, dest_size);
+      *new_size = dest_size;
+      return ret_ptr;
+    }
+#endif
+
     // check if there are chars in it that need to be quoted
     size_t num_quotes = 0;
     bool need_to_quote = false;

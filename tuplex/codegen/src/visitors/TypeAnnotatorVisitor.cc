@@ -1454,7 +1454,11 @@ namespace tuplex {
             // is there an annotation? -> use that then.
             if(sub->hasAnnotation() && sub->annotation().numTimesVisited > 0)
                 sub->setInferredType(sub->annotation().majorityType());
-
+            else {
+                // no annotation, terminate with CompileError. Do not allow for undetermined GENERIC DICT return type.
+                addCompileError(CompileError::TYPE_ERROR_GENERIC_DICT_SUBSCRIPT);
+                error(compileErrorToStr(CompileError::TYPE_ERROR_GENERIC_DICT_SUBSCRIPT)); // error out to trigger sampling.
+            }
         } else if(python::Type::EMPTYDICT == type) {
             // subscripting an empty dict will always yield a KeyError. I.e. warn and set generic object
             // error("subscripting an empty dictionary will always yield a KeyError. Please fix code");

@@ -5,6 +5,7 @@
 #include "TestUtils.h"
 #include "JsonStatistic.h"
 #include "tracing/LambdaAccessedColumnVisitor.h"
+#include "StructCommon.h"
 
 namespace tuplex {
     struct QueryConfiguration {
@@ -651,6 +652,97 @@ namespace tuplex {
             expected_row_count = 294195; // full query result.
 
         EXPECT_EQ(result_row_count, expected_row_count); // result which is correct for all rows.
+
+        python::lockGIL();
+        python::closeInterpreter();
+    }
+
+    TEST(AllQueries, SimpleFieldAccessIntrospection) {
+        using namespace std;
+        using namespace tuplex;
+
+        auto encoded_type = "Struct[(str,'type'=>str),(str,'login'=>str),(str,'gravatar_id'=>str),(str,'email'=>str)]";
+        auto type = python::Type::decode(encoded_type);
+        ASSERT_TRUE(type.isStructuredDictionaryType());
+
+        vector<pair<string, python::Type>> path{make_pair("'type'", python::Type::STRING)};
+
+        int bitmap_idx = 0, present_idx =0, field_idx=0, size_idx=0;
+        std::tie(bitmap_idx, present_idx, field_idx, size_idx) = struct_dict_get_indices(type, path);
+
+        EXPECT_GE(present_idx, 0);
+        EXPECT_GE(field_idx, 0);
+    }
+
+    TEST(AllQueries, SingleGenericDictRow) {
+        using namespace std;
+        using namespace tuplex;
+
+        auto sparse_row_type = github_sparse_row_type();
+        auto encoded_type = sparse_row_type.encode();
+        cout<<"sparse row type is: "<<encoded_type<<endl;
+
+        auto normal_case_row_type = python::decodeType(encoded_type);
+
+        cout<<"Number of columns to decode with this type (at most): "<<normal_case_row_type.get_column_count()<<endl;
+
+        string input_pattern = "../resources/hyperspecialization/single_fork_event.json";
+
+        // init interpreter
+        python::initInterpreter();
+        python::unlockGIL();
+
+        // check now with pipeline and set type.
+        ContextOptions co = ContextOptions::defaults();
+
+        co.set("tuplex.backend", "worker");
+
+        // this allows large files to be processed without splitting.
+        co.set("tuplex.experimental.worker.numWorkers", "0"); // <-- single worker.
+        co.set("tuplex.inputSplitSize", "20G");
+        co.set("tuplex.experimental.worker.workerBufferSize", "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
+
+        co.set("tuplex.resolveWithInterpreterOnly", "true");
+
+        co.set("tuplex.experimental.traceExecution", "true");
+
+        // test with true/false.
+        // use explicitly generic dicts instead of sparse type.
+        for(auto generic_dict_value : std::vector<std::string>{"true", "false"}) {
+            co.set("tuplex.experimental.useGenericDicts", generic_dict_value);
+
+            // create context according to settings
+            Context ctx(co);
+            runtime::init(co.RUNTIME_LIBRARY().toPath());
+
+            // start pipeline incl. output
+            string testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
+            auto output_path = "./local-exp/" + testName + "/" + "output" + "/";
+
+            // remove output files if they exist
+            cout<<"Removing files (if they exist) from "<<output_path<<endl;
+            boost::filesystem::remove_all(output_path.c_str());
+
+            cout<<"Testing with normal-case row type: "<<normal_case_row_type.desc()<<endl;
+
+            ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED)
+                    .withColumn("actor_type", UDF("lambda row: row['actor_attributes']['type']"))
+                    .selectColumns(vector<string>{"type", "actor_type"})
+                    .tocsv(output_path);
+
+            auto output_file_path = output_path + "part0.csv.csv";
+            ASSERT_TRUE(fileExists(output_file_path));
+
+            auto output = fileToString(output_file_path);
+            std::cout<<"output::\n"<<output<<std::endl;
+
+            auto output_lines = splitToLines(output);
+            ASSERT_EQ(output_lines.size(), 2);
+            EXPECT_EQ(output_lines[0], "type,actor_type");
+            EXPECT_EQ(output_lines[1], "ForkEvent,User");
+
+            break;
+        }
 
         python::lockGIL();
         python::closeInterpreter();

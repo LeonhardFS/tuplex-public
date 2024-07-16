@@ -1197,8 +1197,23 @@ namespace tuplex {
             if (value.val) {
                 auto llvm_val_to_store = value.val;
                 auto llvm_element_type = pythonToLLVMType(elementType);
+
                 // special case isStructDict or isListType b.c. they may be represented through a lazy pointer
-                if(elementType.isListType() || elementType.isStructuredDictionaryType() || elementType.isSparseStructuredDictionaryType()) {
+                bool represented_as_lazy_pointer = elementType.isListType() || elementType.isStructuredDictionaryType() || elementType.isSparseStructuredDictionaryType();
+
+                // special case yyjson, now a struct is used as well.
+#ifdef USE_YYJSON_INSTEAD
+                //represented_as_lazy_pointer = represented_as_lazy_pointer || elementType == python::Type::GENERICDICT;
+                if(elementType == python::Type::GENERICDICT) {
+                    // special case: value comes as yyjson*
+
+                    auto json_str = call_cjson_to_string(builder, llvm_val_to_store);
+                    printValue(builder, json_str.size, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" setTupleElement GENERIC DICT with size: ");
+                    printValue(builder, json_str.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" setTupleElement GENERIC DICT with value: ");
+                }
+#endif
+
+                if(represented_as_lazy_pointer) {
 
                     // special case: list type of single-valued type. -> just store length as i64!
                     if(elementType.isListType() && elementType.elementType().isSingleValued()) {

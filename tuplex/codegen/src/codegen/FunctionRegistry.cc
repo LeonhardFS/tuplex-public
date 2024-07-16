@@ -3442,11 +3442,7 @@ namespace tuplex {
                 auto require_deoptimization = !retType.isOptionType();
 
                 // check if item is valid, if nullptr -> normal-case violation basically.
-#ifdef USE_YYJSON_INSTEAD
-                auto item_not_found = builder.CreateICmpEQ(_env.nullConstant(get_or_create_yyjson_shim_type(builder.getContext())->getPointerTo()), item);
-#else
-                auto item_not_found = builder.CreateICmpEQ(_env.i8nullptr(), item);
-#endif
+                auto item_not_found = call_cjson_is_null_object(builder, item);
 
                 if(require_deoptimization) {
                     if(retType != python::Type::NULLVALUE) {
@@ -3796,8 +3792,8 @@ namespace tuplex {
             if(key_type == python::Type::STRING) {
                 // only string key so far supported.
                 auto item = call_cjson_getitem(builder, value.val, key.val);
+                auto item_not_found = call_cjson_is_null_object(builder, item);
 
-                auto item_not_found = builder.CreateICmpEQ(item, env.i8nullptr());
                 lfb.addException(builder, ExceptionCode::KEYERROR, item_not_found, "KeyError for generic dict []");
 
                 if(python::Type::GENERICDICT == expected_return_type) {

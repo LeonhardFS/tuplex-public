@@ -564,7 +564,7 @@ namespace tuplex {
                                                                    _normalCaseRowType, normal_case_columns,
                                                                    unwrap_first_level, parser, bbParseAsGeneralCaseRow);
 
-#ifdef JSON_PARSER_TRACE_MEMORY
+#ifdef PRINT_JSON_TRACE_DETAILS
             _env->printValue(builder, rc,  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " normal row successfully parsed.");
 #endif
             builder.CreateBr(bbNormalCaseSuccess);
@@ -660,8 +660,9 @@ namespace tuplex {
                         builder.CreateCondBr(bad_row_cond, bNotOK, bNext);
                         builder.SetInsertPoint(bNotOK);
 
-                        // _env->debugPrint(builder, "found row to serialize as exception in normal-case handler");
-
+#ifndef NDEBUG
+                        _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " found row to serialize as exception in normal-case handler.");
+#endif
                          // print out original row:
                          //_env->debugPrint(builder, "original normal-case row is: ");
                          //normal_case_row.print(builder);
@@ -732,12 +733,24 @@ namespace tuplex {
 
                         // pipeline ok, continue with normal processing
                         builder.SetInsertPoint(bNext);
+#ifndef NDEBUG
+                        _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Pipeline returned successfully, processing next row.");
+#endif
                     }
                 }
 
-                // serialized size (as is)
-                auto normal_size = normal_case_row.getSize(builder);
-                incVar(builder, _normalMemorySizeVar, normal_size);
+                 // serialized size (as is)
+#ifndef NDEBUG
+                _env->printValue(builder, builder.CreateLoad(builder.getInt64Ty(), _normalRowCountVar),
+                                 std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Computing size of current normal_case_row, row number: ");
+#endif
+
+                 auto normal_size = normal_case_row.getSize(builder);
+                 incVar(builder, _normalMemorySizeVar, normal_size);
+
+#ifndef NDEBUG
+                 _env->printValue(builder, normal_size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " normal rows has size: ");
+#endif
 
                 // _env->debugPrint(builder, "got normal-case row!");
 

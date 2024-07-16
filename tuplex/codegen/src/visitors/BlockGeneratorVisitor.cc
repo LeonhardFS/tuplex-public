@@ -3875,9 +3875,10 @@ namespace tuplex {
             }
 
             auto cjson_val = call_cjson_getitem(builder, value.val, key);
+            auto item_not_found = call_cjson_is_null_object(builder, cjson_val);
 
             // throw a keyerror if it is an invalid key
-            _lfb->addException(builder, ExceptionCode::KEYERROR, builder.CreateIsNull(cjson_val), "KeyError for subscriptCJSON");
+            _lfb->addException(builder, ExceptionCode::KEYERROR, item_not_found, "KeyError for subscriptCJSON");
 
             return get_value_from_cjson(builder, cjson_val, subType);
         }
@@ -4038,9 +4039,10 @@ namespace tuplex {
                     return;
                 }
 
-            } else if (value.val->getType() == llvm::Type::getInt8PtrTy(_env->getContext(), 0)
-                       && value_type == python::Type::STRING
+            } else if (value_type == python::Type::STRING
                        && sub->getInferredType() == python::Type::STRING) {
+
+                assert(value.val->getType() == llvm::Type::getInt8PtrTy(_env->getContext(), 0));
 
                 auto strlength = builder.CreateSub(value.size, _env->i64Const(1));
 
@@ -4098,6 +4100,7 @@ namespace tuplex {
 
                 // OLD:
                 // auto subval = subscriptCJSONDictionary(sub, index, index_type, value);
+                _lfb->setLastBlock(builder.GetInsertBlock());
                 addInstruction(subval.val, subval.size, subval.is_null);
             } else if(value_type.isListType()) {
                 if(value_type == python::Type::EMPTYLIST) {
@@ -4121,7 +4124,6 @@ namespace tuplex {
                     auto el = list_load_value(*_env, builder, list_ptr, list_type, index.val);
                     addInstruction(el.val, el.size, el.is_null);
                     _lfb->setLastBlock(builder.GetInsertBlock());
-
                 }
             } else if (value.val->getType() == _env->getMatchObjectPtrType() &&
                        value_type == python::Type::MATCHOBJECT) {
@@ -4135,20 +4137,52 @@ namespace tuplex {
                 auto end = builder.CreateLoad(builder.getInt64Ty(), builder.CreateGEP(builder.getInt64Ty(), ovector, builder.CreateAdd(ind, _env->i64Const(1))));
 
                 auto ret = stringSliceInst({subject, subject_len}, start, end, _env->i64Const(1));
+                _lfb->setLastBlock(builder.GetInsertBlock());
                 addInstruction(ret.val, ret.size);
             } else {
                 // check if value is of struct dict type
                 if(value_type.isStructuredDictionaryType()) {
                     SerializableValue ret;
                     if(subscriptStructDict(builder, &ret, value_type, value, index_type, index, sub->_expression.get())) {
+
+#ifndef NDEBUG
+                        _env->debugPrint(builder, "Subscripting struct.dict of type " + value_type.desc() + " yielding result type " + sub->getInferredType().desc() + ", result is: ");
+                        if(ret.is_null)
+                            _env->printValue(builder, ret.is_null,  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result is_null: ");
+                        if(ret.val)
+                            _env->printValue(builder, ret.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result value: ");
+                        if(ret.size)
+                            _env->printValue(builder, ret.size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result size: ");
+#endif
+
+                        _lfb->setLastBlock(builder.GetInsertBlock());
                         addInstruction(ret.val, ret.size, ret.is_null);
                         return;
+                    } else {
+                        fatal_error("Failed to subscript struct.dict of type " + value_type.desc());
                     }
                 }
 
                 if(value_type.isRowType()) {
                     SerializableValue ret;
                     if(subscriptRow(builder, &ret, value_type, value, index_type, index, sub->_expression.get())) {
+
+#ifndef NDEBUG
+                        _env->debugPrint(builder, "Subscripting Row yielding result type " + sub->getInferredType().desc() + ", result is: ");
+                        if(sub->getInferredType().withoutOption().isStructuredDictionaryType()) {
+                            if(ret.is_null)
+                                _env->printValue(builder, ret.is_null,  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result is_null: ");
+                            struct_dict_print(*_env, builder, ret, sub->getInferredType().withoutOption());
+                        } else {
+                            if(ret.is_null)
+                                _env->printValue(builder, ret.is_null,  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result is_null: ");
+                            if(ret.val)
+                                _env->printValue(builder, ret.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result value: ");
+                            if(ret.size)
+                                _env->printValue(builder, ret.size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result size: ");
+                        }
+#endif
+                        _lfb->setLastBlock(builder.GetInsertBlock());
                         addInstruction(ret.val, ret.size, ret.is_null);
                         return;
                     }
@@ -4158,6 +4192,7 @@ namespace tuplex {
                     // special behavior compared to struct dict, i.e. if key is not found -> normal-case exception.
                     SerializableValue ret;
                     if(subscriptSparseStructDict(builder, &ret, value_type, value, index_type, index, sub->_expression.get())) {
+                        _lfb->setLastBlock(builder.GetInsertBlock());
                         addInstruction(ret.val, ret.size, ret.is_null);
                         return;
                     }
@@ -4348,7 +4383,11 @@ namespace tuplex {
 
             // check if found in dict index type.
             access_path_t path;
-            path.push_back(make_pair(key, key_type));
+            if(key_type == python::Type::STRING)
+                path.push_back(make_pair(escape_to_python_str(key), key_type));
+            else
+                path.push_back(make_pair(key, key_type));
+
             auto element_type = struct_dict_type_get_element_type(value_type, path);
             if(element_type == python::Type::UNKNOWN) {
                 _logger.debug("did not find entry under key=" + key + " in dict.");
@@ -4360,6 +4399,22 @@ namespace tuplex {
             // ok, can access data -> do so by generating the appropriate instructions
             // handle option...
             assert(!element_type.isOptionType());
+
+            // check indices/escaping in debug mode
+#ifndef NEDBUG
+            {
+                int bitmap_idx = 0, present_idx =0, field_idx=0, size_idx=0;
+                std::tie(bitmap_idx, present_idx, field_idx, size_idx) = struct_dict_get_indices(value_type, path);
+
+                // check what return type is, this is a non-exhaustive check list but good for primitives...
+                if(element_type.withoutOption() == python::Type::STRING ||
+                element_type.withoutOption() == python::Type::I64 ||
+                element_type.withoutOption() == python::Type::F64 ||
+                element_type.withoutOption() == python::Type::BOOLEAN) {
+                    assert(field_idx >= 0);
+                }
+            }
+#endif
 
             // is it a maybe field? => check if present. if not, key error
             auto field_present = struct_dict_load_present(*_env, builder, value.val, value_type, path);

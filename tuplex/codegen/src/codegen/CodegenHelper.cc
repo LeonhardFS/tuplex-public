@@ -1152,6 +1152,16 @@ namespace tuplex {
 #endif
 
 
+        llvm::Value* call_cjson_is_null_object(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            auto& ctx = builder.getContext();
+#ifdef USE_YYJSON_INSTEAD
+            auto null_pointer = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(get_or_create_yyjson_shim_type(ctx)->getPointerTo()));
+            return builder.CreateICmpEQ(cjson_obj, null_pointer);
+#else
+          return builder.CreateICmpEQ(cjson_obj, llvm::ConstantPointerNull::get(i8ptrType(ctx)));
+#endif
+        }
+
         llvm::Value* call_cjson_getitem(const IRBuilder& builder, llvm::Value* cjson_obj, llvm::Value* key) {
             assert(cjson_obj);
             assert(key);
