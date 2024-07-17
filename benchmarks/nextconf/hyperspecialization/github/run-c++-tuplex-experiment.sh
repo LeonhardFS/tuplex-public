@@ -51,7 +51,7 @@ run_benchmarks() {
   ${PROG} -m "yyjson" --input-pattern "${INPUT_PATTERN}" --output-path "./local-exp/tuplex-c++/github/yyjson/output" --result-path "./local-exp/tuplex-c++/github/yyjson_results.csv"
 
   echo ">>> Running Tuplex C++ (generic dict w. cjson)"
-  ${PROG} -m "cjson" --input-pattern "${INPUT_PATTERN}" --output-path "./local-exp/tuplex-c++/github/cjson/output" --result-path "./local-exp/tuplex-c++/github/cjson_results.csv"
+  ${ALT_PROG} -m "cjson" --input-pattern "${INPUT_PATTERN}" --output-path "./local-exp/tuplex-c++/github/cjson/output" --result-path "./local-exp/tuplex-c++/github/cjson_results.csv"
 }
 
 # Run python baseline experiment once (to compare)
