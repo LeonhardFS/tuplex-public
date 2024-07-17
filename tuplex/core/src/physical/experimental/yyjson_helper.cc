@@ -58,6 +58,18 @@ namespace tuplex {
         return yyjson_mut_doc_new(&alc);
     }
 
+    static std::string yyjson_err_to_string(const yyjson_read_err& err) {
+        std::stringstream ss;
+        ss<<"yyjson read error ["<<err.code<<"]: "<<err.msg;
+        return ss.str();
+    }
+
+    static std::string yyjson_err_to_string(const yyjson_write_err& err) {
+        std::stringstream ss;
+        ss<<"yyjson write error ["<<err.code<<"]: "<<err.msg;
+        return ss.str();
+    }
+
     char* yyjson_print_to_runtime_str(yyjson_mut_val* val, int64_t* out_size) {
         assert(out_size);
 
@@ -93,7 +105,7 @@ namespace tuplex {
 
 #ifndef NDEBUG
         if(err_ptr && err_ptr->code != YYJSON_WRITE_SUCCESS) {
-            std::cerr<<"yyjson write error: ["<<err_ptr->code<<"]  "<<err_ptr->msg<<std::endl;
+            std::cerr<<yyjson_err_to_string(*err_ptr)<<std::endl;
 
             exit(1);
         }
@@ -122,8 +134,8 @@ namespace tuplex {
         auto yy_doc = yyjson_read_opts(const_cast<char*>(json_line.c_str()), json_line.size(), 0, nullptr, err_ptr);
 
 #ifndef NDEBUG
-        if(err_ptr) {
-            std::cerr<<"yyjson write error: ["<<err_ptr->code<<"]  "<<err_ptr->msg<<std::endl;
+        if(err_ptr && err_ptr->code != YYJSON_READ_SUCCESS) {
+            std::cerr<<yyjson_err_to_string(*err_ptr)<<std::endl;
         }
 #endif
 
@@ -160,8 +172,8 @@ namespace tuplex {
         auto yy_doc = yyjson_read_opts(const_cast<char*>(str), str_size, 0, nullptr, err_ptr);
 
 #ifndef NDEBUG
-        if(err_ptr) {
-            std::cerr<<"yyjson write error: ["<<err_ptr->code<<"]  "<<err_ptr->msg<<std::endl;
+        if(err_ptr && err_ptr->code != YYJSON_READ_SUCCESS) {
+            std::cerr<<yyjson_err_to_string(*err_ptr)<<std::endl;
         }
 #endif
 
