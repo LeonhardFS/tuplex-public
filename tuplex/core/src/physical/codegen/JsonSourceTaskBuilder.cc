@@ -661,7 +661,7 @@ namespace tuplex {
                         builder.SetInsertPoint(bNotOK);
 
 #ifndef NDEBUG
-                        _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " found row to serialize as exception in normal-case handler.");
+                        // _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " found row to serialize as exception in normal-case handler.");
 #endif
                          // print out original row:
                          //_env->debugPrint(builder, "original normal-case row is: ");
@@ -1163,7 +1163,9 @@ namespace tuplex {
             IRBuilder builder(bMismatch);
             // free objects here
             auto rc_mismatch = env.i64Const(ecToI64(ExceptionCode::BADPARSE_STRING_INPUT));
+#ifdef PRINT_JSON_TRACE_DETAILS
             env.printValue(builder, rc_mismatch, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" mismatch in json_parse_row for row type " + row_type.desc());
+#endif
             builder.CreateRet(rc_mismatch);
 
             // main and entry block.

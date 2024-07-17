@@ -1249,7 +1249,7 @@ namespace tuplex {
             auto func = getOrInsertFunction(mod, "yyjson_mut_is_num", ctypeToLLVM<bool>(ctx),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
-            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_isnumber");
+            // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_isnumber");
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt1Ty(ctx));
 #else
@@ -1325,7 +1325,7 @@ namespace tuplex {
             auto func = getOrInsertFunction(mod, "yyjson_mut_is_arr", ctypeToLLVM<bool>(ctx),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
-            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_isarray");
+            // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_isarray");
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt1Ty(ctx));
 #else
@@ -1464,7 +1464,7 @@ namespace tuplex {
             auto func = getOrInsertFunction(mod, "yyjson_mut_get_sint", ctypeToLLVM<int64_t>(ctx),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
-            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_get_integer");
+            // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_get_integer");
 
             return builder.CreateCall(func, {yy_obj});
 #else

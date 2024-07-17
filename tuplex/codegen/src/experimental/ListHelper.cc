@@ -931,7 +931,7 @@ namespace tuplex {
                 auto llvm_element_type = env.pythonToLLVMType(elementType);
                 auto ptr_values = builder.CreateStructLoad(llvm_list_type, list_ptr, 2);
 
-                auto target_idx = builder.CreateGEP(llvm_element_type, ptr_values, idx);
+                auto target_idx = builder.CreateGEP(llvm_element_type->getPointerTo(), ptr_values, idx);
 
                 llvm::Value* element_as_ptr = nullptr;
                 // is element given as struct or pointer?

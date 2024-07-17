@@ -3257,7 +3257,9 @@ namespace tuplex {
                 // fetch cJSON and store within list!
                 auto arr_item = get_cjson_array_item(builder, item, i);
 
-                env.printValue(builder, serialize_cjson_as_runtime_str(builder, arr_item.val).val, "decoded element: ");
+#ifndef NDEBUG
+                env.printValue(builder, serialize_cjson_as_runtime_str(builder, arr_item.val).val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " decoded element: ");
+#endif
 
                 // can invoke the check before and save this.
                 if(check_every_element) {
