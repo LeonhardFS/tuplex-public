@@ -6,6 +6,7 @@
 #define TUPLEX_PARAMETERS_H
 
 // uncomment following line to use yyjson library instead of (slow cJSON) library
+// this is available as cmake option now.
 // #define USE_YYJSON_INSTEAD
 
 namespace tuplex {

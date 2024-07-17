@@ -34,6 +34,10 @@ option(USE_LD_GOLD "Use GNU gold linker" ON)
 option (FORCE_COLORED_OUTPUT "Always produce ANSI-colored output (GNU/Clang only)." ON)
 option(BUILD_WITH_CEREAL "whether to enable cereal based serialization or not. Disabled per default because it results in 4x larger build times" OFF)
 option(USE_PRECOMPILED_HEADERS "use precompiled headers" OFF)
+# experimental
+option(USE_YYJSON_INSTEAD "whether to encode generic dictionaries using yyjson instead of cJSON" ON)
+
+
 
 # set here library mode, depending on OS
 #if(APPLE)
@@ -446,6 +450,13 @@ if(GENERATE_PDFS)
     add_definitions(-DGENERATE_PDFS)
 else()
     message(STATUS "PDF generation for ASTs and logical plans disabled. Enable by setting -DGENERATE_PDFS=ON.")
+endif()
+
+if(USE_YYJSON_INSTEAD)
+    message(STATUS "Tuplex configured to use yyjson to back generic dictionaries.")
+    add_definitions(-DUSE_YYJSON_INSTEAD)
+else()
+    message(STATUS "Tuplex configured to use cJSON to back generic dictionaries.")
 endif()
 
 ###########################################################################
