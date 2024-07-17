@@ -17,7 +17,7 @@ ALT_BUILD_DIR=$BASE_DIR/alt-build
 echo "-> Compiling Tuplex (w. yyjson) to $BUILD_DIR"
 mkdir -p $BUILD_DIR
 echo "-> Compiling Tuplex (w. cjson) to $ALT_BUILD_DIR"
-mdkir -p $ALT_BUILD_DIR
+mkdir -p $ALT_BUILD_DIR
 TUPLEX_DIR=$BUILD_DIR/../../../../../tuplex
 
 # Unix
