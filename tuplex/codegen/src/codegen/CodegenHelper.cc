@@ -1158,7 +1158,8 @@ namespace tuplex {
             auto null_pointer = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(get_or_create_yyjson_shim_type(ctx)->getPointerTo()));
             return builder.CreateICmpEQ(cjson_obj, null_pointer);
 #else
-          return builder.CreateICmpEQ(cjson_obj, llvm::ConstantPointerNull::get(i8ptrType(ctx)));
+          return builder.CreateICmpEQ(cjson_obj, llvm::ConstantPointerNull::get(
+                  static_cast<llvm::PointerType *>(i8ptrType(ctx))));
 #endif
         }
 
@@ -1198,7 +1199,14 @@ namespace tuplex {
             auto func = getOrInsertFunction(mod, "cJSON_GetObjectItemCaseSensitive", llvm::Type::getInt8PtrTy(ctx, 0),
                                             llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt8PtrTy(ctx, 0));
 
-            return builder.CreateCall(func, {cjson_obj, key});
+            auto ans = builder.CreateCall(func, {cjson_obj, key});
+
+            auto null_i8ptr = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(i8ptrType(ctx)));
+            if(out_item_found) {
+                *out_item_found = builder.CreateICmpNE(ans, null_i8ptr);
+            }
+
+            return ans;
 #endif
         }
 

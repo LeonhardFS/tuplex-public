@@ -229,12 +229,11 @@ namespace tuplex {
         return m;
     }
 
-    std::tuple<int,int,double> process(const std::string& input_pattern, const std::string& output_path) {
+    std::tuple<int,int,double> process(const std::string& input_pattern, const std::string& output_path, bool use_perfect_sparse_type) {
         using namespace std;
 
         auto sparse_row_type = github_sparse_row_type();
         auto encoded_type = sparse_row_type.encode();
-        cout<<"sparse row type is: "<<encoded_type<<endl;
 
         // init interpreter
         python::initInterpreter();
@@ -251,6 +250,12 @@ namespace tuplex {
         co.set("tuplex.experimental.worker.workerBufferSize", "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
 
         co.set("tuplex.resolveWithInterpreterOnly", "true");
+
+        if(!use_perfect_sparse_type) {
+            // use generic dicts instead.
+            cout<<"Using generic dictionaries for types"<<endl;
+            co.set("tuplex.experimental.useGenericDicts", "true");
+        }
 
         // create context according to settings
         Context ctx(co);
@@ -283,8 +288,15 @@ namespace tuplex {
         boost::filesystem::remove_all(output_path.c_str());
 
         cout<<"Testing with normal-case row type: "<<sparse_row_type.desc()<<endl;
+
+        std::unordered_map<std::string, python::Type> type_hints;
+        if(use_perfect_sparse_type) {
+            cout<<"sparse row type is: "<<encoded_type<<endl;
+            type_hints = row_type_to_column_hints(sparse_row_type);
+        }
+
         // original:
-        ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, row_type_to_column_hints(sparse_row_type))
+        ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, type_hints)
                 .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
                 .withColumn("repo_id", UDF(repo_id_code))
                 .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
@@ -303,7 +315,6 @@ namespace tuplex {
         return make_tuple(row_count, output_row_count, loading_time_in_s);
     }
 
-
 }
 
 
@@ -319,6 +330,13 @@ int main(int argc, char* argv[]) {
     string mode = "best";
     string result_path;
     std::vector<std::string> supported_modes{"best"};
+
+#ifdef USE_YYJSON_INSTEAD
+    supported_modes.push_back("yyjson");
+#else
+    supported_modes.push_back("cjson");
+#endif
+
     bool show_help = false;
 
     // construct CLI
@@ -349,7 +367,6 @@ int main(int argc, char* argv[]) {
         cerr<<"Unknown mode "<<mode<<" found, supported are "<<vec_to_string(supported_modes)<<endl;
         return 1;
     }
-
 
     Timer timer;
     cout<<"starting C++ coded Tuplex version with SparseStruct dictionaries::"<<endl;
@@ -386,7 +403,7 @@ int main(int argc, char* argv[]) {
     Timer path_timer;
     int input_row_count=0,output_row_count=0;
     double loading_time = 0.0;
-    std::tie(input_row_count, output_row_count, loading_time) = tuplex::process(input_pattern, output_path);
+    std::tie(input_row_count, output_row_count, loading_time) = tuplex::process(input_pattern, output_path, mode == "best");
 
     double total_time_in_s = timer.time();
     cout<<"Took "<<total_time_in_s<<"s in total"<<endl;
@@ -399,7 +416,11 @@ int main(int argc, char* argv[]) {
         // load file using JSON
         auto worker_json_data = fileToString(URI(worker_json));
         nlohmann::json j_root = nlohmann::json::parse(worker_json_data);
-        auto mode_across_files = "tuplex-c++-sparse";
+        string mode_across_files = "tuplex-c++-";
+        if(mode == "best")
+            mode_across_files += "sparse";
+        else
+            mode_across_files += mode;
         double total_time_sum_in_s = 0.0;
         for (auto j: j_root["responses"]) {
             auto output_row_count = j["stats"]["output"]["normal"].get<size_t>();

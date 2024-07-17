@@ -16,14 +16,18 @@ BUILD_DIR=$BASE_DIR/build
 echo $BUILD_DIR
 mkdir -p $BUILD_DIR
 TUPLEX_DIR=$BUILD_DIR/../../../../../tuplex
+
 # Unix
-LLVM_DIR=/opt/llvm-16.0.6
-cd $BUILD_DIR && cmake -DCMAKE_BUILD_TYPE=Release -DSKIP_AWS_TESTS=ON -DBUILD_WITH_ORC=ON -DAWS_S3_TEST_BUCKET='tuplex-test' -DLLVM_ROOT_DIR=$LLVM_DIR $TUPLEX_DIR && make -j$(nproc) tuplex_github && cd ..
+if [[ "$OSTYPE" =~ ^linux ]]; then
+    LLVM_DIR=/opt/llvm-16.0.6
+    cd $BUILD_DIR && cmake -DCMAKE_BUILD_TYPE=Release -DSKIP_AWS_TESTS=ON -DBUILD_WITH_ORC=ON -DAWS_S3_TEST_BUCKET='tuplex-test' -DLLVM_ROOT_DIR=$LLVM_DIR $TUPLEX_DIR && make -j$(nproc) tuplex_github && cd ..
+fi
 
 # mac os
-#LLVM_DIR=/usr/local/Cellar/llvm/16.0.3
-#cd $BUILD_DIR && cmake -DPYTHON3_VERSION=3.11 -DCMAKE_BUILD_TYPE=Release -DSKIP_AWS_TESTS=ON -DBUILD_WITH_ORC=ON -DAWS_S3_TEST_BUCKET='tuplex-test' -DLLVM_ROOT_DIR=$LLVM_DIR $TUPLEX_DIR && make -j$(nproc) tuplex_github && cd ..
-
+if [[ "$OSTYPE" =~ ^darwin ]]; then
+    LLVM_DIR=/usr/local/Cellar/llvm/16.0.3
+    cd $BUILD_DIR && cmake -DPYTHON3_VERSION=3.11 -DCMAKE_BUILD_TYPE=Release -DSKIP_AWS_TESTS=ON -DBUILD_WITH_ORC=ON -DAWS_S3_TEST_BUCKET='tuplex-test' -DLLVM_ROOT_DIR=$LLVM_DIR $TUPLEX_DIR && make -j$(nproc) tuplex_github && cd ..
+fi
 
 PROG=./build/dist/bin/tuplex_github
 INPUT_PATTERN='/hot/data/github_daily/*.json'
