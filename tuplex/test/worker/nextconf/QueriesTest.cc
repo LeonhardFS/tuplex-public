@@ -1104,4 +1104,79 @@ namespace tuplex {
             cout<<"\ntotal time (sum) in s: "<<total_time_sum_in_s<<"s"<<endl;
         }
     }
-}
+
+
+    TEST(AllQueries, GithubDetectForRepoIdJsonPaths) {
+        using namespace std;
+        using namespace tuplex;
+
+        auto repo_id_code = "def extract_repo_id(row):\n"
+                            "    if 2012 <= row['year'] <= 2014:\n"
+                            "        \n"
+                            "        if row['type'] == 'FollowEvent':\n"
+                            "            return row['payload']['target']['id']\n"
+                            "        \n"
+                            "        if row['type'] == 'GistEvent':\n"
+                            "            return row['payload']['id']\n"
+                            "        \n"
+                            "        repo = row.get('repository')\n"
+                            "        \n"
+                            "        if repo is None:\n"
+                            "            return None\n"
+                            "        return repo.get('id')\n"
+                            "    else:\n"
+                            "        repo =  row.get('repo')\n"
+                            "        if repo:\n"
+                            "            return repo.get('id')\n"
+                            "        else:\n"
+                            "            return None\n";
+
+
+        // get some samples from file (manual JSON to python sample)
+        python::initInterpreter();
+        python::unlockGIL();
+
+        string input_file_path = "../resources/hyperspecialization/github_daily/2020-10-15.json.sample";
+
+        auto data = fileToString(input_file_path);
+
+        // parse row rows & manually extract year.
+        std::vector<std::vector<std::string>> out_column_names;
+        auto raw_rows = parseRowsFromJSON(data.c_str(), data.size(), &out_column_names, true, true, std::numeric_limits<size_t>::max(), false);
+
+        std::vector<PyObject*> sample;
+        std::vector<Row> original_sample_rows;
+        ASSERT_EQ(raw_rows.size(), out_column_names.size());
+
+        python::lockGIL();
+        for(unsigned i = 0; i < raw_rows.size(); ++i) {
+            auto r_row = raw_rows[i];
+            auto columns = out_column_names[i];
+            auto fields = r_row.to_vector();
+            ASSERT_EQ(columns.size(), fields.size());
+
+            // year is computed as follows: int(x['created_at'].split('-')[0])
+            auto created_at = fields[indexInVector(string("created_at"), columns)];
+            string created_at_str((const char*)created_at.getPtr());
+
+            // get first 4 chars and convert to string.
+            auto year_str = created_at_str.substr(0, 4);
+            auto year = std::stoi(year_str);
+
+            fields.push_back(Field((int64_t)year));
+            columns.push_back("year");
+            Row r = Row::from_vector(fields).with_columns(columns);
+            original_sample_rows.push_back(r);
+            sample.push_back(python::rowToPython(r));
+        }
+        python::unlockGIL();
+
+
+        UDF udf(repo_id_code);
+        auto ans = udf.hintSchemaWithSample(sample, original_sample_rows, python::Type::UNKNOWN, true);
+
+        ASSERT_TRUE(ans);
+
+        python::lockGIL();
+        python::closeInterpreter();
+    }}

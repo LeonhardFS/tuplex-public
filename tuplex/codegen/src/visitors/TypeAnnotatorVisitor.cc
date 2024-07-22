@@ -1508,7 +1508,12 @@ namespace tuplex {
             }
             // [2] index via dynamic expression -> requires tracing
             else {
-                fatal_error("no support for dynamic row type expression indexing yet.");
+                if(sub->hasAnnotation() && sub->annotation().numTimesVisited > 0) {
+                    auto maj_ret_type = sub->annotation().majorityType();
+                    sub->setInferredType(maj_ret_type);
+                } else {
+                    fatal_error("no support for dynamic row type expression indexing yet.");
+                }
             }
         } else {
 
