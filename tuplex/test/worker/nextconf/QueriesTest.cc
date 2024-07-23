@@ -6,6 +6,7 @@
 #include "JsonStatistic.h"
 #include "tracing/LambdaAccessedColumnVisitor.h"
 #include "StructCommon.h"
+#include "tracing/TraceVisitor.h"
 
 namespace tuplex {
     struct QueryConfiguration {
@@ -1149,11 +1150,15 @@ namespace tuplex {
         ASSERT_EQ(raw_rows.size(), out_column_names.size());
 
         python::lockGIL();
+        std::set<std::string> unique_column_names;
         for(unsigned i = 0; i < raw_rows.size(); ++i) {
             auto r_row = raw_rows[i];
             auto columns = out_column_names[i];
             auto fields = r_row.to_vector();
             ASSERT_EQ(columns.size(), fields.size());
+
+            for(auto name : columns)
+                unique_column_names.insert(name);
 
             // year is computed as follows: int(x['created_at'].split('-')[0])
             auto created_at = fields[indexInVector(string("created_at"), columns)];
@@ -1173,9 +1178,46 @@ namespace tuplex {
 
 
         UDF udf(repo_id_code);
-        auto ans = udf.hintSchemaWithSample(sample, original_sample_rows, python::Type::UNKNOWN, true);
 
-        ASSERT_TRUE(ans);
+        // trace with visitor to get JSON paths.
+        python::lockGIL();
+        TraceVisitor tv;
+        for(unsigned i = 0; i < sample.size(); ++i) {
+            auto py_object = sample[i];
+            auto columns = original_sample_rows[i].getRowType().get_column_names();
+            tv.recordTrace(udf.getAnnotatedAST().getFunctionAST(), py_object, columns);
+        }
+        python::unlockGIL();
+
+        // auto ans = udf.hintSchemaWithSample(sample, original_sample_rows, python::Type::UNKNOWN, true);
+        // ASSERT_TRUE(ans);
+
+        auto column_access_paths = tv.columnAccessPaths();
+
+        // there should be (in this file)
+        EXPECT_EQ(column_access_paths.size(), unique_column_names.size());
+
+        // check which names are accessed:
+        auto columns = tv.columns();
+
+        ASSERT_EQ(columns.size(), column_access_paths.size());
+        int num_accessed = 0;
+        for(unsigned i = 0; i < columns.size(); ++i) {
+            if(!column_access_paths[i].empty()) {
+                std::cout<<"Access paths for column: "<<columns[i]<<"\n";
+                for(auto path : column_access_paths[i])
+                    std::cout<<" -- "<<access_path_to_str(path)<<"\n";
+                std::cout<<std::endl;
+                num_accessed++;
+            }
+        }
+        cout<<num_accessed<<"/"<<pluralize(columns.size(), "column")<<" accessed."<<endl;
+
+        // helper function to sparsify and project row type
+        auto udf_row_type = tv.majorityInputType().parameters().front();
+        auto sparse_type = sparsify_and_project_row_type(udf_row_type, column_access_paths);
+
+        cout<<"sparsified type is: "<<sparse_type.desc()<<endl;
 
         python::lockGIL();
         python::closeInterpreter();

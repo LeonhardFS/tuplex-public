@@ -1379,12 +1379,12 @@ namespace tuplex {
                             throw std::runtime_error("not yet supported in pure python mode");
                             // there are three options where to store the result now
 //                            // 1. fits targetOutputSchema (i.e. row becomes normalcase row)
-//                            bool outputAsNormalRow = python::Type::UNKNOWN != unifyTypes(rowType, specialized_target_schema.getRowType(), allowNumericTypeUnification)
-//                                                     && canUpcastToRowType(rowType, specialized_target_schema.getRowType());
+//                            bool outputAsNormalRow = python::Type::UNKNOWN != unifyTypes(rowTypeAsTupleType, specialized_target_schema.getRowType(), allowNumericTypeUnification)
+//                                                     && canUpcastToRowType(rowTypeAsTupleType, specialized_target_schema.getRowType());
 //                            // 2. fits generalCaseOutputSchema (i.e. row becomes generalcase row)
-//                            bool outputAsGeneralRow = python::Type::UNKNOWN != unifyTypes(rowType,
+//                            bool outputAsGeneralRow = python::Type::UNKNOWN != unifyTypes(rowTypeAsTupleType,
 //                                                                                          general_target_schema.getRowType(), allowNumericTypeUnification)
-//                                                      && canUpcastToRowType(rowType, general_target_schema.getRowType());
+//                                                      && canUpcastToRowType(rowTypeAsTupleType, general_target_schema.getRowType());
 
                             // 3. doesn't fit, store as python object. => we should use block storage for this as well. Then data can be shared.
 
@@ -3045,10 +3045,10 @@ namespace tuplex {
 //                            continue;
 //                        }
 //
-//                        auto rowType = python::mapPythonClassToTuplexType(rowObj);
+//                        auto rowTypeAsTupleType = python::mapPythonClassToTuplexType(rowObj);
 //
 //                        // special case output schema is str (fileoutput!)
-//                        if(rowType == python::Type::STRING) {
+//                        if(rowTypeAsTupleType == python::Type::STRING) {
 //                            // write to file, no further type check necessary b.c.
 //                            // if it was the object string it would be within a tuple!
 //                            auto cptr = PyUnicode_AsUTF8(rowObj);
@@ -3064,12 +3064,12 @@ namespace tuplex {
 //
 //                            // there are three options where to store the result now
 //                            // 1. fits targetOutputSchema (i.e. row becomes normalcase row)
-//                            bool outputAsNormalRow = python::Type::UNKNOWN != unifyTypes(rowType, specialized_target_schema.getRowType(), allowNumericTypeUnification)
-//                                                     && canUpcastToRowType(rowType, specialized_target_schema.getRowType());
+//                            bool outputAsNormalRow = python::Type::UNKNOWN != unifyTypes(rowTypeAsTupleType, specialized_target_schema.getRowType(), allowNumericTypeUnification)
+//                                                     && canUpcastToRowType(rowTypeAsTupleType, specialized_target_schema.getRowType());
 //                            // 2. fits generalCaseOutputSchema (i.e. row becomes generalcase row)
-//                            bool outputAsGeneralRow = python::Type::UNKNOWN != unifyTypes(rowType,
+//                            bool outputAsGeneralRow = python::Type::UNKNOWN != unifyTypes(rowTypeAsTupleType,
 //                                                                                          general_target_schema.getRowType(), allowNumericTypeUnification)
-//                                                      && canUpcastToRowType(rowType, general_target_schema.getRowType());
+//                                                      && canUpcastToRowType(rowTypeAsTupleType, general_target_schema.getRowType());
 //
 //                            // 3. doesn't fit, store as python object. => we should use block storage for this as well. Then data can be shared.
 //

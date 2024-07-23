@@ -218,7 +218,7 @@ namespace tuplex {
             FlattenedTuple ftAgg(env); ftAgg.init(aggType);
             ftAgg.deserializationCode(builder, out_row_buf);
 
-            // deserialize using rowType
+            // deserialize using rowTypeAsTupleType
             FlattenedTuple ftRow(env); ftRow.init(rowType);
             ftRow.deserializationCode(builder, args["row"]);
 

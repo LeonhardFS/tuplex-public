@@ -1406,7 +1406,7 @@ namespace tuplex {
 
             assert(cellRowType.parameters().size() == ft->flattenedTupleType().parameters().size()); /// this must hold!
 
-            // check, if rowType.size() != numCells, cell_indices must provide valid mapping.
+            // check, if rowTypeAsTupleType.size() != numCells, cell_indices must provide valid mapping.
             if(cellRowType.parameters().size() != numCells) {
                 assert(cell_indices.size() == cellRowType.parameters().size());
                 for(auto idx : cell_indices)

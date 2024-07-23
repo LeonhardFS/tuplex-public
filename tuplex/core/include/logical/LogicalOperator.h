@@ -253,7 +253,7 @@ namespace tuplex {
         virtual bool retype(const RetypeConfiguration& conf) { return false; }
 
         /*!
-         * retype the operator by providing an optional rowType
+         * retype the operator by providing an optional rowTypeAsTupleType
          * @param input_row_type the new input type used for this operator.
          * @param is_projected_row_type whether the new input row type is projected or not. Important, so the case lambda x: x[0] cam be resolved.
          * @param input_columns the (potentially) different input columns

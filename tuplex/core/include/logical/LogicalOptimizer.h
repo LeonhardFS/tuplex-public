@@ -11,6 +11,7 @@
 #define TUPLEX_LOGICALOPTIMIZER_H
 
 #include "Operators.h"
+#include "StructCommon.h"
 #include <Context.h>
 
 // uncomment to trace logical plan optimization
@@ -111,6 +112,15 @@ namespace tuplex {
     inline bool filterDependsOnParentOperator(const std::shared_ptr<FilterOperator>& filter, bool ignoreConstantTypedColumns) {
         return filterDependsOnParentOperator(filter.get(), ignoreConstantTypedColumns);
     }
+
+    /*!
+     * Helper function to create a sparsified and reduced row type using (traced) access paths.
+     * @param row_type
+     * @param column_access_paths
+     * @return sparse (and reduced/projected) row type.
+     */
+    extern python::Type sparsify_and_project_row_type(const python::Type& row_type,
+                                                      const std::vector<std::vector<access_path_t>>& column_access_paths);
 }
 
 #endif //TUPLEX_LOGICALOPTIMIZER_H

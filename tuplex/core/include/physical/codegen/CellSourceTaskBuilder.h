@@ -98,7 +98,7 @@ namespace tuplex {
              * @param env CodeEnv where to generate code into
              * @param normalCaseRowType the detected row Type of the file
              * @param restrictedGeneralCaseInputRowType the (restricted) detected general case row type of the file
-             * @param normalCaseColumnsToSerialize if empty vector, all rows get serialized. If not, indicates which columns should be serialized. Length must match rowType.
+             * @param normalCaseColumnsToSerialize if empty vector, all rows get serialized. If not, indicates which columns should be serialized. Length must match rowTypeAsTupleType.
              * @param name Name of the function to generate++
              * @param except_mode specify how exceptions should be serialized.
              * @param operatorID ID of the operator for exception handling.

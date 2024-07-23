@@ -1596,4 +1596,107 @@ namespace tuplex {
         return true;
     }
 
+
+    struct DictTreeNode {
+        std::vector<std::unique_ptr<DictTreeNode>> children;
+        // leaf nodes
+        bool always_present;
+        python::Type value_type;
+        python::Type key_type;
+        std::string key;
+
+        DictTreeNode() {}
+
+        DictTreeNode(const std::string _key, const python::Type& _key_type,
+                     const python::Type& _value_type, bool _always_present) : key(_key), key_type(_key_type), value_type(_value_type), always_present(_always_present) {}
+    };
+
+    void insert_into_tree(DictTreeNode* node, access_path_t path, python::Type value_type, bool always_present) {
+
+        if(path.empty())
+            return;
+
+        // check whether path exists within children or not, if not add!
+        auto key = path.front().first;
+        auto key_type = path.front().second;
+
+        auto it = std::find_if(node->children.begin(), node->children.end(), [=](const std::unique_ptr<DictTreeNode>& other) {
+            return other->key == key && other->key_type == key_type;
+        });
+
+        if(it == node->children.end()) {
+            std::cout<<"not found";
+        } else {
+            std::cout<<"found";
+        }
+    }
+
+    python::Type access_paths_to_sparse_dict(const std::vector<access_path_t>& access_paths,
+                                             const std::vector<python::Type>& value_types,
+                                             const std::vector<bool>& always_present) {
+        assert(access_paths.size() == value_types.size());
+        std::vector<python::StructEntry> entries;
+
+        assert(access_paths.size() == always_present.size());
+
+        // recursive function:
+        // cluster access paths by size
+
+        auto node = std::make_unique<DictTreeNode>();
+
+        for(unsigned i = 0; i < access_paths.size(); ++i) {
+            auto path = access_paths[i];
+            auto value_type = value_types[i];
+            auto is_present = always_present[i];
+            insert_into_tree(node.get(), path, value_type, is_present);
+        }
+
+        // generate type from tree.
+
+        return python::Type::makeStructuredDictType(entries, true);
+    }
+
+    python::Type sparsify_and_project_row_type(const python::Type& row_type,
+                                               const std::vector<std::vector<access_path_t>>& column_access_paths) {
+
+        auto& logger = Logger::instance().logger("optimizer");
+
+        if(!row_type.isTupleType() && !row_type.isRowType())
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " invalid row type.");
+
+        auto col_types = row_type.isRowType() ? row_type.get_column_types() : row_type.parameters();
+        auto columns = row_type.isRowType() ? row_type.get_column_names() : std::vector<std::string>();
+
+        if(col_types.size() != column_access_paths.size())
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " non-matching number of columns.");
+
+        std::vector<python::Type> reduced_types;
+        std::vector<std::string> reduced_columns;
+
+        // now check which columns are required
+        for(unsigned i = 0; i < col_types.size(); ++i) {
+            if (!column_access_paths[i].empty()) {
+                if(!columns.empty())
+                    reduced_columns.push_back(columns[i]);
+                auto type = col_types[i];
+
+                // dict or sparse dict?
+//                if(type.isStructuredDictionaryType() || type.isSparseStructuredDictionaryType())
+//                    type = type.makeNonSparse(true);
+                if(type.isDictionaryType()) {
+                    // create sparse struct type.
+                    logger.debug("sparsifying dictionary of type " + type.desc() + ": ");
+
+                    //type = access_paths_to_sparse_dict(column_access_paths[i]);
+                }
+                reduced_types.push_back(type);
+            }
+        }
+
+        if(row_type.isTupleType())
+            return python::Type::makeTupleType(reduced_types);
+        else
+            return python::Type::makeRowType(reduced_types, reduced_columns);
+    }
+
 }

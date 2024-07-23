@@ -8,6 +8,7 @@
 #include <vector>
 #include <string>
 #include "TypeSystem.h"
+#include "Tuple.h"
 
 // helper object to store row information (similar to generated row class)
 // for tracer. Need to implement get/set protocols for this one.
@@ -33,7 +34,25 @@ namespace tuplex {
 
         static TraceRowObject* create(const std::vector<PyObject*> items, const std::vector<std::string>& columns={});
 
+        /*!
+         * returns row as tuple type.
+         * @param autoUpcast
+         * @return tuple type of row
+         */
+        python::Type rowTypeAsTupleType(bool autoUpcast=false) const;
+
+        /*!
+         * returns row type incl. column names
+         * @param autoUpcast
+         * @return row type w. columns
+         */
         python::Type rowType(bool autoUpcast=false) const;
+
+        /*!
+         * returns data as Tuple
+         * @return Tuple (can be used in Field)
+         */
+        Tuple rowAsTuple(bool autoUpcast=false) const;
     };
 
 }

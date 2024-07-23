@@ -79,7 +79,7 @@ namespace tuplex {
 //                                    assert(const_type.isConstantValued());
 //                                    auto elementType = const_type.underlying();
 //
-//                                    //  auto t = rowType.parameters()[rowTypePos];?
+//                                    //  auto t = rowTypeAsTupleType.parameters()[rowTypePos];?
 ////                                assert(elementType == )
 //
 //                                    auto value = const_type.constant();
