@@ -31,12 +31,17 @@ namespace tuplex {
 
     // 31 + 19 + 54 + 56 + 63 + 41 + 32 + 16 + 27 + 25 + 25 - 11 = 378 <-- how many rows result for *.json.sample has.
 
-    std::vector<QueryConfiguration> g_configurations_to_test({QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false, false, 378},
-                                                                QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false, true, 378},
-                                                                QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true, false, 378},
-                                                                QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true, true, 378},
-                                                                QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", false, true, 294195},
-                                                                QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", true, true, 294195}});
+    std::vector<QueryConfiguration> g_configurations_to_test(
+            {QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false,
+                                false, 378},
+             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false,
+                                true, 378},
+             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true,
+                                false, 378},
+             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true,
+                                true, 378},
+             QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", false, true, 294195},
+             QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", true, true, 294195}});
 
 // see https://github.com/google/googletest/blob/main/docs/advanced.md#specifying-names-for-value-parameterized-test-parameters
 
@@ -50,14 +55,15 @@ namespace tuplex {
         inline void remove_temp_files() {
             tuplex::Timer timer;
             boost::filesystem::remove_all(scratchDir.c_str());
-            std::cout<<"removed temp files in "<<timer.time()<<"s"<<std::endl;
+            std::cout << "removed temp files in " << timer.time() << "s" << std::endl;
         }
 
         void SetUp() override {
-            testName = std::string(::testing::UnitTest::GetInstance()->current_test_info()->test_case_name()) + std::string(::testing::UnitTest::GetInstance()->current_test_info()->name());
+            testName = std::string(::testing::UnitTest::GetInstance()->current_test_info()->test_case_name()) +
+                       std::string(::testing::UnitTest::GetInstance()->current_test_info()->name());
             auto user = tuplex::getUserName();
-            if(user.empty()) {
-                std::cerr<<"could not retrieve user name, setting to user"<<std::endl;
+            if (user.empty()) {
+                std::cerr << "could not retrieve user name, setting to user" << std::endl;
                 user = "user";
             }
             scratchDir = "/tmp/" + user + "/" + testName;
@@ -134,7 +140,8 @@ namespace tuplex {
             m["tuplex.aws.scratchDir"] = scratchDir;
 
             auto sampling_mode =
-                    SamplingMode::FIRST_ROWS | SamplingMode::LAST_ROWS | SamplingMode::FIRST_FILE | SamplingMode::LAST_FILE;
+                    SamplingMode::FIRST_ROWS | SamplingMode::LAST_ROWS | SamplingMode::FIRST_FILE |
+                    SamplingMode::LAST_FILE;
             m["sampling_mode"] = std::to_string(sampling_mode);
 
             return m;
@@ -143,32 +150,32 @@ namespace tuplex {
     };
 
 
-    size_t csv_row_count(const std::string& path) {
+    size_t csv_row_count(const std::string &path) {
         // parse CSV from path, and count rows.
         csvmonkey::MappedFileCursor stream;
         csvmonkey::CsvReader<csvmonkey::MappedFileCursor> reader(stream);
 
         stream.open(path.c_str());
         csvmonkey::CsvCursor &row = reader.row();
-        if(! reader.read_row()) {
+        if (!reader.read_row()) {
             throw std::runtime_error("Cannot read header row");
         }
 
         size_t row_count = 0;
-        while(reader.read_row()) {
+        while (reader.read_row()) {
             row_count++;
         }
         return row_count;
     }
 
-    size_t csv_row_count_for_pattern(const std::string& pattern) {
+    size_t csv_row_count_for_pattern(const std::string &pattern) {
         using namespace std;
         auto output_uris = glob(pattern);
-        cout<<"Found "<<pluralize(output_uris.size(), "output file")<<endl;
+        cout << "Found " << pluralize(output_uris.size(), "output file") << endl;
         size_t total_row_count = 0;
-        for(auto path : output_uris) {
+        for (auto path: output_uris) {
             auto row_count = csv_row_count(path);
-            cout<<"-- file "<<path<<": "<<pluralize(row_count, "row")<<endl;
+            cout << "-- file " << path << ": " << pluralize(row_count, "row") << endl;
             total_row_count += row_count;
         }
         return total_row_count;
@@ -179,16 +186,17 @@ namespace tuplex {
         using namespace std;
 
         auto test_conf = GetParam();
-        auto it = std::find_if(g_configurations_to_test.begin(), g_configurations_to_test.end(), [&](const QueryConfiguration& conf) { return conf.name == test_conf.name; });
+        auto it = std::find_if(g_configurations_to_test.begin(), g_configurations_to_test.end(),
+                               [&](const QueryConfiguration &conf) { return conf.name == test_conf.name; });
         ASSERT_NE(it, g_configurations_to_test.end());
         auto id = std::abs(std::distance(it, g_configurations_to_test.begin()));
         auto output_path = "./local-exp/" + testName + "/" + test_conf.name + "/" + std::to_string(id) + "/";
         auto input_pattern = test_conf.input_pattern;
-        std::cout << "Performing test: " << test_conf.name << " with output path: "<<output_path<<std::endl;
+        std::cout << "Performing test: " << test_conf.name << " with output path: " << output_path << std::endl;
 
         // check that test files exist, else skip.
         auto file_uris = glob(input_pattern);
-        if(file_uris.empty()) {
+        if (file_uris.empty()) {
             GTEST_SKIP() << "Did not find any files for pattern " + input_pattern + " skipping test.";
         }
 
@@ -200,13 +208,14 @@ namespace tuplex {
         SamplingMode sm = static_cast<SamplingMode>(stoi(exp_settings["sampling_mode"]));
         sm = sm | SamplingMode::SINGLETHREADED;
         ContextOptions co = ContextOptions::defaults();
-        for(const auto& kv : exp_settings)
-            if(startsWith(kv.first, "tuplex."))
+        for (const auto &kv: exp_settings)
+            if (startsWith(kv.first, "tuplex."))
                 co.set(kv.first, kv.second);
 
         // this allows large files to be processed without splitting.
         co.set("tuplex.inputSplitSize", "20G");
-        co.set("tuplex.experimental.worker.workerBufferSize", "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
+        co.set("tuplex.experimental.worker.workerBufferSize",
+               "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
 
         // create context according to settings
         Context ctx(co);
@@ -236,7 +245,7 @@ namespace tuplex {
 
 
         // remove output files if they exist
-        cout<<"Removing files (if they exist) from "<<output_path<<endl;
+        cout << "Removing files (if they exist) from " << output_path << endl;
         boost::filesystem::remove_all(output_path.c_str());
 
         ctx.json(input_pattern, true, true, sm)
@@ -249,43 +258,43 @@ namespace tuplex {
                 .tocsv(output_path);
 
         // check results (from python reference number, add up total line count)
-        cout<<"Analyzing result: "<<endl;
+        cout << "Analyzing result: " << endl;
         auto output_uris = glob(output_path + "*.csv");
-        cout<<"Found "<<pluralize(output_uris.size(), "output file")<<endl;
+        cout << "Found " << pluralize(output_uris.size(), "output file") << endl;
         size_t total_row_count = 0;
-        for(auto path : output_uris) {
+        for (auto path: output_uris) {
             auto row_count = csv_row_count(path);
-            cout<<"-- file "<<path<<": "<<pluralize(row_count, "row")<<endl;
+            cout << "-- file " << path << ": " << pluralize(row_count, "row") << endl;
             total_row_count += row_count;
         }
         EXPECT_EQ(total_row_count, test_conf.expected_result_row_count);
     }
 
     INSTANTIATE_TEST_SUITE_P(AllQueries, NextConfFullTestSuite, testing::ValuesIn(g_configurations_to_test),
-                             [](const testing::TestParamInfo<NextConfFullTestSuite::ParamType>& info) {
+                             [](const testing::TestParamInfo<NextConfFullTestSuite::ParamType> &info) {
                                  // Can use info.param here to generate the test suffix
                                  auto param = info.param;
 
                                  std::stringstream ss;
-                                 ss<<param.name;
-                                 if(param.use_hyper)
-                                     ss<<"_hyper";
+                                 ss << param.name;
+                                 if (param.use_hyper)
+                                     ss << "_hyper";
                                  else
-                                     ss<<"_no_hyper";
-                                 if(param.use_llvm_optimizer)
-                                     ss<<"_llvm_opt";
+                                     ss << "_no_hyper";
+                                 if (param.use_llvm_optimizer)
+                                     ss << "_llvm_opt";
                                  else
-                                     ss<<"_no_llvm_opt";
+                                     ss << "_no_llvm_opt";
                                  return ss.str();
                              });
 
-    auto sorted_view_of_values(const std::unordered_map<python::Type, size_t>& values){
+    auto sorted_view_of_values(const std::unordered_map<python::Type, size_t> &values) {
         std::vector<std::pair<python::Type, size_t>> view(values.begin(), values.end());
-        std::sort(view.begin(), view.end(), [](const auto& lhs, const auto& rhs) {return lhs.second < rhs.second; });
+        std::sort(view.begin(), view.end(), [](const auto &lhs, const auto &rhs) { return lhs.second < rhs.second; });
         return view;
     }
 
-    inline std::unordered_map<std::string, python::Type> row_type_to_column_hints(const python::Type& row_type) {
+    inline std::unordered_map<std::string, python::Type> row_type_to_column_hints(const python::Type &row_type) {
         assert(row_type.isRowType());
 
         std::unordered_map<std::string, python::Type> m;
@@ -293,7 +302,7 @@ namespace tuplex {
         auto names = row_type.get_column_names();
         auto types = row_type.get_column_types();
         assert(names.size() == types.size());
-        for(unsigned i = 0; i < names.size(); ++i)
+        for (unsigned i = 0; i < names.size(); ++i)
             m[names[i]] = types[i];
         return m;
     }
@@ -321,9 +330,9 @@ namespace tuplex {
 
         // parse all rows, and find unique row-types
         std::vector<Row> rows;
-        cout<<"Found "<<pluralize(uris.size(), "file")<<endl;
-        for(auto path : uris) {
-            cout<<"-- parsing "<<path<<endl;
+        cout << "Found " << pluralize(uris.size(), "file") << endl;
+        for (auto path: uris) {
+            cout << "-- parsing " << path << endl;
             Timer timer;
             auto data = fileToString(path);
             std::vector<std::vector<std::string>> out_column_names;
@@ -331,8 +340,8 @@ namespace tuplex {
                                                          true, 99999999, 1, 1,
                                                          1, {}, false);
 
-            cout<<"-- converting to row type (elapsed="<<timer.time()<<")"<<endl;
-            for(unsigned i = 0; i < part_rows.size(); ++i) {
+            cout << "-- converting to row type (elapsed=" << timer.time() << ")" << endl;
+            for (unsigned i = 0; i < part_rows.size(); ++i) {
                 auto row = part_rows[i];
                 part_rows[i] = row.with_columns(out_column_names[i]);
             }
@@ -340,46 +349,46 @@ namespace tuplex {
             // count per file and add to output:
             {
                 std::unordered_map<python::Type, size_t> type_counts;
-                for(const auto& row : part_rows) {
+                for (const auto &row: part_rows) {
                     type_counts[row.getRowType()]++;
                 }
 
-                for(auto kv : type_counts) {
+                for (auto kv: type_counts) {
                     nlohmann::json j;
                     j["path"] = path;
                     j["type"] = kv.first.desc();
                     j["type_hash"] = kv.first.hash();
                     j["type_count"] = kv.second;
                     j["row_count"] = part_rows.size();
-                    stats_stream<<j.dump()<<endl;
+                    stats_stream << j.dump() << endl;
                 }
             }
 
             std::copy(part_rows.begin(), part_rows.end(), std::back_inserter(rows));
-            cout<<"-- took "<<timer.time()<<"s"<<endl;
+            cout << "-- took " << timer.time() << "s" << endl;
         }
-        cout<<"Got "<<pluralize(rows.size(), "row")<<" from all files."<<endl;
+        cout << "Got " << pluralize(rows.size(), "row") << " from all files." << endl;
         //EXPECT_EQ(rows.size(), 11 * 1200);
         std::unordered_map<python::Type, size_t> type_counts;
-        for(const auto& row : rows) {
+        for (const auto &row: rows) {
             type_counts[row.getRowType()]++;
         }
 
-        cout<<"Got "<<type_counts.size()<<" unique row types"<<endl;
+        cout << "Got " << type_counts.size() << " unique row types" << endl;
         auto view_of_counts = sorted_view_of_values(type_counts);
         std::reverse(view_of_counts.begin(), view_of_counts.end());
-        for(auto p : view_of_counts) {
-            cout<<p.second<<"  "<<p.first.desc()<<endl;
+        for (auto p: view_of_counts) {
+            cout << p.second << "  " << p.first.desc() << endl;
         }
 
         // save to file (per_file_row_type_stats.ndjson)
         string stats_file_path = "per_file_row_type_stats.ndjson";
-        cout<<"Saving per-file stats to "<<stats_file_path<<endl;
+        cout << "Saving per-file stats to " << stats_file_path << endl;
         stringToFile(stats_file_path, stats_stream.str());
 
-        cout<<"Load took in total "<<loadTimer.time()<<"s"<<endl;
+        cout << "Load took in total " << loadTimer.time() << "s" << endl;
 
-        for(unsigned id = 0; id < std::min(9999999ul, view_of_counts.size()); ++id) {
+        for (unsigned id = 0; id < std::min(9999999ul, view_of_counts.size()); ++id) {
             auto normal_case_row_type = view_of_counts[id].first;
 
             string testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
@@ -398,7 +407,8 @@ namespace tuplex {
 
             // this allows large files to be processed without splitting.
             co.set("tuplex.inputSplitSize", "20G");
-            co.set("tuplex.experimental.worker.workerBufferSize", "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
+            co.set("tuplex.experimental.worker.workerBufferSize",
+                   "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
 
             // create context according to settings
             Context ctx(co);
@@ -427,12 +437,13 @@ namespace tuplex {
                                 "            return None\n";
 
             // remove output files if they exist
-            cout<<"Removing files (if they exist) from "<<output_path<<endl;
+            cout << "Removing files (if they exist) from " << output_path << endl;
             boost::filesystem::remove_all(output_path.c_str());
 
-            cout<<"Testing with normal-case row type: "<<normal_case_row_type.desc()<<endl;
+            cout << "Testing with normal-case row type: " << normal_case_row_type.desc() << endl;
 
-            ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, row_type_to_column_hints(normal_case_row_type))
+            ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED,
+                     row_type_to_column_hints(normal_case_row_type))
                     .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
                     .withColumn("repo_id", UDF(repo_id_code))
                     .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
@@ -447,12 +458,12 @@ namespace tuplex {
             python::lockGIL();
             python::closeInterpreter();
 
-            if(result_row_count != 378) {
-                cerr<<"RUN id="<<id<<" failed, incorrect result, is: "<<result_row_count<<endl;
+            if (result_row_count != 378) {
+                cerr << "RUN id=" << id << " failed, incorrect result, is: " << result_row_count << endl;
                 break;
             }
 
-            cout<<"RUN "<<(id+1)<<"/"<<view_of_counts.size()<<" done."<<endl;
+            cout << "RUN " << (id + 1) << "/" << view_of_counts.size() << " done." << endl;
         }
 
 
@@ -492,7 +503,8 @@ namespace tuplex {
 
         // this allows large files to be processed without splitting.
         co.set("tuplex.inputSplitSize", "20G");
-        co.set("tuplex.experimental.worker.workerBufferSize", "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
+        co.set("tuplex.experimental.worker.workerBufferSize",
+               "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
 
         // create context according to settings
         Context ctx(co);
@@ -521,10 +533,10 @@ namespace tuplex {
                             "            return None\n";
 
         // remove output files if they exist
-        cout<<"Removing files (if they exist) from "<<output_path<<endl;
+        cout << "Removing files (if they exist) from " << output_path << endl;
         boost::filesystem::remove_all(output_path.c_str());
 
-        cout<<"Testing with normal-case row type: "<<normal_case_row_type.desc()<<endl;
+        cout << "Testing with normal-case row type: " << normal_case_row_type.desc() << endl;
 
         // // debug:
         // ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, row_type_to_column_hints(normal_case_row_type))
@@ -537,14 +549,15 @@ namespace tuplex {
         //         .tocsv(output_path);
 
         // original:
-        ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, row_type_to_column_hints(normal_case_row_type))
-             .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
-             .withColumn("repo_id", UDF(repo_id_code))
-             .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
-             .withColumn("commits", UDF("lambda row: row['payload'].get('commits')"))
-             .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
-             .selectColumns(vector<string>{"type", "repo_id", "year", "number_of_commits"})
-             .tocsv(output_path);
+        ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED,
+                 row_type_to_column_hints(normal_case_row_type))
+                .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
+                .withColumn("repo_id", UDF(repo_id_code))
+                .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
+                .withColumn("commits", UDF("lambda row: row['payload'].get('commits')"))
+                .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
+                .selectColumns(vector<string>{"type", "repo_id", "year", "number_of_commits"})
+                .tocsv(output_path);
 
         auto result_row_count = csv_row_count_for_pattern(output_path + "*.csv");
         EXPECT_EQ(result_row_count, 378); // result which is correct for all rows.
@@ -561,11 +574,12 @@ namespace tuplex {
 
         auto sparse_row_type = github_sparse_row_type();
         auto encoded_type = sparse_row_type.encode();
-        cout<<"sparse row type is: "<<encoded_type<<endl;
+        cout << "sparse row type is: " << encoded_type << endl;
 
         auto normal_case_row_type = python::decodeType(encoded_type);
 
-        cout<<"Number of columns to decode with this type (at most): "<<normal_case_row_type.get_column_count()<<endl;
+        cout << "Number of columns to decode with this type (at most): " << normal_case_row_type.get_column_count()
+             << endl;
 
         string input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
 
@@ -587,7 +601,8 @@ namespace tuplex {
         // this allows large files to be processed without splitting.
         co.set("tuplex.experimental.worker.numWorkers", "0"); // <-- single worker.
         co.set("tuplex.inputSplitSize", "20G");
-        co.set("tuplex.experimental.worker.workerBufferSize", "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
+        co.set("tuplex.experimental.worker.workerBufferSize",
+               "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
 
         co.set("tuplex.resolveWithInterpreterOnly", "true");
 
@@ -618,10 +633,10 @@ namespace tuplex {
                             "            return None\n";
 
         // remove output files if they exist
-        cout<<"Removing files (if they exist) from "<<output_path<<endl;
+        cout << "Removing files (if they exist) from " << output_path << endl;
         boost::filesystem::remove_all(output_path.c_str());
 
-        cout<<"Testing with normal-case row type: "<<normal_case_row_type.desc()<<endl;
+        cout << "Testing with normal-case row type: " << normal_case_row_type.desc() << endl;
 
 //         // debug:
 //         ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, row_type_to_column_hints(normal_case_row_type))
@@ -632,7 +647,8 @@ namespace tuplex {
 //                 .tocsv(output_path);
 
         // original:
-        ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, row_type_to_column_hints(normal_case_row_type))
+        ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED,
+                 row_type_to_column_hints(normal_case_row_type))
                 .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
                 .withColumn("repo_id", UDF(repo_id_code))
                 .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
@@ -642,14 +658,14 @@ namespace tuplex {
                 .tocsv(output_path);
 
         auto output = fileToString(output_path);
-        std::cout<<"output::\n"<<output<<std::endl;
+        std::cout << "output::\n" << output << std::endl;
 
 
         auto result_row_count = csv_row_count_for_pattern(output_path + "*.csv");
 
         auto expected_row_count = 378;
         // full data?
-        if(!strEndsWith(input_pattern, ".sample"))
+        if (!strEndsWith(input_pattern, ".sample"))
             expected_row_count = 294195; // full query result.
 
         EXPECT_EQ(result_row_count, expected_row_count); // result which is correct for all rows.
@@ -668,7 +684,7 @@ namespace tuplex {
 
         vector<pair<string, python::Type>> path{make_pair("'type'", python::Type::STRING)};
 
-        int bitmap_idx = 0, present_idx =0, field_idx=0, size_idx=0;
+        int bitmap_idx = 0, present_idx = 0, field_idx = 0, size_idx = 0;
         std::tie(bitmap_idx, present_idx, field_idx, size_idx) = struct_dict_get_indices(type, path);
 
         EXPECT_GE(present_idx, 0);
@@ -681,11 +697,12 @@ namespace tuplex {
 
         auto sparse_row_type = github_sparse_row_type();
         auto encoded_type = sparse_row_type.encode();
-        cout<<"sparse row type is: "<<encoded_type<<endl;
+        cout << "sparse row type is: " << encoded_type << endl;
 
         auto normal_case_row_type = python::decodeType(encoded_type);
 
-        cout<<"Number of columns to decode with this type (at most): "<<normal_case_row_type.get_column_count()<<endl;
+        cout << "Number of columns to decode with this type (at most): " << normal_case_row_type.get_column_count()
+             << endl;
 
         string input_pattern = "../resources/hyperspecialization/single_fork_event.json";
 
@@ -701,7 +718,8 @@ namespace tuplex {
         // this allows large files to be processed without splitting.
         co.set("tuplex.experimental.worker.numWorkers", "0"); // <-- single worker.
         co.set("tuplex.inputSplitSize", "20G");
-        co.set("tuplex.experimental.worker.workerBufferSize", "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
+        co.set("tuplex.experimental.worker.workerBufferSize",
+               "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
 
         co.set("tuplex.resolveWithInterpreterOnly", "true");
 
@@ -709,7 +727,7 @@ namespace tuplex {
 
         // test with true/false.
         // use explicitly generic dicts instead of sparse type.
-        for(auto generic_dict_value : std::vector<std::string>{"false", "true"}) {
+        for (auto generic_dict_value: std::vector<std::string>{"false", "true"}) {
             co.set("tuplex.experimental.useGenericDicts", generic_dict_value);
 
             // create context according to settings
@@ -721,10 +739,10 @@ namespace tuplex {
             auto output_path = "./local-exp/" + testName + "/" + "output" + "/";
 
             // remove output files if they exist
-            cout<<"Removing files (if they exist) from "<<output_path<<endl;
+            cout << "Removing files (if they exist) from " << output_path << endl;
             boost::filesystem::remove_all(output_path.c_str());
 
-            cout<<"Testing with normal-case row type: "<<normal_case_row_type.desc()<<endl;
+            cout << "Testing with normal-case row type: " << normal_case_row_type.desc() << endl;
 
             ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED)
                     .withColumn("actor_type", UDF("lambda row: row['actor_attributes']['type']"))
@@ -735,7 +753,7 @@ namespace tuplex {
             ASSERT_TRUE(fileExists(output_file_path));
 
             auto output = fileToString(output_file_path);
-            std::cout<<"output::\n"<<output<<std::endl;
+            std::cout << "output::\n" << output << std::endl;
 
             auto output_lines = splitToLines(output);
             ASSERT_EQ(output_lines.size(), 2);
@@ -758,11 +776,12 @@ namespace tuplex {
 
         auto sparse_row_type = github_sparse_row_type();
         auto encoded_type = sparse_row_type.encode();
-        cout<<"sparse row type is: "<<encoded_type<<endl;
+        cout << "sparse row type is: " << encoded_type << endl;
 
         auto normal_case_row_type = python::decodeType(encoded_type);
 
-        cout<<"Number of columns to decode with this type (at most): "<<normal_case_row_type.get_column_count()<<endl;
+        cout << "Number of columns to decode with this type (at most): " << normal_case_row_type.get_column_count()
+             << endl;
 
         string input_pattern = "../resources/hyperspecialization/single_fork_event.json";
 
@@ -781,7 +800,8 @@ namespace tuplex {
         // this allows large files to be processed without splitting.
         co.set("tuplex.experimental.worker.numWorkers", "0"); // <-- single worker.
         co.set("tuplex.inputSplitSize", "20G");
-        co.set("tuplex.experimental.worker.workerBufferSize", "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
+        co.set("tuplex.experimental.worker.workerBufferSize",
+               "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
 
         co.set("tuplex.resolveWithInterpreterOnly", "true");
 
@@ -812,12 +832,13 @@ namespace tuplex {
                             "            return None\n";
 
         // remove output files if they exist
-        cout<<"Removing files (if they exist) from "<<output_path<<endl;
+        cout << "Removing files (if they exist) from " << output_path << endl;
         boost::filesystem::remove_all(output_path.c_str());
 
-        cout<<"Testing with normal-case row type: "<<normal_case_row_type.desc()<<endl;
+        cout << "Testing with normal-case row type: " << normal_case_row_type.desc() << endl;
 
-        ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, row_type_to_column_hints(normal_case_row_type))
+        ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED,
+                 row_type_to_column_hints(normal_case_row_type))
                 .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
                 .withColumn("repo_id", UDF(repo_id_code))
                 .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
@@ -830,7 +851,7 @@ namespace tuplex {
         ASSERT_TRUE(fileExists(output_file_path));
 
         auto output = fileToString(output_file_path);
-        std::cout<<"output::\n"<<output<<std::endl;
+        std::cout << "output::\n" << output << std::endl;
 
         auto output_lines = splitToLines(output);
         ASSERT_EQ(output_lines.size(), 2);
@@ -868,7 +889,8 @@ namespace tuplex {
         // this allows large files to be processed without splitting.
         co.set("tuplex.experimental.worker.numWorkers", "0"); // <-- single worker.
         co.set("tuplex.inputSplitSize", "20G");
-        co.set("tuplex.experimental.worker.workerBufferSize", "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
+        co.set("tuplex.experimental.worker.workerBufferSize",
+               "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
 
         // use explicitly generic dicts instead of sparse type.
         co.set("tuplex.experimental.useGenericDicts", "true");
@@ -902,7 +924,7 @@ namespace tuplex {
                             "            return None\n";
 
         // remove output files if they exist
-        cout<<"Removing files (if they exist) from "<<output_path<<endl;
+        cout << "Removing files (if they exist) from " << output_path << endl;
         boost::filesystem::remove_all(output_path.c_str());
 
         // original:
@@ -919,7 +941,7 @@ namespace tuplex {
 
         auto expected_row_count = 378;
         // full data?
-        if(!strEndsWith(input_pattern, ".sample"))
+        if (!strEndsWith(input_pattern, ".sample"))
             expected_row_count = 294195; // full query result.
 
         EXPECT_EQ(result_row_count, expected_row_count); // result which is correct for all rows.
@@ -958,11 +980,12 @@ namespace tuplex {
 
         UDF udf(repo_id_code);
 
-        auto input_row_type = python::Type::decode("Row['repository'->Option[SparseStruct[(str,'id'=>i64)]],'actor_attributes'->Option[Struct[(str,'blog'=>str),(str,'company'=>str),"
-                                                   "(str,'email'->str),(str,'gravatar_id'->str),(str,'location'=>str),(str,'login'->str),(str,'name'=>str),(str,'type'->str)]],"
-                                                   "'payload'->Option[SparseStruct[(str,'commits'=>List[Struct[(str,'sha'->str),(str,'author'->Struct[(str,'name'->str),(str,'email'->str)]),"
-                                                   "(str,'url'->str),(str,'message'->str)]]),(str,'target'=>SparseStruct[(str,'id'->i64)]),(str,'id'=>i64)]],'created_at'->str,"
-                                                   "'url'->Option[str],'type'->str,'actor'->Option[str],'public'->Option[bool],'repo'->Option[SparseStruct[(str,'id'=>i64)]],'year'->i64]");
+        auto input_row_type = python::Type::decode(
+                "Row['repository'->Option[SparseStruct[(str,'id'=>i64)]],'actor_attributes'->Option[Struct[(str,'blog'=>str),(str,'company'=>str),"
+                "(str,'email'->str),(str,'gravatar_id'->str),(str,'location'=>str),(str,'login'->str),(str,'name'=>str),(str,'type'->str)]],"
+                "'payload'->Option[SparseStruct[(str,'commits'=>List[Struct[(str,'sha'->str),(str,'author'->Struct[(str,'name'->str),(str,'email'->str)]),"
+                "(str,'url'->str),(str,'message'->str)]]),(str,'target'=>SparseStruct[(str,'id'->i64)]),(str,'id'=>i64)]],'created_at'->str,"
+                "'url'->Option[str],'type'->str,'actor'->Option[str],'public'->Option[bool],'repo'->Option[SparseStruct[(str,'id'=>i64)]],'year'->i64]");
 
 
 
@@ -982,8 +1005,8 @@ namespace tuplex {
 
         auto acc_indices = v.getAccessedIndices();
 
-        for(auto idx: acc_indices) {
-            cout<<"Accessed column "<<input_row_type.get_column_names()[idx]<<endl;
+        for (auto idx: acc_indices) {
+            cout << "Accessed column " << input_row_type.get_column_names()[idx] << endl;
         }
 
         EXPECT_EQ(acc_indices.size(), 5);
@@ -1019,11 +1042,12 @@ namespace tuplex {
 
         UDF udf(repo_id_code);
 
-        auto input_row_type = python::Type::decode("Row['repository'->Option[SparseStruct[(str,'id'=>i64)]],'actor_attributes'->Option[Struct[(str,'blog'=>str),(str,'company'=>str),"
-                                                   "(str,'email'->str),(str,'gravatar_id'->str),(str,'location'=>str),(str,'login'->str),(str,'name'=>str),(str,'type'->str)]],"
-                                                   "'payload'->Option[SparseStruct[(str,'commits'=>List[Struct[(str,'sha'->str),(str,'author'->Struct[(str,'name'->str),(str,'email'->str)]),"
-                                                   "(str,'url'->str),(str,'message'->str)]]),(str,'target'=>SparseStruct[(str,'id'->i64)]),(str,'id'=>i64)]],'created_at'->str,"
-                                                   "'url'->Option[str],'type'->str,'actor'->Option[str],'public'->Option[bool],'repo'->Option[SparseStruct[(str,'id'=>i64)]],'year'->i64]");
+        auto input_row_type = python::Type::decode(
+                "Row['repository'->Option[SparseStruct[(str,'id'=>i64)]],'actor_attributes'->Option[Struct[(str,'blog'=>str),(str,'company'=>str),"
+                "(str,'email'->str),(str,'gravatar_id'->str),(str,'location'=>str),(str,'login'->str),(str,'name'=>str),(str,'type'->str)]],"
+                "'payload'->Option[SparseStruct[(str,'commits'=>List[Struct[(str,'sha'->str),(str,'author'->Struct[(str,'name'->str),(str,'email'->str)]),"
+                "(str,'url'->str),(str,'message'->str)]]),(str,'target'=>SparseStruct[(str,'id'->i64)]),(str,'id'=>i64)]],'created_at'->str,"
+                "'url'->Option[str],'type'->str,'actor'->Option[str],'public'->Option[bool],'repo'->Option[SparseStruct[(str,'id'=>i64)]],'year'->i64]");
 
         bool hint_rc = false;
 
@@ -1039,14 +1063,15 @@ namespace tuplex {
         // "public"
         // "repo"
         // "year"
-        Row row_1(Field::null(), Field::null(), Field::null(), Field("2012-11-01"), Field::null(), "TestEvent","test", false,Field::null(), 1234);
+        Row row_1(Field::null(), Field::null(), Field::null(), Field("2012-11-01"), Field::null(), "TestEvent", "test",
+                  false, Field::null(), 1234);
 
         ASSERT_EQ(row_1.getNumColumns(), input_row_type.get_column_count());
 
         std::vector<Row> original_sample_rows;
         original_sample_rows.push_back(row_1.with_columns(input_row_type.get_column_names()));
-        std::vector<PyObject*> sample;
-        for(const auto& row : original_sample_rows)
+        std::vector<PyObject *> sample;
+        for (const auto &row: original_sample_rows)
             sample.push_back(python::rowToPython(row));
 
         // use sample
@@ -1064,8 +1089,8 @@ namespace tuplex {
 
         auto acc_indices = v.getAccessedIndices();
 
-        for(auto idx: acc_indices) {
-            cout<<"Accessed column "<<input_row_type.get_column_names()[idx]<<endl;
+        for (auto idx: acc_indices) {
+            cout << "Accessed column " << input_row_type.get_column_names()[idx] << endl;
         }
 
         EXPECT_EQ(acc_indices.size(), 2); // only repo and year due to tracing.
@@ -1078,7 +1103,7 @@ namespace tuplex {
 
         std::stringstream ss;
 
-        if(fileExists(worker_json)) {
+        if (fileExists(worker_json)) {
             cout << "Found " << worker_json << " to wrangle." << endl;
             auto mode_across_files = "tuplex-c++";
 
@@ -1095,19 +1120,23 @@ namespace tuplex {
                 auto path_time = j["stats"]["request_total_time"].get<double>();
 
                 total_time_sum_in_s += path_time;
-                ss<<mode_across_files<<","<<path<<","<<","<<path_time<<","<<","<<",$$STUB$$,"<<input_row_count<<","<<output_row_count<<"\n";
+                ss << mode_across_files << "," << path << "," << "," << path_time << "," << "," << ",$$STUB$$,"
+                   << input_row_count << "," << output_row_count << "\n";
             }
 
-            auto csv = "mode,input_path,output_path,time_in_s,loading_time_in_s,total_time_in_s,input_row_count,output_row_count\n" + ss.str();
+            auto csv =
+                    "mode,input_path,output_path,time_in_s,loading_time_in_s,total_time_in_s,input_row_count,output_row_count\n" +
+                    ss.str();
 
-            cout<<"CSV generated::\n\n"<<csv<<endl;
+            cout << "CSV generated::\n\n" << csv << endl;
 
-            cout<<"\ntotal time (sum) in s: "<<total_time_sum_in_s<<"s"<<endl;
+            cout << "\ntotal time (sum) in s: " << total_time_sum_in_s << "s" << endl;
         }
     }
 
 
-    TEST(AllQueries, GithubDetectForRepoIdJsonPaths) {
+    // helper function for repo id paths.
+    python::Type sparse_type_test_function(const std::string &input_path) {
         using namespace std;
         using namespace tuplex;
 
@@ -1134,8 +1163,6 @@ namespace tuplex {
 
 
         // get some samples from file (manual JSON to python sample)
-        python::initInterpreter();
-        python::unlockGIL();
 
         string input_file_path = "../resources/hyperspecialization/github_daily/2020-10-15.json.sample";
 
@@ -1143,32 +1170,33 @@ namespace tuplex {
 
         // parse row rows & manually extract year.
         std::vector<std::vector<std::string>> out_column_names;
-        auto raw_rows = parseRowsFromJSON(data.c_str(), data.size(), &out_column_names, true, true, std::numeric_limits<size_t>::max(), false);
+        auto raw_rows = parseRowsFromJSON(data.c_str(), data.size(), &out_column_names, true, true,
+                                          std::numeric_limits<size_t>::max(), false);
 
-        std::vector<PyObject*> sample;
+        std::vector<PyObject *> sample;
         std::vector<Row> original_sample_rows;
-        ASSERT_EQ(raw_rows.size(), out_column_names.size());
+        EXPECT_EQ(raw_rows.size(), out_column_names.size());
 
         python::lockGIL();
         std::set<std::string> unique_column_names;
-        for(unsigned i = 0; i < raw_rows.size(); ++i) {
+        for (unsigned i = 0; i < raw_rows.size(); ++i) {
             auto r_row = raw_rows[i];
             auto columns = out_column_names[i];
             auto fields = r_row.to_vector();
-            ASSERT_EQ(columns.size(), fields.size());
+            EXPECT_EQ(columns.size(), fields.size());
 
-            for(auto name : columns)
+            for (auto name: columns)
                 unique_column_names.insert(name);
 
             // year is computed as follows: int(x['created_at'].split('-')[0])
             auto created_at = fields[indexInVector(string("created_at"), columns)];
-            string created_at_str((const char*)created_at.getPtr());
+            string created_at_str((const char *) created_at.getPtr());
 
             // get first 4 chars and convert to string.
             auto year_str = created_at_str.substr(0, 4);
             auto year = std::stoi(year_str);
 
-            fields.push_back(Field((int64_t)year));
+            fields.push_back(Field((int64_t) year));
             columns.push_back("year");
             Row r = Row::from_vector(fields).with_columns(columns);
             original_sample_rows.push_back(r);
@@ -1182,7 +1210,7 @@ namespace tuplex {
         // trace with visitor to get JSON paths.
         python::lockGIL();
         TraceVisitor tv;
-        for(unsigned i = 0; i < sample.size(); ++i) {
+        for (unsigned i = 0; i < sample.size(); ++i) {
             auto py_object = sample[i];
             auto columns = original_sample_rows[i].getRowType().get_column_names();
             tv.recordTrace(udf.getAnnotatedAST().getFunctionAST(), py_object, columns);
@@ -1200,25 +1228,42 @@ namespace tuplex {
         // check which names are accessed:
         auto columns = tv.columns();
 
-        ASSERT_EQ(columns.size(), column_access_paths.size());
+        EXPECT_EQ(columns.size(), column_access_paths.size());
         int num_accessed = 0;
-        for(unsigned i = 0; i < columns.size(); ++i) {
-            if(!column_access_paths[i].empty()) {
-                std::cout<<"Access paths for column: "<<columns[i]<<"\n";
-                for(auto path : column_access_paths[i])
-                    std::cout<<" -- "<<access_path_to_str(path)<<"\n";
-                std::cout<<std::endl;
+        for (unsigned i = 0; i < columns.size(); ++i) {
+            if (!column_access_paths[i].empty()) {
+                std::cout << "Access paths for column: " << columns[i] << "\n";
+                for (auto path: column_access_paths[i])
+                    std::cout << " -- " << access_path_to_str(path) << "\n";
+                std::cout << std::endl;
                 num_accessed++;
             }
         }
-        cout<<num_accessed<<"/"<<pluralize(columns.size(), "column")<<" accessed."<<endl;
+        cout << num_accessed << "/" << pluralize(columns.size(), "column") << " accessed." << endl;
 
         // helper function to sparsify and project row type
         auto udf_row_type = tv.majorityInputType().parameters().front();
+        udf_row_type = python::Type::makeRowType(udf_row_type.parameters(), tv.columns());
         auto sparse_type = sparsify_and_project_row_type(udf_row_type, column_access_paths);
 
-        cout<<"sparsified type is: "<<sparse_type.desc()<<endl;
+        return sparse_type;
+    }
+
+    TEST(AllQueries, GithubDetectForRepoIdJsonPaths) {
+        using namespace std;
+        using namespace tuplex;
+
+        // get some samples from file (manual JSON to python sample)
+        python::initInterpreter();
+        python::unlockGIL();
+
+        string input_file_path = "../resources/hyperspecialization/github_daily/2020-10-15.json.sample";
+
+        auto sparse_type = sparse_type_test_function(input_file_path);
+        cout << "sparsified type is: " << sparse_type.desc() << endl;
 
         python::lockGIL();
         python::closeInterpreter();
-    }}
+    }
+
+}
