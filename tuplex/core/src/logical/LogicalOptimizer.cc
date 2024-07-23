@@ -1625,9 +1625,32 @@ namespace tuplex {
         });
 
         if(it == node->children.end()) {
-            std::cout<<"not found";
+            node->children.push_back(std::make_unique<DictTreeNode>(key, key_type, value_type, always_present));
+            // recurse
+            insert_into_tree(node->children.front().get(), access_path_t(path.begin() + 1, path.end()), value_type, always_present);
         } else {
-            std::cout<<"found";
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented");
+        }
+    }
+
+    python::Type dict_tree_to_sparse_type(DictTreeNode* node) {
+        if(!node)
+            return python::Type::UNKNOWN;
+
+        if(node->children.empty())
+            return node->value_type;
+        else {
+            std::vector<python::StructEntry> entries;
+            for(const auto& c : node->children) {
+                auto value_type = dict_tree_to_sparse_type(c.get());
+                python::StructEntry entry;
+                entry.key = c->key;
+                entry.keyType = c->key_type;
+                entry.valueType = value_type;
+                entry.alwaysPresent = c->always_present;
+                entries.push_back(entry);
+            }
+            return python::Type::makeStructuredDictType(entries, true);
         }
     }
 
@@ -1652,8 +1675,7 @@ namespace tuplex {
         }
 
         // generate type from tree.
-
-        return python::Type::makeStructuredDictType(entries, true);
+        return dict_tree_to_sparse_type(node.get());
     }
 
     python::Type sparsify_and_project_row_type(const python::Type& row_type,
@@ -1683,11 +1705,21 @@ namespace tuplex {
                 // dict or sparse dict?
 //                if(type.isStructuredDictionaryType() || type.isSparseStructuredDictionaryType())
 //                    type = type.makeNonSparse(true);
-                if(type.isDictionaryType()) {
+                if(type.isStructuredDictionaryType()) {
                     // create sparse struct type.
                     logger.debug("sparsifying dictionary of type " + type.desc() + ": ");
 
-                    //type = access_paths_to_sparse_dict(column_access_paths[i]);
+                    // for each access path, check whether it's present and what its value type is.
+                    // TODO: if information about this is coming from trace, can also sparsify general dicts.
+                    std::vector<bool> presence;
+                    std::vector<python::Type> value_types;
+                    for(const auto& path : column_access_paths[i]) {
+                        auto value_type = struct_dict_type_get_element_type(type, path);
+                        presence.push_back(value_type != python::Type::UNKNOWN);
+                        value_types.push_back(value_type);
+                    }
+
+                    type = access_paths_to_sparse_dict(column_access_paths[i], value_types, presence);
                 }
                 reduced_types.push_back(type);
             }
