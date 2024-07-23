@@ -1136,7 +1136,7 @@ namespace tuplex {
 
 
     // helper function for repo id paths.
-    python::Type sparse_type_test_function(const std::string &input_path) {
+    python::Type sparse_type_test_function(const std::string &input_file_path) {
         using namespace std;
         using namespace tuplex;
 
@@ -1163,9 +1163,6 @@ namespace tuplex {
 
 
         // get some samples from file (manual JSON to python sample)
-
-        string input_file_path = "../resources/hyperspecialization/github_daily/2020-10-15.json.sample";
-
         auto data = fileToString(input_file_path);
 
         // parse row rows & manually extract year.
@@ -1257,7 +1254,8 @@ namespace tuplex {
         python::initInterpreter();
         python::unlockGIL();
 
-        string input_file_path = "../resources/hyperspecialization/github_daily/2020-10-15.json.sample";
+//        string input_file_path = "../resources/hyperspecialization/github_daily/2020-10-15.json.sample";
+        string input_file_path = "../resources/hyperspecialization/github_daily/2012-10-15.json.sample";
 
         auto sparse_type = sparse_type_test_function(input_file_path);
         cout << "sparsified type is: " << sparse_type.desc() << endl;
