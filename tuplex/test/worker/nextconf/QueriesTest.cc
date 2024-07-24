@@ -1219,8 +1219,7 @@ namespace tuplex {
 
         auto column_access_paths = tv.columnAccessPaths();
 
-        // there should be (in this file)
-        EXPECT_EQ(column_access_paths.size(), unique_column_names.size());
+
 
         // check which names are accessed:
         auto columns = tv.columns();
@@ -1240,6 +1239,14 @@ namespace tuplex {
 
         // helper function to sparsify and project row type
         auto udf_row_type = tv.majorityInputType().parameters().front();
+
+        // restrict to columns actually traced
+        auto tv_columns = tv.columns();
+        auto tv_col_types = udf_row_type.parameters();
+
+        // there should be (in this file)
+        EXPECT_EQ(column_access_paths.size(), unique_column_names.size());
+
         udf_row_type = python::Type::makeRowType(udf_row_type.parameters(), tv.columns());
         auto sparse_type = sparsify_and_project_row_type(udf_row_type, column_access_paths);
 

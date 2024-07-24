@@ -17,6 +17,13 @@ namespace tuplex {
     void TraceVisitor::recordTrace(ASTNode *node, PyObject *args, const std::vector<std::string>& columns) {
         assert(node && args);
         _args = args;
+
+        // is this not the first trace? check columns are in same order/identical to existing ones.
+        if(!_colTypes.empty() && !columns.empty()) {
+            assert(!_argsColumns.empty());
+            assert(vec_equal(_argsColumns, columns));
+        }
+
         _argsColumns = columns;
         _functionSeen = false;
         _evalStack.clear();
@@ -435,6 +442,7 @@ namespace tuplex {
             for(auto a : extractedArgs) {
                 types.emplace_back(mapPythonToTuplexType(a, false));
             }
+
             _colTypes.emplace_back(types);
         } else throw std::runtime_error("no nested functions supported in tracer yet!");
 

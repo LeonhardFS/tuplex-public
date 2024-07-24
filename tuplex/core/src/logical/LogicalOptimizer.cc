@@ -1657,6 +1657,8 @@ namespace tuplex {
     python::Type access_paths_to_sparse_dict(const std::vector<access_path_t>& access_paths,
                                              const std::vector<python::Type>& value_types,
                                              const std::vector<bool>& always_present) {
+        using namespace std;
+
         assert(access_paths.size() == value_types.size());
         std::vector<python::StructEntry> entries;
 
@@ -1671,6 +1673,9 @@ namespace tuplex {
             auto path = access_paths[i];
             auto value_type = value_types[i];
             auto is_present = always_present[i];
+
+            cout<<"path: "<<access_path_to_str(path)<<" present: "<<std::boolalpha<<is_present<<" value_type: "<<value_type.desc()<<endl;
+
             insert_into_tree(node.get(), path, value_type, is_present);
         }
 
@@ -1680,6 +1685,8 @@ namespace tuplex {
 
     python::Type sparsify_and_project_row_type(const python::Type& row_type,
                                                const std::vector<std::vector<access_path_t>>& column_access_paths) {
+
+        using namespace std;
 
         auto& logger = Logger::instance().logger("optimizer");
 
@@ -1720,7 +1727,10 @@ namespace tuplex {
                     }
 
                     type = access_paths_to_sparse_dict(column_access_paths[i], value_types, presence);
+
+                    cout<<"Sparsified type for column #"<<i<<": "<<type.desc()<<endl;
                 }
+                cout<<"Adding type for column #"<<i<<": "<<type.desc()<<endl;
                 reduced_types.push_back(type);
             }
         }
