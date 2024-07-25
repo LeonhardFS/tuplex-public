@@ -1174,7 +1174,7 @@ namespace tuplex {
         std::vector<Row> original_sample_rows;
         EXPECT_EQ(raw_rows.size(), out_column_names.size());
 
-        python::lockGIL();
+
         std::set<std::string> unique_column_names;
         for (unsigned i = 0; i < raw_rows.size(); ++i) {
             auto r_row = raw_rows[i];
@@ -1197,8 +1197,46 @@ namespace tuplex {
             columns.push_back("year");
             Row r = Row::from_vector(fields).with_columns(columns);
             original_sample_rows.push_back(r);
-            sample.push_back(python::rowToPython(r));
         }
+
+
+        // reorder rows
+        auto column_names = std::vector<std::string>(unique_column_names.begin(), unique_column_names.end());
+        for(auto& row : original_sample_rows) {
+            Row before_row = row;
+            reorder_and_fill_missing_will_null(row,
+                                               row.getRowType().get_column_names(),
+                                               column_names);
+            Row after_row = row;
+
+            // check invariant:
+            unordered_map<string, Field> before_map;
+            unordered_map<string, Field> after_map;
+            for(unsigned i = 0; i < before_row.getNumColumns(); ++i)
+                before_map[before_row.getRowType().get_column_name(i)] = before_row.get(i);
+            for(unsigned i = 0; i < after_row.getNumColumns(); ++i)
+                after_map[after_row.getRowType().get_column_name(i)] = after_row.get(i);
+
+            // now check:
+            bool validation_failed = false;
+            for(unsigned i = 0; i < before_row.getNumColumns(); ++i) {
+                auto name = before_row.getRowType().get_column_name(i);
+                auto field = before_row.get(i);
+
+                if(field.toPythonString() != after_map[name].toPythonString())
+                    validation_failed = true;
+                EXPECT_EQ(field.toPythonString(), after_map[name].toPythonString());
+            }
+
+            if(validation_failed) {
+                cerr<<"row before: "<<before_row.toPythonString()<<"\nrow after:  "<<after_row.toPythonString()<<endl;
+            }
+        }
+
+        // convert to python.
+        python::lockGIL();
+        for(const auto& r : original_sample_rows)
+            sample.push_back(python::rowToPython(r));
         python::unlockGIL();
 
 
@@ -1244,11 +1282,21 @@ namespace tuplex {
         auto tv_columns = tv.columns();
         auto tv_col_types = udf_row_type.parameters();
 
+        // restrict according to column_names
+        std::vector<std::vector<access_path_t>> r_access_paths(column_names.size());
+        std::vector<python::Type> r_col_types(column_names.size());
+        for(unsigned i = 0; i < column_names.size(); ++i) {
+            auto idx = indexInVector(column_names[i], tv_columns);
+            assert(idx >= 0);
+            r_access_paths[i] = column_access_paths[idx];
+            r_col_types[i] = tv_col_types[idx];
+        }
+
         // there should be (in this file)
         EXPECT_EQ(column_access_paths.size(), unique_column_names.size());
 
-        udf_row_type = python::Type::makeRowType(udf_row_type.parameters(), tv.columns());
-        auto sparse_type = sparsify_and_project_row_type(udf_row_type, column_access_paths);
+        udf_row_type = python::Type::makeRowType(r_col_types, column_names);
+        auto sparse_type = sparsify_and_project_row_type(udf_row_type, r_access_paths);
 
         return sparse_type;
     }
