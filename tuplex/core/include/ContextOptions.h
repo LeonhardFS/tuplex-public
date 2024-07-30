@@ -68,6 +68,7 @@ namespace tuplex {
         bool OPT_OPERATOR_REORDERING() const { return stringToBool(_store.at("tuplex.optimizer.operatorReordering")); }
         bool OPT_MERGE_EXCEPTIONS_INORDER() const { return stringToBool(_store.at("tuplex.optimizer.mergeExceptionsInOrder")); }
         bool OPT_SELECTION_PUSHDOWN() const; //! whether to use selection pushdown when reading files. If false, then full data will be always read and thus serialized within memory.
+        bool OPT_SPARSIFY_STRUCTS() const { return stringToBool(_store.at("tuplex.optimizer.sparsifyStructs")); }
         bool INTERLEAVE_IO() const { return stringToBool(_store.at("tuplex.interleaveIO")); } //! whether to first load, compute, then write or use IO thread to interleave IO work with compute work for faster speeds.
         bool RESOLVE_WITH_INTERPRETER_ONLY() const { return stringToBool(_store.at("tuplex.resolveWithInterpreterOnly")); }
 

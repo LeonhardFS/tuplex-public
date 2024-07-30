@@ -512,7 +512,7 @@ namespace python {
 
     std::string TypeFactory::getDesc(const int _hash) const {
         if(_hash <= 0)
-            return "unknown";
+            return "uninitialized";
 
         std::lock_guard<std::mutex> lock(_typeMapMutex);
         assert(_hash >= 0);

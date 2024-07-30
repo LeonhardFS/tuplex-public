@@ -1166,9 +1166,14 @@ namespace tuplex {
         auto data = fileToString(input_file_path);
 
         // parse row rows & manually extract year.
+        auto n_rows = std::numeric_limits<size_t>::max();
+
+        // start with single row
+        n_rows=15;
+
         std::vector<std::vector<std::string>> out_column_names;
         auto raw_rows = parseRowsFromJSON(data.c_str(), data.size(), &out_column_names, true, true,
-                                          std::numeric_limits<size_t>::max(), false);
+                                          n_rows, false);
 
         std::vector<PyObject *> sample;
         std::vector<Row> original_sample_rows;
@@ -1199,6 +1204,8 @@ namespace tuplex {
             original_sample_rows.push_back(r);
         }
 
+        // add "year"
+        unique_column_names.insert("year");
 
         // reorder rows
         auto column_names = std::vector<std::string>(unique_column_names.begin(), unique_column_names.end());
@@ -1310,7 +1317,15 @@ namespace tuplex {
         python::unlockGIL();
 
 //        string input_file_path = "../resources/hyperspecialization/github_daily/2020-10-15.json.sample";
-        string input_file_path = "../resources/hyperspecialization/github_daily/2012-10-15.json.sample";
+        //string input_file_path = "../resources/hyperspecialization/github_daily/2012-10-15.json.sample";
+
+        // 2 row sample with differently ordered columns
+        string input_file_path = "../resources/github-2012.2rows.sample.json";
+
+        // for the above test file following paths are available: PushEvent/FollowEvent
+        // -> year
+        // -> payload -> target -> id
+        // -> repository -> id
 
         auto sparse_type = sparse_type_test_function(input_file_path);
         cout << "sparsified type is: " << sparse_type.desc() << endl;

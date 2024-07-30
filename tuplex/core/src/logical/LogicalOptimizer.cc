@@ -1605,7 +1605,7 @@ namespace tuplex {
         python::Type key_type;
         std::string key;
 
-        DictTreeNode() {}
+        DictTreeNode() : value_type(python::Type::UNKNOWN), key_type(python::Type::UNKNOWN) {}
 
         DictTreeNode(const std::string _key, const python::Type& _key_type,
                      const python::Type& _value_type, bool _always_present) : key(_key), key_type(_key_type), value_type(_value_type), always_present(_always_present) {}
@@ -1648,6 +1648,12 @@ namespace tuplex {
                 entry.keyType = c->key_type;
                 entry.valueType = value_type;
                 entry.alwaysPresent = c->always_present;
+
+                // skip UNKNOWN types, this means that info is not available in value_type
+                // or there is a case of two structs.
+                if(value_type == python::Type::UNKNOWN)
+                    continue;
+
                 entries.push_back(entry);
             }
             return python::Type::makeStructuredDictType(entries, true);
@@ -1674,10 +1680,19 @@ namespace tuplex {
             auto value_type = value_types[i];
             auto is_present = always_present[i];
 
+            // skip UNKNOWN types, this means that info is not available in value_types
+            // or there is a case of two structs.
+            if(value_type.isIllDefined())
+                continue;
+
             cout<<"path: "<<access_path_to_str(path)<<" present: "<<std::boolalpha<<is_present<<" value_type: "<<value_type.desc()<<endl;
 
             insert_into_tree(node.get(), path, value_type, is_present);
         }
+
+        // empty node?
+        if(node->children.empty() && node->value_type.isIllDefined())
+            return python::Type::UNKNOWN;
 
         // generate type from tree.
         return dict_tree_to_sparse_type(node.get());
@@ -1730,6 +1745,11 @@ namespace tuplex {
 
                     cout<<"Sparsified type for column #"<<i<<": "<<type.desc()<<endl;
                 }
+
+                // restore if UNKNOWN/ill defined
+                if(type.isIllDefined())
+                    type = col_types[i];
+
                 cout<<"Adding type for column #"<<i<<": "<<type.desc()<<endl;
                 reduced_types.push_back(type);
             }

@@ -130,7 +130,7 @@ namespace tuplex {
                          const std::vector<std::shared_ptr<LogicalOperator>>& operators,
                          double nc_threshold) : _inputNode(inputNode),
                          _operators(operators), _nc_threshold(nc_threshold),
-                         _useNVO(false), _useConstantFolding(false), _useDelayedParsing(false) {
+                         _useNVO(false), _useConstantFolding(false), _useDelayedParsing(false), _useSparsifyStructs(false) {
                 assert(inputNode);
                 for(auto op : operators)
                     assert(op);
@@ -174,6 +174,7 @@ namespace tuplex {
                 enableConstantFoldingOptimization();
                 enableDelayedParsingOptimization();
                 enableFilterPromoOptimization();
+                enableSparsifyStructsOptimization();
             }
 
             void disableAll() {
@@ -181,12 +182,14 @@ namespace tuplex {
                 _useConstantFolding = false;
                 _useDelayedParsing = false;
                 _useFilterPromo = false;
+                _useSparsifyStructs = false;
             }
 
             void enableNullValueOptimization() { _useNVO = true; }
             void enableConstantFoldingOptimization() { _useConstantFolding = true; }
             void enableDelayedParsingOptimization() { _useDelayedParsing = true; }
             void enableFilterPromoOptimization() { _useFilterPromo = true; }
+            void enableSparsifyStructsOptimization() { _useSparsifyStructs = true; }
 
             std::map<int, int> normalToGeneralMapping() const { return _normalToGeneralMapping; }
 
@@ -256,6 +259,7 @@ namespace tuplex {
             bool _useConstantFolding;
             bool _useDelayedParsing;
             bool _useFilterPromo;
+            bool _useSparsifyStructs;
 
             // helper when normal-case is specialized to yield less rows than general case
             std::map<int, int> _normalToGeneralMapping;
@@ -305,7 +309,7 @@ namespace tuplex {
                 opt.set("tuplex.optimizer.operatorReordering", "true");
                 opt.set("tuplex.optimizer.selectionPushdown", "true");
                 opt.set("tuplex.optimizer.constantFoldingOptimization", "true");
-
+                opt.set("tuplex.optimizer.sparsifyStructs", "true");
                 return opt;
             }
 
