@@ -3753,6 +3753,95 @@ namespace tuplex {
                 auto key_type = argsTypes.front();
                 if(key_type.isConstantValued()) {
                     // simple, it's a constant key -> can perform direct lookup in struct dict.
+
+                    // is key part of struct dict?
+                    auto path = key_to_access_path(key_type.constant(), key_type.underlying());
+                    auto element_type = struct_dict_type_get_element_type(callerType, path);
+
+                    if(python::Type::UNKNOWN == element_type) {
+                        // path not present, always return default value which is None here.
+                        if(retType.isOptionType()) {
+                            auto ret_val = CreateDummyValue(_env, builder, retType);
+                            ret_val.is_null = _env.i1Const(true);
+                            return ret_val;
+                        } else {
+                            assert(retType == python::Type::NULLVALUE);
+                            return SerializableValue(nullptr, nullptr, _env.i1Const(true));
+                        }
+                    }
+
+                    // path is present, now potentially field may or may not be present.
+                    // check and alter return value accordingly.
+                    auto field_present = struct_dict_load_present(_env, builder, caller.val, callerType, path);
+                    auto field_not_present = _env.i1neg(builder, field_present);
+
+                    // does field have null? need to load then as well.
+                    auto field_is_null = struct_dict_load_is_null(_env, builder, caller.val, callerType, path);
+
+                    // exception if not null.
+                    if(!retType.isOptionType()) {
+                        lfb.addException(builder, ExceptionCode::NORMALCASEVIOLATION, field_is_null, "return type assumed to be non-option but field is null.");
+
+                        // directly load and return
+                        return struct_dict_load_value(_env, builder, caller.val, callerType, path);
+                    }
+
+                    // retType option?
+                    assert(retType.isOptionType());
+
+                    // create phi block incl. dummy
+                    auto ret_val = _env.dummyValue(builder, retType);
+                    ret_val.is_null = _env.i1Const(true);
+
+                    auto skip_element = builder.CreateAnd(field_is_null, field_not_present);
+                    auto bbLoadElement = llvm::BasicBlock::Create(builder.getContext(), "load_element", builder.GetInsertBlock()->getParent());
+                    auto bbDone = llvm::BasicBlock::Create(builder.getContext(), "done", builder.GetInsertBlock()->getParent());
+                    auto bbCurrentBlock = builder.GetInsertBlock();
+                    builder.CreateCondBr(skip_element, bbDone, bbLoadElement);
+
+                    builder.SetInsertPoint(bbLoadElement);
+
+                    auto element_val = struct_dict_load_value(_env, builder, caller.val, callerType, path);
+
+                    // Catch the case struct.list / struct.list* e.g.
+                    if(ret_val.val->getType()->isPointerTy() && element_val.val->getType()->isStructTy()) {
+                        auto tmp = element_val.val;
+                        element_val.val = _env.CreateFirstBlockAlloca(builder, element_val.val->getType());
+                        builder.CreateStore(tmp, element_val.val);
+                    }
+
+                    auto bbLastBlock = builder.GetInsertBlock();
+                    builder.CreateBr(bbDone);
+
+                    builder.SetInsertPoint(bbDone);
+
+                    if(ret_val.val) {
+                        auto phi_val = builder.CreatePHI(ret_val.val->getType(), 2);
+                        phi_val->addIncoming(ret_val.val, bbCurrentBlock);
+                        phi_val->addIncoming(element_val.val, bbLastBlock);
+                        ret_val.val = phi_val;
+                    }
+                    if(ret_val.size) {
+                        auto phi_size = builder.CreatePHI(_env.i64Type(), 2);
+                        phi_size->addIncoming(ret_val.size, bbCurrentBlock);
+                        phi_size->addIncoming(element_val.size, bbLastBlock);
+                        ret_val.size = phi_size;
+                    }
+
+                    ret_val.is_null = skip_element; // because default is None.
+                    lfb.setLastBlock(builder.GetInsertBlock());
+                    return ret_val;
+
+                    // // is it a maybe field? => check if present. if not, key error
+                    //            auto field_present = struct_dict_load_present(*_env, builder, value.val, value_type, path);
+                    //            _lfb->setLastBlock(builder.GetInsertBlock());
+                    //            auto field_not_present = _env->i1neg(builder, field_present);
+                    //            _lfb->addException(builder, ExceptionCode::KEYERROR, field_not_present, "KeyError on struct dict [], element missing for key=" + key + " (" + key_type.desc() + ")");
+                    //            // load entry
+                    //            if(out_ret)
+                    //                *out_ret = struct_dict_load_value(*_env, builder, value.val, value_type, path);
+                    //            _lfb->setLastBlock(builder.GetInsertBlock());
+
                     assert(false); // not yet implemented ?!
                 } else {
                     auto t_lookup = struct_dict_get_by_key(lfb, _env, builder, callerType, caller.val, key_type, args.front(), retType);

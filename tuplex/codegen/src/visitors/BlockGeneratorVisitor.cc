@@ -4383,11 +4383,7 @@ namespace tuplex {
             _logger.debug("extracted static key=" + key + " (" + key_type.desc() + ") from AST.");
 
             // check if found in dict index type.
-            access_path_t path;
-            if(key_type == python::Type::STRING)
-                path.push_back(make_pair(escape_to_python_str(key), key_type));
-            else
-                path.push_back(make_pair(key, key_type));
+            access_path_t path = key_to_access_path(key, key_type);
 
             auto element_type = struct_dict_type_get_element_type(value_type, path);
             if(element_type == python::Type::UNKNOWN) {

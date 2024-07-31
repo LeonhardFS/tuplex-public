@@ -123,6 +123,15 @@ namespace tuplex {
     inline bool struct_dict_access_path_has_optional_nesting(const python::Type& dict_type, const access_path_t& path) {
         return !struct_dict_get_optional_nesting_paths_along_path(dict_type, path).empty();
     }
+
+    inline access_path_t key_to_access_path(const std::string& key, const python::Type& key_type) {
+        access_path_t path;
+        if(key_type == python::Type::STRING)
+            path.push_back(make_pair(escape_to_python_str(key), key_type));
+        else
+            path.push_back(make_pair(key, key_type));
+        return path;
+    }
 }
 
 #endif //TUPLEX_STRUCTCOMMON_H
