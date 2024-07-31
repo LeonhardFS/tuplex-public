@@ -109,7 +109,9 @@ namespace tuplex {
                         break;
                     }
                     case CheckType::CHECK_FILTER: {
-                        throw std::runtime_error("not yet implemented");
+                        // deserialize filter and access its columns
+                        for(const auto& col_no: check.colNos)
+                            columns.insert(col_no);
                         break;
                     }
                     default:
@@ -205,7 +207,8 @@ namespace tuplex {
                         ar(fop);
                     }
 #else
-                    fop = FilterOperator::from_json(nullptr, check.data());
+                    auto j = nlohmann::json::parse(check.data());
+                    fop = FilterOperator::from_json(nullptr, j);
 #endif
                     logger().debug("deserialized operator " + fop->name());
 

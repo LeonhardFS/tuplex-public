@@ -1852,7 +1852,7 @@ namespace tuplex {
             auto bytes_str = oss.str();
             serialized_filter = bytes_str;
 #else
-            serialized_filter = fop->to_json();
+            serialized_filter = fop->to_json().dump();
 #endif
             auto acc_cols = fop->getUDF().getAccessedColumns();
             return NormalCaseCheck::FilterCheck(acc_cols, serialized_filter);
