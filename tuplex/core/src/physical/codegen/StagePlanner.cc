@@ -130,6 +130,9 @@ namespace tuplex {
                 return vec_prepend(_inputNode, _operators);
             }
 
+            // @TODO: implement.
+            assert(false);
+
             return vec_prepend(_inputNode, _operators);
         }
 

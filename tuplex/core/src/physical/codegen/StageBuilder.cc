@@ -1746,8 +1746,8 @@ namespace tuplex {
                 planner.enableNullValueOptimization();
             if(conf.constantFoldingOptimization)
                 planner.enableConstantFoldingOptimization();
-            if(conf.enableSparsifyStructs)
-                planner.enableSparsifyStructs();
+            if(conf.sparsifyStructs)
+                planner.enableSparsifyStructsOptimization();
             planner.optimize();
 
             // use optimized or non-optimized schema
