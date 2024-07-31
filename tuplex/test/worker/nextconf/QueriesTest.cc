@@ -217,6 +217,13 @@ namespace tuplex {
         co.set("tuplex.experimental.worker.workerBufferSize",
                "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
 
+        // activate sparsify structs.
+        // @TODO: separate experiment setting.
+        co.set("tuplex.optimizer.sparsifyStructs", "true");
+
+        // check with generic dict as well.
+        // @TODO.
+
         // create context according to settings
         Context ctx(co);
         runtime::init(co.RUNTIME_LIBRARY().toPath());

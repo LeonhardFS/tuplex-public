@@ -103,6 +103,36 @@ namespace tuplex {
             }
         }
 
+        std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::sparsifyStructs(const std::vector<Row> &sample) {
+            using namespace std;
+            vector<shared_ptr<LogicalOperator>> opt_ops;
+
+            auto& logger = Logger::instance().logger("specializing stage optimizer");
+
+            // check current input node schema, if it contains no struct_dict - can skip.
+            if(!_inputNode) {
+                logger.error("internal problem with _inputNode, skipping.");
+                return vec_prepend(_inputNode, _operators);
+            }
+
+            auto input_row_type_as_tuple = _inputNode->getOutputSchema().getRowType();
+            if(input_row_type_as_tuple.isRowType())
+                input_row_type_as_tuple = input_row_type_as_tuple.get_columns_as_tuple_type();
+
+            // @TODO: could sparsify across operators as well...
+            auto struct_dict_found = false;
+            for(const auto& col_type : input_row_type_as_tuple.parameters())
+                if(col_type.withoutOption().isStructuredDictionaryType() || col_type.withoutOption().isSparseStructuredDictionaryType())
+                    struct_dict_found = true;
+
+            if(!struct_dict_found) {
+                logger.error("Skipping sparsify-struct pass, because no struct dicts found in input operator.");
+                return vec_prepend(_inputNode, _operators);
+            }
+
+            return vec_prepend(_inputNode, _operators);
+        }
+
         std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::constantFoldingOptimization(const std::vector<Row>& sample) {
             using namespace std;
             vector<shared_ptr<LogicalOperator>> opt_ops;
@@ -671,6 +701,31 @@ namespace tuplex {
                         logger.debug(std::string("post-constant-folding pipeline validation: ") + (validation_rc ? "ok" : "failed"));
                     } else {
                         logger.debug("skipping constant-folding optimization for stage");
+                    }
+                }
+            }
+
+            // perform struct sparsification
+            if(_useSparsifyStructs) {
+                if(!use_sample) {
+                    logger.debug("Skipping struct sparsification, because use of sample is deactivated.");
+                } else {
+                    // perform only when input op is present (could do later, but requires sample!)
+                    if(_inputNode && _inputNode->type() == LogicalOperatorType::FILEINPUT) {
+                        logger.info("Performing struct sparsification optimization (sample size=" + std::to_string(sample.size()) + ")");
+                        optimized_operators = sparsifyStructs(sample);
+
+                        // overwrite internal operators to apply subsequent optimizations
+                        _inputNode = _inputNode ? optimized_operators.front() : nullptr;
+                        _operators = _inputNode ? vector<shared_ptr<LogicalOperator>>{optimized_operators.begin() + 1,
+                                                                                      optimized_operators.end()}
+                                                : optimized_operators;
+
+                        // run validation after applying constant folding
+                        validation_rc = validatePipeline();
+                        logger.debug(std::string("post-sparsify-structs pipeline validation: ") + (validation_rc ? "ok" : "failed"));
+                    } else {
+                        logger.debug("skipping sparsify structs optimization for stage");
                     }
                 }
             }
