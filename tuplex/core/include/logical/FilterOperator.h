@@ -101,6 +101,8 @@ namespace tuplex {
             obj["schema"] = getOutputSchema().getRowType().desc();
             obj["id"] = getID();
 
+            obj["inputRowType"] = getInputSchema().getRowType().desc();
+
             // no closure env etc.
             nlohmann::json udf;
             udf["code"] = _udf.getCode();
@@ -124,6 +126,9 @@ namespace tuplex {
 
             auto fop = new FilterOperator(parent, udf, columnNames);
             fop->setID(id);
+
+            // auto input_row_type = python::decodeType(json["inputRowType"].get<std::string>());
+            // udf.setInputSchema(Schema(Schema::MemoryLayout::ROW, input_row_type));
             return std::shared_ptr<FilterOperator>(fop);
         }
 

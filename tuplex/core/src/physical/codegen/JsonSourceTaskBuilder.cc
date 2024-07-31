@@ -214,7 +214,8 @@ namespace tuplex {
 
                     // which columns does filter operator require?
                     // -> perform struct type rewrite specific for THIS filter
-                    auto acc_cols = fop->getUDF().getAccessedColumns(false);
+#warning "shortcut here for JSON mode. Other mode should use correct getUDF->getAccessedColumns, tbd."
+                    auto acc_cols = check.colNos; // fop->getUDF().getAccessedColumns(false);
                     std::stringstream ss;
                     ss<<"filter accesses following columns: "<<acc_cols<<"\n";
                     ss<<"input row type: "<<_inputRowType.desc()<<"\n";
