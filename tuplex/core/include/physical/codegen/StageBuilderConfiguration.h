@@ -23,6 +23,8 @@ namespace tuplex {
             bool updateInputExceptions; // whether input exceptions indices need to be updated (change for experimental incremental exception handling)
             bool generateSpecializedNormalCaseCodePath; // whether to emit specialized normal case code path or not
             bool filterPromotion; // whether to propagate filters to become checks, i.e. manipulate the sample to be only rows that pass the filter.
+            bool sparsifyStructs; // whether to sparsify struct dicts.
+
 
             bool pure_python_mode; // whether to generate only python code
 
@@ -40,6 +42,7 @@ namespace tuplex {
                                           constantFoldingOptimization(true),
                                           updateInputExceptions(false),
                                           generateSpecializedNormalCaseCodePath(true),
+                                          sparsifyStructs(true),
                                           filterPromotion(false),
                                           pure_python_mode(false),
                                           exceptionSerializationMode(ExceptionSerializationMode::SERIALIZE_AS_GENERAL_CASE),
@@ -57,6 +60,7 @@ namespace tuplex {
                 filterPromotion = co.OPT_FILTER_PROMOTION();
                 pure_python_mode = co.PURE_PYTHON_MODE();
                 sampling_size = co.SAMPLE_MAX_DETECTION_MEMORY();
+                sparsifyStructs = co.OPT_SPARSIFY_STRUCTS();
 
                 // from options, infer
                 if(co.EXPERIMENTAL_FORCE_BAD_PARSE_EXCEPT_FORMAT())
