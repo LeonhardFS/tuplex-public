@@ -1176,7 +1176,7 @@ namespace tuplex {
         auto n_rows = std::numeric_limits<size_t>::max();
 
         // start with single row
-        n_rows=15;
+        // n_rows=15;
 
         std::vector<std::vector<std::string>> out_column_names;
         auto raw_rows = parseRowsFromJSON(data.c_str(), data.size(), &out_column_names, true, true,
@@ -1334,11 +1334,33 @@ namespace tuplex {
         // -> payload -> target -> id
         // -> repository -> id
 
-        auto sparse_type = sparse_type_test_function(input_file_path);
-        cout << "sparsified type is: " << sparse_type.desc() << endl;
+        //auto sparse_type = sparse_type_test_function(input_file_path);
+        //cout << "sparsified type is: " << sparse_type.desc() << endl;
+
+        // test sparsification for each sample file:
+        string sample_input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
+        auto input_uris = glob(sample_input_pattern);
+        std::sort(input_uris.begin(), input_uris.end());
+        cout<<"Found "<<pluralize(input_uris.size(), "file")<<" to test sparsification on."<<endl;
+
+
+        // go through each and save sparse type
+        std::vector<python::Type> v_sparsified_types;
+
+        for(const auto& uri : input_uris) {
+            cout<<" -- processing "<<uri<<endl;
+            auto sparse_type = sparse_type_test_function(uri);
+            v_sparsified_types.push_back(sparse_type);
+        }
 
         python::lockGIL();
         python::closeInterpreter();
+
+        // print result now here:
+        cout<<"Sparsified types are: "<<endl;
+        for(unsigned i = 0; i < input_uris.size(); ++i) {
+            cout<<" -- "<<input_uris[i]<<":  "<<v_sparsified_types[i].desc()<<endl;
+        }
     }
 
 }

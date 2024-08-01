@@ -22,6 +22,7 @@
 #include <graphviz/GraphVizBuilder.h>
 #include "logical/LogicalOptimizer.h"
 #include <unordered_map>
+#include <tracing/TraceVisitor.h>
 
 #define VERBOSE_BUILD
 
@@ -103,7 +104,24 @@ namespace tuplex {
             }
         }
 
-        std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::sparsifyStructs(const std::vector<Row> &sample) {
+        std::vector<std::string> get_column_names_from_sample(const std::vector<Row>& sample) {
+            std::vector<std::string> names;
+            std::unordered_set<std::string> names_seen;
+            for(const auto& row : sample) {
+                if(row.getRowType().isRowType()) {
+                    for(const auto& name : row.getRowType().get_column_names()) {
+                        if(names_seen.find(name) == names_seen.end()) {
+                            names.push_back(name);
+                            names_seen.insert(name);
+                        }
+                    }
+                }
+            }
+            return names;
+        }
+
+        std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::sparsifyStructs(const std::vector<Row> &sample,
+                                                                                    const option<std::vector<std::string>>& sample_columns) {
             using namespace std;
             vector<shared_ptr<LogicalOperator>> opt_ops;
 
@@ -128,6 +146,139 @@ namespace tuplex {
             if(!struct_dict_found) {
                 logger.error("Skipping sparsify-struct pass, because no struct dicts found in input operator.");
                 return vec_prepend(_inputNode, _operators);
+            }
+
+            // get column names from sample.
+            auto column_names = get_column_names_from_sample(sample);
+
+            // check with provided values.
+            if(sample_columns.has_value())
+                column_names = sample_columns.value();
+
+#ifndef NDEBUG
+            // check that counts match.
+            {
+                auto n_columns = column_names.size();
+                for(const auto& row : sample) {
+                    if(row.getRowType().isRowType())
+                        assert(n_columns >= extract_columns_from_type(row.getRowType()));
+                    else
+                        assert(n_columns == extract_columns_from_type(row.getRowType()));
+                }
+            }
+#endif
+
+            std::vector<PyObject*> python_sample;
+
+            // go through operators with sample, and then for each record which paths are accessed:
+            for(const auto& op : vec_prepend(_inputNode, _operators)) {
+                switch(op->type()) {
+                    case LogicalOperatorType::FILEINPUT: {
+                        stringstream ss;
+                        ss<<"Found file input parameter, processing sample: ";
+                        logger.debug(ss.str());
+                        break;
+                    }
+                    case LogicalOperatorType::MAP:
+                    case LogicalOperatorType::FILTER: {
+                        auto udfop = std::dynamic_pointer_cast<UDFOperator>(op);
+                        auto func_root = udfop->getUDF().getAnnotatedAST().getFunctionAST();
+                        assert(func_root);
+
+                        // Trace now which columns are accessed.
+                        // convert to python.
+                        python::lockGIL();
+                        for(auto row : sample) {
+                            // row = row.with_columns(column_names);
+                            // reorder_and_fill_missing_will_null(row,
+                            //                                   row.getRowType().get_column_names(),
+                            //                                   column_names);
+                            python_sample.push_back(python::rowToPython(row));
+                        }
+
+                        // Trace
+                        TraceVisitor tv;
+                        for (unsigned i = 0; i < sample.size(); ++i) {
+                            auto py_object = python_sample[i];
+                            tv.recordTrace(func_root, py_object, column_names);
+                        }
+
+                        python::unlockGIL();
+
+                        // results, and print them out:
+                        auto column_access_paths = tv.columnAccessPaths();
+
+                        // check which names are accessed:
+                        auto columns = tv.columns();
+                        int num_accessed = 0;
+                        for (unsigned i = 0; i < columns.size(); ++i) {
+                            if (!column_access_paths[i].empty()) {
+                                std::cout << "Access paths for column: " << columns[i] << "\n";
+                                for (auto path: column_access_paths[i])
+                                    std::cout << " -- " << access_path_to_str(path) << "\n";
+                                std::cout << std::endl;
+                                num_accessed++;
+                            }
+                        }
+                        cout << num_accessed << "/" << pluralize(columns.size(), "column") << " accessed." << endl;
+
+                        if(op->type() == LogicalOperatorType::MAP) {
+                            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Need to update sample for map operator.");
+                        }
+                        break;
+                    }
+                    case LogicalOperatorType::WITHCOLUMN: {
+                        // apply same tracing logic.
+                        auto udfop = std::dynamic_pointer_cast<UDFOperator>(op);
+                        auto func_root = udfop->getUDF().getAnnotatedAST().getFunctionAST();
+                        assert(func_root);
+
+                        // Trace now which columns are accessed.
+                        // convert to python.
+                        python::lockGIL();
+                        for(auto row : sample) {
+                            // row = row.with_columns(column_names);
+                            // reorder_and_fill_missing_will_null(row,
+                            //                                   row.getRowType().get_column_names(),
+                            //                                   column_names);
+                            python_sample.push_back(python::rowToPython(row));
+                        }
+
+                        // Trace
+                        TraceVisitor tv;
+                        for (unsigned i = 0; i < sample.size(); ++i) {
+                            auto py_object = python_sample[i];
+                            tv.recordTrace(func_root, py_object, column_names);
+                        }
+
+                        python::unlockGIL();
+
+                        // results, and print them out:
+                        auto column_access_paths = tv.columnAccessPaths();
+
+                        // check which names are accessed:
+                        auto columns = tv.columns();
+                        int num_accessed = 0;
+                        for (unsigned i = 0; i < columns.size(); ++i) {
+                            if (!column_access_paths[i].empty()) {
+                                std::cout << "Access paths for column: " << columns[i] << "\n";
+                                for (auto path: column_access_paths[i])
+                                    std::cout << " -- " << access_path_to_str(path) << "\n";
+                                std::cout << std::endl;
+                                num_accessed++;
+                            }
+                        }
+                        cout << num_accessed << "/" << pluralize(columns.size(), "column") << " accessed." << endl;
+
+
+                        // update sample (and column names!)
+                        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " update sample for withColumn in sparsifyStructs.");
+                        break;
+                    }
+                    default: {
+                        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " unknown operator " + op->name() + " in sparsifyStructs.");
+                    }
+                }
             }
 
             // @TODO: implement.
@@ -716,7 +867,7 @@ namespace tuplex {
                     // perform only when input op is present (could do later, but requires sample!)
                     if(_inputNode && _inputNode->type() == LogicalOperatorType::FILEINPUT) {
                         logger.info("Performing struct sparsification optimization (sample size=" + std::to_string(sample.size()) + ")");
-                        optimized_operators = sparsifyStructs(sample);
+                        optimized_operators = sparsifyStructs(sample, sample_columns);
 
                         // overwrite internal operators to apply subsequent optimizations
                         _inputNode = _inputNode ? optimized_operators.front() : nullptr;
