@@ -261,6 +261,10 @@ namespace tuplex {
                         // results, and print them out:
                         auto column_access_paths = tv.columnAccessPaths();
 
+                        cout<<"Sparsify struct tracing results for operator "<<op->name()<<"::\n";
+
+                        cout<<"UDF:\n"<<wop->getUDF().getCode()<<endl<<endl;
+
                         // check which names are accessed:
                         auto columns = tv.columns();
                         int num_accessed = 0;
