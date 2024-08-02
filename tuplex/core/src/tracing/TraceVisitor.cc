@@ -1639,7 +1639,8 @@ namespace tuplex {
 
             // check
             if(target_idx < 0 || target_idx >= paths.size())
-                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " invalid target_idx");
+                continue;
+                // throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " invalid target_idx");
             else {
                 if(paths[target_idx].empty()) {
                     paths[target_idx].push_back(path);

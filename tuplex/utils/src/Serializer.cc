@@ -846,6 +846,8 @@ namespace tuplex {
             // offset numbers
             size_t current_offset = sizeof(uint64_t) * l.numElements();
             for (size_t i = 0; i < l.numElements(); i++) {
+                if(elementType == python::Type::PYOBJECT)
+                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " pyobject serialize not yet implemented, need to use correct size - not strlen size");
                 auto current_size = strlen((char *) l.getField(i).getPtr()) + 1;
                 *((uint64_t *)ptr) = pack_offset_and_size(current_offset, current_size);
                 ptr += sizeof(uint64_t);
