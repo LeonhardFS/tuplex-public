@@ -120,7 +120,7 @@ namespace tuplex {
             return names;
         }
 
-        std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::sparsifyStructs(const std::vector<Row> &sample,
+        std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::sparsifyStructs(std::vector<Row> sample,
                                                                                     const option<std::vector<std::string>>& sample_columns) {
             using namespace std;
             vector<shared_ptr<LogicalOperator>> opt_ops;
@@ -188,6 +188,7 @@ namespace tuplex {
                         // Trace now which columns are accessed.
                         // convert to python.
                         python::lockGIL();
+                        python_sample.clear();
                         for(auto row : sample) {
                             // row = row.with_columns(column_names);
                             // reorder_and_fill_missing_will_null(row,
@@ -229,14 +230,15 @@ namespace tuplex {
                     }
                     case LogicalOperatorType::WITHCOLUMN: {
                         // apply same tracing logic.
-                        auto udfop = std::dynamic_pointer_cast<UDFOperator>(op);
-                        auto func_root = udfop->getUDF().getAnnotatedAST().getFunctionAST();
+                        auto wop = std::dynamic_pointer_cast<WithColumnOperator>(op);
+                        auto func_root = wop->getUDF().getAnnotatedAST().getFunctionAST();
                         assert(func_root);
 
                         // Trace now which columns are accessed.
                         // convert to python.
                         python::lockGIL();
-                        for(auto row : sample) {
+                        python_sample.clear();
+                        for(const auto& row : sample) {
                             // row = row.with_columns(column_names);
                             // reorder_and_fill_missing_will_null(row,
                             //                                   row.getRowType().get_column_names(),
@@ -246,9 +248,12 @@ namespace tuplex {
 
                         // Trace
                         TraceVisitor tv;
+                        std::vector<Field> results;
                         for (unsigned i = 0; i < sample.size(); ++i) {
                             auto py_object = python_sample[i];
                             tv.recordTrace(func_root, py_object, column_names);
+                            auto field = python::pythonToField(tv.lastResult());
+                            results.push_back(field);
                         }
 
                         python::unlockGIL();
@@ -270,9 +275,21 @@ namespace tuplex {
                         }
                         cout << num_accessed << "/" << pluralize(columns.size(), "column") << " accessed." << endl;
 
-
                         // update sample (and column names!)
-                        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " update sample for withColumn in sparsifyStructs.");
+                        if(wop->creates_new_column()) {
+                            // go through python result objects.
+                            assert(results.size() == sample.size());
+                            column_names.push_back(wop->columnToMap());
+                            for(unsigned i = 0; i < sample.size(); ++i) {
+                                auto field = results[i];
+                                auto fields = sample[i].to_vector();
+                                fields.push_back(field);
+                                sample[i] = Row::from_vector(fields);
+                            }
+                        } else {
+                            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " update sample for withColumn in sparsifyStructs.");
+                        }
+
                         break;
                     }
                     default: {

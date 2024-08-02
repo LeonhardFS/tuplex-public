@@ -286,7 +286,7 @@ namespace tuplex {
              * @param sample sample to use for tracing sparse accesses
              * @return retyped & reoptimized operators.
              */
-            std::vector<std::shared_ptr<LogicalOperator>> sparsifyStructs(const std::vector<Row>& sample,
+            std::vector<std::shared_ptr<LogicalOperator>> sparsifyStructs(std::vector<Row> sample,
                     const option<std::vector<std::string>>& sample_columns=tuplex::option<std::vector<std::string>>::none);
 
             bool retypeOperators(const std::vector<Row>& sample,
