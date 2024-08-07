@@ -156,7 +156,7 @@ namespace tuplex {
         std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::sparsifyStructs(std::vector<Row> sample,
                                                                                     const option<std::vector<std::string>>& sample_columns) {
             using namespace std;
-            vector<shared_ptr<LogicalOperator>> opt_ops;
+            vector<shared_ptr<LogicalOperator>> opt_ops; // the operators to return.
 
             auto& logger = Logger::instance().logger("specializing stage optimizer");
 
@@ -413,8 +413,6 @@ namespace tuplex {
                             throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " unknown operator " + op->name() + " in sparsifyStructs.");
                         }
                     }
-
-                    cout<<"operator "<<op->name()<<": "<<endl;
                 }
             }
 
@@ -442,10 +440,36 @@ namespace tuplex {
             cout<<"Input row type before sparsification:\n"<<r_row_type.desc()<<endl;
             cout<<"Input row type after sparsification:\n"<<sparse_type.desc()<<endl;
 
-            // @TODO: implement.
-            assert(false);
 
-            return vec_prepend(_inputNode, _operators);
+            // Overwrite input node with new sparse type & propagate through operators.
+            auto inputNode = _inputNode->clone(false);
+            RetypeConfiguration conf;
+            conf.row_type = sparse_type;
+            conf.is_projected = true;
+            inputNode->retype(conf);
+            opt_ops.push_back(inputNode);
+            auto lastParent = inputNode;
+            // retype the other operators.
+            for(const auto& op : _operators) {
+                // clone operator & specialize!
+                auto opt_op = op->clone();
+                opt_op->setParent(lastParent);
+                opt_op->setID(op->getID());
+
+                // before row type
+                std::stringstream ss;
+                ss<<op->name()<<" (before): "<<op->getInputSchema().getRowType().desc()<<" -> "<<op->getOutputSchema().getRowType().desc()<<endl;
+                // retype
+                ss<<"retyping with parent's output schema: "<<lastParent->getOutputSchema().getRowType().desc()<<endl;
+                opt_op->retype(lastParent->getOutputSchema().getRowType(), true);
+                // after retype
+                ss<<opt_op->name()<<" (after): "<<opt_op->getInputSchema().getRowType().desc()<<" -> "<<opt_op->getOutputSchema().getRowType().desc();
+                logger.debug(ss.str());
+                opt_ops.push_back(opt_op);
+                lastParent = opt_op;
+            }
+
+            return opt_ops;
         }
 
         std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::constantFoldingOptimization(const std::vector<Row>& sample) {
