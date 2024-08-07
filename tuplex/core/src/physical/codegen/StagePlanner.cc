@@ -120,6 +120,39 @@ namespace tuplex {
             return names;
         }
 
+        struct SparsifyInfo {
+            std::vector<std::vector<access_path_t>> column_access_paths;
+            std::vector<std::string> columns;
+
+            inline std::vector<access_path_t> get_paths(const std::string& column) {
+                auto idx = indexInVector(column, columns);
+                if(idx >= 0)
+                    return column_access_paths[idx];
+                return {};
+            }
+        };
+
+        void merge_access_paths(std::vector<access_path_t>& paths, const std::vector<access_path_t>& in_paths) {
+            if(paths.empty()) {
+                paths = in_paths;
+                return;
+            }
+
+            // can use string rep as hash.
+            std::set<std::string> hashes;
+            for(auto path : paths)
+                hashes.insert(access_path_to_str(path));
+
+            // insert any paths that are not existing yet.
+            for(auto path : in_paths) {
+                auto key = access_path_to_str(path);
+                if(hashes.find(key) == hashes.end()) {
+                    paths.push_back(path);
+                    hashes.insert(key); // avoids duplicates in in_paths;
+                }
+            }
+        }
+
         std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::sparsifyStructs(std::vector<Row> sample,
                                                                                     const option<std::vector<std::string>>& sample_columns) {
             using namespace std;
@@ -171,7 +204,12 @@ namespace tuplex {
             std::vector<PyObject*> python_sample;
 
             // go through operators with sample, and then for each record which paths are accessed:
+            std::unordered_map<LogicalOperator*, SparsifyInfo> info_map;
+            bool done=false;
             for(const auto& op : vec_prepend(_inputNode, _operators)) {
+                if(done)
+                    break;
+
                 switch(op->type()) {
                     case LogicalOperatorType::FILEINPUT: {
                         stringstream ss;
@@ -209,6 +247,9 @@ namespace tuplex {
                         // results, and print them out:
                         auto column_access_paths = tv.columnAccessPaths();
 
+                        info_map[udfop.get()].columns = tv.columns();
+                        info_map[udfop.get()].column_access_paths = tv.columnAccessPaths();
+
                         // check which names are accessed:
                         auto columns = tv.columns();
                         int num_accessed = 0;
@@ -224,7 +265,9 @@ namespace tuplex {
                         cout << num_accessed << "/" << pluralize(columns.size(), "column") << " accessed." << endl;
 
                         if(op->type() == LogicalOperatorType::MAP) {
-                            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Need to update sample for map operator.");
+                            // processing stops after the first map operator encountered.
+                            done=true;
+//                            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Need to update sample for map operator.");
                         }
                         break;
                     }
@@ -260,6 +303,9 @@ namespace tuplex {
 
                         // results, and print them out:
                         auto column_access_paths = tv.columnAccessPaths();
+
+                        info_map[wop.get()].columns = tv.columns();
+                        info_map[wop.get()].column_access_paths = tv.columnAccessPaths();
 
                         cout<<"Sparsify struct tracing results for operator "<<op->name()<<"::\n";
 
@@ -301,6 +347,100 @@ namespace tuplex {
                     }
                 }
             }
+
+            // for each operator, it is now known which access paths there are.
+            // next step is to (by reversing) identify the file operators valid paths in order to sparsify.
+            std::vector<LogicalOperator*> r_operators;
+            for(const auto& op : vec_prepend(_inputNode, _operators))
+                r_operators.push_back(op.get());
+            std::reverse(r_operators.begin(), r_operators.end());
+
+            // retrieve for input operator which columns are accessed how.
+            std::unordered_map<std::string, std::vector<access_path_t>> column_to_access_path_map;
+            for(const auto& op : r_operators) {
+                if(info_map.find(op) != info_map.end()) {
+
+                    auto info = info_map[op];
+
+                    switch(op->type()) {
+                        case LogicalOperatorType::WITHCOLUMN: {
+                            auto wop = static_cast<WithColumnOperator*>(op);
+
+                            // is the new column already contained? then remove.
+                            if(wop->creates_new_column() && column_to_access_path_map.find(wop->columnToMap()) != column_to_access_path_map.end()) {
+                                column_to_access_path_map.erase(wop->columnToMap());
+                            } else {
+                                // replace access (override column)
+                                column_to_access_path_map[wop->columnToMap()] = info_map[op].get_paths(wop->columnToMap());
+                            }
+
+                            // merge paths for all other columns.
+                            for(unsigned i = 0; i < info.columns.size(); ++i) {
+                                // handled above.
+                                if(info.columns[i] == wop->columnToMap())
+                                    continue;
+
+                                if(!info.column_access_paths[i].empty()) {
+                                    merge_access_paths(column_to_access_path_map[info.columns[i]], info.column_access_paths[i]);
+                                }
+                            }
+
+                            break;
+                        }
+                        case LogicalOperatorType::FILTER: {
+                            // merge paths for all other columns.
+                            for(unsigned i = 0; i < info.columns.size(); ++i) {
+                                 if(!info.column_access_paths[i].empty()) {
+                                    merge_access_paths(column_to_access_path_map[info.columns[i]], info.column_access_paths[i]);
+                                }
+                            }
+
+                            break;
+                        }
+                        case LogicalOperatorType::MAP: {
+                            // reset access paths.
+                            column_to_access_path_map = {};
+
+                            // merge paths for all other columns.
+                            for(unsigned i = 0; i < info.columns.size(); ++i) {
+                                if(!info.column_access_paths[i].empty()) {
+                                    merge_access_paths(column_to_access_path_map[info.columns[i]], info.column_access_paths[i]);
+                                }
+                            }
+                            break;
+                        }
+                        default: {
+                            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " unknown operator " + op->name() + " in sparsifyStructs.");
+                        }
+                    }
+
+                    cout<<"operator "<<op->name()<<": "<<endl;
+                }
+            }
+
+            // erase now all columns which aren't present in input operator
+            std::vector<std::string> columns_to_remove;
+            for(const auto& kv : column_to_access_path_map) {
+                if(indexInVector(kv.first, _inputNode->columns()) < 0)
+                    columns_to_remove.push_back(kv.first);
+            }
+            for(auto name : columns_to_remove)
+                column_to_access_path_map.erase(name);
+
+            // sparsify now.
+            auto r_row_type = _inputNode->getOutputSchema().getRowType();
+            std::vector<std::vector<access_path_t>> r_access_paths;
+            for(auto name : _inputNode->columns()) {
+                r_access_paths.push_back({});
+                if(column_to_access_path_map.find(name) != column_to_access_path_map.end()) {
+                    r_access_paths.back() = column_to_access_path_map[name];
+                }
+            }
+
+            auto sparse_type = sparsify_and_project_row_type(r_row_type, r_access_paths);
+
+            cout<<"Input row type before sparsification:\n"<<r_row_type.desc()<<endl;
+            cout<<"Input row type after sparsification:\n"<<sparse_type.desc()<<endl;
 
             // @TODO: implement.
             assert(false);

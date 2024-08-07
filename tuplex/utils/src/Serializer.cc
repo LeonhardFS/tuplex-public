@@ -845,10 +845,13 @@ namespace tuplex {
         if(elementType == python::Type::STRING || elementType == python::Type::PYOBJECT || elementType == python::Type::GENERICDICT) { // strings are serialized differently
             // offset numbers
             size_t current_offset = sizeof(uint64_t) * l.numElements();
+            size_t current_size = 0;
             for (size_t i = 0; i < l.numElements(); i++) {
                 if(elementType == python::Type::PYOBJECT)
-                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " pyobject serialize not yet implemented, need to use correct size - not strlen size");
-                auto current_size = strlen((char *) l.getField(i).getPtr()) + 1;
+                   current_size = l.getField(i).getPtrSize();
+                else
+                    current_size = strlen((char *) l.getField(i).getPtr()) + 1;
+
                 *((uint64_t *)ptr) = pack_offset_and_size(current_offset, current_size);
                 ptr += sizeof(uint64_t);
                 // update for next field: move forward one uint64_t, then add on the string
@@ -857,10 +860,18 @@ namespace tuplex {
             }
             // string data
             for (size_t i = 0; i < l.numElements(); i++) {
-                size_t slen = strlen((char*)l.getField(i).getPtr());
-                std::memcpy(ptr, l.getField(i).getPtr(), slen);
-                *((uint8_t *) ptr + slen) = 0;
-                ptr += slen + 1;
+
+                if(elementType == python::Type::PYOBJECT) {
+                    current_size = l.getField(i).getPtrSize();
+                    std::memcpy(ptr, l.getField(i).getPtr(), current_size);
+                } else {
+                    current_size = strlen((char *) l.getField(i).getPtr());
+                    std::memcpy(ptr, l.getField(i).getPtr(), current_size);
+                    *((uint8_t *) ptr + current_size) = 0; // '\0' terminate string.
+                    current_size++;
+                }
+
+                ptr += current_size;
             }
         } else if(elementType.isTupleType()) {
             uint8_t *varLenOffsetAddr = ptr;
