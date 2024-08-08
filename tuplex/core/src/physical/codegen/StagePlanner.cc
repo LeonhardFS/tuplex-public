@@ -451,6 +451,7 @@ namespace tuplex {
             }
             conf.is_projected = true;
             inputNode->retype(conf);
+            std::dynamic_pointer_cast<FileInputOperator>(inputNode)->useNormalCase();
             opt_ops.push_back(inputNode);
             auto lastParent = inputNode;
             // retype the other operators.

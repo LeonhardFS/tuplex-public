@@ -1825,7 +1825,6 @@ namespace tuplex {
                 _normalCaseRowType = python::Type::makeTupleType(col_types);
         }
 
-
         return true;
     }
 

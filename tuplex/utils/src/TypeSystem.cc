@@ -1613,6 +1613,11 @@ namespace python {
                     }
                 }
                 return true;
+            } else if(from.isSparseStructuredDictionaryType() && to.isStructuredDictionaryType()) {
+                // sparse can be upcast if same paths are available, else no chance.
+                // for now, return false.
+                // @TODO
+                return false;
             } else {
                 // check whether ALL from key types and value types can be upcasted to generic type
                 auto dest_key_type = to.keyType();
