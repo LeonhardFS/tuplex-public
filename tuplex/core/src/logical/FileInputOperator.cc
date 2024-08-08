@@ -1765,8 +1765,8 @@ namespace tuplex {
 
             if(!python::canUpcastType(t, old_general_col_types[lookup_index])) {
                 // both struct types? => replace, can have different format. that's ok
-                if(t.withoutOption().isStructuredDictionaryType() &&
-                   old_general_col_types[lookup_index].withoutOption().isStructuredDictionaryType()) {
+                if((t.withoutOption().isSparseStructuredDictionaryType() || t.withoutOption().isStructuredDictionaryType()) &&
+                        (old_general_col_types[lookup_index].withoutOption().isStructuredDictionaryType() || old_general_col_types[lookup_index].withoutOption().isSparseStructuredDictionaryType())) {
                     logger.debug("encountered struct dict with different structure at index " + std::to_string(i));
                 } else {
                     if(!(ignore_check_for_str_option && old_general_col_types[lookup_index] == str_opt_type)) {

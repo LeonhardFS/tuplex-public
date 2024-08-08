@@ -445,6 +445,10 @@ namespace tuplex {
             auto inputNode = _inputNode->clone(false);
             RetypeConfiguration conf;
             conf.row_type = sparse_type;
+            if(sparse_type.isRowType()) {
+                conf.row_type = sparse_type.get_columns_as_tuple_type();
+                conf.columns = sparse_type.get_column_names();
+            }
             conf.is_projected = true;
             inputNode->retype(conf);
             opt_ops.push_back(inputNode);
@@ -452,7 +456,7 @@ namespace tuplex {
             // retype the other operators.
             for(const auto& op : _operators) {
                 // clone operator & specialize!
-                auto opt_op = op->clone();
+                auto opt_op = op->clone(false);
                 opt_op->setParent(lastParent);
                 opt_op->setID(op->getID());
 
