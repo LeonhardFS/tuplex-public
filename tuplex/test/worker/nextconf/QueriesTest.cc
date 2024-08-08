@@ -16,6 +16,7 @@ namespace tuplex {
         // settings for experiment
         bool use_hyper;
         bool use_llvm_optimizer;
+        bool use_sparsify_structs;
 
         // ref variable
         size_t expected_result_row_count;
@@ -33,15 +34,24 @@ namespace tuplex {
 
     std::vector<QueryConfiguration> g_configurations_to_test(
             {QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false,
-                                false, 378},
+                                false, false, 378},
              QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false,
-                                true, 378},
+                                true, false, 378},
              QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true,
-                                false, 378},
+                                false, false, 378},
              QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true,
-                                true, 378},
-             QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", false, true, 294195},
-             QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", true, true, 294195}});
+                                true, false, 378},
+             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false,
+                                false, true, 378},
+             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false,
+                                true, true, 378},
+             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true,
+                                false, true, 378},
+             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true,
+                                true, true, 378},
+             QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", false, true, false, 294195},
+             QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", true, true, false, 294195},
+             QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", true, true, true, 294195}});
 
 // see https://github.com/google/googletest/blob/main/docs/advanced.md#specifying-names-for-value-parameterized-test-parameters
 
@@ -218,8 +228,7 @@ namespace tuplex {
                "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
 
         // activate sparsify structs.
-        // @TODO: separate experiment setting.
-        co.set("tuplex.optimizer.sparsifyStructs", "true");
+        co.set("tuplex.optimizer.sparsifyStructs", boolToString(test_conf.use_sparsify_structs));
 
         // check with generic dict as well.
         // @TODO.
@@ -292,6 +301,8 @@ namespace tuplex {
                                      ss << "_llvm_opt";
                                  else
                                      ss << "_no_llvm_opt";
+                                 if(param.use_sparsify_structs)
+                                     ss << "_sparse_structs";
                                  return ss.str();
                              });
 
