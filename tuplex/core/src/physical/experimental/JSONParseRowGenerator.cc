@@ -527,7 +527,9 @@ namespace tuplex {
 
                     // store list as empty!
                     auto loop_i_val = builder.CreateLoad(builder.getInt64Ty(), loop_i);
+#ifndef NDEBUG
                     _env.printValue(builder, loop_i_val, "decode of " + list_type.desc() + " failed after i=");
+#endif
                     list_init_empty(_env, builder, list_ptr, list_type);
 
                     builder.CreateStore(item_rc, rcVar);
