@@ -373,8 +373,8 @@ namespace python {
 
     Type TypeFactory::createOrGetStructuredDictType(const std::vector<StructEntry> &kv_pairs, bool is_sparse) {
 
-        // Struct[] is empty dict
-        if(kv_pairs.empty())
+        // Struct[] is empty dict, but SparseStruct[] is its own type.
+        if(kv_pairs.empty() && !is_sparse)
             return python::Type::EMPTYDICT;
 
         std::string name = is_sparse ? "SparseStruct[" : "Struct[";

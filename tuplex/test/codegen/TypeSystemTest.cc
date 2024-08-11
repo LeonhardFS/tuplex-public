@@ -441,3 +441,16 @@ TEST(TypeSys, SparseStruct) {
     EXPECT_EQ(decoded_type, t);
     EXPECT_EQ(decoded_type.encode(), encoded_type);
 }
+
+TEST(TypeSys, DictEquality) {
+    using namespace tuplex;
+
+    // empty struct dict should be empty dict
+    auto empty_struct = python::Type::makeStructuredDictType(std::vector<python::StructEntry>(), false);
+    auto empty_sparse = python::Type::makeStructuredDictType(std::vector<python::StructEntry>(), true);
+
+    // but empty sparsestruct is different from empty struct dict.
+    EXPECT_EQ(empty_struct, python::Type::EMPTYDICT);
+    EXPECT_NE(empty_struct, empty_sparse);
+    EXPECT_NE(empty_sparse, python::Type::EMPTYDICT);
+}
