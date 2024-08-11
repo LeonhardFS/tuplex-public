@@ -225,7 +225,9 @@ namespace tuplex {
 
             auto is_bad_parse_cond = builder.CreateICmpEQ(ecCode, env.i64Const(ecToI64(ExceptionCode::BADPARSE_STRING_INPUT)));
 
+#ifndef NDEBUG
             env.printValue(builder, is_bad_parse_cond, "is it a bad-parse exception (ec=" + std::to_string(ecToI64(ExceptionCode::BADPARSE_STRING_INPUT)) + "): ");
+#endif
 
             builder.CreateCondBr(is_bad_parse_cond, bIsBadParseStringInput, bIsNot);
 
@@ -242,8 +244,9 @@ namespace tuplex {
             auto ft = decodeBadParseStringInputException(env, builder, input_op, pip_input_row_type,
                                                          ExceptionCode::GENERALCASEVIOLATION, buf, buf_size);
 
+#ifndef NDEBUG
             env.printValue(builder, buf_size, "decoded exception into row from buffer with size: ");
-
+#endif
             // process using pipeline
             //PipelineBuilder::call(builder, pip.build(), ft, userData, )
             //env.printValue(builder, rowNumber, "got badparse string input exception for row=");
@@ -255,7 +258,9 @@ namespace tuplex {
             auto ecOpID = builder.CreateZExtOrTrunc(pip_res.exceptionOperatorID, env.i64Type());
             auto numRowsCreated = builder.CreateZExtOrTrunc(pip_res.numProducedRows, env.i64Type());
 
+#ifndef NDEBUG
              env.printValue(builder, ecCode, "called pipeline for bad-parse row, return code for pipeline is ec= ");
+#endif
 
             // use provided return code.
             env.freeAll(builder);
@@ -263,7 +268,10 @@ namespace tuplex {
 
             // before exiting function, make sure to set builder to correct insert point.
             builder.SetInsertPoint(bIsNot);
+
+#ifndef NDEBUG
             env.debugPrint(builder, "exception not considered bad parse input, continuing resolve paths...");
+#endif
         }
 
         // env, builder, pip_input_row_type, pipFunc, ecCode, rowNo, userData, dataPtr, dataSize
@@ -398,8 +406,10 @@ namespace tuplex {
             auto userData = args["userData"];
             auto rowNo = args["rowNumber"];
 
+#ifndef NDEBUG
             env.printValue(builder, ecCode, "got exception to process with ec=");
             env.printValue(builder, rowNo, "exception row number is: ");
+#endif
 
             // exceptions are stored in a variety of formats
             // 1. PYTHON_PARALLELIZE -> stored as pickled object, can't decode. Requires interpreter functor.
