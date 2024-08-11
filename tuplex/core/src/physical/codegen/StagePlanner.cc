@@ -1615,6 +1615,8 @@ namespace tuplex {
         planner.enableDelayedParsingOptimization();
         if(enable_cf)
             planner.enableConstantFoldingOptimization();
+        if(conf.sparsifyStructs)
+            planner.enableSparsifyStructsOptimization();
         planner.optimize();
         path_ctx.inputNode = planner.input_node();
         path_ctx.operators = planner.optimized_operators();

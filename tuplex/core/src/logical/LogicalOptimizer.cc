@@ -1720,16 +1720,23 @@ namespace tuplex {
         // now check which columns are required
         for(unsigned i = 0; i < col_types.size(); ++i) {
             if (!column_access_paths[i].empty()) {
-                if(!columns.empty())
+
+                std::string current_column_name = "unknown";
+
+                if(!columns.empty()) {
                     reduced_columns.push_back(columns[i]);
+                    current_column_name = columns[i];
+                }
                 auto type = col_types[i];
 
                 // dict or sparse dict?
 //                if(type.isStructuredDictionaryType() || type.isSparseStructuredDictionaryType())
 //                    type = type.makeNonSparse(true);
                 if(type.isStructuredDictionaryType()) {
+                    std::stringstream ss;
+                    ss<<"column "<<current_column_name<<": "<<"sparsifying dictionary of type " + type.desc() + ": ";
                     // create sparse struct type.
-                    logger.debug("sparsifying dictionary of type " + type.desc() + ": ");
+                    logger.debug(ss.str());
 
                     // for each access path, check whether it's present and what its value type is.
                     // TODO: if information about this is coming from trace, can also sparsify general dicts.
@@ -1743,7 +1750,7 @@ namespace tuplex {
 
                     type = access_paths_to_sparse_dict(column_access_paths[i], value_types, presence);
 
-                    cout<<"Sparsified type for column #"<<i<<": "<<type.desc()<<endl;
+                    cout<<"Sparsified type for column #"<<i<<"/"<<current_column_name<<": "<<type.desc()<<endl;
                 }
 
                 // restore if UNKNOWN/ill defined

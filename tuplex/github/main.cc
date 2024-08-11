@@ -229,11 +229,15 @@ namespace tuplex {
         return m;
     }
 
-    std::tuple<int,int,double> process(const std::string& input_pattern, const std::string& output_path, bool use_perfect_sparse_type) {
-        using namespace std;
+    enum ExperimentMode : int {
+        USE_PERFECT_SPARSE_TYPE =1,
+        USE_GENERIC_DICTS=2,
+        AUTO_WITH_NO_HYPER=4,
+        AUTO_WITH_HYPER=8
+    };
 
-        auto sparse_row_type = github_sparse_row_type();
-        auto encoded_type = sparse_row_type.encode();
+    std::tuple<int,int,double> process_with_type_override(const std::string& input_pattern, const std::string& output_path, const ExperimentMode& mode) {
+        using namespace std;
 
         // init interpreter
         python::initInterpreter();
@@ -242,6 +246,7 @@ namespace tuplex {
         // check now with pipeline and set type.
         ContextOptions co = ContextOptions::defaults();
 
+        // use extra process for this.
         co.set("tuplex.backend", "worker");
 
         // this allows large files to be processed without splitting.
@@ -249,12 +254,28 @@ namespace tuplex {
         co.set("tuplex.inputSplitSize", "20G");
         co.set("tuplex.experimental.worker.workerBufferSize", "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
 
+        // only interpreter resolve?
         co.set("tuplex.resolveWithInterpreterOnly", "true");
 
-        if(!use_perfect_sparse_type) {
+        if(mode & ExperimentMode::USE_GENERIC_DICTS) {
             // use generic dicts instead.
             cout<<"Using generic dictionaries for types"<<endl;
             co.set("tuplex.experimental.useGenericDicts", "true");
+        } else {
+            co.set("tuplex.experimental.useGenericDicts", "false");
+        }
+
+        if(mode & AUTO_WITH_HYPER) {
+            cout<<"Using hyperspecialization with everything enabled"<<endl;
+            co.set("tuplex.experimental.hyperspecialization", "true");
+            co.set("tuplex.optimizer.sparsifyStructs", "true");
+            co.set("tuplex.optimizer.filterPromotion", "true");
+        }
+
+        if(mode & AUTO_WITH_NO_HYPER) {
+            cout<<"Using global specialization, with sparsify enabled."<<endl;
+            co.set("tuplex.experimental.hyperspecialization", "false");
+            co.set("tuplex.optimizer.sparsifyStructs", "true");
         }
 
         // create context according to settings
@@ -287,11 +308,11 @@ namespace tuplex {
         cout<<"Removing files (if they exist) from "<<output_path<<endl;
         boost::filesystem::remove_all(output_path.c_str());
 
-        cout<<"Testing with normal-case row type: "<<sparse_row_type.desc()<<endl;
-
         std::unordered_map<std::string, python::Type> type_hints;
-        if(use_perfect_sparse_type) {
-            cout<<"sparse row type is: "<<encoded_type<<endl;
+        if(mode & USE_PERFECT_SPARSE_TYPE) {
+            auto sparse_row_type = github_sparse_row_type();
+            auto encoded_type = sparse_row_type.encode();
+            cout<<"Using perfect sparse row type, testing with normal-case row type: "<<sparse_row_type.desc()<<endl;
             type_hints = row_type_to_column_hints(sparse_row_type);
         }
 
@@ -329,13 +350,19 @@ int main(int argc, char* argv[]) {
     string output_path = "local-output/tuplex-sparse";
     string mode = "best";
     string result_path;
-    std::vector<std::string> supported_modes{"best"};
+    std::unordered_map<std::string, ExperimentMode> mode_lookup;
+    std::vector<std::string> supported_modes{"best", "auto", "hyper"};
 
 #ifdef USE_YYJSON_INSTEAD
     supported_modes.push_back("yyjson");
 #else
     supported_modes.push_back("cjson");
 #endif
+
+    mode_lookup["best"] = USE_PERFECT_SPARSE_TYPE;
+    mode_lookup["auto"] = AUTO_WITH_NO_HYPER;
+    mode_lookup["hyper"] = AUTO_WITH_HYPER;
+    mode_lookup["yyjson"] = mode_lookup["cjson"] = USE_GENERIC_DICTS;
 
     bool show_help = false;
 
@@ -403,7 +430,10 @@ int main(int argc, char* argv[]) {
     Timer path_timer;
     int input_row_count=0,output_row_count=0;
     double loading_time = 0.0;
-    std::tie(input_row_count, output_row_count, loading_time) = tuplex::process(input_pattern, output_path, mode == "best");
+
+    auto exp_mode = mode_lookup[mode];
+
+    std::tie(input_row_count, output_row_count, loading_time) = tuplex::process_with_type_override(input_pattern, output_path, exp_mode);
 
     double total_time_in_s = timer.time();
     cout<<"Took "<<total_time_in_s<<"s in total"<<endl;
@@ -431,7 +461,7 @@ int main(int argc, char* argv[]) {
             auto path_time = j["stats"]["request_total_time"].get<double>();
 
             total_time_sum_in_s += path_time;
-            ss<<mode_across_files<<","<<path<<","<<","<<path_time<<","<<","<<",$$STUB$$,"<<input_row_count<<","<<output_row_count<<"\n";
+            ss<<mode_across_files<<","<<mode<<","<<path<<","<<","<<path_time<<","<<","<<",$$STUB$$,"<<input_row_count<<","<<output_row_count<<"\n";
         }
 
         cout<<"\ntotal time (sum) in s: "<<total_time_sum_in_s<<"s (vs. reported "<<total_time_in_s<<"s"<<")"<<endl;
@@ -440,7 +470,7 @@ int main(int argc, char* argv[]) {
     }
 
 
-    auto csv = "mode,input_path,output_path,time_in_s,loading_time_in_s,total_time_in_s,input_row_count,output_row_count\n" + ss.str();
+    auto csv = "mode,alt_mode,input_path,output_path,time_in_s,loading_time_in_s,total_time_in_s,input_row_count,output_row_count\n" + ss.str();
 
     // replace $$STUB$$ with total time
     csv = replace_all(csv, "$$STUB$$", std::to_string(total_time_in_s));
