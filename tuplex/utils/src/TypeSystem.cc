@@ -330,7 +330,7 @@ namespace python {
             kv_pair.keyType = f.getType();
             kv_pair.key = f.toPythonString();
             kv_pair.valueType = pair.second;
-            kv_pair.alwaysPresent = true;
+            kv_pair.presence = ALWAYS_PRESENT;
             kv_pairs.push_back(kv_pair);
         }
         return createOrGetStructuredDictType(kv_pairs, is_sparse);
@@ -372,6 +372,16 @@ namespace python {
     }
 
 
+    std::string presence_to_string(StructPresence p) {
+        if(p == ALWAYS_PRESENT)
+            return "->";
+        if(p == MAYBE_PRESENT)
+            return "=>";
+        if(p == NOT_PRESENT)
+            return "~>";
+        return "<unknown presence>";
+    }
+
     Type TypeFactory::createOrGetStructuredDictType(const std::vector<StructEntry> &kv_pairs, bool is_sparse) {
 
         // Struct[] is empty dict, but SparseStruct[] is its own type.
@@ -388,7 +398,7 @@ namespace python {
             // add mapping
             // escape non-string values as string
             auto py_string = kv_pair.keyType == python::Type::STRING ? kv_pair.key : escape_to_python_str(kv_pair.key);
-            auto map_str = kv_pair.alwaysPresent ? "->" : "=>";
+            auto map_str = presence_to_string(kv_pair.presence);
             pair_str += kv_pair.keyType.desc() + "," + py_string + map_str + kv_pair.valueType.desc();
 
             pair_str += ")";
@@ -1593,7 +1603,7 @@ namespace python {
 
                     // check "maybe" compatibility. I.e., can upcast a present to maybe but not the other way round
                     auto kv_to = to_key_type_map.at(kv_from.key);
-                    if(!kv_from.alwaysPresent && kv_to.alwaysPresent)
+                    if(!kv_from.presence != ALWAYS_PRESENT && kv_to.presence == ALWAYS_PRESENT)
                         return false;
 
                     // can we upcast both key/value?
@@ -1606,7 +1616,7 @@ namespace python {
                 // each key in "to" that is required must be present in "from" as well
                 // => if this fails, can early determine upcast not possible.
                 for(const auto& kv : to_key_type_map) {
-                    if(kv.second.alwaysPresent) {
+                    if(kv.second.presence == ALWAYS_PRESENT) {
                         // must be present and castable
                         if(from_key_type_map.find(kv.first) == from_key_type_map.end())
                             return false;
@@ -2201,12 +2211,15 @@ namespace python {
                 while(pos < s.size() && isspace(s[pos]))
                     pos++;
                 // check if next one is ->
-                bool alwaysPresent = true;
+                StructPresence presence = ALWAYS_PRESENT;
                 if(s.substr(pos, 2) == "->") {
-                    alwaysPresent = true;
+                    presence = ALWAYS_PRESENT;
                     pos += 2;
                 } else if(s.substr(pos, 2) == "=>") {
-                    alwaysPresent = false;
+                    presence = MAYBE_PRESENT;
+                    pos += 2;
+                } else if(s.substr(pos, 2) == "~>") {
+                    presence = NOT_PRESENT;
                     pos += 2;
                 } else {
                     throw std::runtime_error("invalid pair found.");
@@ -2221,7 +2234,7 @@ namespace python {
                 assert(!kvStack.empty());
                 assert(!kvStack.top().empty());
                 kvStack.top().back().key = decoded_string;
-                kvStack.top().back().alwaysPresent = alwaysPresent;
+                kvStack.top().back().presence = presence;
             } else if(s[pos] == ']') {
                 numClosedSqBrackets++;
                 if(numOpenSqBrackets < numClosedSqBrackets) {
@@ -2510,7 +2523,7 @@ namespace python {
         assert(isStructuredDictionaryType());
 
         for(auto p : get_struct_pairs())
-            if(p.alwaysPresent)
+            if(p.presence == ALWAYS_PRESENT)
                 return false;
         return true;
     }
@@ -2519,7 +2532,7 @@ namespace python {
         assert(isStructuredDictionaryType());
 
         for(auto p : get_struct_pairs()) {
-            if(!p.alwaysPresent)
+            if(p.presence != ALWAYS_PRESENT)
                 return false;
         }
         return true;
@@ -2601,7 +2614,7 @@ namespace python {
         auto kv_pairs = get_struct_pairs();
         for(auto& p : kv_pairs)
             if(p.valueType.isSparseStructuredDictionaryType())
-                p = StructEntry(p.key, p.keyType, p.valueType.makeNonSparse(true), p.alwaysPresent);
+                p = StructEntry(p.key, p.keyType, p.valueType.makeNonSparse(true), p.presence);
         return python::Type::makeStructuredDictType(kv_pairs, false);
     }
 }

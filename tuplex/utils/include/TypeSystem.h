@@ -493,15 +493,22 @@ namespace python {
         size_t get_column_count() const;
     };
 
+    enum StructPresence {
+        UNKNOWN=0,
+        ALWAYS_PRESENT=1,
+        MAYBE_PRESENT=2,
+        NOT_PRESENT=3
+    };
+
      struct StructEntry { // an entry of a structured dict
 
         std::string key; // the value of the key, represented as string
         Type keyType; // type required to decode the string key
         Type valueType; // type what to store under key
-        bool alwaysPresent; // whether this (key,value) pair is always present or not. if true, use ->, else use =>
+        StructPresence presence; // whether this (key,value) pair is always present or not. if true, use ->, else use =>
 
          StructEntry(const std::string &_key, const Type& _key_type,
-                     const Type _value_type, bool _always_present=true):key(_key), keyType(_key_type), valueType(_value_type), alwaysPresent(_always_present) {
+                     const Type _value_type, StructPresence _presence=ALWAYS_PRESENT):key(_key), keyType(_key_type), valueType(_value_type), presence(_presence) {
 
          }
 
@@ -509,15 +516,15 @@ namespace python {
             return key.empty() && keyType == Type() && valueType == Type();
         }
 
-        StructEntry() : alwaysPresent(true) {}
+        StructEntry() : presence(ALWAYS_PRESENT) {}
 
-        StructEntry(const StructEntry& other) : key(other.key), keyType(other.keyType), valueType(other.valueType), alwaysPresent(other.alwaysPresent) {}
-        StructEntry(StructEntry&& other) : key(other.key), keyType(other.keyType), valueType(other.valueType), alwaysPresent(other.alwaysPresent) {}
+        StructEntry(const StructEntry& other) : key(other.key), keyType(other.keyType), valueType(other.valueType), presence(other.presence) {}
+        StructEntry(StructEntry&& other) : key(other.key), keyType(other.keyType), valueType(other.valueType), presence(other.presence) {}
         StructEntry& operator = (const StructEntry& other) {
             key = other.key;
             keyType = other.keyType;
             valueType = other.valueType;
-            alwaysPresent = other.alwaysPresent;
+            presence = other.presence;
             return *this;
         }
     };

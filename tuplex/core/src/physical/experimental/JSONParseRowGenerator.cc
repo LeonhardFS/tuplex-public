@@ -1414,7 +1414,7 @@ namespace tuplex {
             // perform now here depending on policy the present check etc.
             // basically if element should be always present - then a key error indicates it's missing
             // if it's a key error, change rc to success and return is_present as false
-            if(entry.alwaysPresent) {
+            if(entry.presence == python::ALWAYS_PRESENT) {
                 // anything else than success? => go to schema mismatch
                 auto is_not_ok = builder.CreateICmpNE(rc, _env.i64Const(ecToI64(ExceptionCode::SUCCESS)));
                 BasicBlock* bbOK = BasicBlock::Create(ctx, "extract_ok", builder.GetInsertBlock()->getParent());
@@ -1423,6 +1423,8 @@ namespace tuplex {
                 builder.SetInsertPoint(bbOK);
                 is_present = _env.i1Const(true); // it's present, else there'd have been an error reported.
             } else {
+                assert(entry.presence == python::MAYBE_PRESENT);
+
                 // is it a key error? => that's ok, element is simply not present.
                 // is it a different error => issue!
                 auto is_key_error = builder.CreateICmpEQ(rc, _env.i64Const(ecToI64(ExceptionCode::KEYERROR)));
@@ -1492,7 +1494,7 @@ namespace tuplex {
                 for (const auto &kv_pair: kv_pairs) {
                     // for JSON should be always keyType == string!
                     assert(kv_pair.keyType == python::Type::STRING);
-                    if (kv_pair.alwaysPresent)
+                    if (kv_pair.presence == python::ALWAYS_PRESENT)
                         alwaysKeys.push_back(str_value_from_python_raw_value(kv_pair.key));
                     else
                         maybeKeys.push_back(str_value_from_python_raw_value(kv_pair.key));
@@ -1592,7 +1594,7 @@ namespace tuplex {
                     }
 
                     // special case: if include maybe structs as well, add entry. (should not get serialized)
-                    if (include_maybe_structs && !kv_pair.alwaysPresent) {
+                    if (include_maybe_structs && kv_pair.presence != python::ALWAYS_PRESENT) {
 
                         // technically we'd want to check here whether the value stored in item_var is nullptr (for key not found)
                         // however, if the entry is not an object, there will be a (type) mismatch so this is equivalent to not present.
@@ -1615,7 +1617,7 @@ namespace tuplex {
                         //        make_tuple(access_path, kv_pair.valueType, kv_pair.alwaysPresent, SerializableValue(),
                         //                   is_object));
                     } else {
-                        if(kv_pair.alwaysPresent) {
+                        if(kv_pair.presence == python::ALWAYS_PRESENT) {
                             // key MUST be present, hence it's a schema mismatch if not found.
                             BasicBlock* bKeyFound = BasicBlock::Create(ctx, "key_found", builder.GetInsertBlock()->getParent());
                             builder.CreateCondBr(is_object, bKeyFound, bbSchemaMismatch);
@@ -1725,7 +1727,7 @@ namespace tuplex {
                                                                   llvm::Value *obj,
                                                                   const std::string &debug_path,
                                                                   tuplex::codegen::SerializableValue *out,
-                                                                  bool alwaysPresent,
+                                                                  python::StructPresence presence,
                                                                   llvm::Value *key,
                                                                   const python::Type &keyType,
                                                                   const python::Type &valueType,
@@ -1800,7 +1802,7 @@ namespace tuplex {
 
                 // if the object is maybe present, then key-error is not a problem.
                 // correct condition therefore
-                if (!alwaysPresent) {
+                if (presence != python::ALWAYS_PRESENT) {
                     BasicBlock *bbParseSub = BasicBlock::Create(ctx, "parse_object",
                                                                 builder.GetInsertBlock()->getParent());
                     BasicBlock *bbContinue = BasicBlock::Create(ctx, "continue_parse",
@@ -1819,7 +1821,7 @@ namespace tuplex {
                     // continue parse if present
                     auto sub_obj = builder.CreateLoad(_env.i8ptrType(), obj_var);
                     // recurse...
-                    parseDict(builder, sub_obj, debug_path + ".", alwaysPresent, v_type, true, bbSchemaMismatch);
+                    parseDict(builder, sub_obj, debug_path + ".", presence, v_type, true, bbSchemaMismatch);
                     builder.CreateBr(bbOK);
 
                     // continue on ok block.
@@ -1831,7 +1833,7 @@ namespace tuplex {
                     auto sub_obj = builder.CreateLoad(_env.i8ptrType(), obj_var);
 
                     // recurse...
-                    parseDict(builder, sub_obj, debug_path + ".", alwaysPresent, v_type, true, bbSchemaMismatch);
+                    parseDict(builder, sub_obj, debug_path + ".", presence, v_type, true, bbSchemaMismatch);
                 }
             } else if (v_type.isListType()) {
                 std::cerr << "skipping for now type: " << v_type.desc() << std::endl;
@@ -1952,7 +1954,7 @@ namespace tuplex {
 //        }
 
         void JSONParseRowGenerator::parseDict(const IRBuilder& builder, llvm::Value *obj,
-                                              const std::string &debug_path, bool alwaysPresent,
+                                              const std::string &debug_path, python::StructPresence presence,
                                               const python::Type &t, bool check_that_all_keys_are_present,
                                               llvm::BasicBlock *bbSchemaMismatch) {
             using namespace llvm;
@@ -1966,7 +1968,7 @@ namespace tuplex {
                 // check how many keys are contained. If all are present, quick check -> count of keys
                 bool all_keys_always_present = true;
                 for (auto kv_pair: kv_pairs)
-                    if (!kv_pair.alwaysPresent) {
+                    if (kv_pair.presence != python::ALWAYS_PRESENT) {
                         all_keys_always_present = false;
                         break;
                     }
@@ -2002,7 +2004,7 @@ namespace tuplex {
                     for (const auto &kv_pair: kv_pairs) {
                         // for JSON should be always keyType == string!
                         assert(kv_pair.keyType == python::Type::STRING);
-                        if (kv_pair.alwaysPresent)
+                        if (kv_pair.presence == python::ALWAYS_PRESENT)
                             alwaysKeys.push_back(str_value_from_python_raw_value(kv_pair.key));
                         else
                             maybeKeys.push_back(str_value_from_python_raw_value(kv_pair.key));
@@ -2031,7 +2033,7 @@ namespace tuplex {
                     // _env.debugPrint(builder, "decoding now key=" + key_value + " of path " + debug_path);
 
                     auto rc = decodeFieldFromObject(builder, obj, debug_path + "." + key_value, &value,
-                                                    kv_pair.alwaysPresent, key_value, kv_pair.keyType,
+                                                    kv_pair.presence, key_value, kv_pair.keyType,
                                                     kv_pair.valueType, check_that_all_keys_are_present,
                                                     bbSchemaMismatch);
                     auto successful_lookup = rc ? builder.CreateICmpEQ(rc,
@@ -2039,7 +2041,7 @@ namespace tuplex {
                                                 : _env.i1Const(false);
 
                     // optional? or always there?
-                    if (kv_pair.alwaysPresent) {
+                    if (kv_pair.presence == python::ALWAYS_PRESENT) {
                         // needs to be present, i.e. key error is fatal error!
                         // --> add check, and jump to mismatch else
                         BasicBlock *bbOK = BasicBlock::Create(ctx, "key_present",

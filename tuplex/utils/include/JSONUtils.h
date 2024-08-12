@@ -182,8 +182,10 @@ namespace tuplex {
                     ss<<indent<<kv.key<<": ";
                 }
 
-                if(!kv.alwaysPresent)
+                if(kv.presence == python::MAYBE_PRESENT)
                     ss<<" (maybe) ";
+                if(kv.presence == python::NOT_PRESENT)
+                    ss<<" (never) ";
 
                 // check what type the other stuff is
                 auto subtype = prettyPrintStructType(kv.valueType);

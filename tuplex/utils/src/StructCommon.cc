@@ -232,22 +232,22 @@ namespace tuplex {
 
             if(kv_pair.valueType == python::Type::EMPTYDICT || kv_pair.valueType == python::Type::EMPTYSPARSEDICT) {
                 // empty dict / empty sparse dict
-                entries.push_back(make_tuple(access_path, kv_pair.valueType, kv_pair.alwaysPresent));
+                entries.push_back(make_tuple(access_path, kv_pair.valueType, kv_pair.presence));
             } else if (kv_pair.valueType.isStructuredDictionaryType() || kv_pair.valueType.isSparseStructuredDictionaryType()) {
 
                 // special case: if include maybe structs as well, add entry. (should not get serialized)
-                if (include_maybe_structs && !kv_pair.alwaysPresent)
-                    entries.push_back(make_tuple(access_path, kv_pair.valueType.makeNonSparse(), kv_pair.alwaysPresent));
+                if (include_maybe_structs && kv_pair.presence == python::MAYBE_PRESENT)
+                    entries.push_back(make_tuple(access_path, kv_pair.valueType.makeNonSparse(), kv_pair.presence));
 
                 // recurse using new prefix
                 flatten_recursive_helper(entries, kv_pair.valueType.makeNonSparse(), access_path, include_maybe_structs);
             } else if(kv_pair.valueType.isOptionType() && (kv_pair.valueType.getReturnType().isStructuredDictionaryType() || kv_pair.valueType.getReturnType().isSparseStructuredDictionaryType())) {
-                entries.push_back(make_tuple(access_path, kv_pair.valueType, kv_pair.alwaysPresent));
+                entries.push_back(make_tuple(access_path, kv_pair.valueType, kv_pair.presence));
 
                 // recurse element field!
                 flatten_recursive_helper(entries, kv_pair.valueType.getReturnType().makeNonSparse(), access_path, include_maybe_structs);
             } else {
-                entries.push_back(make_tuple(access_path, kv_pair.valueType, kv_pair.alwaysPresent));
+                entries.push_back(make_tuple(access_path, kv_pair.valueType, kv_pair.presence));
             }
         }
     }
@@ -267,7 +267,7 @@ namespace tuplex {
             for (auto atom: std::get<0>(entry)) {
                 ss << atom.first << " (" << atom.second.desc() << ") -> ";
             }
-            auto presence = !std::get<2>(entry) ? "  (maybe)" : "";
+            auto presence = std::get<2>(entry) == python::MAYBE_PRESENT ? "  (maybe)" : "";
             auto v_type = std::get<1>(entry);
             auto value_desc = v_type.isStructuredDictionaryType() ? "Struct[...]" : v_type.desc();
             ss << value_desc << presence << endl;
@@ -350,7 +350,7 @@ namespace tuplex {
         for(auto& entry : entries) {
             auto access_path = std::get<0>(entry);
             auto value_type = std::get<1>(entry);
-            auto always_present = std::get<2>(entry);
+            auto always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
 
             // helpful for debugging.
             auto path = json_access_path_to_string(access_path, value_type, always_present);
@@ -1031,7 +1031,7 @@ namespace tuplex {
             size_t field_count = 0, option_count = 0, maybe_count = 0;
 
             for (auto entry: entries) {
-                bool is_always_present = std::get<2>(entry);
+                bool is_always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
                 maybe_count += !is_always_present;
                 auto value_type = std::get<1>(entry);
                 bool is_value_optional = value_type.isOptionType();
@@ -1075,7 +1075,7 @@ namespace tuplex {
                     for(auto entry : entries) {
                         auto access_path = std::get<0>(entry);
                         auto value_type = std::get<1>(entry);
-                        auto always_present = std::get<2>(entry);
+                        auto always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
                         auto t_indices = indices.at(access_path);
 
                         auto path_str = json_access_path_to_string(access_path, value_type, always_present);
@@ -1101,7 +1101,7 @@ namespace tuplex {
             for(auto entry : entries) {
                 auto access_path = std::get<0>(entry);
                 auto value_type = std::get<1>(entry);
-                auto always_present = std::get<2>(entry);
+                auto always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
                 auto t_indices = indices.at(access_path);
 
                 auto path_str = json_access_path_to_string(access_path, value_type, always_present);
@@ -1301,7 +1301,7 @@ namespace tuplex {
                 for(auto entry : entries) {
                     auto access_path = std::get<0>(entry);
                     auto value_type = std::get<1>(entry);
-                    auto always_present = std::get<2>(entry);
+                    auto always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
                     auto t_indices = indices.at(access_path);
 
                     auto path_str = json_access_path_to_string(access_path, value_type, always_present);
@@ -1330,7 +1330,7 @@ namespace tuplex {
         for(auto entry : entries) {
             auto access_path = std::get<0>(entry);
             auto value_type = std::get<1>(entry);
-            auto always_present = std::get<2>(entry);
+            auto always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
             auto t_indices = indices.at(access_path);
 
             auto path_str = json_access_path_to_string(access_path, value_type, always_present);
@@ -1522,7 +1522,7 @@ namespace tuplex {
             // each entry is a full path pointing to an element.
             auto access_path = std::get<0>(entry);
             auto value_type = std::get<1>(entry);
-            bool is_always_present = std::get<2>(entry);
+            bool is_always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
 
             maybe_count += !is_always_present; // <-- checks whether this entry is always there.
             bool is_value_optional = value_type.isOptionType();
@@ -1581,7 +1581,7 @@ namespace tuplex {
             for(auto entry : entries) {
                 auto access_path = std::get<0>(entry);
                 auto value_type = std::get<1>(entry);
-                bool is_always_present = std::get<2>(entry);
+                bool is_always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
 
                 // get indices
                 auto t_indices = indices.at(access_path);
@@ -1669,7 +1669,7 @@ namespace tuplex {
             for(auto entry : entries) {
                 auto access_path = std::get<0>(entry);
                 auto value_type = std::get<1>(entry);
-                auto always_present = std::get<2>(entry);
+                auto always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
                 auto t_indices = indices.at(access_path);
 
                 auto path_str = json_access_path_to_string(access_path, value_type, always_present);

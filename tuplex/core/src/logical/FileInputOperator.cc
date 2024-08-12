@@ -32,7 +32,8 @@ namespace tuplex {
         // go over pairs and make them all optional
         auto kv_pairs = struct_type.get_struct_pairs();
         for(auto& p : kv_pairs) {
-            p.alwaysPresent = false;
+            // p.alwaysPresent = false;
+            p.presence = python::MAYBE_PRESENT;
 
             // update value types as well
             p.valueType = generalize_struct_type(p.valueType);

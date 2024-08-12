@@ -39,7 +39,7 @@ namespace tuplex {
             size_t field_count = 0, option_count = 0, maybe_count = 0;
 
             for (auto entry: entries) {
-                bool is_always_present = std::get<2>(entry);
+                bool is_always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
                 maybe_count += !is_always_present;
                 bool is_value_optional = std::get<1>(entry).isOptionType();
                 option_count += is_value_optional;
@@ -1270,7 +1270,7 @@ namespace tuplex {
             for(auto entry : entries) {
                 auto access_path = std::get<0>(entry);
                 auto value_type = std::get<1>(entry);
-                bool is_always_present = std::get<2>(entry);
+                bool is_always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
                 auto t_indices = struct_dict_get_indices(dict_type, access_path);
 
                 int bitmap_idx=-1, present_idx=-1, value_idx=-1, size_idx=-1;
@@ -1990,7 +1990,7 @@ namespace tuplex {
                 auto access_path = std::get<0>(entry);
                 auto value_type = std::get<1>(entry);
 
-                bool is_always_present = std::get<2>(entry);
+                bool is_always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
                 bool is_struct_type = value_type.isStructuredDictionaryType();
 
                 // skip nested entries

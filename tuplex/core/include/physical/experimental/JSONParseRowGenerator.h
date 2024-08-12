@@ -262,7 +262,7 @@ namespace tuplex {
                                                llvm::Value *obj,
                                                const std::string &debug_path,
                                                SerializableValue *out,
-                                               bool alwaysPresent,
+                                               python::StructPresence presence,
                                                llvm::Value *key,
                                                const python::Type &keyType,
                                                const python::Type &valueType,
@@ -271,10 +271,10 @@ namespace tuplex {
 
             llvm::Value *
             decodeFieldFromObject(const IRBuilder& builder, llvm::Value *obj, const std::string &debug_path,
-                                  SerializableValue *out, bool alwaysPresent, const std::string &key,
+                                  SerializableValue *out, python::StructPresence presence, const std::string &key,
                                   const python::Type &keyType, const python::Type &valueType,
                                   bool check_that_all_keys_are_present, llvm::BasicBlock *bbSchemaMismatch) {
-                return decodeFieldFromObject(builder, obj, debug_path, out, alwaysPresent, _env.strConst(builder, key),
+                return decodeFieldFromObject(builder, obj, debug_path, out, presence, _env.strConst(builder, key),
                                              keyType, valueType, check_that_all_keys_are_present, bbSchemaMismatch);
             }
 
@@ -291,7 +291,7 @@ namespace tuplex {
 
 
             void parseDict(const IRBuilder& builder, llvm::Value *obj,
-                           const std::string &debug_path, bool alwaysPresent,
+                           const std::string &debug_path, python::StructPresence presence,
                            const python::Type &t, bool check_that_all_keys_are_present,
                            llvm::BasicBlock *bbSchemaMismatch);
 

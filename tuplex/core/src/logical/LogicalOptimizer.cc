@@ -1647,7 +1647,8 @@ namespace tuplex {
                 entry.key = c->key;
                 entry.keyType = c->key_type;
                 entry.valueType = value_type;
-                entry.alwaysPresent = c->always_present;
+                // entry.alwaysPresent = c->always_present;
+                entry.presence = c->always_present ? python::ALWAYS_PRESENT : python::MAYBE_PRESENT;
 
                 // skip UNKNOWN types, this means that info is not available in value_type
                 // or there is a case of two structs.

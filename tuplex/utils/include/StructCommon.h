@@ -22,7 +22,7 @@ namespace tuplex {
     using access_path_t = std::vector<std::pair<std::string, python::Type>>;
 
     // flatten struct dict.
-    using flattened_struct_dict_entry_t = std::tuple<std::vector<std::pair<std::string, python::Type>>, python::Type, bool>;
+    using flattened_struct_dict_entry_t = std::tuple<std::vector<std::pair<std::string, python::Type>>, python::Type, python::StructPresence>;
     using flattened_struct_dict_entry_list_t = std::vector<flattened_struct_dict_entry_t>;
 
     inline bool noNeedToSerializeType(const python::Type &t) {

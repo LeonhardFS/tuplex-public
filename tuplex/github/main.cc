@@ -199,15 +199,15 @@ namespace tuplex {
                                                      "repository",
                                                      "repo"};
 
-        auto payload_entries = std::vector<python::StructEntry>{python::StructEntry("'commits'", python::Type::STRING, python::Type::makeListType(commits_struct_type), false),
-                                                                python::StructEntry("'target'", python::Type::STRING, python::Type::makeStructuredDictType({make_pair("id", python::Type::I64)}, true), false),
-                                                                python::StructEntry("'id'", python::Type::STRING, python::Type::I64, false)};
+        auto payload_entries = std::vector<python::StructEntry>{python::StructEntry("'commits'", python::Type::STRING, python::Type::makeListType(commits_struct_type), python::MAYBE_PRESENT),
+                                                                python::StructEntry("'target'", python::Type::STRING, python::Type::makeStructuredDictType({make_pair("id", python::Type::I64)}, true), python::MAYBE_PRESENT),
+                                                                python::StructEntry("'id'", python::Type::STRING, python::Type::I64, python::MAYBE_PRESENT)};
 
         auto column_types = std::vector<python::Type>{python::Type::STRING,
                                                       python::Type::STRING,
                                                       python::Type::makeOptionType(python::Type::makeStructuredDictType(payload_entries, true)), // <-- PublicEvents have no payload.
-                                                      python::Type::makeOptionType(python::Type::makeStructuredDictType(std::vector<python::StructEntry>{python::StructEntry("'id'", python::Type::STRING, python::Type::I64, false)}, true)),
-                                                      python::Type::makeOptionType(python::Type::makeStructuredDictType(std::vector<python::StructEntry>{python::StructEntry("'id'", python::Type::STRING, python::Type::I64, false)}, true)) // GistEvent have no repo id (instead a url)
+                                                      python::Type::makeOptionType(python::Type::makeStructuredDictType(std::vector<python::StructEntry>{python::StructEntry("'id'", python::Type::STRING, python::Type::I64, python::MAYBE_PRESENT)}, true)),
+                                                      python::Type::makeOptionType(python::Type::makeStructuredDictType(std::vector<python::StructEntry>{python::StructEntry("'id'", python::Type::STRING, python::Type::I64, python::MAYBE_PRESENT)}, true)) // GistEvent have no repo id (instead a url)
         };
 
 

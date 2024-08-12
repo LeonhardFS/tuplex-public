@@ -498,7 +498,7 @@ namespace tuplex {
                     if(pair.valueType == value_type_to_return.withoutOption())
                         builder.CreateStore(env.i1Const(false), var.is_null);
 
-                    if(pair.alwaysPresent) {
+                    if(pair.presence == python::ALWAYS_PRESENT) {
                         // can simply load value, no further checks necessary. value type and ret type are the same
                         assert(pair.valueType == value_type_to_return.withoutOption());
                         access_path_t access_path;

@@ -1005,7 +1005,8 @@ namespace tuplex {
                     // if value type is option[...] (or null) and fill missing flag is set,
                     // then make it a maybe present element.
                     if((python::Type::NULLVALUE == entry.valueType || entry.valueType.isOptionType()) && fill_missing_first_level_with_null)
-                        entry.alwaysPresent = false;
+                        //entry.alwaysPresent = false;
+                        entry.presence = python::MAYBE_PRESENT;
 
                     entries.push_back(entry);
                 }
