@@ -245,7 +245,7 @@ namespace tuplex {
                 }
             }
 
-            void promoteFilters();
+            bool promoteFilters(std::vector<Row>* filtered_sample=nullptr);
 
         private:
             std::shared_ptr<LogicalOperator> _inputNode;

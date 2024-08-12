@@ -1743,6 +1743,9 @@ namespace tuplex {
                     std::vector<bool> presence;
                     std::vector<python::Type> value_types;
                     for(const auto& path : column_access_paths[i]) {
+
+                        // TODO: if path is present, but result is unknown -> thin existing struct to sparsestructs but do NOT remove.
+
                         auto value_type = struct_dict_type_get_element_type(type, path);
                         presence.push_back(value_type != python::Type::UNKNOWN);
                         value_types.push_back(value_type);
@@ -1754,8 +1757,19 @@ namespace tuplex {
                 }
 
                 // restore if UNKNOWN/ill defined
-                if(type.isIllDefined())
+                if(type.isIllDefined()) {
                     type = col_types[i];
+
+                    // special case: col_types[i] is a struct dict.
+                    // -> can sparsify to SparseStruct[], basically in the sample the recorded path was not hit (i.e., because of filter promot)
+                    // therefore sparsify to have not always present (done above with presence.push_back(value_type != python::Type::UNKNOWN)), and
+                    // in case there is an access the sparsestruct[] will error out.
+
+                    // @TODO: fix this here, because else fallback...
+                    if(type.isStructuredDictionaryType())
+                        type = python::Type::makeStructuredDictType(std::vector<python::StructEntry>(), true); // empty sparse.
+                }
+
 
                 cout<<"Adding type for column #"<<i<<": "<<type.desc()<<endl;
                 reduced_types.push_back(type);

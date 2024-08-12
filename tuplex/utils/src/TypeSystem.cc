@@ -39,6 +39,7 @@ namespace python {
     const Type Type::INF = TypeFactory::instance().createOrGetPrimitiveType("inf");
     const Type Type::EMPTYTUPLE = python::TypeFactory::instance().createOrGetTupleType(std::vector<python::Type>());
     const Type Type::EMPTYDICT = python::TypeFactory::instance().createOrGetPrimitiveType("{}"); // empty dict
+    const Type Type::EMPTYSPARSEDICT = python::TypeFactory::instance().createOrGetStructuredDictType(std::vector<python::StructEntry>(), true); // empty sparse dict
     const Type Type::EMPTYLIST = python::TypeFactory::instance().createOrGetPrimitiveType("[]"); // empty list: primitive because it can have any type element
     const Type Type::EMPTYSET = python::TypeFactory::instance().createOrGetPrimitiveType("empty_set"); // empty list: primitive because it can have any type element
     const Type Type::NULLVALUE = python::TypeFactory::instance().createOrGetPrimitiveType("null");
@@ -720,6 +721,9 @@ namespace python {
     }
 
     std::vector<StructEntry> Type::get_struct_pairs() const {
+        if(_hash == python::Type::EMPTYDICT._hash)
+            return {};
+
         assert(isStructuredDictionaryType() || isSparseStructuredDictionaryType());
         auto& factory = TypeFactory::instance();
 
@@ -830,7 +834,7 @@ namespace python {
     Type Type::keyType() const {
 
         // special cases: empty dict, generic dict and structured dict
-        if(_hash == EMPTYDICT._hash || _hash == GENERICDICT._hash)
+        if(_hash == EMPTYDICT._hash || _hash == GENERICDICT._hash || _hash == EMPTYSPARSEDICT._hash)
             return PYOBJECT;
 
 
@@ -876,7 +880,7 @@ namespace python {
 
     Type Type::valueType() const {
         // special cases: empty dict, generic dict and structured dict
-        if(_hash == EMPTYDICT._hash || _hash == GENERICDICT._hash)
+        if(_hash == EMPTYDICT._hash || _hash == GENERICDICT._hash || _hash == EMPTYSPARSEDICT._hash)
             return PYOBJECT;
 
         // is it a structured dict? -> same key type?
@@ -1132,7 +1136,7 @@ namespace python {
             }
 
             // empty or generic are well defined
-            if(_hash == Type::EMPTYDICT._hash || _hash == Type::GENERICDICT._hash)
+            if(_hash == Type::EMPTYDICT._hash || _hash == Type::GENERICDICT._hash || _hash == EMPTYSPARSEDICT._hash)
                 return false;
 
             if(keyType().isIllDefined())

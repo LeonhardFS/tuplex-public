@@ -72,6 +72,9 @@ namespace tuplex {
     static std::mutex g_struct_property_cache_mutex;
 
     bool struct_dict_has_bitmap(const python::Type& dict_type) {
+        if(python::Type::EMPTYDICT == dict_type)
+            return false;
+
         std::lock_guard<std::mutex> lock(g_struct_property_cache_mutex);
         assert(dict_type.isStructuredDictionaryType());
 
@@ -84,6 +87,9 @@ namespace tuplex {
     }
 
     bool struct_dict_has_presence_map(const python::Type& dict_type) {
+        if(python::Type::EMPTYDICT == dict_type)
+            return false;
+
         std::lock_guard<std::mutex> lock(g_struct_property_cache_mutex);
         assert(dict_type.isStructuredDictionaryType());
         // check cache & fill if necessary
@@ -209,6 +215,9 @@ namespace tuplex {
                                   bool include_maybe_structs) {
         using namespace std;
 
+        if(dict_type == python::Type::EMPTYDICT)
+            return;
+
 #ifndef NDEBUG
         if(!dict_type.isStructuredDictionaryType()) {
             throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " flatten_recursive_helper expects structured dictionary type, but got instead type " + dict_type.desc());
@@ -221,7 +230,10 @@ namespace tuplex {
             vector<pair<string, python::Type>> access_path = prefix; // = prefix
             access_path.push_back(make_pair(kv_pair.key, kv_pair.keyType));
 
-            if (kv_pair.valueType.isStructuredDictionaryType() || kv_pair.valueType.isSparseStructuredDictionaryType()) {
+            if(kv_pair.valueType == python::Type::EMPTYDICT || kv_pair.valueType == python::Type::EMPTYSPARSEDICT) {
+                // empty dict / empty sparse dict
+                entries.push_back(make_tuple(access_path, kv_pair.valueType, kv_pair.alwaysPresent));
+            } else if (kv_pair.valueType.isStructuredDictionaryType() || kv_pair.valueType.isSparseStructuredDictionaryType()) {
 
                 // special case: if include maybe structs as well, add entry. (should not get serialized)
                 if (include_maybe_structs && !kv_pair.alwaysPresent)

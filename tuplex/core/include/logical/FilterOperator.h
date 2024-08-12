@@ -55,9 +55,10 @@ namespace tuplex {
          * get sample but apply filter (i.e. remove rows that do not pass filter)
          * @param num  maximum number of samples to process (output)
          * @param applyFilter whether to apply filter or simply return sample from parent "as-is"
+         * @param indices_to_keep if not nullptr, save here which of the original indices are kept.
          * @return sample
          */
-        std::vector<Row> getSample(const size_t num, bool applyFilter) const;
+        std::vector<Row> getSample(const size_t num, bool applyFilter, std::vector<size_t>* indices_to_keep=nullptr) const;
 
         std::shared_ptr<LogicalOperator> clone(bool cloneParents) const override;
 

@@ -3660,8 +3660,8 @@ namespace tuplex {
                     // no key, however for sparse-struct can't decide whether this is a key error or not.
 
                     _env.debugPrint(builder, "no key pair found for sparse dict.get");
-
-                    lfb.exitNormalCase();
+                    lfb.addException(builder, ExceptionCode::NORMALCASEVIOLATION, _env.i1Const(true), "no key pair found for sparse dict.get for key=" + lookup_key);
+                    return {nullptr, nullptr, _env.i1Const(true)}; // return None
                 } else {
                     const auto& entry = *it;
 

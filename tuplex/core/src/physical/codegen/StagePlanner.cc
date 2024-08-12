@@ -990,7 +990,10 @@ namespace tuplex {
                 } else {
                     auto input_columns_before = _inputNode->columns();
 
-                    promoteFilters();
+                    std::vector<Row> sample_after_filter;
+                    auto rc_filter = promoteFilters(&sample_after_filter);
+                    if(rc_filter)
+                        sample = sample_after_filter;
 
                     // want to redo typing if checks changed!
                     if(_checks.end() != std::find_if(_checks.begin(),
@@ -2259,27 +2262,38 @@ namespace tuplex {
             return NormalCaseCheck::FilterCheck(acc_cols, serialized_filter);
         }
 
-        void StagePlanner::promoteFilters() {
+        bool StagePlanner::promoteFilters(std::vector<Row>* filtered_sample) {
             auto& logger = Logger::instance().logger("optimizer");
 
             logger.debug("carrying out potential filter promotion");
 
             if(!_inputNode) {
                 logger.warn("no input node, skip optimization.");
-                return;
+                return false;
             }
 
             size_t original_sample_size = 0;
+            std::vector<Row> original_sample;
             if(_inputNode->type() == LogicalOperatorType::FILEINPUT) {
                 original_sample_size = std::dynamic_pointer_cast<FileInputOperator>(_inputNode)->storedSampleRowCount();
+
+                if(filtered_sample)
+                    original_sample = std::dynamic_pointer_cast<FileInputOperator>(_inputNode)->getSample(original_sample_size);
             }
 
             if(0 == original_sample_size) {
                 logger.debug("skip because empty original sample");
-                return;
+                return false;
             }
 
             std::vector<std::shared_ptr<LogicalOperator>> operators_post_op;
+
+            bool filter_promo_applied = false;
+            bool return_sample = filtered_sample != nullptr;
+            std::vector<size_t> indices_to_keep(original_sample_size); // track which of the original samples to keep.
+            // init indices as all
+            for(unsigned i = 0; i < original_sample_size; ++i)
+                indices_to_keep[i] = i;
 
             // check if there is at least one filter operator!
             // -> carry then repeated filters out!
@@ -2295,8 +2309,17 @@ namespace tuplex {
                 if(node->type() == LogicalOperatorType::FILTER) {
                     auto filter_node = std::dynamic_pointer_cast<FilterOperator>(node);
                     // get sample! is it non-empty and smaller than the original sample size?
-                    auto samples_post_filter = filter_node->getSample(original_sample_size, true);
+                    std::vector<size_t> indices_kept;
+                    auto samples_post_filter = filter_node->getSample(original_sample_size, true, &indices_kept);
                     logger.debug("sample size post-filter: " + pluralize(samples_post_filter.size(), "row"));
+
+                    // apply indices_kept to original indices
+                    std::vector<size_t> new_indices;
+                    new_indices.reserve(indices_kept.size());
+                    for(auto idx : indices_kept) {
+                        new_indices.push_back(indices_to_keep[idx]);
+                    }
+                    indices_to_keep = new_indices;
 
                     // @TODD: There's two possibilities here:
                     // [1] if sample is empty, replace pipeline with simple filter node throwing normal-case if filter condition is not met.
@@ -2359,6 +2382,7 @@ namespace tuplex {
 
                             // no need for parents etc.
                             _checks.push_back(filterToCheck(filter_node));
+                            filter_promo_applied = true;
 
                             // manipulate input node sample!
                             std::dynamic_pointer_cast<FileInputOperator>(_inputNode)->setRowsSample(samples_post_filter);
@@ -2378,6 +2402,17 @@ namespace tuplex {
             if(node)
                 operators_post_op.push_back(node);
             _operators = operators_post_op;
+
+            // output filtered rows if desired
+            if(filtered_sample) {
+                *filtered_sample = std::vector<Row>();
+                for(auto idx : indices_to_keep) {
+                    assert(idx < original_sample.size());
+                    filtered_sample->push_back(original_sample[idx]);
+                }
+            }
+
+            return filter_promo_applied;
         }
 
         bool StagePlanner::retypeOperators(const std::vector<Row>& sample,

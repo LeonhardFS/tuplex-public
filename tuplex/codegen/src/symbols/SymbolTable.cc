@@ -635,10 +635,13 @@ namespace tuplex {
                             return python::Type::makeFunctionType(parameterType, default_value_type);
                         } else {
                             // can not decide for sparse struct whether element is contained or not, i.e. this would be normal-case violation.
-                            auto normal_case_except_type = python::TypeFactory::instance().getByName(
-                                    exceptionCodeToPythonClass(ExceptionCode::NORMALCASEVIOLATION));
-                            assert(normal_case_except_type != python::Type::UNKNOWN);
-                            return python::Type::makeFunctionType(parameterType, normal_case_except_type);
+                            // to continue typing, return default type.
+                            return python::Type::makeFunctionType(parameterType, default_value_type);
+
+                            // auto normal_case_except_type = python::TypeFactory::instance().getByName(
+                            //        exceptionCodeToPythonClass(ExceptionCode::NORMALCASEVIOLATION));
+                            // assert(normal_case_except_type != python::Type::UNKNOWN);
+                            // return python::Type::makeFunctionType(parameterType, normal_case_except_type);
                         }
                     } else {
                         // found type, return now depending on whether entry is present or not.
