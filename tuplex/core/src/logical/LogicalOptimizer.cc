@@ -1699,6 +1699,24 @@ namespace tuplex {
         return dict_tree_to_sparse_type(node.get());
     }
 
+    python::Type negate_struct_pairs(const python::Type& type) {
+        if(!type.isStructuredDictionaryType() && !type.isSparseStructuredDictionaryType())
+            return type;
+
+        auto is_sparse = type.isSparseStructuredDictionaryType();
+
+        static std::unordered_map<python::StructPresence, python::StructPresence> presence_mapper{{python::ALWAYS_PRESENT, python::NOT_PRESENT},
+                                                                                  {python::MAYBE_PRESENT, python::MAYBE_PRESENT},
+                                                                                  {python::NOT_PRESENT, python::ALWAYS_PRESENT}};
+
+        // get pairs
+        auto kv_pairs = type.get_struct_pairs();
+        for(auto& p : kv_pairs) {
+            p = python::StructEntry(p.key, p.keyType, p.valueType, presence_mapper[p.presence]);
+        }
+        return python::Type::makeStructuredDictType(kv_pairs, is_sparse);
+    }
+
     python::Type sparsify_and_project_row_type(const python::Type& row_type,
                                                const std::vector<std::vector<access_path_t>>& column_access_paths) {
 
@@ -1746,7 +1764,6 @@ namespace tuplex {
                     for(const auto& path : column_access_paths[i]) {
 
                         // TODO: if path is present, but result is unknown -> thin existing struct to sparsestructs but do NOT remove.
-
                         auto value_type = struct_dict_type_get_element_type(type, path);
                         presence.push_back(value_type != python::Type::UNKNOWN);
                         value_types.push_back(value_type);
@@ -1767,8 +1784,27 @@ namespace tuplex {
                     // in case there is an access the sparsestruct[] will error out.
 
                     // @TODO: fix this here, because else fallback...
-                    if(type.isStructuredDictionaryType())
-                        type = python::Type::makeStructuredDictType(std::vector<python::StructEntry>(), true); // empty sparse.
+                    if(type.isStructuredDictionaryType()) {
+                        if(column_access_paths[i].empty() || column_access_paths[i].front().empty())
+                            type = python::Type::makeStructuredDictType(std::vector<python::StructEntry>(), true); // empty sparse.
+                        else {
+                            // i.e. create sparse dict with NOT entry for all paths (as they weren't attained!) --> could also do this partial.
+                            // need to adjust parser (JSON) + processing for dict.get for this.
+                            auto this_column_paths = column_access_paths[i];
+                            auto dummy_type = access_paths_to_sparse_dict(this_column_paths,
+                                                                     std::vector<python::Type>(this_column_paths.size(), python::Type::PYOBJECT),
+                                                                             std::vector<bool>(this_column_paths.size(), true));
+                            // recursively mark as NOT_PRESENT
+                            cout<<"dummy is: "<<dummy_type.desc()<<endl;
+
+                            dummy_type = negate_struct_pairs(dummy_type);
+
+                            cout<<"negated dummy is: "<<dummy_type.desc()<<endl;
+
+                            type = dummy_type; // override with negated type.
+                        }
+                    }
+
                 }
 
 

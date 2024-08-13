@@ -646,11 +646,15 @@ namespace tuplex {
                     } else {
                         // found type, return now depending on whether entry is present or not.
                         const auto& entry = *it;
-                        auto ret_type = entry.valueType;
-                        if(entry.presence != python::ALWAYS_PRESENT) {
+                        auto ret_type = entry.valueType; // --> ALWAYS_PRESENT
+
+                        // check other presence options here.
+                        if(entry.presence == python::MAYBE_PRESENT) {
                             ret_type = unifyTypes(ret_type, default_value_type);
                             if(ret_type == python::Type::UNKNOWN)
                                 ret_type = entry.valueType;
+                        } else if(entry.presence == python::NOT_PRESENT) {
+                            ret_type = default_value_type;
                         }
 
                         return python::Type::makeFunctionType(parameterType, ret_type);
