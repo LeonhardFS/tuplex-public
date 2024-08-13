@@ -489,6 +489,7 @@ namespace python {
 
         bool all_struct_pairs_optional() const;
         bool all_struct_pairs_always_present() const;
+        bool has_not_presence() const;
 
         size_t get_column_count() const;
     };

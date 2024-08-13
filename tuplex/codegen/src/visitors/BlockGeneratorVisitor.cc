@@ -4446,9 +4446,17 @@ namespace tuplex {
 
             _logger.debug("extracted static key=" + key + " (" + key_type.desc() + ") from AST.");
 
-            // check if found in dict index type.
             access_path_t path;
             path.push_back(make_pair(key, key_type));
+
+            // check if not present
+            if(python::NOT_PRESENT == struct_dict_type_get_presence(value_type.makeNonSparse(), path)) {
+                // generate key error
+                _lfb->exitWithException(ExceptionCode::KEYERROR); // Definitive KeyError.
+                return true;
+            }
+
+            // check if found in dict index type.
             auto element_type = struct_dict_type_get_element_type(value_type.makeNonSparse(), path);
             if(element_type == python::Type::UNKNOWN) {
                 _logger.debug("did not find entry under key=" + key + " in dict of type " + value_type.desc() + ".");

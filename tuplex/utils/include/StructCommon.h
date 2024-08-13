@@ -85,6 +85,14 @@ namespace tuplex {
      */
     extern python::Type struct_dict_type_get_element_type(const python::Type& dict_type, const access_path_t& path);
 
+    /*!
+     * extract presence along path. UNKNOWN if path not found.
+     * @param dict_type
+     * @param path
+     * @return
+     */
+    extern python::StructPresence struct_dict_type_get_presence(const python::Type& dict_type, const access_path_t& path);
+
     extern void retrieve_bitmap_counts(const python::Type& dict_type, size_t& bitmap_element_count, size_t& presence_map_element_count);
 
     /*!

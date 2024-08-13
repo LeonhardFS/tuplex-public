@@ -2523,7 +2523,7 @@ namespace python {
         assert(isStructuredDictionaryType());
 
         for(auto p : get_struct_pairs())
-            if(p.presence == ALWAYS_PRESENT)
+            if(p.presence == ALWAYS_PRESENT || p.presence == NOT_PRESENT)
                 return false;
         return true;
     }
@@ -2532,10 +2532,19 @@ namespace python {
         assert(isStructuredDictionaryType());
 
         for(auto p : get_struct_pairs()) {
-            if(p.presence != ALWAYS_PRESENT)
+            if(p.presence != ALWAYS_PRESENT && p.presence != NOT_PRESENT)
                 return false;
         }
         return true;
+    }
+
+    bool Type::has_not_presence() const {
+        assert(isStructuredDictionaryType() || isSparseStructuredDictionaryType());
+        for(auto p : get_struct_pairs()) {
+            if(p.presence == NOT_PRESENT)
+                return true;
+        }
+        return false;
     }
 
     size_t Type::get_column_count() const {

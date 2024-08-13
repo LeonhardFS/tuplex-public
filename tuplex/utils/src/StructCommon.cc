@@ -110,6 +110,47 @@ namespace tuplex {
         return key;
     }
 
+    python::StructPresence struct_dict_type_get_presence(const python::Type& dict_type, const access_path_t& path) {
+        if(!dict_type.isStructuredDictionaryType() && !dict_type.isSparseStructuredDictionaryType())
+            return python::UNKNOWN;
+
+        // fetch the type
+        if(path.empty())
+            return python::UNKNOWN;
+
+        auto p = path.front();
+
+        // escape to python string (if needed), THIS IS A HACK
+        if(!is_encoded_python_str(p.first)) {
+#ifndef NDEBUG
+            Logger::instance().logger("codegen").warn("HACK: forced conversion to python string, something is wrong here...");
+#endif
+            p.first = escape_to_python_str(p.first);
+        }
+
+        // this is done recursively
+        for(const auto& kv_pair : dict_type.get_struct_pairs()) {
+            // compare
+            if(p.second == kv_pair.keyType
+               && semantic_python_value_eq(p.second, p.first, kv_pair.key)) {
+                // match -> recurse!
+                if(path.size() == 1)
+                    return kv_pair.presence;
+                else {
+                    assert(path.size() >= 2);
+                    auto suffix_path = access_path_t(path.begin() + 1, path.end());
+
+                    // special case: option[struct[...]] => search the non-option type
+                    auto value_type = kv_pair.valueType;
+                    if(value_type.isOptionType())
+                        value_type = value_type.getReturnType();
+                    return struct_dict_type_get_presence(value_type, suffix_path);
+                }
+            }
+        }
+        return python::UNKNOWN; // not found.
+    }
+
     python::Type struct_dict_type_get_element_type(const python::Type& dict_type, const access_path_t& path) {
 
         if(!dict_type.isStructuredDictionaryType() && !dict_type.isSparseStructuredDictionaryType())
@@ -267,7 +308,7 @@ namespace tuplex {
             for (auto atom: std::get<0>(entry)) {
                 ss << atom.first << " (" << atom.second.desc() << ") -> ";
             }
-            auto presence = std::get<2>(entry) == python::MAYBE_PRESENT ? "  (maybe)" : "";
+            auto presence = std::get<2>(entry) == python::MAYBE_PRESENT ? "  (maybe)" : (std::get<2>(entry) == python::NOT_PRESENT ? "  (never) " : "");
             auto v_type = std::get<1>(entry);
             auto value_desc = v_type.isStructuredDictionaryType() ? "Struct[...]" : v_type.desc();
             ss << value_desc << presence << endl;
@@ -304,6 +345,13 @@ namespace tuplex {
 
         auto t = indices.at(path); // must exist.
         auto present_idx = std::get<1>(t);
+
+        // if all are -1, then this is a NOT_PRESENT entry
+        if(std::get<0>(t) == -1 &&
+           std::get<1>(t) == -1 &&
+           std::get<2>(t) == -1 &&
+           std::get<3>(t) == -1)
+            return false;
 
         bool is_present = true;
         // >= 0? -> entry in bitmap exists.
@@ -359,6 +407,12 @@ namespace tuplex {
             int maybe_idx = -1;
             int field_idx = -1;
             int size_idx = -1;
+
+            // not present? add -1 dummies.
+            if(std::get<2>(entry) == python::NOT_PRESENT) {
+                indices[access_path] = std::make_tuple(bitmap_idx, maybe_idx, field_idx, size_idx);
+                continue;
+            }
 
             // manipulate indices accordingly
             if(!always_present) {
@@ -1031,6 +1085,10 @@ namespace tuplex {
             size_t field_count = 0, option_count = 0, maybe_count = 0;
 
             for (auto entry: entries) {
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
                 bool is_always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
                 maybe_count += !is_always_present;
                 auto value_type = std::get<1>(entry);
@@ -1073,6 +1131,10 @@ namespace tuplex {
                     // check whether any elements must be there...
                     no_elements_present = true;
                     for(auto entry : entries) {
+                        // skip not present
+                        if(std::get<2>(entry) == python::NOT_PRESENT)
+                            continue;
+
                         auto access_path = std::get<0>(entry);
                         auto value_type = std::get<1>(entry);
                         auto always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
@@ -1099,6 +1161,10 @@ namespace tuplex {
 
             std::unordered_map<access_path_t, std::string> elements;
             for(auto entry : entries) {
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
                 auto access_path = std::get<0>(entry);
                 auto value_type = std::get<1>(entry);
                 auto always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
@@ -1208,8 +1274,6 @@ namespace tuplex {
                 // serialized field -> inc index!
                 field_index++;
             }
-
-
         } catch(const std::exception& e) {
             if(doc)
                 yyjson_doc_free(doc);
@@ -1242,7 +1306,7 @@ namespace tuplex {
 
         // retrieve counts => i.e. how many fields are options? how many are maybe present?
         size_t field_count = 0, option_count = 0, maybe_count = 0;
-       std::tie(field_count, option_count, maybe_count) = struct_dict_get_counts(dict_type);
+        std::tie(field_count, option_count, maybe_count) = struct_dict_get_counts(dict_type);
 
         size_t num_option_bitmap_bits = option_count; // multiples of 64bit
         size_t num_maybe_bitmap_bits = maybe_count;
@@ -1299,6 +1363,10 @@ namespace tuplex {
                 // check whether any elements must be there...
                 no_elements_present = true;
                 for(auto entry : entries) {
+                    // skip not present
+                    if(std::get<2>(entry) == python::NOT_PRESENT)
+                        continue;
+
                     auto access_path = std::get<0>(entry);
                     auto value_type = std::get<1>(entry);
                     auto always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
@@ -1328,6 +1396,10 @@ namespace tuplex {
         std::unordered_map<access_path_t, bool> prefix_null_map;
 
         for(auto entry : entries) {
+            // skip not present
+            if(std::get<2>(entry) == python::NOT_PRESENT)
+                continue;
+
             auto access_path = std::get<0>(entry);
             auto value_type = std::get<1>(entry);
             auto always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
@@ -1518,6 +1590,9 @@ namespace tuplex {
         flatten_recursive_helper(entries, dict_type, {});
 
         for(auto entry : entries) {
+            // skip not present
+            if(std::get<2>(entry) == python::NOT_PRESENT)
+                continue;
 
             // each entry is a full path pointing to an element.
             auto access_path = std::get<0>(entry);
@@ -1579,6 +1654,10 @@ namespace tuplex {
             presence_map_entries = std::vector<bool>(maybe_count, false); // <-- same here as well.
 
             for(auto entry : entries) {
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
                 auto access_path = std::get<0>(entry);
                 auto value_type = std::get<1>(entry);
                 bool is_always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
@@ -1667,6 +1746,10 @@ namespace tuplex {
             auto last_var_ptr = var_base_ptr;
 
             for(auto entry : entries) {
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
                 auto access_path = std::get<0>(entry);
                 auto value_type = std::get<1>(entry);
                 auto always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
@@ -1874,6 +1957,10 @@ namespace tuplex {
             assert(it != entries.end());
             auto parent_entry = *it;
             auto parent_value_type = std::get<1>(parent_entry);
+
+            // make sure no NOT_PRESENT path is called
+            assert(std::get<2>(parent_entry) != python::NOT_PRESENT);
+
             if(parent_value_type.isOptionType() && parent_value_type.getReturnType().isStructuredDictionaryType())
                 v.push_back(parent_path);
         }

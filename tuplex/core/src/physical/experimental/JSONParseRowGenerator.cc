@@ -1455,11 +1455,56 @@ namespace tuplex {
             assert(dict_type.isStructuredDictionaryType() || dict_type.isSparseStructuredDictionaryType());
 
             // skip for sparsestruct
-            if(dict_type.isSparseStructuredDictionaryType())
+            if(dict_type.isSparseStructuredDictionaryType()) {
+                // if no NOT_PRESENT presence in all key pairs, can skip.
+                if(!dict_type.has_not_presence())
+                    return;
+
+                // else, need to check for all not present pairs that keys are NOT present.
+
+                auto bKeysetMatch = BasicBlock::Create(builder.getContext(), "keyset_not_match", builder.GetInsertBlock()->getParent());
+
+                auto kv_pairs = dict_type.get_struct_pairs();
+                auto& ctx = _env.getContext();
+
+#ifdef PRINT_JSON_TRACE_DETAILS
+                _env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" pairwise (not-contained) keyset check for type=" + dict_type.desc() + ": ");
+#endif
+                // perform check by generating appropriate constants
+                // this is the expensive key check.
+                // -> i.e. should be used to match only against general-case.
+                // generate constants
+                std::vector<std::string> notKeys;
+                for (const auto &kv_pair: kv_pairs) {
+                    // for JSON should be always keyType == string!
+                    assert(kv_pair.keyType == python::Type::STRING);
+                    if (kv_pair.presence == python::NOT_PRESENT)
+                        notKeys.push_back(str_value_from_python_raw_value(kv_pair.key));
+                }
+
+                auto sconst_not_keys = _env.strConst(builder, makeKeySetBuffer(notKeys));
+
+                // perform check using helper function on item.
+                // call uint64_t JsonItem_keySetMatch(JsonItem *item, uint8_t* always_keys_buf, uint8_t* maybe_keys_buf)
+                auto Fcheck = getOrInsertFunction(_env.getModule().get(), "JsonItem_keySetNotMatch", _env.i64Type(),
+                                                  _env.i8ptrType(), _env.i8ptrType());
+                auto rc = builder.CreateCall(Fcheck, {json_item, sconst_not_keys});
+                auto cond = builder.CreateICmpEQ(rc, _env.i64Const(ecToI64(ExceptionCode::SUCCESS)));
+
+#ifdef PRINT_JSON_TRACE_DETAILS
+                 _env.printValue(builder, cond, "keyset (not) check (=>): ");
+#endif
+
+                builder.CreateCondBr(cond, bKeysetMatch, bbMismatch);
+                builder.SetInsertPoint(bKeysetMatch);
                 return;
+            }
+
 
             // there are two ways to check: 1.) all keys are always present -> check via number of keys!
             // 2.) not all keys are always present -> check via table (expensive check!)
+            // 3.) there are not_present keys (they need to be checked as well)
+            assert(!dict_type.has_not_presence());
 
             auto bKeysetMatch = BasicBlock::Create(builder.getContext(), "keyset_match", builder.GetInsertBlock()->getParent());
 
@@ -1536,6 +1581,13 @@ namespace tuplex {
             assert(dict_ptr && dict_ptr->getType()->isPointerTy());
 
             for (const auto& kv_pair: dict_type.get_struct_pairs()) {
+
+                // skip not present. check is carried out as part of perform_keyset_check
+                if(kv_pair.presence == python::NOT_PRESENT) {
+                    assert(generate_keyset_check);
+                    continue;
+                }
+
                 vector <pair<string, python::Type>> access_path = prefix; // = prefix
                 access_path.push_back(make_pair(kv_pair.key, kv_pair.keyType));
 

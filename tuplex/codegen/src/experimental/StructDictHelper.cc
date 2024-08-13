@@ -39,6 +39,10 @@ namespace tuplex {
             size_t field_count = 0, option_count = 0, maybe_count = 0;
 
             for (auto entry: entries) {
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
                 bool is_always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
                 maybe_count += !is_always_present;
                 bool is_value_optional = std::get<1>(entry).isOptionType();
@@ -100,6 +104,10 @@ namespace tuplex {
             // now add all the elements from the (flattened) struct type (skip lists and other struct entries, i.e. only primitives so far)
             // --> could use a different structure as well! --> which to use?
             for (const auto &entry: entries) {
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
                 // value type
                 auto access_path = std::get<0>(entry);
                 python::Type value_type = std::get<1>(entry);
@@ -119,8 +127,6 @@ namespace tuplex {
                 // // skip list
                 // if (value_type.isListType())
                 //     continue;
-
-
 
                 // do we actually need to serialize the value?
                 // if not, no problem.
@@ -254,6 +260,10 @@ namespace tuplex {
 
             // go over entries and generate code to load them!
             for(const auto& entry : entries) {
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
                 // each item should be access_path | value_type | alwaysPresent |  value : SerializableValue | present : i1
                 access_path_t access_path;
                 python::Type value_type;
@@ -382,6 +392,10 @@ namespace tuplex {
             flatten_recursive_helper(entries, dict_type);
 
             for(const auto& entry : entries) {
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
                 access_path_t access_path = std::get<0>(entry);
                 python::Type value_type = std::get<1>(entry);
                 bool always_present = std::get<2>(entry);
@@ -931,6 +945,10 @@ namespace tuplex {
             // get indices to properly decode
             int pos = -1;
             for(auto entry : entries) {
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
                 pos++;
                 auto access_path = std::get<0>(entry);
                 auto value_type = std::get<1>(entry);
@@ -1137,6 +1155,10 @@ namespace tuplex {
 //                dest_ptr = serializeBitmap(env, builder, presence_map, dest_ptr);
             }
             for(auto entry : entries) {
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
                 auto access_path = std::get<0>(entry);
                 auto t_indices = struct_dict_get_indices(dict_type, access_path);
                 auto value_idx = std::get<2>(t_indices);
@@ -1179,6 +1201,10 @@ namespace tuplex {
             // count how many fields there are => important to compute offsets!
             size_t num_fields = 0;
             for(auto entry : entries) {
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
                 auto access_path = std::get<0>(entry);
                 auto t_indices = struct_dict_get_indices(dict_type, access_path);
                 auto value_idx = std::get<2>(t_indices);
@@ -1268,6 +1294,10 @@ namespace tuplex {
 
             // get indices to properly decode
             for(auto entry : entries) {
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
                 auto access_path = std::get<0>(entry);
                 auto value_type = std::get<1>(entry);
                 bool is_always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
@@ -1479,6 +1509,10 @@ namespace tuplex {
 
             // get indices to properly decode
             for(auto entry : entries) {
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
                 auto access_path = std::get<0>(entry);
                 auto value_type = std::get<1>(entry);
                 auto t_indices = struct_dict_get_indices(dict_type, access_path);
@@ -1987,6 +2021,10 @@ namespace tuplex {
 
             env.debugPrint(builder, "Printing contents of value of type " + dict_type.desc() + " (" + pluralize(entries.size(), "field") + "):");
             for (auto entry: entries) {
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
                 auto access_path = std::get<0>(entry);
                 auto value_type = std::get<1>(entry);
 

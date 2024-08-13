@@ -744,7 +744,45 @@ namespace tuplex {
             return buf;
         }
 
+        // negative function
+        uint64_t JsonItem_keySetNotMatch(JsonItem *item, uint8_t *not_keys_buf) {
+            assert(item);
+            assert(not_keys_buf);
 
+            // check always_keys_buf
+            // => they all need to be there!
+            uint64_t num_not_keys = *(uint64_t *) not_keys_buf;
+
+            // fetch all keys and check then off.
+            size_t num_fields = 0;
+            // note: looking up string views does work for C++20+
+            std::unordered_set<std::string> lookup;
+            for (auto field: item->o) {
+
+                // ondemand
+                // auto key = field.unescaped_key().take_value();
+
+                // dom
+                auto key = field.key;
+
+                lookup.insert(view_to_string(key));
+            }
+
+
+            // go through the two buffers, if any of the not keys is found return with key error
+            auto ptr = not_keys_buf + sizeof(int64_t);
+            for (unsigned i = 0; i < num_not_keys; ++i) {
+                auto str_size = *(uint32_t *) ptr;
+                ptr += sizeof(uint32_t);
+                std::string key = (char *) ptr;
+                if (lookup.end() != lookup.find(key)) {
+                    return ecToI64(ExceptionCode::KEYERROR);
+                }
+                ptr += str_size;
+            }
+
+            return ecToI64(ExceptionCode::SUCCESS);
+        }
 
         // use a helper function for this and specially encoded buffers
         uint64_t JsonItem_keySetMatch(JsonItem *item, uint8_t *always_keys_buf, uint8_t *maybe_keys_buf) {
@@ -927,6 +965,7 @@ namespace tuplex {
             jit.registerSymbol("JsonItem_IsNull", JsonItem_IsNull);
             jit.registerSymbol("JsonItem_numberOfKeys", JsonItem_numberOfKeys);
             jit.registerSymbol("JsonItem_keySetMatch", JsonItem_keySetMatch);
+            jit.registerSymbol("JsonItem_keySetNotMatch", JsonItem_keySetNotMatch);
             jit.registerSymbol("JsonItem_hasKey", JsonItem_hasKey);
             jit.registerSymbol("JsonItem_getArray", JsonItem_getArray);
             jit.registerSymbol("JsonArray_Free", JsonArray_Free);

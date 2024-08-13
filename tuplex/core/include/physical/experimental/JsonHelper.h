@@ -73,6 +73,10 @@ namespace tuplex {
         // will optimize function signatures...!
 
         extern "C" uint64_t JsonItem_keySetMatch(JsonItem *item, uint8_t *always_keys_buf, uint8_t *maybe_keys_buf);
+
+        // negative keyset match
+        extern "C" uint64_t JsonItem_keySetNotMatch(JsonItem *item, uint8_t *not_keys_buf);
+
         extern "C" JsonParser *JsonParser_init();
         extern "C" void JsonParser_free(JsonParser *parser);
         extern "C" void JsonItem_Free(JsonItem *i);
