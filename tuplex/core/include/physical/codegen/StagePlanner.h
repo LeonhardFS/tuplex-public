@@ -284,10 +284,14 @@ namespace tuplex {
             /*!
              * perform sparsification of structured dictionaries.
              * @param sample sample to use for tracing sparse accesses
+             * @param sample_columns optional column description for sample, best to pass
+             * @param relax_for_sample it could happen that not all samples will work with the sparse type detected.
+             * To avoid overfitting, relax the type to adjust top-level struct paths to maybe_present from not_present/always_present.
              * @return retyped & reoptimized operators.
              */
             std::vector<std::shared_ptr<LogicalOperator>> sparsifyStructs(std::vector<Row> sample,
-                    const option<std::vector<std::string>>& sample_columns=tuplex::option<std::vector<std::string>>::none);
+                    const option<std::vector<std::string>>& sample_columns=tuplex::option<std::vector<std::string>>::none,
+                    bool relax_for_sample = true);
 
             bool retypeOperators(const std::vector<Row>& sample,
                                  const std::vector<std::string>& sample_columns,

@@ -154,7 +154,8 @@ namespace tuplex {
         }
 
         std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::sparsifyStructs(std::vector<Row> sample,
-                                                                                    const option<std::vector<std::string>>& sample_columns) {
+                                                                                    const option<std::vector<std::string>>& sample_columns,
+                                                                                    bool relax_for_sample) {
             using namespace std;
             vector<shared_ptr<LogicalOperator>> opt_ops; // the operators to return.
 
@@ -441,8 +442,7 @@ namespace tuplex {
             cout<<"Input row type after sparsification:\n"<<sparse_type.desc()<<endl;
 
 
-            // if desires, relax type to make sure sample passes.
-            bool relax_for_sample = true;
+            // if desired, relax type to make sure sample passes.
             if(relax_for_sample) {
 
                 std::vector<std::pair<int, int>> indices;
