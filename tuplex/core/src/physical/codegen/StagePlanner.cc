@@ -441,6 +441,99 @@ namespace tuplex {
             cout<<"Input row type after sparsification:\n"<<sparse_type.desc()<<endl;
 
 
+            // if desires, relax type to make sure sample passes.
+            bool relax_for_sample = true;
+            if(relax_for_sample) {
+
+                std::vector<std::pair<int, int>> indices;
+                int pos = 0;
+                for(auto name : sparse_type.get_column_names()) {
+                    if(sparse_type.get_column_type(pos).withoutOption().isStructuredDictionaryType() || sparse_type.get_column_type(pos).isSparseStructuredDictionaryType()) {
+                        indices.push_back(make_pair(pos, indexInVector(name, sample_columns.data())));
+                        assert(indices.back().second >= 0);
+                    }
+                    pos++;
+                }
+
+                auto before_type = sparse_type;
+
+                for(const auto& row : sample) {
+                    // for each sparse struct in row_type check whether it passes or not, if not -> change from NOT_PRESENT or ALWAYS_PRESENT to MAYBE_PRESENT.
+                    // now check sparse types for fields to keep
+                    for(auto p : indices) {
+                        auto i = p.first;
+                        auto idx = p.second;
+                        auto field = row.get(idx);
+                        if(!field.isNull() && field.getType().withoutOption().isStructuredDictionaryType()) {
+
+                            // TODO: better struct/JSON type matching here...
+
+                            auto column_name = sparse_type.get_column_name(i);
+
+                            // different type?
+                            auto expected_type = sparse_type.get_column_type(i);
+                            auto expected_pairs = expected_type.get_struct_pairs();
+                            if(field.getType().withoutOption() != expected_type) {
+
+                                if(expected_type.isStructuredDictionaryType()) {
+                                    // full check:
+                                    throw std::runtime_error("not yet implemented");
+                                } else {
+                                    assert(expected_type.isSparseStructuredDictionaryType());
+                                    // partial check:
+
+                                    bool relaxation_found = false;
+
+                                    // i.e., all always present/not present in sparse dict must be ok.
+                                    for(auto& kv_pair : expected_pairs) {
+                                        if(kv_pair.presence == python::MAYBE_PRESENT)
+                                            continue;
+
+                                        access_path_t path{make_pair(kv_pair.key, kv_pair.keyType)};
+                                        auto field_present = is_field_present(field, path);
+
+                                        if(kv_pair.presence == python::ALWAYS_PRESENT) {
+                                            // ensure that kv_pair is present, else relax to maybe present.
+                                            if(!field_present) {
+                                                cout<<column_name<<": Path "<<access_path_to_str(path)<<" not present, relax struct pair for key "<<kv_pair.key<<" to maybe present"<<endl;
+                                                relaxation_found = true;
+                                                kv_pair = python::StructEntry(kv_pair.key, kv_pair.keyType, kv_pair.valueType, python::MAYBE_PRESENT);
+                                            }
+                                        } else if(kv_pair.presence == python::NOT_PRESENT) {
+                                            // ensure that kv_pair is not present, else relax to maybe present.
+                                            if(field_present) {
+                                                cout<<column_name<<": Path "<<access_path_to_str(path)<<" present, relax struct pair for key "<<kv_pair.key<<" to maybe present"<<endl;
+                                                relaxation_found = true;
+                                                kv_pair = python::StructEntry(kv_pair.key, kv_pair.keyType, kv_pair.valueType, python::MAYBE_PRESENT);
+                                            }
+                                        }
+                                    }
+
+                                    // relaxation found? => update sparse type!
+                                    if(relaxation_found) {
+                                        auto new_expected_type = python::Type::makeStructuredDictType(expected_pairs, expected_type.isSparseStructuredDictionaryType());
+                                        // create new sparse type
+                                        auto column_names = sparse_type.get_column_names();
+                                        auto column_types = sparse_type.get_column_types();
+                                        column_types[i] = new_expected_type;
+                                        sparse_type = python::Type::makeRowType(column_types, column_names);
+                                    }
+
+                                }
+
+                            } else {
+                                // all good, type match.
+                            }
+                        }
+                    }
+                }
+
+                if(before_type != sparse_type) {
+                    cout<<"Relaxed row type from\n"<<before_type.desc()<<" to \n"<<sparse_type.desc()<<endl;
+                }
+
+            }
+
             // Overwrite input node with new sparse type & propagate through operators.
             auto inputNode = _inputNode->clone(false);
             RetypeConfiguration conf;
@@ -1042,6 +1135,9 @@ namespace tuplex {
                     auto rc_filter = promoteFilters(&sample_after_filter);
                     if(rc_filter)
                         sample = sample_after_filter;
+                    else {
+                        cout<<"Filter promo not carried out, because filter found no relevant rows to keep. Can't specialize."<<endl;
+                    }
 
                     if(!sample.empty()) {
                         cout<<"First sample (post-filter):\n";

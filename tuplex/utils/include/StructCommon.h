@@ -140,6 +140,8 @@ namespace tuplex {
             path.push_back(make_pair(key, key_type));
         return path;
     }
+
+    extern bool is_field_present(const Field& f, const access_path_t& path);
 }
 
 #endif //TUPLEX_STRUCTCOMMON_H
