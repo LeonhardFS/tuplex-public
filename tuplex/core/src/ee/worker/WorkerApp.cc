@@ -444,6 +444,7 @@ namespace tuplex {
             conf.constantFoldingOptimization = _settings.useConstantFolding;
             conf.exceptionSerializationMode = _settings.exceptionSerializationMode;
             conf.filterPromotion = _settings.useFilterPromotion;
+            conf.sparsifyStructs = _settings.sparsifyStructs;
 
             // overwrite sampling size using settings
             conf.sampling_size = _settings.samplingSize;
@@ -1920,6 +1921,13 @@ namespace tuplex {
             ws.useFilterPromotion = stringToBool(it->second);
         } else {
             ws.useFilterPromotion = false;
+        }
+
+        it = req.settings().other().find("tuplex.optimizer.sparsifyStructs");
+        if(it != req.settings().other().end()) {
+            ws.sparsifyStructs = stringToBool(it->second);
+        } else {
+            ws.sparsifyStructs = false;
         }
 
         it = req.settings().other().find("tuplex.sample.maxDetectionMemory");

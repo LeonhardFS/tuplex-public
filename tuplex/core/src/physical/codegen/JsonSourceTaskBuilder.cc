@@ -181,6 +181,10 @@ namespace tuplex {
                     if(_normal_case_columns.empty())
                         required_column_names.push_back("<no name>");
                     else {
+                        if(i >= _normal_case_columns.size()) {
+                            throw std::runtime_error("Invalid check column index " + std::to_string(i) + ", there are only " +
+                                                             pluralize(_normal_case_columns.size(), "normal case column"));
+                        }
                         required_column_names.push_back(_normal_case_columns[i]);
                     }
                 ss<<"Following columns are to be parsed for checks: "<<required_cols_for_check<<" ("<<required_column_names<<")";

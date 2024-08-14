@@ -1695,6 +1695,10 @@ namespace tuplex {
             std::stringstream err_stream;
             bool rc = true;
 
+            // single valued do no need anything set.
+            if(type.isSingleValued())
+                return true;
+
             if(type.isOptionType()) {
                 if(!v.is_null) {
                     err_stream<<"is option type, but is_null is not set"<<std::endl;

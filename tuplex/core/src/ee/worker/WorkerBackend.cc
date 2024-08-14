@@ -562,6 +562,7 @@ namespace tuplex {
                                              // "tuplex.sample.strataSize",
                                              // "tuplex.sample.samplesPerStrata",
                                              "tuplex.optimizer.constantFoldingOptimization",
+                                             "tuplex.optimizer.sparsifyStructs",
                                              "tuplex.optimizer.filterPromotion",
                                              "tuplex.experimental.forceBadParseExceptFormat",
                                              "tuplex.experimental.specializationUnitSize",

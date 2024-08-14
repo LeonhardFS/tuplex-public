@@ -1261,6 +1261,55 @@ namespace tuplex {
         return indices;
     }
 
+    void FileInputOperator::selectColumns(const std::vector<std::string>& columns) {
+        using namespace std;
+
+        auto& logger = Logger::instance().logger("logical");
+
+        if(columns.empty()) {
+            auto columns_before = this->columns();
+            _columnsToSerialize = vector<bool>(_columnsToSerialize.size(), false);
+
+            stringstream ss;
+            ss<<"Columns before selectColumns: "<<columns_before<<"\nColumns after  selectColumns: "<<this->columns();
+            logger.debug(ss.str());
+
+            assert(extract_columns_from_type(getOutputSchema().getRowType()) == columns.size());
+
+            return;
+        }
+
+        // check that all columns are actually contained.
+        std::vector<int> indices;
+        std::vector<std::string> names_not_found;
+        for(const auto& name : columns) {
+            auto idx = indexInVector(name, this->_columnNames);
+            indices.push_back(idx);
+            if(idx < 0)
+                names_not_found.push_back(name);
+        }
+
+        if(!names_not_found.empty()) {
+            stringstream ss;
+            ss << "Can not select columns " << names_not_found << " from " << name()
+               << " operator, because columns are not contained.";
+            throw std::runtime_error(ss.str());
+        }
+
+        // reset columns to serialize, and print out result
+        auto columns_before = this->columns();
+        _columnsToSerialize = vector<bool>(_columnsToSerialize.size(), false);
+
+        for(auto idx : indices)
+            _columnsToSerialize[idx] = true;
+
+        stringstream ss;
+        ss<<"Columns before selectColumns: "<<columns_before<<"\nColumns after  selectColumns: "<<this->columns();
+        logger.debug(ss.str());
+
+        assert(extract_columns_from_type(getOutputSchema().getRowType()) == columns.size());
+    }
+
     void FileInputOperator::selectColumns(const std::vector<size_t> &columnsToSerialize, bool original_indices) {
         using namespace std;
 
@@ -1726,6 +1775,7 @@ namespace tuplex {
         auto& logger = Logger::instance().logger("codegen");
 
         // check whether number of columns are compatible (necessary when no concrete columns are given)
+        // if this fails, need to update projected columns first!
         if(conf.columns.size() != projectColumns(inputColumns()).size()) {
             if (is_projected_row_type) {
                 if (col_types.size() != num_projected_columns) {
@@ -1764,20 +1814,21 @@ namespace tuplex {
 
             assert(lookup_index < old_general_col_types.size());
 
-            if(!python::canUpcastType(t, old_general_col_types[lookup_index])) {
-                // both struct types? => replace, can have different format. that's ok
-                if((t.withoutOption().isSparseStructuredDictionaryType() || t.withoutOption().isStructuredDictionaryType()) &&
-                        (old_general_col_types[lookup_index].withoutOption().isStructuredDictionaryType() || old_general_col_types[lookup_index].withoutOption().isSparseStructuredDictionaryType())) {
-                    logger.debug("encountered struct dict with different structure at index " + std::to_string(i));
-                } else {
-                    if(!(ignore_check_for_str_option && old_general_col_types[lookup_index] == str_opt_type)) {
-                        logger.warn("provided specialized type " + col_types[i].desc() + " can't be upcast to "
-                                    + old_general_col_types[lookup_index].desc() + ", ignoring in retype.");
-                        assert(lookup_index < old_col_types.size());
-                        col_types[i] = old_col_types[lookup_index];
-                    }
-                }
-            }
+            // TODO: why is this block here needed? => always use new types.
+            // if(!python::canUpcastType(t, old_general_col_types[lookup_index])) {
+            //     // both struct types? => replace, can have different format. that's ok
+            //     if((t.withoutOption().isSparseStructuredDictionaryType() || t.withoutOption().isStructuredDictionaryType()) &&
+            //             (old_general_col_types[lookup_index].withoutOption().isStructuredDictionaryType() || old_general_col_types[lookup_index].withoutOption().isSparseStructuredDictionaryType())) {
+            //         logger.debug("encountered struct dict with different structure at index " + std::to_string(i));
+            //     } else {
+            //         if(!(ignore_check_for_str_option && old_general_col_types[lookup_index] == str_opt_type)) {
+            //             logger.warn("provided specialized type " + col_types[i].desc() + " can't be upcast to "
+            //                         + old_general_col_types[lookup_index].desc() + ", ignoring in retype.");
+            //             assert(lookup_index < old_col_types.size());
+            //             col_types[i] = old_col_types[lookup_index];
+            //         }
+            //     }
+            // }
         }
 
         // type hints have precedence over sampling! I.e., include them here!

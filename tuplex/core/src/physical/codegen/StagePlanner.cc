@@ -450,6 +450,45 @@ namespace tuplex {
                 conf.columns = sparse_type.get_column_names();
             }
             conf.is_projected = true;
+
+            // project columns, also need to update check indices (checks refer to output column indices).
+            if(!conf.columns.empty()) {
+                auto columns_before = inputNode->columns(); // output columns.
+
+                // step 1: validate checks
+                for(const auto& check : _checks) {
+                    for(auto idx : check.colNos)
+                        if(idx >= columns_before.size())
+                            throw std::runtime_error("Check " + check.to_string() + " has invalid index " + std::to_string(idx));
+                }
+
+                // step 2: reselect relevant columns
+                std::dynamic_pointer_cast<FileInputOperator>(inputNode)->selectColumns(conf.columns);
+
+                // step 3: update checks (their indices) to new columns
+                auto columns_after = inputNode->columns();
+                for(auto& check : _checks) {
+                    for(auto& idx : check.colNos) {
+                        auto new_idx = indexInVector(columns_before[idx], columns_after);
+                        if(new_idx < 0) {
+                            std::stringstream ss;
+                            ss<<"Check "<<check.to_string()<<" has invalid index "
+                              <<new_idx<<", required column "<<columns_before[idx]
+                              <<" can not be found in newly selected columns "<<columns_after;
+                            throw std::runtime_error(ss.str());
+                        }
+                        idx = new_idx; // this should update it!
+                    }
+                }
+
+                // step 4: validate current checks again, this time against columns_after.
+                for(const auto& check : _checks) {
+                    for(auto idx : check.colNos)
+                        if(idx >= columns_after.size())
+                            throw std::runtime_error("Check " + check.to_string() + " has invalid index " + std::to_string(idx));
+                }
+            }
+
             inputNode->retype(conf);
             std::dynamic_pointer_cast<FileInputOperator>(inputNode)->useNormalCase();
             opt_ops.push_back(inputNode);
@@ -980,6 +1019,15 @@ namespace tuplex {
                     sample_columns = sample.front().getRowType().get_column_names();
             }
 
+            cout<<"Got sample of "<<pluralize(sample.size(), "row")<<" with columns "<<sample_columns<<endl;
+
+            if(!sample.empty()) {
+                cout<<"First sample:\n";
+                for(unsigned i = 0; i < sample_columns.size(); ++i) {
+                    cout<<"name="<<sample_columns[i]<<" type="<<sample.front().getType(i).desc()<<":\n"<<sample.front().get(i).toPythonString()<<endl;
+                }
+            }
+
             // retype using sample, need to do this initially.
             retypeOperators(sample, sample_columns, use_sample);
 
@@ -995,6 +1043,13 @@ namespace tuplex {
                     if(rc_filter)
                         sample = sample_after_filter;
 
+                    if(!sample.empty()) {
+                        cout<<"First sample (post-filter):\n";
+                        for(unsigned i = 0; i < sample_columns.size(); ++i) {
+                            cout<<"name="<<sample_columns[i]<<" type="<<sample.front().getType(i).desc()<<":\n"<<sample.front().get(i).toPythonString()<<endl;
+                        }
+                    }
+
                     // want to redo typing if checks changed!
                     if(_checks.end() != std::find_if(_checks.begin(),
                                                      _checks.end(),
@@ -1005,6 +1060,14 @@ namespace tuplex {
                         auto input_type_before_promo = _inputNode->getOutputSchema().getRowType();
                         sample = fetchInputSample();
                         sample_columns = _inputNode ? _inputNode->columns() : std::vector<std::string>();
+
+                        if(!sample.empty()) {
+                            cout<<"First sample (retype due to filter promo):\n";
+                            for(unsigned i = 0; i < sample_columns.size(); ++i) {
+                                cout<<"name="<<sample_columns[i]<<" type="<<sample.front().getType(i).desc()<<":\n"<<sample.front().get(i).toPythonString()<<endl;
+                            }
+                        }
+
                         retypeOperators(sample, sample_columns, use_sample);
 
                         auto input_type_after_promo = _inputNode->getOutputSchema().getRowType();
@@ -1587,6 +1650,12 @@ namespace tuplex {
             // use sampling size provided
             if(0 != conf.sampling_size)
                 fop->setSamplingSize(conf.sampling_size);
+
+#ifndef NDEBUG
+            // debug help
+            if(uri.toString().find("2018-10-15") != std::string::npos)
+                std::cout<<"found file!"<<std::endl;
+#endif
 
             // resample
             fop->setInputFiles({uri}, {file_size}, true, sample_limit, true, strata_size, samples_per_strata);

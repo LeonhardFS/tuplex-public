@@ -131,6 +131,7 @@ namespace tuplex {
         bool useCompiledGeneralPath;
         bool useFilterPromotion;
         bool useConstantFolding;
+        bool sparsifyStructs;
 
         bool opportuneGeneralPathCompilation; // <-- whether to kick off query optimization as early on as possible
         size_t s3PreCacheSize; // <-- whether to load S3 first and activate cache
@@ -153,6 +154,7 @@ namespace tuplex {
         useInterpreterOnly(false), useCompiledGeneralPath(true),
         opportuneGeneralPathCompilation(true),
         useFilterPromotion(false), useConstantFolding(false),
+        sparsifyStructs(false),
         s3PreCacheSize(0),
         exceptionSerializationMode(codegen::ExceptionSerializationMode::SERIALIZE_AS_GENERAL_CASE),
         specializationUnitSize(0),
@@ -183,6 +185,7 @@ namespace tuplex {
         useCompiledGeneralPath(other.useCompiledGeneralPath),
         useFilterPromotion(other.useFilterPromotion),
         useConstantFolding(other.useConstantFolding),
+        sparsifyStructs(other.sparsifyStructs),
         opportuneGeneralPathCompilation(other.opportuneGeneralPathCompilation),
         s3PreCacheSize(other.s3PreCacheSize),
         useOptimizer(other.useOptimizer),
@@ -227,6 +230,8 @@ namespace tuplex {
             if(useFilterPromotion != other.useFilterPromotion)
                 return false;
             if(useConstantFolding != other.useConstantFolding)
+                return false;
+            if(sparsifyStructs != other.sparsifyStructs)
                 return false;
             if(!double_eq(normalCaseThreshold, other.normalCaseThreshold))
                 return false;
@@ -276,6 +281,7 @@ namespace tuplex {
         os << "\"samplesPerStrata\":"<<ws.samplesPerStrata<<", ";
         os << "\"useFilterPromotion\":"<<boolToString(ws.useFilterPromotion)<<", ";
         os << "\"useConstantFolding\":"<<boolToString(ws.useConstantFolding)<<", ";
+        os << "\"sparsifyStructs\":"<<boolToString(ws.sparsifyStructs)<<", ";
         os << "\"normalCaseThreshold\":"<<ws.normalCaseThreshold<<", ";
         os << "\"exceptionSerializationMode\":"<<(int)ws.exceptionSerializationMode<<", ";
         os << "\"s3PreCacheSize\":"<<ws.s3PreCacheSize<<",";

@@ -538,6 +538,12 @@ namespace tuplex {
         void selectColumns(const std::vector<size_t>& columnsToSerialize, bool original_indices=true);
 
         /*!
+         * select columns based on column names.
+         * @param columns
+         */
+        void selectColumns(const std::vector<std::string>& columns);
+
+        /*!
          * explicitly define some column names for this operator.
          * @param columnNames
          */
