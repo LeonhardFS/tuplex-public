@@ -188,14 +188,14 @@ namespace tuplex {
             logger().info("Start processing request " + std::to_string(request_counter) + "/" + std::to_string(requests.size()) + "  current RSS: " +
                                   sizeToMemString(getCurrentRSS()) + " peak RSS: " + sizeToMemString(getPeakRSS()));
 
-            // snippet to select single relevant request.
-#warning "REMOVE THIS CODE HERE"
-#ifndef NDEBUG
-            if(req.inputuris(0).find("2018-10-15") == std::string::npos) {
-                logger().info("DEBUG: --> Skipping request for uri=" + req.inputuris(0));
-                continue;
-            }
-#endif
+//            // snippet to select single relevant request.
+//#warning "REMOVE THIS CODE HERE"
+//#ifndef NDEBUG
+//            if(req.inputuris(0).find("2018-10-15") == std::string::npos) {
+//                logger().info("DEBUG: --> Skipping request for uri=" + req.inputuris(0));
+//                continue;
+//            }
+//#endif
 
             auto rc = app->processJSONMessage(json_buf);
             // fetch result

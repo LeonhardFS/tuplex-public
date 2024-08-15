@@ -2618,15 +2618,17 @@ namespace tuplex {
                 operators_post_op.push_back(node);
             _operators = operators_post_op;
 
-            // output filtered rows if desired
-            if(filtered_sample) {
-                assert(indices_to_keep.size() == current_input_sample.size());
-                *filtered_sample = current_input_sample;
-//                *filtered_sample = std::vector<Row>();
-//                for(auto idx : indices_to_keep) {
-//                    assert(idx < original_sample.size());
-//                    filtered_sample->push_back(original_sample[idx]);
-//                }
+            // output filtered rows if desired (and filter promo was applied)
+            if(filtered_sample && filter_promo_applied) {
+                if(indices_to_keep.size() == current_input_sample.size())
+                    *filtered_sample = current_input_sample;
+                else {
+                    *filtered_sample = std::vector<Row>();
+                    for(auto idx : indices_to_keep) {
+                        assert(idx < original_sample.size());
+                        filtered_sample->push_back(original_sample[idx]);
+                    }
+                }
             }
 
             return filter_promo_applied;
