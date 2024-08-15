@@ -257,6 +257,14 @@ namespace tuplex {
         // only interpreter resolve?
         co.set("tuplex.resolveWithInterpreterOnly", "true");
 
+        // when using compiled resolver (as well), need to deactivate opportune compilation for now.
+        co.set("tuplex.resolveWithInterpreterOnly", "false");
+        co.set("tuplex.experimental.opportuneCompilation", "false");
+
+        // opportune compilation is still broken due to symbol registry, need to fix.
+        assert(co.USE_EXPERIMENTAL_OPPORTUNE_COMPILATION() == false);
+
+
         if(mode & ExperimentMode::USE_GENERIC_DICTS) {
             // use generic dicts instead.
             cout<<"Using generic dictionaries for types"<<endl;
@@ -276,6 +284,7 @@ namespace tuplex {
             cout<<"Using global specialization, with sparsify enabled."<<endl;
             co.set("tuplex.experimental.hyperspecialization", "false");
             co.set("tuplex.optimizer.sparsifyStructs", "true");
+            co.set("tuplex.optimizer.filterPromotion", "true");
         }
 
         // create context according to settings

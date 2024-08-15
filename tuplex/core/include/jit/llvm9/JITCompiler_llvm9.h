@@ -300,6 +300,10 @@ namespace tuplex {
             auto addr = reinterpret_cast<llvm::JITTargetAddress>(f);
             assert(addr);
 
+#ifndef NDEBUG
+            // print to help fixing opportune compilation
+            std::cout<<"THREAD "<<std::this_thread::get_id()<<" registering symbol (remove once opportune compilation is fixed)"<<std::endl;
+#endif
             // with addressof a C++ function can be hacked into this.
             // however may lead to hard to debug bugs!
             _customSymbols[Name] = JITEvaluatedSymbol(addr, JITSymbolFlags::Exported);
