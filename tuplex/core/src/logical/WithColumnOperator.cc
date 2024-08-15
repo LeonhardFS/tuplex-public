@@ -241,6 +241,16 @@ namespace tuplex {
         size_t numExceptions = 0;
         for(auto row : vSamples) {
 
+            // convert to row with row type.
+            if(!row.getRowType().isRowType()) {
+                auto columns = parent()->columns();
+                if(columns.size() != row.getRowType().parameters().size()) {
+                    std::cerr<<"invalid column count retrieved from parent, skipping row."<<std::endl;
+                    continue;
+                }
+                row = row.with_columns(columns);
+            }
+
             auto rowObj = python::rowToPython(row);
 
             // object should be a tuple, get column
@@ -256,8 +266,10 @@ namespace tuplex {
             if(!inputColumns().empty() && row.getNumColumns() != inputColumns().size()) {
                  //std::cerr<<"HACK executed here, pls fix."<<std::endl;
                  // tuple type does not support column mismatch...
-                 if(!row.getRowType().isRowType())
-                    continue;
+                 if(!row.getRowType().isRowType()) {
+                     std::cerr<<"Make sure to pass rows with type set as Row[...], skipping for now."<<std::endl;
+                     continue;
+                 }
             }
             Py_XINCREF(rowObj);
 

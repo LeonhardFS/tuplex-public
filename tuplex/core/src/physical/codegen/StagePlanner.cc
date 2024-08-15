@@ -21,6 +21,7 @@
 #include <physical/codegen/StageBuilder.h>
 #include <graphviz/GraphVizBuilder.h>
 #include "logical/LogicalOptimizer.h"
+#include <visitors/ApplyVisitor.h>
 #include <unordered_map>
 #include <tracing/TraceVisitor.h>
 
@@ -153,6 +154,17 @@ namespace tuplex {
             }
         }
 
+        /*!
+         * remove existing annotations.
+         * @param node
+         */
+        void reset_annotations(ASTNode* node) {
+            ApplyVisitor av([](const ASTNode* node) { return true; }, [](ASTNode& node) {
+                node.removeAnnotation();
+            });
+            node->accept(av);
+        }
+
         std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::sparsifyStructs(std::vector<Row> sample,
                                                                                     const option<std::vector<std::string>>& sample_columns,
                                                                                     bool relax_for_sample) {
@@ -164,6 +176,11 @@ namespace tuplex {
             // check current input node schema, if it contains no struct_dict - can skip.
             if(!_inputNode) {
                 logger.error("internal problem with _inputNode, skipping.");
+                return vec_prepend(_inputNode, _operators);
+            }
+
+            if(sample.empty()) {
+                logger.info("Empty sample, skipping sparsifyStructs optimization.");
                 return vec_prepend(_inputNode, _operators);
             }
 
@@ -224,6 +241,8 @@ namespace tuplex {
                         auto func_root = udfop->getUDF().getAnnotatedAST().getFunctionAST();
                         assert(func_root);
 
+                        reset_annotations(func_root);
+
                         // Trace now which columns are accessed.
                         // convert to python.
                         python::lockGIL();
@@ -277,6 +296,8 @@ namespace tuplex {
                         auto wop = std::dynamic_pointer_cast<WithColumnOperator>(op);
                         auto func_root = wop->getUDF().getAnnotatedAST().getFunctionAST();
                         assert(func_root);
+
+                        reset_annotations(func_root);
 
                         // Trace now which columns are accessed.
                         // convert to python.
@@ -585,6 +606,9 @@ namespace tuplex {
             inputNode->retype(conf);
             std::dynamic_pointer_cast<FileInputOperator>(inputNode)->useNormalCase();
             opt_ops.push_back(inputNode);
+
+            assert(std::dynamic_pointer_cast<FileInputOperator>(inputNode)->storedSampleRowCount() == sample.size()); // this should match, indeed the sample should be identical...
+
             auto lastParent = inputNode;
             // retype the other operators.
             for(const auto& op : _operators) {
@@ -592,6 +616,10 @@ namespace tuplex {
                 auto opt_op = op->clone(false);
                 opt_op->setParent(lastParent);
                 opt_op->setID(op->getID());
+                if(hasUDF(opt_op.get())) {
+                    // important.
+                    reset_annotations(std::dynamic_pointer_cast<UDFOperator>(opt_op)->getUDF().getAnnotatedAST().getFunctionAST());
+                }
 
                 // before row type
                 std::stringstream ss;
@@ -2460,6 +2488,9 @@ namespace tuplex {
             for(unsigned i = 0; i < original_sample_size; ++i)
                 indices_to_keep[i] = i;
 
+            // the current sample (to assign the input operator to)
+            std::vector<Row> current_input_sample; // empty for now.
+
             // check if there is at least one filter operator!
             // -> carry then repeated filters out!
             auto node = _inputNode;
@@ -2478,13 +2509,30 @@ namespace tuplex {
                     auto samples_post_filter = filter_node->getSample(original_sample_size, true, &indices_kept);
                     logger.debug("sample size post-filter: " + pluralize(samples_post_filter.size(), "row"));
 
-                    // apply indices_kept to original indices
-                    std::vector<size_t> new_indices;
-                    new_indices.reserve(indices_kept.size());
-                    for(auto idx : indices_kept) {
-                        new_indices.push_back(indices_to_keep[idx]);
+                    if(!samples_post_filter.empty()) {
+                        // apply indices_kept to original indices
+                        std::vector<size_t> new_indices;
+                        new_indices.reserve(indices_kept.size());
+                        for(auto idx : indices_kept) {
+                            new_indices.push_back(indices_to_keep[idx]);
+                        }
+                        indices_to_keep = new_indices;
+
+                        // update:
+                        current_input_sample.clear();
+                        current_input_sample.reserve(indices_to_keep.size());
+                        for(auto idx : indices_to_keep) {
+                            assert(idx < original_sample.size());
+
+                            auto row = original_sample[idx];
+                            // ensure row type (w. columns)
+                            if(!row.getRowType().isRowType())
+                                row = row.with_columns(_inputNode->columns());
+
+                            current_input_sample.push_back(row);
+                        }
                     }
-                    indices_to_keep = new_indices;
+
 
                     // @TODD: There's two possibilities here:
                     // [1] if sample is empty, replace pipeline with simple filter node throwing normal-case if filter condition is not met.
@@ -2549,9 +2597,11 @@ namespace tuplex {
                             _checks.push_back(filterToCheck(filter_node));
                             filter_promo_applied = true;
 
+                            assert(current_input_sample.size() == indices_to_keep.size());
+
                             // manipulate input node sample!
-                            std::dynamic_pointer_cast<FileInputOperator>(_inputNode)->setRowsSample(samples_post_filter);
-                            logger.debug("replaced samples in input operator with " + pluralize(_inputNode->getSample(original_sample_size).size(), "filtered sample"));
+                            std::dynamic_pointer_cast<FileInputOperator>(_inputNode)->setRowsSample(current_input_sample);
+                            logger.debug("replaced samples in input operator with " + pluralize(current_input_sample.size(), "filtered sample"));
                             logger.debug("promoted filter to check: \n" + core::withLineNumbers(filter_node->getUDF().getCode()));
 
                             node = nullptr;
@@ -2570,11 +2620,13 @@ namespace tuplex {
 
             // output filtered rows if desired
             if(filtered_sample) {
-                *filtered_sample = std::vector<Row>();
-                for(auto idx : indices_to_keep) {
-                    assert(idx < original_sample.size());
-                    filtered_sample->push_back(original_sample[idx]);
-                }
+                assert(indices_to_keep.size() == current_input_sample.size());
+                *filtered_sample = current_input_sample;
+//                *filtered_sample = std::vector<Row>();
+//                for(auto idx : indices_to_keep) {
+//                    assert(idx < original_sample.size());
+//                    filtered_sample->push_back(original_sample[idx]);
+//                }
             }
 
             return filter_promo_applied;

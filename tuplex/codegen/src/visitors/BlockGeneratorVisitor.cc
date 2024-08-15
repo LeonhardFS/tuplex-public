@@ -2146,8 +2146,10 @@ namespace tuplex {
                 if(iftype_py.isTupleType())
                     error("tuple type as result of if-else expression not yet supported.");
 
+                auto dbg_cond = astToString(ifelse->_expression.get());
+
                 // create exception when condition does not hold
-                _lfb->addException(builder, ExceptionCode::NORMALCASEVIOLATION, _env->i1neg(builder, ifcond), "normal-case error, else branch not taken");
+                _lfb->addException(builder, ExceptionCode::NORMALCASEVIOLATION, _env->i1neg(builder, ifcond), "normal-case error, else branch not taken for " + dbg_cond);
 
                 // emit code for if block only
                 // in case of expression that's super simple

@@ -607,6 +607,12 @@ namespace tuplex {
 
         void setProjectionDefaults();
 
+        // for optimizer only.
+        void setRowSample(const std::vector<Row>& sample) {
+            _rowsSample = sample;
+            _cachePopulated = true;
+        }
+
         int64_t cost() const override;
 
         /*!

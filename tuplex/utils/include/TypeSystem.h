@@ -984,6 +984,17 @@ namespace tuplex {
         std::string name = "Exception";
         name = exceptionCodeToPythonClass(ec);
         auto t = python::TypeFactory::instance().getByName(name);
+
+        if(t == python::Type::UNKNOWN) {
+            // register new exception type (based on Exception)
+            auto base_type = python::TypeFactory::instance().getByName("Exception");
+            assert(base_type != python::Type::UNKNOWN);
+
+            std::vector<python::Type> baseTypes(1, base_type);
+
+            t = python::TypeFactory::instance().createOrGetPrimitiveType(name, baseTypes);
+        }
+
         assert(t != python::Type::UNKNOWN);
         return t;
     }
