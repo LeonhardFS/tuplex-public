@@ -325,8 +325,20 @@ namespace tuplex {
             type_hints = row_type_to_column_hints(sparse_row_type);
         }
 
+        // TODO: add / fix sampling modes.
+        // different sampling mode options.
+        auto tuplex_original = SamplingMode::FIRST_FILE | SamplingMode::FIRST_ROWS; // fastest, quickest tuplex sampling mode.
+        // this one here is much more adequate.
+        auto first_last_both = SamplingMode::FIRST_FILE | SamplingMode::LAST_FILE | SamplingMode::FIRST_ROWS | SamplingMode::LAST_ROWS;
+
+        // auto sampling_mode = tuplex_original;
+        auto sampling_mode = first_last_both;
+
+        sampling_mode = normalizeSamplingMode(sampling_mode);
+        cout<<"Using for experiment sampling mode: "<<samplingModeToString(sampling_mode)<<endl;
+
         // original:
-        ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED, type_hints)
+        ctx.json(input_pattern, true, true, sampling_mode, type_hints)
                 .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
                 .withColumn("repo_id", UDF(repo_id_code))
                 .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
