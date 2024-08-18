@@ -79,18 +79,83 @@ WHL_FILE=$(ls ${BUILD_DIR}/dist/python/dist/*.whl)
 echo ">>> Installing tuplex (force) from wheel ${WHL_FILE}"
 ${PYTHON} -m pip install --upgrade --force-reinstall ${WHL_FILE}
 
+# There's an issue with an old cloudpickle version, remove and intall newer one
+${PYTHON} -m pip uninstall -y cloudpickle && ${PYTHON} -m pip install "cloudpickle>=2.2"
+
 # start benchmarking, first single run + validate results.
 ${PYTHON} runtuplex-new.py --help
 
 INPUT_PATTERN='/hot/data/github_daily/*.json'
-RESULT_DIR=.local/test
+RESULT_DIR=./local-exp/github/
 OUTPUT_PATH=${RESULT_DIR}/output
 mkdir -p ${RESULT_DIR}
 
-${PYTHON} runtuplex-new.py --mode tuplex --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH} \
-                           --tuplex-worker-path $BUILD_DIR/dist/bin/tuplex-worker \
-                           --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/log.txt \
-                           --result-path ${RESULT_DIR}/result.ndjson
+# helper function
+run_benchmarks() {
+  run=$1
 
+  echo ">>> Running python baseline"
+  mode=python
+  ${PYTHON} runtuplex-new.py --mode python --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
+                             --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
+                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
+                             --result-path ${RESULT_DIR}/${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
+
+  echo ">>> Running tuplex with no hyper, no sparse structs"
+  mode=tuplex-global-structs
+  ${PYTHON} runtuplex-new.py --mode tuplex --no-hyper --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
+                             --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
+                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
+                             --result-path ${RESULT_DIR}/${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
+
+  echo ">>> Running tuplex with no hyper, generic dicts"
+  mode=tuplex-global-generic-dicts
+  ${PYTHON} runtuplex-new.py --mode tuplex --no-hyper --generic-dicts --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
+                            --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
+                            --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
+                            --result-path ${RESULT_DIR}/${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
+
+  echo ">>> Running tuplex with hyper, generic dicts"
+  mode=tuplex-hyper-generic-dicts
+  ${PYTHON} runtuplex-new.py --mode tuplex --no-hyper --generic-dicts --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
+                            --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
+                            --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
+                            --result-path ${RESULT_DIR}/${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
+
+  echo ">>> Running tuplex with no hyper, sparse structs"
+  mode=tuplex-global-sparse-structs
+  ${PYTHON} runtuplex-new.py --mode tuplex --no-hyper --sparse-structs --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
+                            --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
+                            --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
+                            --result-path ${RESULT_DIR}/${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
+
+  echo ">>> Running tuplex with hyper, sparse structs"
+  mode=tuplex-hyper-sparse-structs
+  ${PYTHON} runtuplex-new.py --mode tuplex --sparse-structs --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
+                            --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
+                            --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
+                            --result-path ${RESULT_DIR}/${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
+}
+
+# Run all benchmarks once (run 0 is validation run)
+run_benchmarks 0
+
+# Validate results
+echo ">>> Validating python baseline vs. tuplex with no hyper, no sparse structs"
+python3 validate.py "${RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-global-structs"
+
+echo ">>> Validating python baseline vs. tuplex with no hyper, generic dicts"
+python3 validate.py "${RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-global-generic-dicts"
+
+echo ">>> Validating python baseline vs. tuplex with hyper, generic dicts"
+python3 validate.py "${RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-hyper-generic-dicts"
+
+echo ">>> Validating python baseline vs. tuplex with no hyper, sparse structs"
+python3 validate.py "${RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-global-sparse-structs"
+
+echo ">>> Validating python baseline vs. tuplex with hyper, sparse structs"
+python3 validate.py "${RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-hyper-sparse-structs"
+
+# Actual benchmark now.
 
 # TODO: other frameworks (Ray (?), PySpark (?), Pandas (?), lithops (?))

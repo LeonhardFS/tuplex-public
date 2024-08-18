@@ -11,6 +11,7 @@ import time
 import sys
 import json
 import os
+import pathlib
 import glob
 import argparse
 import logging
@@ -179,7 +180,7 @@ def github_pipeline(ctx, input_pattern, s3_output_path, sm):
 # local worker version
 def run_with_tuplex(args):
 
-    if not os.path.isfile(args.tuplex_worker_path):
+    if not args.tuplex_worker_path or not os.path.isfile(args.tuplex_worker_path):
         raise ValueError(f"Could not find worker under {args.tuplex_worker_path}.")
 
     output_path = args.output_path
@@ -196,6 +197,9 @@ def run_with_tuplex(args):
     use_hyper_specialization = not args.no_hyper
     use_filter_promotion = not args.no_promo
     use_constant_folding = False  # deactivate explicitly
+
+    use_sparse_structs = args.sparse_structs
+    use_generic_dicts = args.generic_dicts
 
     strata_size = args.strata_size
     samples_per_strata = args.samples_per_strata
@@ -259,9 +263,12 @@ def run_with_tuplex(args):
             "useLLVMOptimizer": True,
             "optimizer.generateParser": False,  # not supported on lambda yet
             "optimizer.nullValueOptimization": True,
+            "tuplex.experimental.useGenericDicts":use_generic_dicts,
+            "tuplex.optimizer.sparsifyStructs":use_sparse_structs,
             "resolveWithInterpreterOnly": False,
             "optimizer.constantFoldingOptimization": use_constant_folding,
             "optimizer.filterPromotion": use_filter_promotion,
+
             "optimizer.selectionPushdown": True,
             "useInterpreterOnly": args.python_mode,
             "experimental.forceBadParseExceptFormat": not args.use_internal_fmt}
@@ -450,6 +457,7 @@ def setup_logging(log_path:Optional[str]) -> None:
 
     # add file handler to root logger
     if log_path:
+        os.makedirs(pathlib.Path(log_path).parent, exist_ok=True)
         handler = logging.FileHandler(log_path)
         formatter = logging.Formatter(LOG_FORMAT)
         handler.setFormatter(formatter)
@@ -514,6 +522,8 @@ if __name__ == '__main__':
                         help='how many samples to use per strata')
     parser.add_argument('--strata-size', dest='strata_size', default=1024,
                         help='how many samples to use per strata')
+    parser.add_argument("--generic-dicts", action="store_true", help="use generic dicts when running tuplex mode.")
+    parser.add_argument("--sparse-structs", action="store_true", help="use sparsified structs when running tuplex mode (should set generic dicts to false then).")
     parser.add_argument('--tuplex-worker-path', default=None, dest="tuplex_worker_path", help="specify worker path when executing in local mode.")
     parser.add_argument('--m', '--mode', dest='mode', choices=['tuplex', 'python'], default='tuplex', help='select whether to run benchmark using python baseline or tuplex')
     parser.add_argument('--input-pattern', default=None, dest='input_pattern', help='input files to read into github pipeline')
@@ -545,6 +555,7 @@ if __name__ == '__main__':
 
     logging.info(f"pipeline in mode {args.mode} took {ans['job_time_in_s']:.2f} seconds")
     logging.info(f"Storing results in {args.result_path} via append")
+    os.makedirs(pathlib.Path(args.result_path).parent, exist_ok=True)
     with open(args.result_path, 'a') as f:
         json.dump(ans, f, sort_keys=True)
         f.write('\n')
