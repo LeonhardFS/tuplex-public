@@ -77,7 +77,7 @@ ${PYTHON} ${BUILD_DIR}/dist/python/setup.py bdist_wheel
 
 WHL_FILE=$(ls ${BUILD_DIR}/dist/python/dist/*.whl)
 echo ">>> Installing tuplex (force) from wheel ${WHL_FILE}"
-${PYTHON} -m pip install ${WHL_FILE}
+${PYTHON} -m pip install --upgrade --force-reinstall ${WHL_FILE}
 
 # start benchmarking, first single run + validate results.
 ${PYTHON} runtuplex-new.py --help
@@ -88,6 +88,7 @@ OUTPUT_PATH=${RESULT_DIR}/output
 mkdir -p ${RESULT_DIR}
 
 ${PYTHON} runtuplex-new.py --mode tuplex --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH} \
+                           --tuplex-worker-path $BUILD_DIR/dist/bin/tuplex-worker \
                            --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/log.txt \
                            --result-path ${RESULT_DIR}/result.ndjson
 

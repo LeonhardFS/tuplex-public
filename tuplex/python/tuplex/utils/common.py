@@ -952,11 +952,13 @@ def check_cloudpickle_version():
     if sys.version_info.major != 3:
         raise RuntimeError("Tuplex is only compatible with Python 3.7+")
 
-    if sys.version.minor <= 9:
+    error_message = f"Tuplex running Python {sys.version} is only compatible with cloudpickle up to 1.6.0. However currently installed cloudpickle version is {cv}"
+
+    if sys.version_info.minor <= 9:
         # Maximum cloudpickle version supported is 1.6.0 for Python < 3.9.
         if cv_maj > 1:
-            raise RuntimeError(f"Tuplex running Python {sys.version} is only compatible with cloudpickle up to 1.6.0. However found cloudpickle version {cv}")
+            raise RuntimeError(error_message)
     else:
         # Minimum cloudpickle version supported is 2.2.0 for Python 3.10+ (2.1.0 and 2.0.0 is buggy)
-        if (cv_maj == 2 and cv_min < 2):
-            raise RuntimeError(f"Tuplex running Python {sys.version} is only compatible with cloudpickle up to 2.2.0+. However found cloudpickle version {cv}")
+        if (cv_maj == 2 and cv_min < 2) or cv_maj < 2:
+            raise RuntimeError(error_message)

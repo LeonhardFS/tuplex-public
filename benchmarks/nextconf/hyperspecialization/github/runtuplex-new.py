@@ -179,8 +179,8 @@ def github_pipeline(ctx, input_pattern, s3_output_path, sm):
 # local worker version
 def run_with_tuplex(args):
 
-    LOCAL_WORKER_PATH='/home/leonhards/projects/tuplex-public/tuplex/cmake-build-release-w-cereal/dist/bin/tuplex-worker' # llvm9 version
-    LOCAL_WORKER_PATH = '/home/leonhards/projects/2nd-copy/tuplex/build/dist/bin/tuplex-worker/test' # llvm16 version
+    if not os.path.isfile(args.tuplex_worker_path):
+        raise ValueError(f"Could not find worker under {args.tuplex_worker_path}.")
 
     output_path = args.output_path
     input_pattern = args.input_pattern
@@ -241,7 +241,7 @@ def run_with_tuplex(args):
     conf = {"webui.enable": False,
             "backend": "worker",
             "experimental.worker.numWorkers": num_processes,
-            "experimental.worker.workerPath": LOCAL_WORKER_PATH,
+            "experimental.worker.workerPath": args.tuplex_worker_path,
             "aws.lambdaTimeout": 900,  # maximum allowed is 900s!
             "aws.httpThreadCount": 410,
             "aws.maxConcurrency": 410,
@@ -514,6 +514,7 @@ if __name__ == '__main__':
                         help='how many samples to use per strata')
     parser.add_argument('--strata-size', dest='strata_size', default=1024,
                         help='how many samples to use per strata')
+    parser.add_argument('--tuplex-worker-path', default=None, dest="tuplex_worker_path", help="specify worker path when executing in local mode.")
     parser.add_argument('--m', '--mode', dest='mode', choices=['tuplex', 'python'], default='tuplex', help='select whether to run benchmark using python baseline or tuplex')
     parser.add_argument('--input-pattern', default=None, dest='input_pattern', help='input files to read into github pipeline')
     parser.add_argument('--output-path', default=None, dest='output_path', help='where to store result of pipeline')
