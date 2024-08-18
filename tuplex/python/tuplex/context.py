@@ -21,7 +21,7 @@ import os
 import glob
 import sys
 import cloudpickle
-from tuplex.utils.common import flatten_dict, load_conf_yaml, stringify_dict, unflatten_dict, save_conf_yaml, in_jupyter_notebook, in_google_colab, is_in_interactive_mode, current_user, is_shared_lib, host_name, ensure_webui, pythonize_options, logging_callback, registerLoggingCallback
+from tuplex.utils.common import flatten_dict, load_conf_yaml, stringify_dict, unflatten_dict, save_conf_yaml, in_jupyter_notebook, in_google_colab, is_in_interactive_mode, current_user, is_shared_lib, host_name, ensure_webui, pythonize_options, logging_callback, registerLoggingCallback, check_cloudpickle_version
 import uuid
 import json
 from .metrics import Metrics
@@ -83,6 +83,8 @@ class Context:
         """
         runtime_path = os.path.join(os.path.dirname(__file__), 'libexec', 'tuplex_runtime')
         paths = glob.glob(runtime_path + '*')
+
+        check_cloudpickle_version()
 
         if len(paths) != 1:
             # filter based on type (runtime must be shared object!)

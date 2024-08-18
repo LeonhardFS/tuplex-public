@@ -180,7 +180,7 @@ def github_pipeline(ctx, input_pattern, s3_output_path, sm):
 def run_with_tuplex(args):
 
     LOCAL_WORKER_PATH='/home/leonhards/projects/tuplex-public/tuplex/cmake-build-release-w-cereal/dist/bin/tuplex-worker' # llvm9 version
-    LOCAL_WORKER_PATH = '/home/leonhards/projects/2nd-copy/tuplex/build/dist/bin/tuplex-worker' # llvm16 version
+    LOCAL_WORKER_PATH = '/home/leonhards/projects/2nd-copy/tuplex/build/dist/bin/tuplex-worker/test' # llvm16 version
 
     output_path = args.output_path
     input_pattern = args.input_pattern
@@ -453,7 +453,7 @@ def setup_logging(log_path:Optional[str]) -> None:
         handler = logging.FileHandler(log_path)
         formatter = logging.Formatter(LOG_FORMAT)
         handler.setFormatter(formatter)
-        handlers.append*handler
+        handlers.append(handler)
 
         # set up logging to file - see previous section for more details
     logging.basicConfig(level=logging.INFO,

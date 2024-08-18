@@ -940,3 +940,23 @@ def ensure_webui(options):
         # log gunicorn errors for local startup
         if os.path.isfile(gunicorn_logpath) and 'localhost' == webui_url:
             log_gunicorn_errors(gunicorn_logpath)
+
+def check_cloudpickle_version():
+    # check what the installed cloudpickle version is and compare to sys version because there are certain incompatibilities
+    import cloudpickle
+    import sys
+
+    cv = cloudpickle.__version__
+    cv_maj, cv_min, cv_patch = [int(v) for v in cv.split('.')]
+
+    if sys.version_info.major != 3:
+        raise RuntimeError("Tuplex is only compatible with Python 3.7+")
+
+    if sys.version.minor <= 9:
+        # Maximum cloudpickle version supported is 1.6.0 for Python < 3.9.
+        if cv_maj > 1:
+            raise RuntimeError(f"Tuplex running Python {sys.version} is only compatible with cloudpickle up to 1.6.0. However found cloudpickle version {cv}")
+    else:
+        # Minimum cloudpickle version supported is 2.2.0 for Python 3.10+ (2.1.0 and 2.0.0 is buggy)
+        if (cv_maj == 2 and cv_min < 2):
+            raise RuntimeError(f"Tuplex running Python {sys.version} is only compatible with cloudpickle up to 2.2.0+. However found cloudpickle version {cv}")
