@@ -6,6 +6,9 @@
 
 set -e pipefail
 
+# more detailed debugging
+set -euxo pipefail
+
 # get shell script location
 BASE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
@@ -94,40 +97,40 @@ mkdir -p ${RESULT_DIR}
 run_benchmarks() {
   run=$1
 
-  echo ">>> Running python baseline"
-  mode=python
-  ${PYTHON} runtuplex-new.py --mode python --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
-                             --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
-                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
-                             --result-path ${RESULT_DIR}/${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
-
-  echo ">>> Running tuplex with no hyper, no sparse structs"
-  mode=tuplex-global-structs
-  ${PYTHON} runtuplex-new.py --mode tuplex --no-hyper --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
-                             --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
-                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
-                             --result-path ${RESULT_DIR}/${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
-
-  echo ">>> Running tuplex with no hyper, generic dicts"
-  mode=tuplex-global-generic-dicts
-  ${PYTHON} runtuplex-new.py --mode tuplex --no-hyper --generic-dicts --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
-                            --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
-                            --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
-                            --result-path ${RESULT_DIR}/${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
-
-  echo ">>> Running tuplex with hyper, generic dicts"
-  mode=tuplex-hyper-generic-dicts
-  ${PYTHON} runtuplex-new.py --mode tuplex --no-hyper --generic-dicts --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
-                            --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
-                            --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
-                            --result-path ${RESULT_DIR}/${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
-
-  echo ">>> Running tuplex with no hyper, sparse structs"
-  mode=tuplex-global-sparse-structs
-  ${PYTHON} runtuplex-new.py --mode tuplex --no-hyper --sparse-structs --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
-                            --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
-                            --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
-                            --result-path ${RESULT_DIR}/${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
+#  echo ">>> Running python baseline"
+#  mode=python
+#  ${PYTHON} runtuplex-new.py --mode python --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
+#                             --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
+#                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
+#                             --result-path ${RESULT_DIR}/${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
+#
+#  echo ">>> Running tuplex with no hyper, no sparse structs"
+#  mode=tuplex-global-structs
+#  ${PYTHON} runtuplex-new.py --mode tuplex --no-hyper --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
+#                             --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
+#                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
+#                             --result-path ${RESULT_DIR}/${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
+#
+#  echo ">>> Running tuplex with no hyper, generic dicts"
+#  mode=tuplex-global-generic-dicts
+#  ${PYTHON} runtuplex-new.py --mode tuplex --no-hyper --generic-dicts --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
+#                            --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
+#                            --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
+#                            --result-path ${RESULT_DIR}/${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
+#
+#  echo ">>> Running tuplex with hyper, generic dicts"
+#  mode=tuplex-hyper-generic-dicts
+#  ${PYTHON} runtuplex-new.py --mode tuplex --no-hyper --generic-dicts --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
+#                            --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
+#                            --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
+#                            --result-path ${RESULT_DIR}/${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
+#
+#  echo ">>> Running tuplex with no hyper, sparse structs"
+#  mode=tuplex-global-sparse-structs
+#  ${PYTHON} runtuplex-new.py --mode tuplex --no-hyper --sparse-structs --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
+#                            --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
+#                            --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
+#                            --result-path ${RESULT_DIR}/${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
 
   echo ">>> Running tuplex with hyper, sparse structs"
   mode=tuplex-hyper-sparse-structs

@@ -261,6 +261,12 @@ namespace tuplex {
         co.set("tuplex.resolveWithInterpreterOnly", "false");
         co.set("tuplex.experimental.opportuneCompilation", "false");
 
+        // mimick settings
+        //    'sample.strataSize': strata_size,
+        //            'sample.samplesPerStrata': samples_per_strata,
+        co.set("sample.strataSize", "1024");
+        co.set("sample.samplesPerStrata", "10");
+
         // opportune compilation is still broken due to symbol registry, need to fix.
         assert(co.USE_EXPERIMENTAL_OPPORTUNE_COMPILATION() == false);
 
@@ -329,7 +335,7 @@ namespace tuplex {
         // different sampling mode options.
         auto tuplex_original = SamplingMode::FIRST_FILE | SamplingMode::FIRST_ROWS; // fastest, quickest tuplex sampling mode.
         // this one here is much more adequate.
-        auto first_last_both = SamplingMode::FIRST_FILE | SamplingMode::LAST_FILE | SamplingMode::FIRST_ROWS | SamplingMode::LAST_ROWS;
+        auto first_last_both = SamplingMode::FIRST_FILE | SamplingMode::LAST_FILE | SamplingMode::FIRST_ROWS | SamplingMode::LAST_ROWS | SamplingMode::MULTITHREADED;
 
         // auto sampling_mode = tuplex_original;
         auto sampling_mode = first_last_both;

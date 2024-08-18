@@ -1560,6 +1560,15 @@ namespace tuplex {
             PyDict_SetItem(dictObject,
                            python::PyString_FromString("tuplex.resolveWithInterpreterOnly"),
                            python::boolToPython(co.RESOLVE_WITH_INTERPRETER_ONLY()));
+            PyDict_SetItem(dictObject,
+                           python::PyString_FromString("tuplex.experimental.interchangeWithObjectFiles"),
+                           python::boolToPython(co.EXPERIMENTAL_INTERCHANGE_CODE_VIA_OBJECT_FILES()));
+            PyDict_SetItem(dictObject,
+                           python::PyString_FromString("tuplex.optimizer.sparsifyStructs"),
+                           python::boolToPython(co.OPT_SPARSIFY_STRUCTS()));
+            PyDict_SetItem(dictObject,
+                           python::PyString_FromString("tuplex.experimental.useGenericDicts"),
+                           python::boolToPython(co.EXPERIMENTAL_USE_GENERIC_DICTS()));
 
             PyDict_SetItem(dictObject,
                            python::PyString_FromString("tuplex.network.verifySSL"),

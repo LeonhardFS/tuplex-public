@@ -234,7 +234,10 @@ def run_with_tuplex(args):
     print('    constant-folding: {}'.format(use_constant_folding))
     print('    filter-promotion: {}'.format(use_filter_promotion))
     print('    null-value optimization: {}'.format(not args.no_nvo))
+    print(f'    sparse-structs: {use_sparse_structs}')
+    print(f'    generic-dicts: {use_generic_dicts}')
     print('    strata: {} per {}'.format(samples_per_strata, strata_size))
+    print(f'    worker: {args.tuplex_worker_path}')
     # load data
     tstart = time.time()
 

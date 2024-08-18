@@ -193,6 +193,23 @@ namespace tuplex {
 
             std::map<int, int> normalToGeneralMapping() const { return _normalToGeneralMapping; }
 
+            inline std::string info_string() const {
+                std::stringstream ss;
+                ss<<"Stage Planner active optimizations:\n";
+                std::vector<std::string> opt_names;
+                if(_useNVO)
+                    opt_names.push_back("null-value optimization");
+                if(_useConstantFolding)
+                    opt_names.push_back("constant-folding");
+                if(_useDelayedParsing)
+                    opt_names.push_back("delayed-parsing");
+                if(_useFilterPromo)
+                    opt_names.push_back("filter-promotion");
+                if(_useSparsifyStructs)
+                    opt_names.push_back("struct-sparsification");
+                ss<<opt_names;
+                return ss.str();
+            }
 
             // helper functions regarding row types
             /*!

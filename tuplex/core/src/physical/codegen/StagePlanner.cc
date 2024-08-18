@@ -1813,6 +1813,9 @@ namespace tuplex {
             planner.enableConstantFoldingOptimization();
         if(conf.sparsifyStructs)
             planner.enableSparsifyStructsOptimization();
+
+        logger.info("Hyperspecializer using " + planner.info_string());
+
         planner.optimize();
         path_ctx.inputNode = planner.input_node();
         path_ctx.operators = planner.optimized_operators();
