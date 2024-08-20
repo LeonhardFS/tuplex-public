@@ -151,7 +151,7 @@ namespace tuplex {
 #endif
         ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(opt_level);
 
-        // Optimize the IR!F
+        // Optimize the IR!
         MPM.run(M, MAM);
     }
 

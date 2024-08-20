@@ -1814,21 +1814,7 @@ namespace tuplex {
 
         // node need to find some smart way to QUICKLY detect whether the optimization can be applied or should be rather skipped...
         codegen::StagePlanner planner(inputNode, operators, conf.policy.normalCaseThreshold);
-
-
-        planner.enableAll();
-        planner.disableAll();
-        if(conf.nullValueOptimization)
-            planner.enableNullValueOptimization();
-        if(conf.filterPromotion)
-            planner.enableFilterPromoOptimization();
-        planner.enableDelayedParsingOptimization();
-        if(enable_cf)
-            planner.enableConstantFoldingOptimization();
-        if(conf.sparsifyStructs)
-            planner.enableSparsifyStructsOptimization();
-
-        logger.info("Hyperspecializer using " + planner.info_string());
+        apply_stage_builder_conf_to_planner(conf, planner);
 
         planner.optimize();
         path_ctx.inputNode = planner.input_node();

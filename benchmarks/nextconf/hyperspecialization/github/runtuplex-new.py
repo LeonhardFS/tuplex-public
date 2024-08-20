@@ -268,10 +268,10 @@ def run_with_tuplex(args):
             "optimizer.nullValueOptimization": True,
             "tuplex.experimental.useGenericDicts":use_generic_dicts,
             "tuplex.optimizer.sparsifyStructs":use_sparse_structs,
-            "resolveWithInterpreterOnly": False,
+            # "resolveWithInterpreterOnly": False,
+            "resolveWithInterpreterOnly":True, # avoid slow path compilation
             "optimizer.constantFoldingOptimization": use_constant_folding,
             "optimizer.filterPromotion": use_filter_promotion,
-
             "optimizer.selectionPushdown": True,
             "useInterpreterOnly": args.python_mode,
             "experimental.forceBadParseExceptFormat": not args.use_internal_fmt}

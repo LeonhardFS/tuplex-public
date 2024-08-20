@@ -95,6 +95,9 @@ RESULT_DIR=./local-exp/github/
 OUTPUT_PATH=${RESULT_DIR}/output
 mkdir -p ${RESULT_DIR}
 
+# For test purposes, can invoke basically
+# python3 runtuplex-new.py --mode tuplex --sparse-structs --input-pattern "/hot/data/github_daily/*.json" --output-path ./local-exp/github/hyper --tuplex-worker-path ./build/dist/bin/tuplex-worker --scratch-dir ./local-exp/scratch
+
 # helper function
 run_benchmarks() {
   run=$1

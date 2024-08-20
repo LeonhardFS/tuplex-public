@@ -94,6 +94,23 @@ namespace tuplex {
 //                  _generateNormalCaseCodePath(generateSpecializedNormalCaseCodePath) {
 //        }
 
+        void apply_stage_builder_conf_to_planner(const StageBuilderConfiguration& conf, StagePlanner& planner) {
+            auto& logger = Logger::instance().logger("logical optimizer");
+
+            planner.disableAll();
+            if(conf.nullValueOptimization)
+                planner.enableNullValueOptimization();
+            if(conf.filterPromotion)
+                planner.enableFilterPromoOptimization();
+            planner.enableDelayedParsingOptimization();
+            if(conf.constantFoldingOptimization)
+                planner.enableConstantFoldingOptimization();
+            if(conf.sparsifyStructs)
+                planner.enableSparsifyStructsOptimization();
+
+            logger.info("Stage optimizer using " + planner.info_string());
+        }
+
         StageBuilder::StageBuilder(int64_t stage_number,
                                    bool rootStage,
                                    const StageBuilderConfiguration &conf) : _stageNumber(stage_number),
@@ -1741,13 +1758,7 @@ namespace tuplex {
 
             // node need to find some smart way to QUICKLY detect whether the optimization can be applied or should be rather skipped...
             codegen::StagePlanner planner(inputNode, operators, conf.policy.normalCaseThreshold);
-            planner.disableAll();
-            if(conf.nullValueOptimization)
-                planner.enableNullValueOptimization();
-            if(conf.constantFoldingOptimization)
-                planner.enableConstantFoldingOptimization();
-            if(conf.sparsifyStructs)
-                planner.enableSparsifyStructsOptimization();
+            apply_stage_builder_conf_to_planner(conf, planner);
             planner.optimize();
 
             // use optimized or non-optimized schema
