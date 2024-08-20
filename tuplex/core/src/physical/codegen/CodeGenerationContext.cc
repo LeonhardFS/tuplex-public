@@ -209,6 +209,7 @@ namespace tuplex {
 
                     auto mop = new MapOperator(operators.back(), udf, columnNames);
                     mop->setID(id);
+                    mop->setName(json_op["name"].get<std::string>());
 
                     // set other important fields
                     mop->setOutputColumns(json_op["outputColumns"].get<std::vector<std::string>>());

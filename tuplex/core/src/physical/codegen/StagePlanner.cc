@@ -1441,6 +1441,12 @@ namespace tuplex {
                 r_conf.columns = last_columns;
                 r_conf.remove_existing_annotations = true; // remove all annotations (except the column restore ones?)
 
+                {
+                    std::stringstream ss;
+                    ss<<__FILE__<<":"<<__LINE__<<" node "<<node->name()<<" retype with type: "<<last_rowtype.desc()<<" columns: "<<last_columns;
+                    logger.debug(ss.str());
+                }
+
                 switch(node->type()) {
                     // handled above...
                     //  case LogicalOperatorType::PARALLELIZE: {
@@ -1481,8 +1487,16 @@ namespace tuplex {
                         // set FIRST the parent. Why? because operators like ignore depend on parent schema
                         // therefore, this needs to get updated first.
                         op->setParent(lastParent); // need to call this before retype, so that columns etc. can be utilized.
-                        if(!op->retype(r_conf))
-                            throw std::runtime_error("could not retype operator " + op->name());
+                        if(!op->retype(r_conf)) {
+                            std::stringstream ss;
+                            ss<<__FILE__<<":"<<__LINE__<<" Failed retype operator " + op->name()<<"\n";
+                            ss<<"operator columns: "<<columns_before<<"\n";
+                            if(hasUDF(op.get())) {
+                                auto udfop = std::dynamic_pointer_cast<UDFOperator>(op);
+                                ss<<"UDF:\n"<<udfop->getUDF().getCode()<<"\n";
+                            }
+                            throw std::runtime_error(ss.str());
+                        }
                         opt_ops.push_back(op);
                         opt_ops.back()->setID(node->getID());
 #ifdef VERBOSE_BUILD
@@ -2729,7 +2743,12 @@ namespace tuplex {
 
             // if majType of sample is different from input node type input sample -> retype!
             // also need to restrict type first!
-            logger.debug("performing Retyping");
+            {
+                std::stringstream ss;
+                ss<<__FILE__<<":"<<__LINE__<<" Performing Retyping with type: "<<projectedMajType.desc()<<" columns: "<<projectedColumns;
+                logger.debug(ss.str());
+            }
+
             auto optimized_operators = retypeUsingOptimizedInputSchema(projectedMajType, projectedColumns);
 
             // overwrite internal operators to apply subsequent optimizations

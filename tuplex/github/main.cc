@@ -264,8 +264,10 @@ namespace tuplex {
         // mimick settings
         //    'sample.strataSize': strata_size,
         //            'sample.samplesPerStrata': samples_per_strata,
-        co.set("sample.strataSize", "1024");
-        co.set("sample.samplesPerStrata", "10");
+        // --> Python solution produces different results??
+        co.set("sample.maxDetectionMemory", "32MB"); // ???
+        co.set("sample.strataSize", "1024"); // ???
+        co.set("sample.samplesPerStrata", "10"); // ???
 
         // opportune compilation is still broken due to symbol registry, need to fix.
         assert(co.USE_EXPERIMENTAL_OPPORTUNE_COMPILATION() == false);
