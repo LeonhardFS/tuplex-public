@@ -165,6 +165,17 @@ namespace tuplex {
             node->accept(av);
         }
 
+        bool StagePlanner::input_schema_contains_structs(const Schema& schema) {
+            auto input_row_type_as_tuple = schema.getRowType();
+            if(input_row_type_as_tuple.isRowType())
+                input_row_type_as_tuple = input_row_type_as_tuple.get_columns_as_tuple_type();
+
+            for(const auto& col_type : input_row_type_as_tuple.parameters())
+                if(col_type.withoutOption().isStructuredDictionaryType() || col_type.withoutOption().isSparseStructuredDictionaryType())
+                   return true;
+            return false;
+        }
+
         std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::sparsifyStructs(std::vector<Row> sample,
                                                                                     const option<std::vector<std::string>>& sample_columns,
                                                                                     bool relax_for_sample) {
@@ -184,15 +195,9 @@ namespace tuplex {
                 return vec_prepend(_inputNode, _operators);
             }
 
-            auto input_row_type_as_tuple = _inputNode->getOutputSchema().getRowType();
-            if(input_row_type_as_tuple.isRowType())
-                input_row_type_as_tuple = input_row_type_as_tuple.get_columns_as_tuple_type();
+            // TODO: could sparsify within operators as well.
 
-            // @TODO: could sparsify across operators as well...
-            auto struct_dict_found = false;
-            for(const auto& col_type : input_row_type_as_tuple.parameters())
-                if(col_type.withoutOption().isStructuredDictionaryType() || col_type.withoutOption().isSparseStructuredDictionaryType())
-                    struct_dict_found = true;
+            auto struct_dict_found = input_schema_contains_structs(_inputNode->getOutputSchema());
 
             if(!struct_dict_found) {
                 logger.error("Skipping sparsify-struct pass, because no struct dicts found in input operator.");
@@ -635,6 +640,113 @@ namespace tuplex {
             }
 
             return opt_ops;
+        }
+
+        size_t struct_field_count(const python::Type& t, bool recurse =true) {
+            if(!t.isStructuredDictionaryType() && !t.isSparseStructuredDictionaryType())
+                return 1;
+
+            if(!recurse)
+                return t.get_struct_pairs().size();
+
+            size_t field_count = 0;
+            for(auto kv_pair : t.get_struct_pairs()) {
+                field_count += struct_field_count(kv_pair.valueType.withoutOption(), recurse);
+            }
+            return field_count;
+        }
+
+        std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::simplifyLargeStructs(size_t max_field_count) {
+            using namespace std;
+
+            auto& logger = Logger::instance().logger("specializing stage optimizer");
+
+            // check whether input node contains any struct types.
+            auto struct_dict_found = input_schema_contains_structs(_inputNode->getOutputSchema());
+
+            if(!struct_dict_found) {
+                logger.info("Skipping simplify-large-structs pass, because no struct dicts found in input operator.");
+                return vec_prepend(_inputNode, _operators);
+            }
+
+            // structs are found, for each struct count now depth and then simplify
+            auto columns = _inputNode->columns();
+            auto tuple_row_type = _inputNode->getOutputSchema().getRowType();
+            if(tuple_row_type.isRowType())
+                tuple_row_type = tuple_row_type.get_columns_as_tuple_type();
+            assert(columns.size() == tuple_row_type.parameters().size());
+
+            auto col_types = tuple_row_type.parameters();
+            for(unsigned i = 0; i < columns.size(); ++i) {
+                auto original_col_type = col_types[i];
+                auto col_type = original_col_type.withoutOption();
+                if(col_type.isStructuredDictionaryType() || col_type.isSparseStructuredDictionaryType()) {
+                    auto col_field_count = struct_field_count(col_type);
+                    std::stringstream ss;
+                    ss<<"Column "<<columns[i]<<": "<<pluralize(col_field_count, "field");
+                    if(col_field_count > max_field_count) {
+                        ss<<" --> exceeds maximum field count of "<<max_field_count<<", substituting with generic dict.";
+                        if(original_col_type.isOptionType()) {
+                            col_types[i] = python::Type::makeOptionType(python::Type::GENERICDICT);
+                        } else {
+                            col_types[i] = python::Type::GENERICDICT;
+                        }
+                    }
+                    logger.info(ss.str());
+                }
+            }
+
+            // retype if different!
+            auto new_row_type = python::Type::makeRowType(col_types, columns);
+            if(new_row_type.get_columns_as_tuple_type() != tuple_row_type) {
+                // TOOD: retype.
+
+                // Overwrite input node with new sparse type & propagate through operators.
+                auto inputNode = _inputNode->clone(false);
+                RetypeConfiguration conf;
+                conf.row_type = new_row_type;
+                if(new_row_type.isRowType()) {
+                    conf.row_type = new_row_type.get_columns_as_tuple_type();
+                    conf.columns = new_row_type.get_column_names();
+                }
+                conf.is_projected = true;
+
+                // no columns change (only their types), so no need to reproject checks.
+                std::vector<std::shared_ptr<LogicalOperator>> opt_ops;
+                inputNode->retype(conf);
+                std::dynamic_pointer_cast<FileInputOperator>(inputNode)->useNormalCase();
+                opt_ops.push_back(inputNode);
+
+                auto lastParent = inputNode;
+                // retype the other operators.
+                for(const auto& op : _operators) {
+                    // clone operator & specialize!
+                    auto opt_op = op->clone(false);
+                    opt_op->setParent(lastParent);
+                    opt_op->setID(op->getID());
+                    if(hasUDF(opt_op.get())) {
+                        // important.
+                        reset_annotations(std::dynamic_pointer_cast<UDFOperator>(opt_op)->getUDF().getAnnotatedAST().getFunctionAST());
+                    }
+
+                    // before row type
+                    std::stringstream ss;
+                    ss<<op->name()<<" (before): "<<op->getInputSchema().getRowType().desc()<<" -> "<<op->getOutputSchema().getRowType().desc()<<endl;
+                    // retype
+                    ss<<"retyping with parent's output schema: "<<lastParent->getOutputSchema().getRowType().desc()<<endl;
+                    opt_op->retype(lastParent->getOutputSchema().getRowType(), true);
+                    // after retype
+                    ss<<opt_op->name()<<" (after): "<<opt_op->getInputSchema().getRowType().desc()<<" -> "<<opt_op->getOutputSchema().getRowType().desc();
+                    logger.debug(ss.str());
+                    opt_ops.push_back(opt_op);
+                    lastParent = opt_op;
+                }
+
+                return opt_ops;
+            }
+
+            // no change.
+            return vec_prepend(_inputNode, _operators);
         }
 
         std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::constantFoldingOptimization(const std::vector<Row>& sample) {
@@ -1150,7 +1262,8 @@ namespace tuplex {
             }
 
             // retype using sample, need to do this initially.
-            retypeOperators(sample, sample_columns, use_sample);
+            if(use_sample)
+                retypeOperators(sample, sample_columns, use_sample);
 
             // check now whether filters can be promoted or not
             if(_useFilterPromo) {
@@ -1239,6 +1352,7 @@ namespace tuplex {
                 }
             }
 
+
             // perform struct sparsification
             if(_useSparsifyStructs) {
                 if(!use_sample) {
@@ -1263,6 +1377,20 @@ namespace tuplex {
                     }
                 }
             }
+
+            // simplify large structs (threshold 20?)
+            // this is necessary because large structs will kill the performance of the LLVM optimizer (in its default -O2 setting).
+            // This pass should come after sparsification to allow large structs to get sparsified first.
+            {
+                optimized_operators = simplifyLargeStructs(20);
+
+                // overwrite internal operators to apply subsequent optimizations
+                _inputNode = _inputNode ? optimized_operators.front() : nullptr;
+                _operators = _inputNode ? vector<shared_ptr<LogicalOperator>>{optimized_operators.begin() + 1,
+                                                                              optimized_operators.end()}
+                                        : optimized_operators;
+            }
+
 
             // can filters get pushed down even further? => check! constant folding may remove code!
         }
@@ -1822,6 +1950,8 @@ namespace tuplex {
         path_ctx.checks = planner.checks();
 
         assert(inputNode->getID() == path_ctx.inputNode->getID());
+
+        // TODO: refactor together with code in StageBuilder.
 
         // output schema: the schema this stage yields ultimately after processing
         // input schema: the (optimized/projected, normal case) input schema this stage reads from (CSV, Tuplex, ...)
@@ -2677,50 +2807,51 @@ namespace tuplex {
 
             }
 
-
-            assert(majType.isTupleType());
-            assert(projectedMajType.isTupleType());
-            size_t num_columns_before_pushdown = majType.parameters().size();
-            size_t num_columns_after_pushdown = projectedMajType.parameters().size();
+            if(use_sample) {
+                assert(majType.isTupleType());
+                assert(projectedMajType.isTupleType());
+                size_t num_columns_before_pushdown = majType.parameters().size();
+                size_t num_columns_after_pushdown = projectedMajType.parameters().size();
 
 #ifndef NDEBUG
-            // check how many rows adhere to the normal-case type.
-            // (can upcast to normal-case type)
-            size_t num_passing = 0;
-            std::vector<Row> majRows;
-            for(auto row: sample) {
-                auto row_tuple_type = row.getRowType();
-                if(row_tuple_type.isRowType())
-                    row_tuple_type = row_tuple_type.get_columns_as_tuple_type();
-                if(python::canUpcastToRowType(deoptimizedType(row_tuple_type), deoptimizedType(majType))) {
-                    num_passing++;
-                    majRows.push_back(row);
+                // check how many rows adhere to the normal-case type.
+                // (can upcast to normal-case type)
+                size_t num_passing = 0;
+                std::vector<Row> majRows;
+                for(auto row: sample) {
+                    auto row_tuple_type = row.getRowType();
+                    if(row_tuple_type.isRowType())
+                        row_tuple_type = row_tuple_type.get_columns_as_tuple_type();
+                    if(python::canUpcastToRowType(deoptimizedType(row_tuple_type), deoptimizedType(majType))) {
+                        num_passing++;
+                        majRows.push_back(row);
+                    }
                 }
-            }
-            std::stringstream sample_stream;
-            for(const auto& row: sample) {
-                auto row_as_str = row.toJsonString(sample_columns); //row.toPythonString();
-                sample_stream<<row_as_str<<"\n";
-            }
+                std::stringstream sample_stream;
+                for(const auto& row: sample) {
+                    auto row_as_str = row.toJsonString(sample_columns); //row.toPythonString();
+                    sample_stream<<row_as_str<<"\n";
+                }
 
-            std::string sample_dbg_save_path = "extracted_sample.ndjson";
-            stringToFile(sample_dbg_save_path, sample_stream.str());
+                std::string sample_dbg_save_path = "extracted_sample.ndjson";
+                stringToFile(sample_dbg_save_path, sample_stream.str());
 
-            logger.debug("saved obtained sample to " + sample_dbg_save_path + " as ndjson");
-            logger.debug("Of " + pluralize(sample.size(), "sample row") + ", " + std::to_string(num_passing) + " adhere to detected majority type.");
-            for(unsigned i = 0; i < std::min(majRows.size(), 5ul); ++i)
-                std::cout<<majRows[i].toPythonString()<<std::endl;
+                logger.debug("saved obtained sample to " + sample_dbg_save_path + " as ndjson");
+                logger.debug("Of " + pluralize(sample.size(), "sample row") + ", " + std::to_string(num_passing) + " adhere to detected majority type.");
+                for(unsigned i = 0; i < std::min(majRows.size(), 5ul); ++i)
+                    std::cout<<majRows[i].toPythonString()<<std::endl;
 
-            // check if any forkevents are found in the sample
-            std::vector<std::string> rows_as_python_strings;
-            size_t fork_events_found = 0;
-            for(auto row : sample) {
-                rows_as_python_strings.push_back(row.toPythonString());
-                if(rows_as_python_strings.back().find("ForkEvent") != std::string::npos)
-                    fork_events_found++;
-            }
-            std::cout<<"Found forkevents: "<<fork_events_found<<"x"<<std::endl;
+                // check if any forkevents are found in the sample
+                std::vector<std::string> rows_as_python_strings;
+                size_t fork_events_found = 0;
+                for(auto row : sample) {
+                    rows_as_python_strings.push_back(row.toPythonString());
+                    if(rows_as_python_strings.back().find("ForkEvent") != std::string::npos)
+                        fork_events_found++;
+                }
+                std::cout<<"Found forkevents: "<<fork_events_found<<"x"<<std::endl;
 #endif
+            }
 
 
             // the detected majority type here is BEFORE projection pushdown.

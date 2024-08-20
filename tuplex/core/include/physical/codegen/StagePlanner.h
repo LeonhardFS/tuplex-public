@@ -310,6 +310,13 @@ namespace tuplex {
                     const option<std::vector<std::string>>& sample_columns=tuplex::option<std::vector<std::string>>::none,
                     bool relax_for_sample = true);
 
+            /*!
+             * optimization pass to convert very large struct / sparse struct to generic dict if (nested) max_field count is exceeded.
+             * @param max_field_count
+             * @return retyped & reoptimized operators.
+             */
+            std::vector<std::shared_ptr<LogicalOperator>> simplifyLargeStructs(size_t max_field_count);
+
             bool retypeOperators(const std::vector<Row>& sample,
                                  const std::vector<std::string>& sample_columns,
                                  bool use_sample);
@@ -347,6 +354,8 @@ namespace tuplex {
             static std::vector<size_t> get_accessed_columns(const std::vector<std::shared_ptr<LogicalOperator>>& ops);
 
             bool validatePipeline();
+
+            bool input_schema_contains_structs(const Schema& schema);
         };
     }
 
