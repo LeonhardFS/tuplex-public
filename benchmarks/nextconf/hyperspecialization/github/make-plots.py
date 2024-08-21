@@ -201,4 +201,4 @@ if __name__ == '__main__':
     plot_breakdown(df, os.path.join(args.output_dir, 'tuplex-hyper-vs-global-breakdown.png'))
 
     logging.info("Plotting full hyper mode vs. Python per file")
-    plot_per_file_vs_python(df, 'tuplex-hyper-sparse-structs', os.path.join(args.output_dir, 'tuplex-hyper-sparse-structs.png'))
+    plot_per_file_vs_python(df, 'tuplex-hyper-sparse-structs', os.path.join(args.output_dir, 'tuplex-hyper-per-file-vs-python.png'))
