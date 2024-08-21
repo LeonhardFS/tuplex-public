@@ -180,4 +180,7 @@ done
 # First, combine results into single ndjson file
 ./combine-results.py ${RESULT_DIR}/results/ ${RESULT_DIR}/combined.ndjson
 
+# Second, run plots
+./make-plots.py ${RESULT_DIR}/combined.ndjson ${RESULT_DIR}/plots/
+
 # TODO: other frameworks (Ray (?), PySpark (?), Pandas (?), lithops (?))
