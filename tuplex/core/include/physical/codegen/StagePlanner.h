@@ -130,7 +130,8 @@ namespace tuplex {
                          const std::vector<std::shared_ptr<LogicalOperator>>& operators,
                          double nc_threshold) : _inputNode(inputNode),
                          _operators(operators), _nc_threshold(nc_threshold),
-                         _useNVO(false), _useConstantFolding(false), _useDelayedParsing(false), _useSparsifyStructs(false) {
+                         _useNVO(false), _useConstantFolding(false), _useDelayedParsing(false),
+                         _useSparsifyStructs(false), _simplifyLargeStructs(false), _largeStructTreshold(0) {
                 assert(inputNode);
                 for(auto op : operators)
                     assert(op);
@@ -175,6 +176,7 @@ namespace tuplex {
                 enableDelayedParsingOptimization();
                 enableFilterPromoOptimization();
                 enableSparsifyStructsOptimization();
+                enableSimplifyLargeStructs(20);
             }
 
             void disableAll() {
@@ -183,6 +185,8 @@ namespace tuplex {
                 _useDelayedParsing = false;
                 _useFilterPromo = false;
                 _useSparsifyStructs = false;
+                _simplifyLargeStructs = true;
+                _largeStructTreshold = 0;
             }
 
             void enableNullValueOptimization() { _useNVO = true; }
@@ -190,6 +194,10 @@ namespace tuplex {
             void enableDelayedParsingOptimization() { _useDelayedParsing = true; }
             void enableFilterPromoOptimization() { _useFilterPromo = true; }
             void enableSparsifyStructsOptimization() { _useSparsifyStructs = true; }
+            void enableSimplifyLargeStructs(size_t threshold) {
+                _simplifyLargeStructs = true;
+                _largeStructTreshold = threshold;
+            }
 
             std::map<int, int> normalToGeneralMapping() const { return _normalToGeneralMapping; }
 
@@ -207,6 +215,8 @@ namespace tuplex {
                     opt_names.push_back("filter-promotion");
                 if(_useSparsifyStructs)
                     opt_names.push_back("struct-sparsification");
+                if(_simplifyLargeStructs)
+                    opt_names.push_back("simplify-large-structs[th="+std::to_string(_largeStructTreshold)+"]");
                 ss<<opt_names;
                 return ss.str();
             }
@@ -277,6 +287,8 @@ namespace tuplex {
             bool _useDelayedParsing;
             bool _useFilterPromo;
             bool _useSparsifyStructs;
+            bool _simplifyLargeStructs;
+            size_t _largeStructTreshold;
 
             // helper when normal-case is specialized to yield less rows than general case
             std::map<int, int> _normalToGeneralMapping;

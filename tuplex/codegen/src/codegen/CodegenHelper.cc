@@ -1099,10 +1099,12 @@ namespace tuplex {
         }
 
         void codegen_debug_printf(const IRBuilder& builder, const std::string& message) {
+#ifndef NDEBUG
             auto printf_func = printf_prototype(builder.getContext(), builder.GetInsertBlock()->getModule());
             llvm::Value *sConst = builder.CreateGlobalStringPtr(message);
             llvm::Value *sFormat = builder.CreateGlobalStringPtr("%s\n");
             builder.CreateCall(printf_func, {sFormat, sConst});
+#endif
         }
 
 #ifdef USE_YYJSON_INSTEAD

@@ -73,8 +73,8 @@ python3 validate.py "./local-exp/python-baseline/github/output" "./local-exp/tup
 echo "validation succeeded!"
 
 
-# run a couple runs here
-NUM_RUNS=5
+# Run a couple runs here.
+NUM_RUNS=${NUM_RUNS:-5}
 
 for ((r = 1; r <= NUM_RUNS; r++)); do
   echo "-- RUN ${r}/${NUM_RUNS}"

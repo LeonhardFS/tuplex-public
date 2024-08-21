@@ -25,6 +25,7 @@ namespace tuplex {
             bool filterPromotion; // whether to propagate filters to become checks, i.e. manipulate the sample to be only rows that pass the filter.
             bool sparsifyStructs; // whether to sparsify struct dicts.
 
+            option<size_t> simplifyLargeStructs; // if not ::none, then use this threshold and enable optimization
 
             bool pure_python_mode; // whether to generate only python code
 
@@ -47,6 +48,7 @@ namespace tuplex {
                                           pure_python_mode(false),
                                           exceptionSerializationMode(ExceptionSerializationMode::SERIALIZE_AS_GENERAL_CASE),
                                           sampling_size(0),
+                                          simplifyLargeStructs(option<size_t>::none),
                                           use_sample(true) {}
 
             // update with context option object
@@ -61,6 +63,12 @@ namespace tuplex {
                 pure_python_mode = co.PURE_PYTHON_MODE();
                 sampling_size = co.SAMPLE_MAX_DETECTION_MEMORY();
                 sparsifyStructs = co.OPT_SPARSIFY_STRUCTS();
+
+                if(co.OPT_SIMPLIFY_LARGE_STRUCTS()) {
+                    simplifyLargeStructs = co.OPT_SIMPLIFY_LARGE_STRUCTS_THRESHOLD();
+                } else {
+                    simplifyLargeStructs = option<size_t>::none;
+                }
 
                 // from options, infer
                 if(co.EXPERIMENTAL_FORCE_BAD_PARSE_EXCEPT_FORMAT())

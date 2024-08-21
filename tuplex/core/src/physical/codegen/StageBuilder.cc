@@ -107,6 +107,8 @@ namespace tuplex {
                 planner.enableConstantFoldingOptimization();
             if(conf.sparsifyStructs)
                 planner.enableSparsifyStructsOptimization();
+            if(conf.simplifyLargeStructs.has_value())
+                planner.enableSimplifyLargeStructs(conf.simplifyLargeStructs.value());
 
             logger.info("Stage optimizer using " + planner.info_string());
         }
@@ -2101,39 +2103,44 @@ namespace tuplex {
 
                 if(gen_slow_code) {
 
-                    // TODO: safeguard this!
-                    // apply to slow path the simplify-large-struct pass in order to save compilation time on the client.
-                    StagePlanner planner(ctx.slowPathContext.inputNode, ctx.slowPathContext.operators, 0.5);
-                    planner.disableAll();
-                    planner.optimize(false);
                     auto path_ctx = ctx.slowPathContext;
-                    path_ctx.inputNode = planner.input_node();
-                    path_ctx.operators = planner.optimized_operators();
-                    path_ctx.checks = planner.checks();
+                    if(backend->context().getOptions().OPT_SIMPLIFY_LARGE_STRUCTS()) {
+                        auto threshold = backend->context().getOptions().OPT_SIMPLIFY_LARGE_STRUCTS_THRESHOLD();
+                        logger.info("Applying simplify-large-structs(threshold=" + std::to_string(threshold) + ") to slow compiled code path.");
 
+                        // apply to slow path the simplify-large-struct pass in order to save compilation time on the client.
+                        StagePlanner planner(ctx.slowPathContext.inputNode, ctx.slowPathContext.operators, 0.5);
+                        planner.disableAll();
 
-                    // output schema: the schema this stage yields ultimately after processing
-                    // input schema: the (optimized/projected, normal case) input schema this stage reads from (CSV, Tuplex, ...)
-                    // read schema: the schema to read from (specialized) but unprojected.
-                    if(path_ctx.inputNode->type() == LogicalOperatorType::FILEINPUT) {
-                        auto fop = std::dynamic_pointer_cast<FileInputOperator>(path_ctx.inputNode);
-                        path_ctx.inputSchema = fop->getOptimizedOutputSchema();
-                        path_ctx.readSchema = fop->getOptimizedInputSchema(); // when null-value opt is used, then this is different! hence apply!
-                        path_ctx.columnsToRead = fop->columnsToSerialize();
-                        // print out columns & types!
-                        auto col_types = path_ctx.inputSchema.getRowType().isRowType() ? path_ctx.inputSchema.getRowType().get_column_types() : path_ctx.inputSchema.getRowType().parameters();
-                        assert(fop->columns().size() == col_types.size());
-                        for(unsigned i = 0; i < fop->columns().size(); ++i) {
-                            std::cout<<"col "<<i<<" (" + fop->columns()[i] + ")"<<": "<<col_types[i].desc()<<std::endl;
+                        planner.enableSimplifyLargeStructs(threshold);
+                        planner.optimize(false);
+                        path_ctx.inputNode = planner.input_node();
+                        path_ctx.operators = planner.optimized_operators();
+                        path_ctx.checks = planner.checks();
+
+                        // output schema: the schema this stage yields ultimately after processing
+                        // input schema: the (optimized/projected, normal case) input schema this stage reads from (CSV, Tuplex, ...)
+                        // read schema: the schema to read from (specialized) but unprojected.
+                        if(path_ctx.inputNode->type() == LogicalOperatorType::FILEINPUT) {
+                            auto fop = std::dynamic_pointer_cast<FileInputOperator>(path_ctx.inputNode);
+                            path_ctx.inputSchema = fop->getOptimizedOutputSchema();
+                            path_ctx.readSchema = fop->getOptimizedInputSchema(); // when null-value opt is used, then this is different! hence apply!
+                            path_ctx.columnsToRead = fop->columnsToSerialize();
+                            // print out columns & types!
+                            auto col_types = path_ctx.inputSchema.getRowType().isRowType() ? path_ctx.inputSchema.getRowType().get_column_types() : path_ctx.inputSchema.getRowType().parameters();
+                            assert(fop->columns().size() == col_types.size());
+                            for(unsigned i = 0; i < fop->columns().size(); ++i) {
+                                std::cout<<"col "<<i<<" (" + fop->columns()[i] + ")"<<": "<<col_types[i].desc()<<std::endl;
+                            }
+
+                        } else {
+                            path_ctx.inputSchema = path_ctx.inputNode->getOutputSchema();
+                            path_ctx.readSchema = Schema::UNKNOWN; // not set, b.c. not a reader...
+                            path_ctx.columnsToRead = {};
                         }
 
-                    } else {
-                        path_ctx.inputSchema = path_ctx.inputNode->getOutputSchema();
-                        path_ctx.readSchema = Schema::UNKNOWN; // not set, b.c. not a reader...
-                        path_ctx.columnsToRead = {};
+                        path_ctx.outputSchema = path_ctx.operators.back()->getOutputSchema();
                     }
-
-                    path_ctx.outputSchema = path_ctx.operators.back()->getOutputSchema();
 
                     // if no separate fast path is generated, use as normal-case the current path.
                     if(!gen_fast_code)

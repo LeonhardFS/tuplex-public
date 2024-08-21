@@ -269,13 +269,20 @@ def run_with_tuplex(args):
             "tuplex.experimental.useGenericDicts":use_generic_dicts,
             "tuplex.optimizer.sparsifyStructs":use_sparse_structs,
             # "resolveWithInterpreterOnly": False,
-            "resolveWithInterpreterOnly":True, # avoid slow path compilation
+            "resolveWithInterpreterOnly": False, # use compiled slow path in addition.
             "optimizer.constantFoldingOptimization": use_constant_folding,
             "optimizer.filterPromotion": use_filter_promotion,
             "optimizer.selectionPushdown": True,
+            "optimizer.simplifyLargeStructs": False,
+            "optimizer.simplifyLargeStructs.threshold": 20,
             "useInterpreterOnly": args.python_mode,
             "experimental.forceBadParseExceptFormat": not args.use_internal_fmt}
 
+    # In hyper mode to avoid long LLVM IR optimization times, enable simplifyLargeStructs optimization. Deactivate it for global sparse structs,
+    # as this mode specifically needs to measure how badly global structs affect everything.
+    if use_hyper_specialization:
+        conf["optimizer.simplifyLargeStructs"] = True
+        # leave threshold as above.
 
     # if os.path.exists('tuplex_config.json'):
     #     with open('tuplex_config.json') as fp:
@@ -521,7 +528,7 @@ if __name__ == '__main__':
     parser.add_argument('--internal-fmt', dest='use_internal_fmt',
                         help='if active, use the internal tuplex storage format for exceptions, no CSV/JSON format optimization',
                         action='store_true')
-    parser.add_argument('--samples-per-strata', dest='samples_per_strata', default=10,
+    parser.add_argument('--samples-per-strata', dest='samples_per_strata', default=1, # use 1 instead of 10 to speed up hyperspecialization.
                         help='how many samples to use per strata')
     parser.add_argument('--strata-size', dest='strata_size', default=1024,
                         help='how many samples to use per strata')

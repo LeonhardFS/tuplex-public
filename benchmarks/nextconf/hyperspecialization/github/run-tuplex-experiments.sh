@@ -107,42 +107,42 @@ run_benchmarks() {
   ${PYTHON} runtuplex-new.py --mode python --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
                              --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
                              --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
-                             --result-path ${RESULT_DIR}/${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
+                             --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
 
   echo ">>> Running tuplex with no hyper, no sparse structs"
   mode=tuplex-global-structs
   ${PYTHON} runtuplex-new.py --mode tuplex --no-hyper --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
                              --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
                              --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
-                             --result-path ${RESULT_DIR}/${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
+                             --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
 
   echo ">>> Running tuplex with no hyper, generic dicts"
   mode=tuplex-global-generic-dicts
   ${PYTHON} runtuplex-new.py --mode tuplex --no-hyper --generic-dicts --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
                             --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
-                            --result-path ${RESULT_DIR}/${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
+                            --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
 
   echo ">>> Running tuplex with hyper, generic dicts"
   mode=tuplex-hyper-generic-dicts
   ${PYTHON} runtuplex-new.py --mode tuplex --no-hyper --generic-dicts --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
                             --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
-                            --result-path ${RESULT_DIR}/${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
+                            --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
 
   echo ">>> Running tuplex with no hyper, sparse structs"
   mode=tuplex-global-sparse-structs
   ${PYTHON} runtuplex-new.py --mode tuplex --no-hyper --sparse-structs --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
                             --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
-                            --result-path ${RESULT_DIR}/${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
+                            --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
 
   echo ">>> Running tuplex with hyper, sparse structs"
   mode=tuplex-hyper-sparse-structs
   ${PYTHON} runtuplex-new.py --mode tuplex --sparse-structs --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
                             --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
-                            --result-path ${RESULT_DIR}/${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
+                            --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
 }
 
 # Run all benchmarks once (run 0 is validation run)
@@ -165,5 +165,19 @@ echo ">>> Validating python baseline vs. tuplex with hyper, sparse structs"
 python3 validate.py "${RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-hyper-sparse-structs"
 
 # Actual benchmark now.
+
+# Run a couple runs here.
+NUM_RUNS=${NUM_RUNS:-5}
+
+for ((r = 1; r <= NUM_RUNS; r++)); do
+  echo "-- RUN ${r}/${NUM_RUNS}"
+
+  run_benchmarks $r
+done
+
+# Once this is done, run plotting scripts to generate all sorts of paper plots.
+
+# First, combine results into single ndjson file
+./combine-results.py ${RESULT_DIR}/results/ ${RESULT_DIR}/combined.ndjson
 
 # TODO: other frameworks (Ray (?), PySpark (?), Pandas (?), lithops (?))

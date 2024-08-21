@@ -1381,7 +1381,7 @@ namespace tuplex {
             // simplify large structs (threshold 20?)
             // this is necessary because large structs will kill the performance of the LLVM optimizer (in its default -O2 setting).
             // This pass should come after sparsification to allow large structs to get sparsified first.
-            {
+            if(_simplifyLargeStructs) {
                 optimized_operators = simplifyLargeStructs(20);
 
                 // overwrite internal operators to apply subsequent optimizations
