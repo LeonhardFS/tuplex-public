@@ -157,6 +157,11 @@ def load_tuplex(path, mode):
             row = ans
             data.append(row)
         df = pd.DataFrame(data).reset_index().rename(columns={'index':'run', 'job_time_in_s':'total_time_in_s'})
+
+        run = os.path.basename(path).split('.')[0]
+        run = int(run[run.find('run-')+4:])
+        df['run'] = run
+
         df['mode'] = mode
         return expand_tuplex_df(df)
 
@@ -182,6 +187,7 @@ def load_and_combine_results_to_df(experimental_result_root_path):
         logging.info(f'Loading tuplex mode {mode}')
         for path in glob.glob(os.path.join(experimental_result_root_path, mode, 'log-run-*.ndjson')):
             path_df = load_tuplex(path, mode)
+            assert len(path_df) != 0
             df = pd.concat((df, path_df))
 
     # Step 3: cleanup
