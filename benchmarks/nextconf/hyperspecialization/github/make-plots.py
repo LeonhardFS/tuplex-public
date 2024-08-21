@@ -21,6 +21,10 @@ python_color = [.5]*3
 hyper_color = sns.color_palette()[1]
 compute_color = sns.color_palette()[0]
 
+# colors to distinguish different row types.
+normal_color = sns.color_palette()[0]
+general_color = sns.color_palette()[1]
+fallback_color = sns.color_palette()[2]
 
 def compute_df_totals(df):
     # ignore first warm-up/verification run
@@ -157,6 +161,62 @@ def plot_per_file_vs_python(df, mode_to_compare, path):
     os.makedirs(pathlib.Path(path).parent, exist_ok=True)
     plt.savefig(path, dpi=120, bbox_inches='tight', pad_inches=0.5, transparent=True)
 
+def plot_row_count_breakdown(df, mode_to_select, run_to_select, path):
+    df = df[df['mode'] == mode_to_select]
+
+    df = df[df['run'] == run_to_select]
+
+    df['name'] = df['input_path'].apply(os.path.basename)
+    df = df.sort_values(by='name').reset_index(drop=True)
+
+    for k in ['fallback', 'normal', 'general']:
+        df[f'in_{k}'] = df['per_file_stats'].apply(lambda x: x['input'][k])
+
+    xq = np.array(range(len(df['name'].unique())))
+    plt.figure(figsize=(10, 4))
+
+    n_normal= df['in_normal'].sum()
+    n_general = df['in_general'].sum()
+    n_fallback = df['in_fallback'].sum()
+
+    total_time_in_s = df['total_time_in_s'].iloc[0]
+
+    kwargs={'edgecolor':None, 'lw':0}
+    h = df['in_normal']
+    plt.bar(xq, h, label=f'normal ({n_normal:,} rows)', color=normal_color, **kwargs)
+    hh = df['in_general']
+    plt.bar(xq, hh, label=f'general ({n_general:,} rows)', color=general_color, bottom=h, **kwargs)
+    hhh = df['in_fallback']
+    plt.bar(xq, hhh, label=f'fallback ({n_fallback:,} rows)', color=fallback_color, bottom=h+hh, **kwargs)
+    # sf = py_df['time_in_s'] / m_df['time_in_s']
+
+    # print speedup on top of python
+    yq = df['in_normal'] + df['in_general'] + df['in_fallback']
+    for xi, yi, ti in zip(xq, yq, df['time_in_s']):
+        plt.text(xi, yi + 1e5, f'{ti:.1f}s', horizontalalignment='center', verticalalignment='center')
+
+    plt.xticks(rotation=90)
+    ax = plt.gca()
+    ax.set_xticks(xq, df['name'])
+    ax.yaxis.set_major_formatter(EngFormatter(unit='', sep=''))
+    plt.legend(loc='best')
+    plt.title(f'{mode_to_select}\ninput row breakdown\nrun={run_to_select}, total time={total_time_in_s:.1f}s')
+    plt.ylabel('#input rows')
+    plt.grid(axis='x')
+    plt.ylim(0, 3.2*10e5)
+
+    os.makedirs(pathlib.Path(path).parent, exist_ok=True)
+    plt.savefig(path, dpi=120, bbox_inches='tight', pad_inches=0.5, transparent=True)
+
+def plot_row_breakdown_for_all(df, path):
+    combos = df[df['mode'] != 'python'][['mode', 'run']].values
+    logging.info(f"Plotting row count breakdowns for {len(combos)} runs")
+    for i, combo in enumerate(combos):
+        mode, run = combo
+        logging.info(f"Plotting {i+1}/{len(combos)}: {mode}")
+
+        plot_row_count_breakdown(df, mode, run, os.path.join(path, f'row-count-breakdown-{mode}-run-{run}.png'))
+
 
 def setup_logging() -> None:
 
@@ -202,3 +262,6 @@ if __name__ == '__main__':
 
     logging.info("Plotting full hyper mode vs. Python per file")
     plot_per_file_vs_python(df, 'tuplex-hyper-sparse-structs', os.path.join(args.output_dir, 'tuplex-hyper-per-file-vs-python.png'))
+
+    # for all tuplex scenarios, plot row count breakdown per run.
+    plot_row_breakdown_for_all(df, os.path.join(args.output_dir, "runs"))
