@@ -17,6 +17,10 @@ import logging
 import os
 
 SAVE_FIG_DPI=180
+python_color = [.5]*3
+hyper_color = sns.color_palette()[1]
+compute_color = sns.color_palette()[0]
+
 
 def compute_df_totals(df):
     # ignore first warm-up/verification run
@@ -80,7 +84,7 @@ def plot_breakdown(df, path):
     hhh = gdf[('other_time_in_s', 'mean')]
     handle = plt.barh(gdf.index, hhh, left=h + hh, **kwargs, label='time spent on client (global optimization/compilation)')
     # modify python handle
-    handle[-1].set_color([.5]*3)
+    handle[-1].set_color(python_color)
     # plot total error bar
     mu = gdf[('total_time_in_s', 'mean')]
     sigma = gdf[('total_time_in_s', 'std')]
@@ -113,6 +117,47 @@ def plot_breakdown(df, path):
 
     os.makedirs(pathlib.Path(path).parent, exist_ok=True)
     plt.savefig(path, dpi=SAVE_FIG_DPI, bbox_inches='tight', pad_inches=0.5, transparent=True)
+
+def plot_per_file_vs_python(df, mode_to_compare, path):
+    b_width=.3
+    # Plot breakdown per file path
+
+    gdf = df.groupby(['mode', 'input_path'])[['time_in_s', 'hyperspecialization_time']].mean().reset_index()
+    gdf['name'] = gdf['input_path'].apply(os.path.basename)
+    gdf = gdf.fillna(0.0)
+
+    gdf['compute_in_s'] = gdf['time_in_s'] - gdf['hyperspecialization_time']
+
+    gdf
+
+    py_df = gdf[gdf['mode'] == 'python'].sort_values(by='name').reset_index(drop=True)
+    m_df = gdf[gdf['mode'] == mode_to_compare].sort_values(by='name').reset_index(drop=True)
+
+    xq = np.array(range(len(py_df)))
+    plt.figure(figsize=(10, 4))
+    plt.bar(xq-b_width/2, py_df['compute_in_s'], b_width, color=python_color, edgecolor=None, lw=0, label='python')
+    plt.bar(xq+b_width/2, m_df['compute_in_s'], b_width, color=compute_color, edgecolor=None, lw=0, label='compute')
+    plt.bar(xq+b_width/2, m_df['hyperspecialization_time'], b_width, bottom=m_df['compute_in_s'], color=hyper_color, edgecolor=None, lw=0, label='hyperspecialization')
+
+    sf = py_df['time_in_s'] / m_df['time_in_s']
+
+    # print speedup on top of python
+    for xi, yi, sfi in zip(xq, py_df['time_in_s'], sf):
+        plt.text(xi, yi + 2., f'{sfi:.1f}x', horizontalalignment='center', verticalalignment='center')
+
+    plt.xticks(rotation=90)
+    ax = plt.gca()
+    ax.set_xticks(xq, py_df['name'])
+    ax.yaxis.set_major_formatter(EngFormatter(unit='s', sep=''))
+    plt.legend(loc='best')
+    plt.title(f'{mode_to_compare} vs. python')
+    plt.ylim(0, 49)
+    plt.grid(axis='x')
+
+    os.makedirs(pathlib.Path(path).parent, exist_ok=True)
+    plt.savefig(path, dpi=120, bbox_inches='tight', pad_inches=0.5, transparent=True)
+
+
 def setup_logging() -> None:
 
     LOG_FORMAT="[%(asctime)s] %(levelname)s [%(name)s.%(funcName)s:%(lineno)d] %(message)s"
@@ -154,3 +199,6 @@ if __name__ == '__main__':
 
     logging.info("Plotting breakdown.")
     plot_breakdown(df, os.path.join(args.output_dir, 'tuplex-hyper-vs-global-breakdown.png'))
+
+    logging.info("Plotting full hyper mode vs. Python per file")
+    plot_per_file_vs_python(df, 'tuplex-hyper-sparse-structs', os.path.join(args.output_dir, 'tuplex-hyper-sparse-structs.png'))
