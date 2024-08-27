@@ -23,6 +23,7 @@ import os
 
 import datetime
 import gzip
+import glob
 
 def setup_logging() -> None:
 
@@ -48,34 +49,21 @@ def setup_logging() -> None:
                         handlers=handlers)
 
 
-if __name__ == '__main__':
-
-    setup_logging()
-
-    parser = argparse.ArgumentParser(description='Helper script to download all data files from https://www.gharchive.org/')
-    parser.add_argument('output_dir', help="output directory where to store files.")
-
-    args = parser.parse_args()
-
-    logging.info(f"Preparing download of gharchive files to {args.output_dir}")
-    os.makedirs(args.output_dir, exist_ok=True)
+def prepare_urls_to_download(months=None):
+    if months is None:
+        months = list(range(1, 13))
 
     today = datetime.date.today()
     start_date = datetime.date(year=2011, month=2, day=12)
     urls = []
-    for year in range(2011, today.year+1):
-        if year < 2016:
-            continue
-
-        #for month in range(1, 13):
-        # download only october for now.
-        for month in [10]:
+    for year in range(2011, today.year + 1):
+        for month in months:
             single_month_urls = []
             for day in range(1, 32):
                 try:
                     d = datetime.date(year=year, month=month, day=day)
                 except:
-                    continue # gets rid off potentially invalid dates
+                    continue  # gets rid off potentially invalid dates
                 if d >= start_date and d < today:
                     for hour in range(0, 24):
                         url = f'https://data.gharchive.org/{year:04d}-{month:02d}-{day:02d}-{hour}.json.gz'
@@ -84,19 +72,9 @@ if __name__ == '__main__':
                 urls.append(single_month_urls)
     num_urls = sum(len(url) for url in urls)
     logging.info(f"Prepared {num_urls:,} urls ({start_date} to {today}) to download.")
+    return urls
 
-    # Use parallel curl (requires at least version 7.68)
-
-    # write temporary file with urls etc out
-    # format of this file should be
-    # url = https://data.gharchive.org/2015-02-12-0.json.gz
-    # output = {output_dir}/2015-02-12-0.json.gz
-    # ...
-
-    # Download a single month completely, then process files to output folders.
-    cache_dir = os.path.join(args.output_dir, "cache")
-    daily_output_dir = os.path.join(args.output_dir, "daily")
-
+def download_with_parallel_curl(urls, cache_dir, daily_output_dir):
     for batch_no, url_batch in enumerate(sorted(urls)):
         os.makedirs(cache_dir, exist_ok=True)
         month_name = '/'.join(os.path.basename(url_batch[0]).split('-')[:2])
@@ -137,10 +115,73 @@ if __name__ == '__main__':
             zipped_size = os.stat(output_path).st_size
             logging.info(f'Wrote {int(zipped_size / 1024 / 1024):,} MiB to {output_path}')
             total_size += zipped_size
-        logging.info(f"Storing {year:04d}-{month:02d} as json.gz uses {int(zipped_size / 1024 / 1024):,} MiB in total")
+        logging.info(f"Storing {year:04d}-{month:02d} as json.gz uses {int(total_size / 1024 / 1024):,} MiB in total")
 
         # remove files from cache dir
         shutil.rmtree(cache_dir)
 
+def combine_files_to_single_file(files, single_file):
+    with gzip.open(single_file, 'w') as fp:
+        for path in files:
+            with gzip.open(path, 'r') as gp:
+                content = gp.read()
+                fp.write(content)
+def combine_daily_to_monthly(daily_output_dir, monthly_output_dir):
+    os.makedirs(monthly_output_dir, exist_ok=True)
+
+    today = datetime.date.today()
+    start_date = datetime.date(year=2011, month=2, day=12)
+    files_to_combine = []
+    for year in range(2011, today.year + 1):
+        for month in range(1, 13):
+            # Glob files to
+            files = glob.glob(os.path.join(daily_output_dir, f'{year:04d}-{month:02d}-*.json.gz'))
+            files = sorted(files)
+            if len(files) != 0:
+                logging.info(f"Found {len(files)} files/days for {year:04d}-{month:02d}: {files}")
+                files_to_combine.append(files)
+
+    # single file to combine
+    for files in files_to_combine:
+        year, month = os.path.basename(files[0]).split('-')[:2]
+        year, month = int(year), int(month)
+        logging.info(f"-- Combining files for {year:04d}-{month:02d}...")
+        output_path = os.path.join(monthly_output_dir, f'{year:04d}-{month:02d}.json.gz')
+        combine_files_to_single_file(files, output_path)
+
+if __name__ == '__main__':
+
+    setup_logging()
+
+    parser = argparse.ArgumentParser(description='Helper script to download all data files from https://www.gharchive.org/')
+    parser.add_argument('output_dir', help="output directory where to store files.")
+
+    args = parser.parse_args()
+
+    logging.info(f"Preparing download of gharchive files to {args.output_dir}")
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    # download only october for now.
+    urls = prepare_urls_to_download(months=[10])
+
+    # Use parallel curl (requires at least version 7.68)
+
+    # write temporary file with urls etc out
+    # format of this file should be
+    # url = https://data.gharchive.org/2015-02-12-0.json.gz
+    # output = {output_dir}/2015-02-12-0.json.gz
+    # ...
+
+    # Download a single month completely, then process files to output folders.
+    cache_dir = os.path.join(args.output_dir, "cache")
+    daily_output_dir = os.path.join(args.output_dir, "daily")
+
+    # Download urls from above using parallel curl (this may take multiple hours...)
+    download_with_parallel_curl(urls, cache_dir, daily_output_dir)
+
+    # Combine daily to monthly gzip files?
+    monthly_output_dir = os.path.join(args.output_dir, "monthly")
+
+    combine_daily_to_monthly(daily_output_dir, monthly_output_dir)
 
     # TODO: could store in bzip2 as this is splittable https://www.kurokatta.org/grumble/2021/03/splittable-bzip2.
