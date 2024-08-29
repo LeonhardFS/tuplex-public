@@ -71,7 +71,7 @@ def process_path_with_python(input_path, dest_output_path):
     rows = []
     num_input_rows = 0
     with open(input_path, 'r') as fp:
-        for line in fp.readlines():
+        for line in fp:
             row = json.loads(line.strip())
             num_input_rows += 1
 

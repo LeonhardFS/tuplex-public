@@ -108,8 +108,11 @@ def download_with_parallel_curl(urls, cache_dir, daily_output_dir):
                     try:
                         if os.path.isfile(input_path):
                             with gzip.open(input_path, 'r') as gp:
-                                content = gp.read()
-                                fp.write(content)
+                                content = gp.read().decode('utf-8')
+                                # ensure content is new-line delimited.
+                                if content:
+                                    content = content.strip() + '\n'
+                                    fp.write(content.encode('utf-8'))
                     except Exception as e:
                         logging.error(f"Error processing {input_path}, details: {e}. Skipping file.")
             zipped_size = os.stat(output_path).st_size
@@ -121,11 +124,30 @@ def download_with_parallel_curl(urls, cache_dir, daily_output_dir):
         shutil.rmtree(cache_dir)
 
 def combine_files_to_single_file(files, single_file):
+
+    # Read in 1GB chunks.
+    chunk_size = 1024 * 1024 * 1024
+
     with gzip.open(single_file, 'w') as fp:
         for path in files:
             with gzip.open(path, 'r') as gp:
-                content = gp.read()
-                fp.write(content)
+                while 1:
+                    content = gp.read(chunk_size)
+                    if len(content) < chunk_size:
+                        content = content.decode('utf-8')
+                        # ensure for last chunk, that content is new-line delimited.
+                        content = content.strip() + '\n'
+                        if content:
+                            fp.write(content.encode('utf-8'))
+                            logging.info(f"--- Wrote {chunk_size}, last chunk done.")
+                        break
+                    else:
+                        # regular chunk, copy full data
+                        content = content.decode('utf-8')
+                        if content:
+                            fp.write(content.encode('utf-8'))
+                            logging.info(f"--- Wrote {chunk_size}.")
+
 def combine_daily_to_monthly(daily_output_dir, monthly_output_dir):
     os.makedirs(monthly_output_dir, exist_ok=True)
 
@@ -133,6 +155,9 @@ def combine_daily_to_monthly(daily_output_dir, monthly_output_dir):
     start_date = datetime.date(year=2011, month=2, day=12)
     files_to_combine = []
     for year in range(2011, today.year + 1):
+        if year < 2020:
+            continue
+
         for month in range(1, 13):
             # Glob files to
             files = glob.glob(os.path.join(daily_output_dir, f'{year:04d}-{month:02d}-*.json.gz'))
@@ -177,7 +202,7 @@ if __name__ == '__main__':
     daily_output_dir = os.path.join(args.output_dir, "daily")
 
     # Download urls from above using parallel curl (this may take multiple hours...)
-    download_with_parallel_curl(urls, cache_dir, daily_output_dir)
+    #download_with_parallel_curl(urls, cache_dir, daily_output_dir)
 
     # Combine daily to monthly gzip files?
     monthly_output_dir = os.path.join(args.output_dir, "monthly")
