@@ -545,57 +545,42 @@ namespace tuplex {
                                                     credentials.secret_key.c_str(),
                                                     credentials.session_token.c_str());
 
+
+        auto payload_signing_policy = Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Always;
+        if(!ns.signPayloads)
+            payload_signing_policy = Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never;
+
         // lambda Mode? just use default settings.
         if(lambdaMode) {
             // AWS SDK 1.10 introduces endpoint config
-#if (1 == AWS_SDK_VERSION_MAJOR && 10 > AWS_SDK_VERSION_MINOR)
+//#if (1 == AWS_SDK_VERSION_MAJOR && 10 > AWS_SDK_VERSION_MINOR)
+//
+//            _client = std::make_shared<S3::S3Client>(aws_credentials, Aws::Client::ClientConfiguration(), payload_signing_policy,  ns.useVirtualAddressing);
+//#else
+//            auto s3_endpoint_provider = Aws::MakeShared<Aws::S3::S3EndpointProvider>("TUPLEX");
+//            _client = std::make_shared<S3::S3Client>(aws_credentials,
+//                                                    s3_endpoint_provider);
+//#endif
 
-            _client = std::make_shared<S3::S3Client>(aws_credentials);
-#else
-            auto s3_endpoint_provider = Aws::MakeShared<Aws::S3::S3EndpointProvider>("TUPLEX");
-            _client = std::make_shared<S3::S3Client>(aws_credentials,
-                                                    s3_endpoint_provider);
-#endif
-            _client = std::make_shared<S3::S3Client>(aws_credentials);
+            _client = std::make_shared<S3::S3Client>(aws_credentials, Aws::Client::ClientConfiguration(), payload_signing_policy, ns.useVirtualAddressing);
             _requestPayer = Aws::S3::Model::RequestPayer::requester;
 
             std::stringstream ss;
             ss<<"S3 Client initialized using defaults";
             Logger::instance().defaultLogger().info(ss.str());
-            return;
+        } else {
+            // AWS SDK 1.10 introduces endpoint config
+//#if (1 == AWS_SDK_VERSION_MAJOR && 10 > AWS_SDK_VERSION_MINOR)
+//
+//            _client = std::make_shared<S3::S3Client>(aws_credentials, config, payload_signing_policy, ns.useVirtualAddressing);
+//#else
+//            auto s3_endpoint_provider = Aws::MakeShared<Aws::S3::S3EndpointProvider>("TUPLEX");
+//            _client = std::make_shared<S3::S3Client>(aws_credentials, s3_endpoint_provider, config, payload_signing_policy, ns.useVirtualAddressing);
+//#endif
+
+            _client = std::make_shared<S3::S3Client>(aws_credentials, config, payload_signing_policy, ns.useVirtualAddressing);
         }
-
-                // AWS SDK 1.10 introduces endpoint config
-#if (1 == AWS_SDK_VERSION_MAJOR && 10 > AWS_SDK_VERSION_MINOR)
-
-        _client = std::make_shared<S3::S3Client>(Auth::AWSCredentials(credentials.access_key.c_str(),
-                                                                      credentials.secret_key.c_str(),
-                                                                      credentials.session_token.c_str()), config);
-#else
-        auto s3_endpoint_provider = Aws::MakeShared<Aws::S3::S3EndpointProvider>("TUPLEX");
-        _client = std::make_shared<S3::S3Client>(Auth::AWSCredentials(credentials.access_key.c_str(),
-                                                                      credentials.secret_key.c_str(),
-                                                                      credentials.session_token.c_str()),
-                                                 s3_endpoint_provider, config);
-#endif
-
-//        if(lambdaMode) {
-//            // disable virtual host to prevent curl code 6 https://guihao-liang.github.io/2020/04/08/aws-virtual-address
-//            _client = std::make_shared<S3::S3Client>(aws_credentials,
-//                                                     config,
-//                                                     Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-//                                                     false);
-//
-//            // log out settings quickly (debug)
-//            std::stringstream ss;
-//            ss<<"S3 settings: REGION="<<config.region.c_str()<<" VERIFY_SSL="<<config.verifySSL<<" CAFILE="<<config.caFile<<" CAPATH="<<config.caPath;
-//            Logger::instance().defaultLogger().info(ss.str());
-//
-//        } else {
-//
-//        }
     }
-
 
     void S3FileSystemImpl::activateReadCache(size_t max_cache_size) {
         _useS3ReadCache = true;

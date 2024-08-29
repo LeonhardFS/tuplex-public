@@ -17,6 +17,7 @@
 #include <aws/core/auth/AWSCredentials.h>
 
 #include <nlohmann/json.hpp>
+#include <boost/interprocess/streams/bufferstream.hpp>
 
 //#include <reproc>
 
@@ -60,6 +61,7 @@ std::tuple<Aws::Auth::AWSCredentials, Aws::Client::ClientConfiguration> local_s3
     Aws::Client::ClientConfiguration config;
     config.endpointOverride = "http://localhost:" + std::to_string(port);
     config.enableEndpointDiscovery = false;
+    // need to disable signing https://docs.aws.amazon.com/IAM/latest/UserGuide/create-signed-request.html.
     config.verifySSL = false;
     config.connectTimeoutMs = 1500; // 1.5s timeout (local machine)
     return std::make_tuple(credentials, config);
@@ -179,12 +181,13 @@ class S3LocalTests : public ::testing::Test {
 protected:
     std::string testName;
 
-
     // Per Test setup
     void SetUp() override {
         // Check if docker is installed and S3 minio is up and running. If not, skip test.
         if(!is_docker_installed())
             GTEST_SKIP() << "Docker not found.";
+
+        testName = std::string(::testing::UnitTest::GetInstance()->current_test_info()->test_case_name()) + std::string(::testing::UnitTest::GetInstance()->current_test_info()->name());
     }
 
     void TearDown() override {
@@ -211,12 +214,16 @@ protected:
         auto rc = start_local_s3_server();
         ASSERT_TRUE(rc);
 
-//        // init S3 file system
-//        auto cred = AWSCredentials::get();
-//        NetworkSettings ns;
-//        initAWS(cred, ns, true);
-//        VirtualFileSystem::addS3FileSystem(cred.access_key, cred.secret_key, cred.session_token, cred.default_region, ns, false, true);
-//        testName = std::string(::testing::UnitTest::GetInstance()->current_test_info()->test_case_name()) + std::string(::testing::UnitTest::GetInstance()->current_test_info()->name());
+        // Add minio S3 Filesystem to tuplex.
+        Aws::Auth::AWSCredentials credentials;
+        Aws::Client::ClientConfiguration config;
+        std::tie(credentials, config) = local_s3_credentials();
+        NetworkSettings ns;
+        ns.endpointOverride = config.endpointOverride.c_str();
+        ns.verifySSL = false;
+        ns.useVirtualAddressing = false;
+        ns.signPayloads = false;
+        VirtualFileSystem::addS3FileSystem(credentials.GetAWSAccessKeyId().c_str(), credentials.GetAWSSecretKey().c_str(), "", "", ns);
     }
 
     static void TearDownTestSuite() {
@@ -257,6 +264,42 @@ TEST_F(S3LocalTests, BasicConnectWithListBucket) {
         cerr<<"Failed listing buckets. Details: " + std::string(outcome.GetError().GetMessage().c_str());
     }
 }
+
+TEST_F(S3LocalTests, BasicPut) {
+    using namespace std;
+    using namespace tuplex;
+
+    // test with aws s3 client
+    Aws::Auth::AWSCredentials credentials;
+    Aws::Client::ClientConfiguration config;
+    std::tie(credentials, config) = local_s3_credentials();
+
+    // overwrites
+    config.scheme = Aws::Http::Scheme::HTTP;
+    config.endpointOverride = "localhost:9000";
+
+    std::shared_ptr<Aws::S3::S3Client> client = make_shared<Aws::S3::S3Client>(credentials, config, Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, false);
+
+    Aws::S3::Model::PutObjectRequest putObjectRequest;
+    putObjectRequest.SetBucket("tuplex-test");
+    putObjectRequest.SetKey("test-file-123.txt");
+    string buffer= "test123!";
+    auto stream = std::shared_ptr<Aws::IOStream>(new boost::interprocess::bufferstream((char*)buffer.c_str(), buffer.size() + 1));
+    putObjectRequest.SetBody(stream);
+    auto outcome = client->PutObject(putObjectRequest);
+    EXPECT_TRUE(outcome.IsSuccess());
+
+    if(outcome.IsSuccess()) {
+        cout<<"S3 put request success:"<<endl;
+    } else {
+        cerr << "PutObject error: " <<
+                  outcome.GetError().GetExceptionName() << " " <<
+                  outcome.GetError().GetMessage() << std::endl;
+        cerr<<"Failed putting object. Details: " + std::string(outcome.GetError().GetMessage().c_str());
+    }
+}
+
+// TODO: check https://github.com/minio/minio/issues/10176
 
 
 TEST_F(S3LocalTests, BasicFileWriteAndRead) {

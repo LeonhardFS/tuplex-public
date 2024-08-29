@@ -240,6 +240,18 @@ namespace tuplex {
         config.caFile = ns.caFile.c_str();
         config.caPath = ns.caPath.c_str();
         config.verifySSL = ns.verifySSL;
+
+        if(!ns.endpointOverride.empty()) {
+            if(strStartsWith(ns.endpointOverride, "http://")) {
+                config.endpointOverride = ns.endpointOverride.substr(std::string("http://").size());
+                config.scheme = Aws::Http::Scheme::HTTP;
+            } else if(strStartsWith(ns.endpointOverride, "https://")) {
+                config.endpointOverride = ns.endpointOverride.substr(std::string("https://").size());
+                config.scheme = Aws::Http::Scheme::HTTPS;
+            } else {
+                config.endpointOverride = ns.endpointOverride;
+            }
+        }
     }
 }
 
