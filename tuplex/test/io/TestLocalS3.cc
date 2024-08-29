@@ -65,28 +65,30 @@ std::tuple<Aws::Auth::AWSCredentials, Aws::Client::ClientConfiguration> local_s3
     return std::make_tuple(credentials, config);
 }
 
-bool start_local_s3_server() {
+std::vector<std::string> list_containers(bool only_active=false) {
     using namespace std;
     stringstream ss;
-    // General form is docker run [OPTIONS] IMAGE [COMMAND] [ARG...]
-    ss<<"docker run -p 9000:"<<MINIO_S3_ENDPOINT_PORT<<" -p 9001:"<<MINIO_S3_CONSOLE_PORT
-      <<" -e \"MINIO_ROOT_USER="<<MINIO_ACCESS_KEY<<"\""
-      <<" -e \"MINIO_ROOT_PASSWORD="<<MINIO_SECRET_KEY<<"\""
-      <<" --name \""<<MINIO_DOCKER_CONTAINER_NAME<<"\""
-      <<" -d " // detached mode.
-      <<" quay.io/minio/minio server /data --console-address \":"<<MINIO_S3_CONSOLE_PORT<<"\"";
+    ss<<"docker ps ";
+    if(!only_active)
+        ss<<" -a ";
+    ss<<" --format=json";
 
     Pipe p(ss.str());
     p.pipe();
     if(p.retval() != 0) {
-        cerr<<"Failed starting local s3 server: "<<p.stderr()<<endl;
-        return false;
+        throw std::runtime_error("Failed to list docker containers: " + p.stderr());
     } else {
-        cout<<"Started local s3 server."<<endl;
-#ifndef NDEBUG
-        cout<<p.stdout()<<endl;
-#endif
-        return true;
+        string json_str = p.stdout();
+        std::vector<std::string> names;
+        std::string line;
+        std::stringstream input; input<<json_str;
+        while(std::getline(input, line)) {
+            auto j = nlohmann::json::parse(line);
+
+            names.push_back(j["Names"].get<std::string>());
+        }
+
+        return names;
     }
 }
 
@@ -126,27 +128,41 @@ bool remove_container(const std::string& container_name) {
     }
 }
 
-std::vector<std::string> list_containers(bool only_active=false) {
+bool start_local_s3_server() {
     using namespace std;
+
+    // check if container with the name already exists, if so stop & remove.
+    auto container_names = list_containers();
+    if(std::find(container_names.begin(), container_names.end(), MINIO_DOCKER_CONTAINER_NAME) != container_names.end()) {
+        cout<<"Found existing oontainer named "<<MINIO_DOCKER_CONTAINER_NAME<<", stopping and removing container."<<endl;
+        stop_container(MINIO_DOCKER_CONTAINER_NAME);
+        remove_container(MINIO_DOCKER_CONTAINER_NAME);
+    }
+
     stringstream ss;
-    ss<<"docker ps ";
-    if(!only_active)
-        ss<<" -a ";
-    ss<<" --format=json";
+    // General form is docker run [OPTIONS] IMAGE [COMMAND] [ARG...]
+    ss<<"docker run -p 9000:"<<MINIO_S3_ENDPOINT_PORT<<" -p 9001:"<<MINIO_S3_CONSOLE_PORT
+      <<" -e \"MINIO_ROOT_USER="<<MINIO_ACCESS_KEY<<"\""
+      <<" -e \"MINIO_ROOT_PASSWORD="<<MINIO_SECRET_KEY<<"\""
+      <<" --name \""<<MINIO_DOCKER_CONTAINER_NAME<<"\""
+      <<" -d " // detached mode.
+      <<" quay.io/minio/minio server /data --console-address \":"<<MINIO_S3_CONSOLE_PORT<<"\"";
 
     Pipe p(ss.str());
     p.pipe();
     if(p.retval() != 0) {
-        throw std::runtime_error("Failed to list docker containers: " + p.stderr());
+        cerr<<"Failed starting local s3 server: "<<p.stderr()<<endl;
+        return false;
     } else {
-        auto json_str = p.stdout();
-
-        auto j = nlohmann::json::parse(json_str);
-
-        // TODO: parse the JSON here, it's ndjson.
-        return {};
+        cout<<"Started local s3 server."<<endl;
+#ifndef NDEBUG
+        cout<<p.stdout()<<endl;
+#endif
+        return true;
     }
 }
+
+
 
 bool stop_local_s3_server() {
     using namespace std;
@@ -207,7 +223,7 @@ protected:
         using namespace std;
         using namespace tuplex;
 
-        cout<<"Stopping local MinIO server";
+        cout<<"Stopping local MinIO server"<<endl;
         stop_local_s3_server();
 
         cout<<"Shutting down AWSSDK"<<endl;
@@ -240,4 +256,34 @@ TEST_F(S3LocalTests, BasicConnectWithListBucket) {
     } else {
         cerr<<"Failed listing buckets. Details: " + std::string(outcome.GetError().GetMessage().c_str());
     }
+}
+
+
+TEST_F(S3LocalTests, BasicFileWriteAndRead) {
+    using namespace tuplex;
+    using namespace std;
+
+    // simple test to write a file, and read it back using Tuplex VFS infrastructure.
+    URI uri("s3://tuplex-test/simple-file.txt");
+    string test_data = "Hello world!";
+
+    auto vfs = VirtualFileSystem::fromURI(uri);
+
+    auto vf = vfs.open_file(uri, VirtualFileMode::VFS_WRITE | VirtualFileMode::VFS_TEXTMODE);
+    ASSERT_TRUE(vf);
+    vf->write(test_data.c_str(), test_data.size() + 1);
+    vf->close();
+
+    // read back
+    vf = vfs.open_file(uri, VirtualFileMode::VFS_READ | VirtualFileMode::VFS_TEXTMODE);
+    ASSERT_TRUE(vf);
+    auto file_size = vf->size();
+    EXPECT_EQ(file_size, test_data.size() + 1);
+    char *buf = new char[file_size];
+    size_t bytes_read = 0;
+    vf->read(buf, file_size, &bytes_read);
+    EXPECT_EQ(bytes_read, file_size);
+
+    EXPECT_EQ(buf, test_data);
+    delete [] buf;
 }
