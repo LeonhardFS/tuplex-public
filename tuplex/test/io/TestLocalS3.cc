@@ -269,6 +269,8 @@ TEST_F(S3LocalTests, BasicPut) {
     using namespace std;
     using namespace tuplex;
 
+    string buffer= "test123!";
+
     // test with aws s3 client
     Aws::Auth::AWSCredentials credentials;
     Aws::Client::ClientConfiguration config;
@@ -278,15 +280,23 @@ TEST_F(S3LocalTests, BasicPut) {
     config.scheme = Aws::Http::Scheme::HTTP;
     config.endpointOverride = "localhost:9000";
 
-    std::shared_ptr<Aws::S3::S3Client> client = make_shared<Aws::S3::S3Client>(credentials, config, Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, false);
+    //std::shared_ptr<Aws::S3::S3Client> client = make_shared<Aws::S3::S3Client>(credentials, config, Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, false);
+
+    auto& s3_client = VirtualFileSystem::getS3FileSystemImpl()->client();
 
     Aws::S3::Model::PutObjectRequest putObjectRequest;
     putObjectRequest.SetBucket("tuplex-test");
     putObjectRequest.SetKey("test-file-123.txt");
-    string buffer= "test123!";
+
+    putObjectRequest.SetContentLength(buffer.size() + 1); // ok
+    // Amazon specific headers (?)
+    //putObjectRequest.SetRequestPayer(Aws::S3::Model::RequestPayer::NOT_SET); // <-- breaks minio
+
     auto stream = std::shared_ptr<Aws::IOStream>(new boost::interprocess::bufferstream((char*)buffer.c_str(), buffer.size() + 1));
     putObjectRequest.SetBody(stream);
-    auto outcome = client->PutObject(putObjectRequest);
+    //auto outcome = client->PutObject(putObjectRequest);
+
+    auto outcome = s3_client.PutObject(putObjectRequest);
     EXPECT_TRUE(outcome.IsSuccess());
 
     if(outcome.IsSuccess()) {

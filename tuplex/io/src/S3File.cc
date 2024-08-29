@@ -92,11 +92,15 @@ namespace tuplex {
                 put_req.SetBucket(_uri.s3Bucket().c_str());
                 put_req.SetKey(_uri.s3Key().c_str());
                 put_req.SetContentLength(_bufferLength);
-                put_req.SetRequestPayer(_requestPayer);
 
-                auto content_type = _uri.s3GetMIMEType();
-                if(!content_type.empty()) {
-                    put_req.SetContentType(content_type.c_str());
+                // Amazon specific header.
+                if(_s3fs.isAmazon()) {
+                    put_req.SetRequestPayer(_requestPayer);
+
+                    auto content_type = _uri.s3GetMIMEType();
+                    if(!content_type.empty()) {
+                        put_req.SetContentType(content_type.c_str());
+                    }
                 }
 
                 // body
@@ -137,10 +141,14 @@ namespace tuplex {
         Aws::S3::Model::CreateMultipartUploadRequest req;
         req.SetBucket(_uri.s3Bucket().c_str());
         req.SetKey(_uri.s3Key().c_str());
-        req.SetRequestPayer(_requestPayer);
-        auto content_type = _uri.s3GetMIMEType();
-        if(!content_type.empty()) {
-            req.SetContentType(content_type.c_str());
+
+        // Amazon specific header.
+        if(_s3fs.isAmazon()) {
+            req.SetRequestPayer(_requestPayer);
+            auto content_type = _uri.s3GetMIMEType();
+            if (!content_type.empty()) {
+                req.SetContentType(content_type.c_str());
+            }
         }
 
         Timer timer;
@@ -190,7 +198,10 @@ namespace tuplex {
         req.SetUploadId(_uploadID);
         req.SetPartNumber(_partNumber);
         req.SetContentLength(_bufferLength);
-        req.SetRequestPayer(_requestPayer);
+        // Amazon specific header.
+        if(_s3fs.isAmazon()) {
+            req.SetRequestPayer(_requestPayer);
+        }
 
         auto stream = std::shared_ptr<Aws::IOStream>(new boost::interprocess::bufferstream((char*)_buffer, _bufferLength));
         req.SetBody(stream);
@@ -233,7 +244,10 @@ namespace tuplex {
         req.SetBucket(_uri.s3Bucket().c_str());
         req.SetKey(_uri.s3Key().c_str());
         req.SetUploadId(_uploadID);
-        req.SetRequestPayer(_requestPayer);
+        // Amazon specific header.
+        if(_s3fs.isAmazon()) {
+            req.SetRequestPayer(_requestPayer);
+        }
 
         Aws::S3::Model::CompletedMultipartUpload upld;
         for(auto part : _parts)
@@ -452,7 +466,10 @@ namespace tuplex {
         req.SetKey(_uri.s3Key().c_str());
         // retrieve byte range according to http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.35
         req.SetRange(range.c_str());
-        req.SetRequestPayer(_requestPayer);
+        // Amazon specific header.
+        if(_s3fs.isAmazon()) {
+            req.SetRequestPayer(_requestPayer);
+        }
 
         // Get the object ==> Note: this s3 client is damn slow, need to make it faster in the future...
         Timer timer;
@@ -630,7 +647,10 @@ namespace tuplex {
         req.SetKey(_uri.s3Key().c_str());
         // retrieve byte range according to http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.35
         req.SetRange(range.c_str());
-        req.SetRequestPayer(_requestPayer);
+        // Amazon specific header.
+        if(_s3fs.isAmazon()) {
+            req.SetRequestPayer(_requestPayer);
+        }
 
         Timer timer;
         // Get the object

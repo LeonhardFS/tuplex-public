@@ -63,8 +63,13 @@ namespace tuplex {
             _useS3ReadCache = false;
         }
 
+        inline bool isAmazon() const {
+            return _config.endpointOverride.empty();
+        }
+
     private:
         std::shared_ptr<Aws::S3::S3Client> _client;
+        Aws::Client::ClientConfiguration _config;
         Aws::S3::Model::RequestPayer _requestPayer;
 
         // to compute pricing, use https://calculator.s3.amazonaws.com/index.html

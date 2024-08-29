@@ -162,7 +162,10 @@ static size_t s3walk(const Aws::S3::S3Client& client, const std::string& bucket,
     Aws::S3::Model::ListObjectsV2Request objects_request;
     objects_request.WithBucket(Aws::String(bucket.c_str()));
     objects_request.WithPrefix(Aws::String(prefix.c_str()));
-    objects_request.SetRequestPayer(requestPayer);
+
+    if(requestPayer != Aws::S3::Model::RequestPayer::NOT_SET)
+        objects_request.SetRequestPayer(requestPayer);
+
     // use delimiter if suffix is not yet exhausted
     if(suffix.length() > 0)
         objects_request.WithDelimiter("/");
@@ -364,7 +367,10 @@ namespace tuplex {
                 objects_request.WithBucket(Aws::String(bucket.c_str()));
                 objects_request.WithPrefix(Aws::String(s3_prefix.c_str()));
                 objects_request.WithDelimiter("/");
-                objects_request.SetRequestPayer(_requestPayer);
+
+                // Amazon specific header.
+                if(isAmazon())
+                    objects_request.SetRequestPayer(_requestPayer);
 
                 auto list_objects_outcome = _client->ListObjectsV2(objects_request);
 #ifndef NDEBUG
@@ -396,7 +402,10 @@ namespace tuplex {
             objects_request.WithBucket(Aws::String(bucket.c_str()));
             objects_request.WithPrefix(Aws::String(s3_prefix.c_str()));
             objects_request.WithDelimiter("/");
-            objects_request.SetRequestPayer(_requestPayer);
+
+            // Amazon specific header.
+            if(isAmazon())
+                objects_request.SetRequestPayer(_requestPayer);
 
             auto list_objects_outcome = _client->ListObjectsV2(objects_request);
 #ifndef NDEBUG
@@ -484,7 +493,7 @@ namespace tuplex {
             return std::vector<URI>();
         }
 
-        _lsRequests += s3walk(client(), uri.s3Bucket(), "", uri.s3Key(), files, _requestPayer);
+        _lsRequests += s3walk(client(), uri.s3Bucket(), "", uri.s3Key(), files, isAmazon() ? _requestPayer : Aws::S3::Model::RequestPayer::NOT_SET);
         return files;
     }
 
@@ -580,6 +589,9 @@ namespace tuplex {
 
             _client = std::make_shared<S3::S3Client>(aws_credentials, config, payload_signing_policy, ns.useVirtualAddressing);
         }
+
+        // save config, so parameters are easily accessible.
+        _config = config;
     }
 
     void S3FileSystemImpl::activateReadCache(size_t max_cache_size) {
@@ -619,7 +631,9 @@ namespace tuplex {
         Aws::S3::Model::ListObjectsV2Request objects_request;
         objects_request.WithBucket(Aws::String(bucket.c_str()));
         objects_request.WithPrefix(Aws::String(prefix.c_str()));
-        objects_request.SetRequestPayer(requestPayer);
+
+        if(requestPayer != Aws::S3::Model::RequestPayer::NOT_SET)
+            objects_request.SetRequestPayer(requestPayer);
 
         // use delimiter if suffix is not yet exhausted
         if(suffix.length() > 0)
@@ -744,7 +758,7 @@ namespace tuplex {
         // find longest non pattern prefix to speed up walking queries
         auto prefix = findLongestPrefix(uri.s3Key());
         auto suffix = uri.s3Key().substr(prefix.length());
-        auto res = s3walkEx(client(), uri.s3Bucket(), prefix, suffix, lsRequests, callback, userData, _requestPayer);
+        auto res = s3walkEx(client(), uri.s3Bucket(), prefix, suffix, lsRequests, callback, userData, isAmazon() ? _requestPayer : Aws::S3::Model::RequestPayer::NOT_SET);
         _lsRequests += lsRequests;
         return res;
     }

@@ -550,7 +550,10 @@ namespace tuplex {
         req.SetKey(uri.s3Key().c_str());
         // retrieve byte range according to http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.35
         req.SetRange(range.c_str());
-        req.SetRequestPayer(_requestPayer);
+        // Amazon specific header.
+        if(_s3fs->isAmazon()) {
+            req.SetRequestPayer(_requestPayer);
+        }
 
         // Get the object ==> Note: this s3 client is damn slow, need to make it faster in the future...
         Timer timer;
