@@ -1,0 +1,36 @@
+# Use `docker compose up` to start.
+# USe `docker compose up -d` to start in detached mode.configs:
+# Call `docker compose rm -fsv` afterwards for fresh start.
+
+version: '3.8'
+
+services:
+  minio:
+    image: quay.io/minio/minio
+    container_name: minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: test1234
+    # Add volume here if desired to persist data.
+    #volumes:
+    #  - ~/minio/data:/data
+    command: server /data --console-address ":9001"
+
+  jupyter:
+    build:
+      # other popular way here would be:
+      # context: .
+      # dockerfile: ./docker/jupyter.docker
+      context: ./docker/jupyter
+      dockerfile: Dockerfile
+    #volumes:
+    #  - ./work:/home/jovyan/work
+    ports:
+      - 8888:8888
+    container_name: jupyter_notebook
+    command: "start-notebook.sh --NotebookApp.token="
+    depends_on:
+      - minio
