@@ -323,6 +323,8 @@ TEST_F(S3Tests, FileCache) {
 
 #ifndef SKIP_AWS_TESTS
 
+// These tests can also be acrried out minio in TestLocalS3.cc
+
 TEST_F(S3Tests, FileUploadLargerThanInternal) {
     // tests S3 writing capabilities
     using namespace tuplex;
