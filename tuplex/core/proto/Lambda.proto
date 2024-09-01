@@ -1,3 +1,4 @@
+// Protobuf message for invoking Aws Lambda backend.
 syntax = "proto3";
 package tuplex.messages;
 
@@ -116,14 +117,14 @@ message WorkerSettings {
 }
 
 message WarmupMessage {
-    // how many lambdas should each Lambda invoke? Recursive, i.e. {1, 1, 1} means the first Lambda invokes another
+    // How many lambdas should each Lambda invoke? Recursive, i.e. {1, 1, 1} means the first Lambda invokes another
     // lambda, that again another etc. The total wait time thereby is baseDelay * depth
     repeated uint32 invocationCount = 1;
     uint32 baseDelayInMs = 2;
     uint32 timeOutInMs = 3;
 }
 
-// a simple message for a resource that may be send along an invocation request
+// A simple message for a resource that may be send along an invocation request.
 message Resource {
     string id = 1;
     uint32 type = 2;
@@ -145,10 +146,13 @@ message InvocationRequest {
     optional TransformStage stage = 8;
     optional WarmupMessage warmup = 9;
     bool verboseLogging = 10;
+
+    // how the request should be carried out (options etc.)
+    uint64 requestMode = 11;
 }
 
 
-// info about a running container, cf. ContainerInfo struct
+// Info about a running container, cf. ContainerInfo struct.
 message ContainerInfo {
     bool reused = 1;
     string requestId = 2;
@@ -159,7 +163,7 @@ message ContainerInfo {
     uint64 deadline = 7;
 }
 
-// info about a single request , cf. Request Info struct
+// Info about a single request , cf. Request Info struct.
 message RequestInfo {
     string requestId = 1;
     string containerId = 2;
@@ -176,7 +180,7 @@ message RequestInfo {
     string errorMessage = 10;
 }
 
-// statistics about how input rows were processed.
+// Statistics about how input rows were processed.
 message CodePathStats {
     uint64 normal = 1;
     uint64 general = 2;
@@ -212,7 +216,7 @@ message InvocationResponse {
     repeated ContainerInfo invokedContainers = 12;
     repeated RequestInfo invokedRequests = 13;
 
-    // messages may contain already result data, given in form of a resource
+    // Messages may contain already result data, given in form of a list of resources.
     repeated Resource resources = 14;
 
     // stats

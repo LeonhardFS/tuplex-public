@@ -540,6 +540,13 @@ namespace tuplex {
             //});
         }
 
+        // Save in codepath stats the (input) types.
+        if(!_settings.useInterpreterOnly) {
+            _codePathStats.normalCaseType = _stage_normal_input_type;
+            if(_settings.useCompiledGeneralPath)
+                _codePathStats.generalCaseType = _stage_general_input_type;
+        }
+
         auto rc = processTransformStage(tstage.get(), syms, parts, outputURI);
         _lastStat = jsonStat(req, tstage.get()); // generate stats before returning.
         return rc;
@@ -3441,6 +3448,18 @@ namespace tuplex {
         ss<<"\"general\":"<<_codePathStats.rowsOnGeneralPathCount<<",";
         ss<<"\"fallback\":"<<_codePathStats.rowsOnInterpreterPathCount<<",";
         ss<<"\"unresolved\":"<<_codePathStats.unresolvedRowsCount;
+        // encode types (if not pure python mode).
+        if(_codePathStats.normalCaseType != python::Type::UNKNOWN || _codePathStats.generalCaseType != python::Type::UNKNOWN) {
+            ss<<",\"types\":{";
+            if(_codePathStats.normalCaseType != python::Type::UNKNOWN)
+                ss<<"\"normal\":"<<escape_json_string(_codePathStats.normalCaseType.desc());
+            if(_codePathStats.generalCaseType != python::Type::UNKNOWN) {
+                if(_codePathStats.normalCaseType != python::Type::UNKNOWN)
+                    ss<<",";
+                ss<<"\"general\":"<<escape_json_string(_codePathStats.generalCaseType.desc());
+            }
+            ss<<"}";
+        }
         ss<<"}";
 
         auto num_normal_output_rows = 0;

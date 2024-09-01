@@ -126,27 +126,43 @@ def download_with_parallel_curl(urls, cache_dir, daily_output_dir):
 def combine_files_to_single_file(files, single_file):
 
     # Read in 1GB chunks.
-    chunk_size = 1024 * 1024 * 1024
+    #chunk_size = 1024 * 1024 * 1024
+
+    # utf8 decode issue/boundaries with 2023 - use different size.
+    chunk_size = 768 * 1024 * 1024
 
     with gzip.open(single_file, 'w') as fp:
         for path in files:
+            logging.info(f"Reading file {path}")
             with gzip.open(path, 'r') as gp:
-                while 1:
-                    content = gp.read(chunk_size)
-                    if len(content) < chunk_size:
-                        content = content.decode('utf-8')
-                        # ensure for last chunk, that content is new-line delimited.
-                        content = content.strip() + '\n'
-                        if content:
-                            fp.write(content.encode('utf-8'))
-                            logging.info(f"--- Wrote {chunk_size}, last chunk done.")
-                        break
-                    else:
-                        # regular chunk, copy full data
-                        content = content.decode('utf-8')
-                        if content:
-                            fp.write(content.encode('utf-8'))
-                            logging.info(f"--- Wrote {chunk_size}.")
+                line_no = 1
+                for line in gp:
+                    if line_no % 100000 == 0:
+                        logging.info(f"-- Read {line_no} lines...")
+                    line = line.decode('utf-8').strip() + '\n'
+                    fp.write(line.encode('utf-8'))
+                    line_no += 1
+
+                # while 1:
+                #     content = gp.read(chunk_size)
+                #
+                #     # try to decode with UTF-8, if it fails - seek back.
+                #     content = content.decode('utf-8')
+                #
+                #     if len(content) < chunk_size:
+                #
+                #         # ensure for last chunk, that content is new-line delimited.
+                #         content = content.strip() + '\n'
+                #         if content:
+                #             fp.write(content.encode('utf-8'))
+                #             logging.info(f"--- Wrote {chunk_size} bytes from {path}, last chunk done.")
+                #         break
+                #     else:
+                #         # regular chunk, copy full data
+                #         content = content.decode('utf-8')
+                #         if content:
+                #             fp.write(content.encode('utf-8'))
+                #             logging.info(f"--- Wrote {chunk_size} bytes from {path}.")
 
 def combine_daily_to_monthly(daily_output_dir, monthly_output_dir):
     os.makedirs(monthly_output_dir, exist_ok=True)
@@ -155,7 +171,7 @@ def combine_daily_to_monthly(daily_output_dir, monthly_output_dir):
     start_date = datetime.date(year=2011, month=2, day=12)
     files_to_combine = []
     for year in range(2011, today.year + 1):
-        if year < 2020:
+        if year != 2022:
             continue
 
         for month in range(1, 13):
@@ -202,7 +218,7 @@ if __name__ == '__main__':
     daily_output_dir = os.path.join(args.output_dir, "daily")
 
     # Download urls from above using parallel curl (this may take multiple hours...)
-    #download_with_parallel_curl(urls, cache_dir, daily_output_dir)
+    download_with_parallel_curl(urls, cache_dir, daily_output_dir)
 
     # Combine daily to monthly gzip files?
     monthly_output_dir = os.path.join(args.output_dir, "monthly")
@@ -210,3 +226,5 @@ if __name__ == '__main__':
     combine_daily_to_monthly(daily_output_dir, monthly_output_dir)
 
     # TODO: could store in bzip2 as this is splittable https://www.kurokatta.org/grumble/2021/03/splittable-bzip2.
+
+    # TODO: need to run fix files to touch up bad downloads.

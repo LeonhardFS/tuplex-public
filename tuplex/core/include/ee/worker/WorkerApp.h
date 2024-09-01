@@ -69,12 +69,19 @@ namespace tuplex {
         std::atomic<int64_t> rowsOnInterpreterPathCount;
         std::atomic<int64_t> unresolvedRowsCount;
 
+        python::Type normalCaseType;
+        python::Type generalCaseType;
+
         void reset() {
             inputRowCount = 0;
             rowsOnNormalPathCount = 0;
             rowsOnGeneralPathCount = 0;
             rowsOnInterpreterPathCount = 0;
             unresolvedRowsCount = 0;
+
+            // reset types.
+            normalCaseType = python::Type::UNKNOWN;
+            generalCaseType = python::Type::UNKNOWN;
         }
 
         CodePathStatistics() {

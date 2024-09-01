@@ -109,6 +109,8 @@ run_benchmarks() {
                              --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
                              --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
 
+  exit 0
+
   echo ">>> Running tuplex with hyper, sparse structs"
   mode=tuplex-hyper-sparse-structs
   ${PYTHON} runtuplex-new.py --mode tuplex --sparse-structs --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
