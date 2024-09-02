@@ -10,7 +10,6 @@
 
 #include <physical/execution/CSVReader.h>
 #include <VirtualFileSystem.h>
-#include <physical/execution/csvmonkey.h>
 #include <Logger.h>
 #include <jit/RuntimeInterface.h>
 #include <StringUtils.h>
@@ -18,236 +17,181 @@
 #include <Base.h>
 
 namespace tuplex {
-    // class for manual cursor (block based from file)
-    class VFCSVStreamCursor : public csvmonkey::BufferedStreamCursor {
-    public:
-        VFCSVStreamCursor() = delete;
+ssize_t VFCSVStreamCursor::readmore() {
 
-        explicit VFCSVStreamCursor(const URI &uri, char delimiter, char quotechar, size_t numColumns = 0,
-                                   size_t rangeStart = 0, size_t rangeEnd = 0) :
-                _delimiter(delimiter), _quotechar(quotechar),
-                _file(VirtualFileSystem::open_file(uri, VirtualFileMode::VFS_READ)), _numColumns(numColumns),
-                _rangeStart(rangeStart), _rangeEnd(rangeEnd), _curFilePos(0) {
+        // Note: current version of CSV reader expects last line to be newline delimited. need to fix that!
 
-            if(!_file)
-                throw std::runtime_error("could not open file " + uri.toPath());
+        // eof should return -1 to stop reading more chars
+        if (_file->eof()) {
 
-            ensure(16 * 1024); // 16KB buffer
+            // consume remaining bytes
+            if(size() > 0) {
 
-            if(_rangeStart < _rangeEnd)
-                seekToStart();
-        }
-
-        void consume(size_t n) override {
-            auto delta = std::min(n, write_pos_ - read_pos_);
-            read_pos_ += delta;
-            _curFilePos += delta; // important for range based!
-            CSM_DEBUG("consume(%lu); new size: %lu", n, size())
-        }
-
-        size_t curFilePos() const {
-            return _curFilePos;
-        }
-
-        /**
-         * actual start of range that is been read
-         * @return i.e. where csv offset starts
-         */
-        size_t rangeStartRead() const { return _rangeStart; }
-
-        /*!
-         * actual end of range reading.
-         * @return
-         */
-        size_t rangeEndRead() const { assert(_curFilePos >= _rangeEnd); return _curFilePos; }
-
-        ssize_t readmore() override {
-
-            // Note: current version of CSV reader expects last line to be newline delimited. need to fix that!
-
-            // eof should return -1 to stop reading more chars
-            if (_file->eof()) {
-
-                // consume remaining bytes
-                if(size() > 0) {
-
-                    // check the left characters in the buffer. If they are only '\r', '\n' or '\0'
-                    // consume them and stop parse
-                    bool all_escape_chars = true;
-                    for(int i = 0; i < size(); ++i) {
-                        char c = vec_[read_pos_ + i];
-                        if(c != '\r' && c != '\n' && c != 0)
-                            all_escape_chars = false;
-                    }
-
-                    if(all_escape_chars) {
-                        consume(size());
-                        assert(write_pos_ == read_pos_);
-                        // force to zero
-                        write_pos_ = read_pos_ = 0;
-                        return 0;
-                    }
-
-                    // set everything after write pos to zero
-                    memset(&vec_[write_pos_], 0, vec_.size() - write_pos_);
-
-                    // check if null terminated, if not update with both endline + newline
-                    if(vec_[write_pos_] != '\0' && vec_[write_pos_] != '\n') {
-                        assert(write_pos_ + 2 < vec_.size());
-                        // fill in 0 and newline (because of csvmonkey bug)
-                        vec_[write_pos_] = '\n';
-                        vec_[write_pos_+1] = 0;
-                        write_pos_++;
-                    }
-
-                    // prune write pos zero
-                    while(write_pos_ >= read_pos_ && vec_[write_pos_ + 1] == '\0')
-                        write_pos_--;
-
-                    return 0;
-                } else
-                    return -1;
-            }
-
-            // end reached? ==> return remaining in vec!
-            // note check on rangeEnd so if rangeStart == rangeEnd, b
-            if(_rangeEnd > 0 && _curFilePos >= _rangeEnd)
-                return -1; // done
-
-            size_t bytesRead = 0;
-            // ranges defined?
-            if(_rangeStart < _rangeEnd) {
-
-                // fill up buffer with next content
-                // read one less than buf capacity to end file with 0
-                // note that 33 is important to safeguard buffer! (+1 for '\0' + 32 for 2x 16 byte SIMD execution)
-                auto nbytes_max_to_read = vec_.size() - write_pos_ - 33; // fill buffer completely up
-                _file->read(&vec_[write_pos_], nbytes_max_to_read, &bytesRead);
-
-                // note: need to provide as much overhead as required!!!
-                auto remainingToParse = _rangeEnd - _curFilePos;
-                if(bytesRead > remainingToParse) {
-
-                    if(0 == remainingToParse)
-                        return -1; // done
-
-                    const char* p = (const char*)buf();
-                    auto endp = p + bytesRead;
-
-                    int maxOffset = 0;
-                    while(maxOffset < remainingToParse) {
-                        // get offset to next line.
-                        int offset = csvOffsetToNextLine(p, endp - p, _delimiter, _quotechar);
-                        p += offset;
-                        maxOffset += offset;
-                    }
-
-                    // zero out buffer after maxOffset !!!
-                    assert(write_pos_ + maxOffset < vec_.size());
-                    vec_[write_pos_ + maxOffset] = 0;
-
-                    return maxOffset;
-                } else {
-                    //_curFilePos += bytesRead;
-                    // check if eof, then fill up with 0
-                    if (_file->eof()) {
-                        vec_[write_pos_ + bytesRead] = 0;
-                        bytesRead++;
-                    }
-
-                    return bytesRead;
+                // check the left characters in the buffer. If they are only '\r', '\n' or '\0'
+                // consume them and stop parse
+                bool all_escape_chars = true;
+                for(int i = 0; i < size(); ++i) {
+                    char c = vec_[read_pos_ + i];
+                    if(c != '\r' && c != '\n' && c != 0)
+                        all_escape_chars = false;
                 }
 
+                if(all_escape_chars) {
+                    consume(size());
+                    assert(write_pos_ == read_pos_);
+                    // force to zero
+                    write_pos_ = read_pos_ = 0;
+                    return 0;
+                }
+
+                // set everything after write pos to zero
+                memset(&vec_[write_pos_], 0, vec_.size() - write_pos_);
+
+                // check if null terminated, if not update with both endline + newline
+                if(vec_[write_pos_] != '\0' && vec_[write_pos_] != '\n') {
+                    assert(write_pos_ + 2 < vec_.size());
+                    // fill in 0 and newline (because of csvmonkey bug)
+                    vec_[write_pos_] = '\n';
+                    vec_[write_pos_+1] = 0;
+                    write_pos_++;
+                }
+
+                // prune write pos zero
+                while(write_pos_ >= read_pos_ && vec_[write_pos_ + 1] == '\0')
+                    write_pos_--;
+
+                return 0;
+            } else
+                return -1;
+        }
+
+        // end reached? ==> return remaining in vec!
+        // note check on rangeEnd so if rangeStart == rangeEnd, b
+        if(_rangeEnd > 0 && _curFilePos >= _rangeEnd)
+            return -1; // done
+
+        size_t bytesRead = 0;
+        // ranges defined?
+        if(_rangeStart < _rangeEnd) {
+
+            // fill up buffer with next content
+            // read one less than buf capacity to end file with 0
+            // note that 33 is important to safeguard buffer! (+1 for '\0' + 32 for 2x 16 byte SIMD execution)
+            auto nbytes_max_to_read = vec_.size() - write_pos_ - 33; // fill buffer completely up
+            _file->read(&vec_[write_pos_], nbytes_max_to_read, &bytesRead);
+
+            // note: need to provide as much overhead as required!!!
+            auto remainingToParse = _rangeEnd - _curFilePos;
+            if(bytesRead > remainingToParse) {
+
+                if(0 == remainingToParse)
+                    return -1; // done
+
+                const char* p = (const char*)buf();
+                auto endp = p + bytesRead;
+
+                int maxOffset = 0;
+                while(maxOffset < remainingToParse) {
+                    // get offset to next line.
+                    int offset = csvOffsetToNextLine(p, endp - p, _delimiter, _quotechar);
+                    p += offset;
+                    maxOffset += offset;
+                }
+
+                // zero out buffer after maxOffset !!!
+                assert(write_pos_ + maxOffset < vec_.size());
+                vec_[write_pos_ + maxOffset] = 0;
+
+                return maxOffset;
             } else {
-                // just read full file
-                // read one less than buf capacity to end file with 0
-                auto nbytes_max_to_read = vec_.size() - write_pos_ - 33;
-                _file->read(&vec_[write_pos_], nbytes_max_to_read, &bytesRead);
-
-                // check if eof, then fill up with newline and 0
+                //_curFilePos += bytesRead;
+                // check if eof, then fill up with 0
                 if (_file->eof()) {
-
-                    size_t pos = write_pos_ + bytesRead;
-                    vec_[pos] = '\0'; // zero out.
-                    while(pos >= read_pos_ && vec_[pos] == '\0')
-                        pos--;
-                    // check whether newline delimited, if not add & correct position accordingly
-                    if(vec_[pos] != '\r' && vec_[pos] != '\n') {
-                        vec_[++pos] = '\n';
-                        vec_[++pos] = 0;
-                        return pos;
-                    }
+                    vec_[write_pos_ + bytesRead] = 0;
+                    bytesRead++;
                 }
 
                 return bytesRead;
             }
-        }
 
-        VirtualFile *file() const { return _file.get(); }
-
-    private:
-        char _delimiter;
-        char _quotechar;
-        std::unique_ptr<VirtualFile> _file;
-        size_t _numColumns;
-        size_t _rangeStart;
-        size_t _rangeEnd;
-        size_t _curFilePos;
-
-
-        int getChunkStart(int num_resizes_left=5) {
-
-            // reset buffer
-            write_pos_ = 0;
-            read_pos_ = 0;
-
-            // special case: _rangeStart is 0, i.e. at beginning of file, no need to infer chunk start.
-            if(_rangeStart == 0) {
-                size_t bytesRead = 0;
-                auto nbytes_max_to_read = vec_.size() - write_pos_ - 33; // fill buffer completely up
-                _file->read(&vec_[write_pos_], nbytes_max_to_read, &bytesRead);
-                write_pos_ = bytesRead;
-                return 0;
-            }
-
-            // fill initial buffer starting from rangeStart
-            assert(_rangeStart >= 128); // sanity check
-
-            int readBeforeSize = 16; // read 16 bytes before rangeStart, must be > 2 for lookback if the first field is hit accidentally
-
-            // find start
-            _file->seek(_rangeStart - readBeforeSize);
-
-            size_t bytesRead = 0;
+        } else {
+            // just read full file
             // read one less than buf capacity to end file with 0
-
-            // note that 33 is important to safeguard buffer! (+1 for '\0' + 32 for 2x 16 byte SIMD execution)
-            assert(write_pos_ == 0);
-            auto nbytes_max_to_read = vec_.size() - write_pos_ - 33; // fill buffer completely up
+            auto nbytes_max_to_read = vec_.size() - write_pos_ - 33;
             _file->read(&vec_[write_pos_], nbytes_max_to_read, &bytesRead);
 
+            // check if eof, then fill up with newline and 0
+            if (_file->eof()) {
+
+                size_t pos = write_pos_ + bytesRead;
+                vec_[pos] = '\0'; // zero out.
+                while(pos >= read_pos_ && vec_[pos] == '\0')
+                    pos--;
+                // check whether newline delimited, if not add & correct position accordingly
+                if(vec_[pos] != '\r' && vec_[pos] != '\n') {
+                    vec_[++pos] = '\n';
+                    vec_[++pos] = 0;
+                    return pos;
+                }
+            }
+
+            return bytesRead;
+        }
+    }
+
+    int VFCSVStreamCursor::getChunkStart(int num_resizes_left) {
+
+        // reset buffer
+        write_pos_ = 0;
+        read_pos_ = 0;
+
+        // special case: _rangeStart is 0, i.e. at beginning of file, no need to infer chunk start.
+        if(_rangeStart == 0) {
+            size_t bytesRead = 0;
+            auto nbytes_max_to_read = vec_.size() - write_pos_ - 33; // fill buffer completely up
+            _file->read(&vec_[write_pos_], nbytes_max_to_read, &bytesRead);
+            write_pos_ = bytesRead;
+            return 0;
+        }
+
+        // fill initial buffer starting from rangeStart
+        assert(_rangeStart >= 128); // sanity check
+
+        int readBeforeSize = 16; // read 16 bytes before rangeStart, must be > 2 for lookback if the first field is hit accidentally
+
+        // find start
+        _file->seek(_rangeStart - readBeforeSize);
+
+        size_t bytesRead = 0;
+        // read one less than buf capacity to end file with 0
+
+        // note that 33 is important to safeguard buffer! (+1 for '\0' + 32 for 2x 16 byte SIMD execution)
+        assert(write_pos_ == 0);
+        auto nbytes_max_to_read = vec_.size() - write_pos_ - 33; // fill buffer completely up
+        _file->read(&vec_[write_pos_], nbytes_max_to_read, &bytesRead);
+
 #ifndef NDEBUG
-            // // uncomment to trace possible bugs in CSV chunking.
-            // auto chunkInfoSize = 128;
-            // auto chunkInfo = fromCharPointers((const char*)&vec_[read_pos_], (const char*)&vec_[read_pos_] + chunkInfoSize);
-            // std::cout<<"inferring data from:"<<std::endl;
-            // std::cout<<chunkInfo<<std::endl;
-            // for(int i = 0; i < readBeforeSize; ++i)
-            //     std::cout<<"~";
-            // std::cout<<"^";
-            // for(int i = readBeforeSize; i < chunkInfoSize; ++i)
-            //     std::cout<<"~";
-            // std::cout<<std::endl;
+        // // uncomment to trace possible bugs in CSV chunking.
+        // auto chunkInfoSize = 128;
+        // auto chunkInfo = fromCharPointers((const char*)&vec_[read_pos_], (const char*)&vec_[read_pos_] + chunkInfoSize);
+        // std::cout<<"inferring data from:"<<std::endl;
+        // std::cout<<chunkInfo<<std::endl;
+        // for(int i = 0; i < readBeforeSize; ++i)
+        //     std::cout<<"~";
+        // std::cout<<"^";
+        // for(int i = readBeforeSize; i < chunkInfoSize; ++i)
+        //     std::cout<<"~";
+        // std::cout<<std::endl;
 #endif
 
-            // find start of chunk
+        // find start of chunk
 
-            auto info = findLineStart((const char*)&vec_[0], bytesRead, readBeforeSize,
-                                      _numColumns, _delimiter, _quotechar);
+        auto info = findLineStart((const char*)&vec_[0], bytesRead, readBeforeSize,
+                                  _numColumns, _delimiter, _quotechar);
 
-            if(!info.valid) {
+        if(!info.valid) {
 
-                // Note: this code doesn't work yet b.c. of bad seeking, redo better in future release
+            // Note: this code doesn't work yet b.c. of bad seeking, redo better in future release
 //                // one possible reason why this fails could be that the input buffer doesn't hold enough data, i.e. resize buffer
 //                if(num_resizes_left > 0) {
 //                    // double buf and retry
@@ -256,83 +200,80 @@ namespace tuplex {
 //                    return getChunkStart(num_resizes_left - 1);
 //                } else {
 
-                auto bufSearchSize = bytesRead;
-                std::stringstream ss;
-                ss<<std::string(__FILE__)<<":"<<__LINE__<<"Could not find csv start, aborting task.\n";
-                ss<<"Searched following buffer ("<<bufSearchSize<<" B) assuming "<<_numColumns<<" columns:\n";
-                ss<<fromCharPointers((const char*)&vec_[0], (const char*)&vec_[0] + bufSearchSize)<<std::endl;
+            auto bufSearchSize = bytesRead;
+            std::stringstream ss;
+            ss<<std::string(__FILE__)<<":"<<__LINE__<<"Could not find csv start, aborting task.\n";
+            ss<<"Searched following buffer ("<<bufSearchSize<<" B) assuming "<<_numColumns<<" columns:\n";
+            ss<<fromCharPointers((const char*)&vec_[0], (const char*)&vec_[0] + bufSearchSize)<<std::endl;
 
 #ifndef NDEBUG
-                // for quicker jumping into the error...
-                auto info = findLineStart((const char*)&vec_[0], bytesRead, readBeforeSize,
-                                          _numColumns, _delimiter, _quotechar);
+            // for quicker jumping into the error...
+            auto info = findLineStart((const char*)&vec_[0], bytesRead, readBeforeSize,
+                                      _numColumns, _delimiter, _quotechar);
 #endif
 
-                throw std::runtime_error(ss.str());
+            throw std::runtime_error(ss.str());
 //                }
-            }
-
-
-            auto csvStartOffset = info.offset;
-
-            // update range Start
-            _rangeStart += csvStartOffset;
-            //write_pos_ = std::min(bytesRead + _file->eof(), _rangeEnd - _rangeStart);
-            write_pos_ = bytesRead;
-            // move input by start offset + readbefore buffer
-            read_pos_ = csvStartOffset + readBeforeSize;
-
-
-#ifndef NDEBUG
-             // chunkInfo = fromCharPointers((const char*)&vec_[read_pos_], (const char*)&vec_[read_pos_] + chunkInfoSize);
-             // std::cout<<"first line to parse is:"<<std::endl;
-             // std::cout<<chunkInfo<<std::endl;
-#endif
-            return csvStartOffset;
         }
 
 
-        void seekToStart() {
-            // reset bufferedstreamcursor
-            reset();
+        auto csvStartOffset = info.offset;
 
-            _curFilePos = 0;
+        // update range Start
+        _rangeStart += csvStartOffset;
+        //write_pos_ = std::min(bytesRead + _file->eof(), _rangeEnd - _rangeStart);
+        write_pos_ = bytesRead;
+        // move input by start offset + readbefore buffer
+        read_pos_ = csvStartOffset + readBeforeSize;
 
-            if(_rangeStart == 0 && _rangeEnd == 0)
-                return;
-
-            // if ranges, fill!
-            if(_rangeStart < _rangeEnd) {
 
 #ifndef NDEBUG
-                // sanity check
-                // range should be at least 256bytes for a row!
-                if(_rangeEnd - _rangeStart < 256)
-                    Logger::instance().defaultLogger().debug("extremely small range of " + std::to_string(_rangeEnd - _rangeStart) + " requested, merge with other part?");
+         // chunkInfo = fromCharPointers((const char*)&vec_[read_pos_], (const char*)&vec_[read_pos_] + chunkInfoSize);
+         // std::cout<<"first line to parse is:"<<std::endl;
+         // std::cout<<chunkInfo<<std::endl;
 #endif
-                getChunkStart();
+        return csvStartOffset;
+    }
 
-                _curFilePos = _rangeStart;
 
-                // check if eof, then fill up with 0
-                if (_file->eof())
-                    vec_[write_pos_] = 0;
-            }
+    void VFCSVStreamCursor::seekToStart() {
+        // reset bufferedstreamcursor
+        reset();
 
-            // make sure rangeEnd is higher than rangeStart
-            if(_rangeEnd != 0) {
-                if(_rangeEnd <= _rangeStart) {
-                    // buffer to short to hold line
-                    Logger::instance().defaultLogger().warn("range can't hold a single line, skipping task");
-                }
+        _curFilePos = 0;
+
+        if(_rangeStart == 0 && _rangeEnd == 0)
+            return;
+
+        // if ranges, fill!
+        if(_rangeStart < _rangeEnd) {
+
+#ifndef NDEBUG
+            // sanity check
+            // range should be at least 256bytes for a row!
+            if(_rangeEnd - _rangeStart < 256)
+                Logger::instance().defaultLogger().debug("extremely small range of " + std::to_string(_rangeEnd - _rangeStart) + " requested, merge with other part?");
+#endif
+            getChunkStart();
+
+            _curFilePos = _rangeStart;
+
+            // check if eof, then fill up with 0
+            if (_file->eof())
+                vec_[write_pos_] = 0;
+        }
+
+        // make sure rangeEnd is higher than rangeStart
+        if(_rangeEnd != 0) {
+            if(_rangeEnd <= _rangeStart) {
+                // buffer to short to hold line
+                Logger::instance().defaultLogger().warn("range can't hold a single line, skipping task");
             }
         }
-    };
+    }
 }
 
-
 namespace tuplex {
-
 
     void checkfallbackTupleFromParseException(const uint8_t* buf, size_t buf_size) {
         // cf.  char* serializeParseException(int64_t numCells,

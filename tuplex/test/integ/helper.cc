@@ -3,7 +3,7 @@
 //
 
 #include "helper.h"
-#include "physical/execution/csvmonkey.h"
+#include "physical/execution/CSVReader.h"
 
 namespace tuplex {
 
@@ -144,7 +144,6 @@ namespace tuplex {
     }
 
 
-
     bool stop_local_s3_server() {
         using namespace std;
 
@@ -158,10 +157,9 @@ namespace tuplex {
 
     size_t csv_row_count(const std::string &path) {
         // parse CSV from path, and count rows.
-        csvmonkey::MappedFileCursor stream;
-        csvmonkey::CsvReader<csvmonkey::MappedFileCursor> reader(stream);
+        VFCSVStreamCursor stream(path, ',', '"');
+        csvmonkey::CsvReader<csvmonkey::StreamCursor> reader(stream);
 
-        stream.open(path.c_str());
         csvmonkey::CsvCursor &row = reader.row();
         if (!reader.read_row()) {
             throw std::runtime_error("Cannot read header row");
@@ -176,11 +174,11 @@ namespace tuplex {
 
     size_t csv_row_count_for_pattern(const std::string &pattern) {
         using namespace std;
-        auto output_uris = glob(pattern);
+        auto output_uris = VirtualFileSystem::fromURI(pattern).glob(pattern);
         cout << "Found " << pluralize(output_uris.size(), "output file") << endl;
         size_t total_row_count = 0;
         for (auto path: output_uris) {
-            auto row_count = csv_row_count(path);
+            auto row_count = csv_row_count(path.toString());
             cout << "-- file " << path << ": " << pluralize(row_count, "row") << endl;
             total_row_count += row_count;
         }

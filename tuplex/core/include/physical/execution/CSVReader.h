@@ -18,7 +18,71 @@
 #include <jit/RuntimeInterface.h>
 #include <stdexcept>
 
+#include <physical/execution/csvmonkey.h>
+
 namespace tuplex {
+
+    // class for manual cursor (block based from file)
+    class VFCSVStreamCursor : public csvmonkey::BufferedStreamCursor {
+    public:
+        VFCSVStreamCursor() = delete;
+
+        explicit VFCSVStreamCursor(const URI &uri, char delimiter, char quotechar, size_t numColumns = 0,
+                                   size_t rangeStart = 0, size_t rangeEnd = 0) :
+                _delimiter(delimiter), _quotechar(quotechar),
+                _file(VirtualFileSystem::open_file(uri, VirtualFileMode::VFS_READ)), _numColumns(numColumns),
+                _rangeStart(rangeStart), _rangeEnd(rangeEnd), _curFilePos(0) {
+
+            if(!_file)
+                throw std::runtime_error("could not open file " + uri.toPath());
+
+            ensure(16 * 1024); // 16KB buffer
+
+            if(_rangeStart < _rangeEnd)
+                seekToStart();
+        }
+
+        inline void consume(size_t n) override {
+            auto delta = std::min(n, write_pos_ - read_pos_);
+            read_pos_ += delta;
+            _curFilePos += delta; // important for range based!
+            CSM_DEBUG("consume(%lu); new size: %lu", n, size())
+        }
+
+        inline size_t curFilePos() const {
+            return _curFilePos;
+        }
+
+        /**
+         * actual start of range that is been read
+         * @return i.e. where csv offset starts
+         */
+        inline size_t rangeStartRead() const { return _rangeStart; }
+
+        /*!
+         * actual end of range reading.
+         * @return
+         */
+        inline size_t rangeEndRead() const { assert(_curFilePos >= _rangeEnd); return _curFilePos; }
+
+        ssize_t readmore() override;
+
+        VirtualFile *file() const { return _file.get(); }
+
+    private:
+        char _delimiter;
+        char _quotechar;
+        std::unique_ptr<VirtualFile> _file;
+        size_t _numColumns;
+        size_t _rangeStart;
+        size_t _rangeEnd;
+        size_t _curFilePos;
+
+        int getChunkStart(int num_resizes_left=5);
+
+        void seekToStart();
+    };
+
     class CSVReader : public FileInputReader {
     public:
         CSVReader() = delete;

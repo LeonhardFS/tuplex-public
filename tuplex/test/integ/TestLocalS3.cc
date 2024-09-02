@@ -443,5 +443,6 @@ TEST_F(S3LocalTests, TestGithubPipeline) {
     EXPECT_EQ(output_uris.size(), files_to_upoad.size());
 
     // Check csv counts to make sure these are correct.
-
+    auto total_row_count = csv_row_count_for_pattern(output_path + "/*.csv");
+    EXPECT_EQ(total_row_count, 378);
 }

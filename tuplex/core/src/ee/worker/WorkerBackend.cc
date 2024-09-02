@@ -19,7 +19,8 @@ namespace tuplex {
                                                                 _options(context.getOptions()),
                                                                 _deleteScratchDirOnShutdown(false),
                                                                 _logger(Logger::instance().logger("worker")),
-                                                                _scratchDir(URI::INVALID) {
+                                                                _scratchDir(URI::INVALID),
+                                                                _emitRequestsOnly(false) {
 
         _driver.reset(new Executor(_options.DRIVER_MEMORY(),
                                    _options.PARTITION_SIZE(),
@@ -108,7 +109,7 @@ namespace tuplex {
                                             buf_spill_size);
 
         if (!requests.empty()) {
-            logger().info("Invoking " + pluralize(requests.size(), "request") + " ...");
+            logger().info("Created " + pluralize(requests.size(), "request") + " ...");
 
 
             // check requests have all different output uris
@@ -140,23 +141,30 @@ namespace tuplex {
             // process using multiple processes? -> i.e. pass message to worker executable
             auto num_processes = _options.EXPERIMENTAL_WORKER_BACKEND_NUM_WORKERS();
             logger().info("Context configured with " + pluralize(num_processes, "worker process") + " (experimental)");
-            processRequestsWithProcessPool(requests, &stats_array, &req_array, &total_input_rows, &total_num_output_rows, num_processes);
 
-            logger().info("total input row count: " + std::to_string(total_input_rows));
-            logger().info("total output row count: " + std::to_string(total_num_output_rows));
 
-            // dump
-            logger().info("JSON:\n" + stats_array.dump(2));
+            if(_emitRequestsOnly) {
+                _pendingRequests = requests;
+            } else {
+                // actually process requests.
+                logger().info("Start processing " + pluralize(requests.size(), "request") + ".");
+                processRequestsWithProcessPool(requests, &stats_array, &req_array, &total_input_rows, &total_num_output_rows, num_processes);
 
-            // write output to file
-            nlohmann::json j_all;
-            j_all["responses"] = stats_array;
-            j_all["requests"] = req_array;
-            j_all["total_input_row_count"] = total_input_rows;
-            auto job_uri = URI("worker_app_job.json");
-            stringToFile(job_uri, j_all.dump());
-            logger().info("Saved job to " + job_uri.toPath());
+                logger().info("Total input row count: " + std::to_string(total_input_rows));
+                logger().info("Total output row count: " + std::to_string(total_num_output_rows));
 
+                // dump
+                logger().info("JSON:\n" + stats_array.dump(2));
+
+                // write output to file
+                nlohmann::json j_all;
+                j_all["responses"] = stats_array;
+                j_all["requests"] = req_array;
+                j_all["total_input_row_count"] = total_input_rows;
+                auto job_uri = URI("worker_app_job.json");
+                stringToFile(job_uri, j_all.dump());
+                logger().info("Saved job to " + job_uri.toPath());
+            }
         } else {
             logger().warn("No requests generated, skipping stage.");
         }

@@ -42,6 +42,27 @@ namespace tuplex {
 
         Executor* driver() override { return _driver.get(); }
         void execute(PhysicalStage* stage) override;
+
+
+        // Helpers for testing.
+
+        /*!
+         * if true, requests are only created but not posted.
+         * @param emitOnly
+         */
+        void setRequestMode(bool emitOnly) {
+            _emitRequestsOnly = emitOnly;
+        }
+
+        inline std::vector<messages::InvocationRequest> pendingRequests(bool clear=true) {
+            if(clear) {
+                auto v = _pendingRequests;
+                _pendingRequests.clear();
+                return v;
+            }
+            return _pendingRequests;
+        }
+
     protected:
         ContextOptions _options;
         std::unique_ptr<Executor> _driver;
@@ -75,6 +96,9 @@ namespace tuplex {
         URI _scratchDir;
         bool _deleteScratchDirOnShutdown;
         std::string _worker_exe_path;
+
+        std::vector<messages::InvocationRequest> _pendingRequests;
+        bool _emitRequestsOnly;
 
         /*!
          * returns a scratch dir. If none is stored/found, abort
