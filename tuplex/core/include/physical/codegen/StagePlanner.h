@@ -380,6 +380,29 @@ namespace tuplex {
                                 size_t strata_size,
                                 size_t samples_per_strata,
                                 const codegen::StageBuilderConfiguration& conf);
+
+    inline RetypeConfiguration retype_configuration_from(const python::Type& projected_row_type, const std::vector<std::string>& projected_columns) {
+        // need to restrict potentially?
+        RetypeConfiguration r_conf;
+        r_conf.is_projected = true;
+        r_conf.row_type = projected_row_type;
+        r_conf.columns = projected_columns;
+        r_conf.remove_existing_annotations = true; // remove all annotations (except the column restore ones?)
+
+        if(extract_columns_from_type(r_conf.row_type) != r_conf.columns.size() && r_conf.row_type.isRowType() && !r_conf.row_type.get_column_names().empty())
+            r_conf.columns = r_conf.row_type.get_column_names();
+
+        // make sure all existing columns get a type, if the given columns are less than the current ones -> expand the column + type description.
+        //if(extract_columns_from_type())
+
+        // perform quick sanity check
+        if(!r_conf.columns.empty()) {
+            auto n_cols_row_type = extract_columns_from_type(r_conf.row_type);
+            auto n_cols_count = r_conf.columns.size();
+            assert(n_cols_row_type == n_cols_count);
+        }
+        return r_conf;
+    }
 }
 
 #endif

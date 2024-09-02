@@ -382,6 +382,10 @@ namespace tuplex {
                         // compare value
                         auto c_val = parseBoolString(constant_value);
                         check_cond = builder.CreateICmpEQ(_env->boolConst(c_val), val.val);
+                    } else if(python::Type::STRING == elementType) {
+                        // direct compare (size + content)
+                        check_cond = builder.CreateICmpEQ(val.size, _env->i64Const(constant_value.size() + 1));
+                        check_cond = builder.CreateAnd(check_cond, _env->fixedSizeStringCompare(builder, val.val, constant_value));
                     } else {
                         throw std::runtime_error("Check with type " + check.constant_type().desc() + " not yet supported");
                     }

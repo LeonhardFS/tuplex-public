@@ -33,25 +33,28 @@ namespace tuplex {
     // 31 + 19 + 54 + 56 + 63 + 41 + 32 + 16 + 27 + 25 + 25 - 11 = 378 <-- how many rows result for *.json.sample has.
 
     std::vector<QueryConfiguration> g_configurations_to_test(
-            {QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false,
-                                false, false, 378},
-             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false,
-                                true, false, 378},
-             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true,
-                                false, false, 378},
-             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true,
-                                true, false, 378},
-             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false,
-                                false, true, 378},
-             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false,
-                                true, true, 378},
-             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true,
-                                false, true, 378},
-             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true,
-                                true, true, 378},
-             QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", false, true, false, 294195},
-             QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", true, true, false, 294195},
-             QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", true, true, true, 294195}});
+            {
+//                QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false,
+//                                false, false, 378},
+//             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false,
+//                                true, false, 378},
+//             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true,
+//                                false, false, 378},
+//             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true,
+//                                true, false, 378},
+//             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false,
+//                                false, true, 378},
+//             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false,
+//                                true, true, 378},
+//             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true,
+//                                false, true, 378},
+//             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true,
+//                                true, true, 378},
+//             QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", false, true, false, 294195},
+//             QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", true, true, false, 294195},
+//             QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", true, true, true, 294195},
+             QueryConfiguration{"large_benchmark", "/hot/data/github_download/monthly/*.json", true, true, true, 12409995}
+            });
 
 // see https://github.com/google/googletest/blob/main/docs/advanced.md#specifying-names-for-value-parameterized-test-parameters
 
