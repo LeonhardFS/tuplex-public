@@ -25,7 +25,6 @@ namespace tuplex {
                                    _options.PARTITION_SIZE(),
                                    _options.RUNTIME_MEMORY(),
                                    _options.RUNTIME_MEMORY_DEFAULT_BLOCK_SIZE(),
-                                   _options.RUNTIME_MEMORY_DEFAULT_BLOCK_SIZE(),
                                    _options.SCRATCH_DIR(), "worker-local-driver"));
     }
 

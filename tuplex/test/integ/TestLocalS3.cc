@@ -4,178 +4,19 @@
 
 #include <gtest/gtest.h>
 
-#include "FileSystemUtils.h"
 #include "S3File.h"
 #include "Pipe.h"
+#include "jit/RuntimeInterface.h"
 #include <ContextOptions.h>
 #include <Timer.h>
 
-#include <AWSCommon.h>
-#include <VirtualFileSystem.h>
-#include <S3Cache.h>
-#include <filesystem>
-#include <aws/core/auth/AWSCredentials.h>
-#include <aws/s3/model/CreateBucketRequest.h>
-#include <nlohmann/json.hpp>
-#include <boost/interprocess/streams/bufferstream.hpp>
+#include "helper.h"
 
-//#include <reproc>
+// tuplex files
+#include <UDF.h>
+#include <Context.h>
 
-bool is_docker_installed() {
-    using namespace tuplex;
-    using namespace std;
-
-    // Check by running `docker --version`, whether locally docker is available.
-    // If not, skip tests.
-    Pipe p("docker --version");
-    p.pipe();
-    if(p.retval() == 0) {
-        auto p_stdout = p.stdout();
-        trim(p_stdout);
-        cout<<"Found "<<p_stdout<<"."<<endl;
-        return true;
-    }
-    return false;
-}
-
-std::string minio_data_location() {
-    using namespace tuplex;
-
-    // create location if needed
-    auto absolute_path = URI("../resources/data").toPath();
-    if(!dirExists(absolute_path.c_str())) {
-        std::filesystem::create_directories(absolute_path);
-    }
-    return absolute_path;
-}
-
-// dummy values used for testing
-static const std::string MINIO_ACCESS_KEY="AKIAIOSFODNN7EXAMPLE";
-static const std::string MINIO_SECRET_KEY="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
-static const std::string MINIO_DOCKER_CONTAINER_NAME="tuplex-local-s3-minio";
-static const int MINIO_S3_ENDPOINT_PORT=9000;
-static const int MINIO_S3_CONSOLE_PORT=9001;
-
-std::tuple<Aws::Auth::AWSCredentials, Aws::Client::ClientConfiguration> local_s3_credentials(const std::string& access_key=MINIO_ACCESS_KEY, const std::string& secret_key=MINIO_SECRET_KEY, int port=MINIO_S3_ENDPOINT_PORT) {
-    Aws::Auth::AWSCredentials credentials(access_key.c_str(), secret_key.c_str(), "");
-    Aws::Client::ClientConfiguration config;
-    config.endpointOverride = "http://localhost:" + std::to_string(port);
-    config.enableEndpointDiscovery = false;
-    // need to disable signing https://docs.aws.amazon.com/IAM/latest/UserGuide/create-signed-request.html.
-    config.verifySSL = false;
-    config.connectTimeoutMs = 1500; // 1.5s timeout (local machine)
-    return std::make_tuple(credentials, config);
-}
-
-std::vector<std::string> list_containers(bool only_active=false) {
-    using namespace std;
-    stringstream ss;
-    ss<<"docker ps ";
-    if(!only_active)
-        ss<<" -a ";
-    ss<<" --format=json";
-
-    Pipe p(ss.str());
-    p.pipe();
-    if(p.retval() != 0) {
-        throw std::runtime_error("Failed to list docker containers: " + p.stderr());
-    } else {
-        string json_str = p.stdout();
-        std::vector<std::string> names;
-        std::string line;
-        std::stringstream input; input<<json_str;
-        while(std::getline(input, line)) {
-            auto j = nlohmann::json::parse(line);
-
-            names.push_back(j["Names"].get<std::string>());
-        }
-
-        return names;
-    }
-}
-
-bool stop_container(const std::string& container_name) {
-    using namespace std;
-    stringstream ss;
-    ss<<"docker stop "<<container_name;
-    Pipe p(ss.str());
-    p.pipe();
-    if(p.retval() != 0) {
-        cerr<<"Failed stopping container "<<container_name<<": "<<p.stderr()<<endl;
-        return false;
-    } else {
-        cout<<"Stopped container "<<container_name<<"."<<endl;
-#ifndef NDEBUG
-        cout<<p.stdout()<<endl;
-#endif
-        return true;
-    }
-}
-
-bool remove_container(const std::string& container_name) {
-    using namespace std;
-    stringstream ss;
-    ss<<"docker rm "<<container_name;
-    Pipe p(ss.str());
-    p.pipe();
-    if(p.retval() != 0) {
-        cerr<<"Failed removing container "<<container_name<<": "<<p.stderr()<<endl;
-        return false;
-    } else {
-        cout<<"Removed container "<<container_name<<"."<<endl;
-#ifndef NDEBUG
-        cout<<p.stdout()<<endl;
-#endif
-        return true;
-    }
-}
-
-bool start_local_s3_server() {
-    using namespace std;
-
-    // check if container with the name already exists, if so stop & remove.
-    auto container_names = list_containers();
-    if(std::find(container_names.begin(), container_names.end(), MINIO_DOCKER_CONTAINER_NAME) != container_names.end()) {
-        cout<<"Found existing oontainer named "<<MINIO_DOCKER_CONTAINER_NAME<<", stopping and removing container."<<endl;
-        stop_container(MINIO_DOCKER_CONTAINER_NAME);
-        remove_container(MINIO_DOCKER_CONTAINER_NAME);
-    }
-
-    stringstream ss;
-    // General form is docker run [OPTIONS] IMAGE [COMMAND] [ARG...]
-    ss<<"docker run -p 9000:"<<MINIO_S3_ENDPOINT_PORT<<" -p 9001:"<<MINIO_S3_CONSOLE_PORT
-      <<" -e \"MINIO_ROOT_USER="<<MINIO_ACCESS_KEY<<"\""
-      <<" -e \"MINIO_ROOT_PASSWORD="<<MINIO_SECRET_KEY<<"\""
-      <<" --name \""<<MINIO_DOCKER_CONTAINER_NAME<<"\""
-      <<" -d " // detached mode.
-      <<" quay.io/minio/minio server /data --console-address \":"<<MINIO_S3_CONSOLE_PORT<<"\"";
-
-    Pipe p(ss.str());
-    p.pipe();
-    if(p.retval() != 0) {
-        cerr<<"Failed starting local s3 server: "<<p.stderr()<<endl;
-        return false;
-    } else {
-        cout<<"Started local s3 server."<<endl;
-#ifndef NDEBUG
-        cout<<p.stdout()<<endl;
-#endif
-        return true;
-    }
-}
-
-
-
-bool stop_local_s3_server() {
-    using namespace std;
-
-    if(!stop_container(MINIO_DOCKER_CONTAINER_NAME))
-        return false;
-    if(!remove_container(MINIO_DOCKER_CONTAINER_NAME))
-        return false;
-
-    return true;
-}
+using namespace tuplex;
 
 static const std::string LOCAL_TEST_BUCKET_NAME="local-bucket";
 
@@ -253,11 +94,20 @@ protected:
         // create test bucket (because everything is in-memory so far)
         rc = create_test_bucket(LOCAL_TEST_BUCKET_NAME);
         ASSERT_TRUE(rc);
+
+
+        cout<<"Initializing interpreter and releasing GIL"<<endl;
+        python::initInterpreter();
+        python::unlockGIL();
     }
 
     static void TearDownTestSuite() {
         using namespace std;
         using namespace tuplex;
+
+        cout<<"Shutting down interpreter"<<endl;
+        python::lockGIL();
+        python::closeInterpreter();
 
         cout<<"Stopping local MinIO server"<<endl;
         stop_local_s3_server();
@@ -502,4 +352,96 @@ TEST_F(S3LocalTests, FileSeek) {
         else
             EXPECT_EQ(buf[i - 1], 0);
     }
+}
+
+namespace tuplex {
+    void github_pipeline(Context& ctx, const std::string& input_pattern, const std::string& output_path) {
+        using namespace std;
+        // start pipeline incl. output
+        auto repo_id_code = "def extract_repo_id(row):\n"
+                            "    if 2012 <= row['year'] <= 2014:\n"
+                            "        \n"
+                            "        if row['type'] == 'FollowEvent':\n"
+                            "            return row['payload']['target']['id']\n"
+                            "        \n"
+                            "        if row['type'] == 'GistEvent':\n"
+                            "            return row['payload']['id']\n"
+                            "        \n"
+                            "        repo = row.get('repository')\n"
+                            "        \n"
+                            "        if repo is None:\n"
+                            "            return None\n"
+                            "        return repo.get('id')\n"
+                            "    else:\n"
+                            "        repo =  row.get('repo')\n"
+                            "        if repo:\n"
+                            "            return repo.get('id')\n"
+                            "        else:\n"
+                            "            return None\n";
+
+        ctx.json(input_pattern, true, true)
+                .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
+                .withColumn("repo_id", UDF(repo_id_code))
+                .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
+                .withColumn("commits", UDF("lambda row: row['payload'].get('commits')"))
+                .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
+                .selectColumns(vector<string>{"type", "repo_id", "year", "number_of_commits"})
+                .tocsv(output_path);
+    }
+
+    ContextOptions microIntegOptions() {
+        auto co = ContextOptions::defaults();
+
+        co.set("tuplex.backend", "worker");
+
+        return co;
+    }
+}
+
+
+
+TEST_F(S3LocalTests, TestGithubPipeline) {
+    using namespace tuplex;
+    using namespace std;
+
+    // Test github pipeline with small sample files.
+    // Step 1: Upload all files into bucket.
+    // test file, write some stuff to it.
+
+    auto files_to_upoad = glob("../resources/hyperspecialization/github_daily/*.json.sample");
+    cout<<"Found "<<pluralize(files_to_upoad.size(), "test file")<<" to upload to local S3 storage."<<endl;
+
+    Timer timer;
+    cout<<"Uploading files..."<<endl;
+    for(const auto&path : files_to_upoad) {
+        auto target_uri = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + URI(path).base_name();
+        VirtualFileSystem::copy(path, target_uri);
+    }
+    cout<<"Upload took "<<std::fixed<<std::setprecision(1)<<timer.time()<<"s."<<endl;
+
+    // Check files are existing:
+    string input_pattern = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + "*.json.sample";
+    auto uris = VirtualFileSystem::fromURI(input_pattern).glob(input_pattern);
+    EXPECT_EQ(uris.size(), files_to_upoad.size());
+
+    auto output_path = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + "output";
+
+    // create context according to settings
+    auto co = microIntegOptions();
+    Context ctx(co);
+    runtime::init(co.RUNTIME_LIBRARY().toPath());
+
+    cout<<"Saving files to "<<output_path<<endl;
+
+    github_pipeline(ctx, input_pattern, output_path);
+
+    // glob output files (should be equal amount, as 1 request per file)
+    auto output_uris = VirtualFileSystem::fromURI(input_pattern).glob(output_path + "/*.csv");
+
+    cout<<"Found "<<pluralize(output_uris.size(), "output file")<<" in local S3 file system."<<endl;
+
+    EXPECT_EQ(output_uris.size(), files_to_upoad.size());
+
+    // Check csv counts to make sure these are correct.
+
 }

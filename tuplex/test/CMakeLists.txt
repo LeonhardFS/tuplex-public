@@ -83,7 +83,7 @@ endif()
 add_subdirectory(dict)
 add_subdirectory(worker)
 add_subdirectory(hyperspecialization)
-
+add_subdirectory(integ)
 add_subdirectory(hyper)
 
 # these require python, so only if embed is active!

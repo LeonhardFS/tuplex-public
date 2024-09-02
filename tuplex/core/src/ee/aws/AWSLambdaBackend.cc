@@ -500,7 +500,7 @@ namespace tuplex {
             return URI(root_path).join_path("job_0000.json").toString();
         unsigned max_job_no = 0;
         for (auto uri: uris) {
-            auto name = uri.basename();
+            auto name = uri.base_name();
             unsigned num = std::stoi(remove_non_digits(name));
             max_job_no = std::max(num, max_job_no);
         }
@@ -805,7 +805,7 @@ namespace tuplex {
                         logger().warn("could not find output uri " + output_uri + " in remote -> local mapping, skipping.");
                     } else {
                         // get basename of remote uri and map to local (join with parent)
-                        auto remote_basename = URI(it->first).basename();
+                        auto remote_basename = URI(it->first).base_name();
                         auto local_parent = it->second.parent();
                         auto target_path = local_parent.join(remote_basename).toPath();
                         logger().info("storing " + it->first.toPath() + " to " + target_path);
@@ -1524,7 +1524,7 @@ namespace tuplex {
             entries.push_back(std::make_tuple(kv.first, kv.second.to_csv()));
 
             // write to local dir for convenience
-            auto log_path = "./logs/" + URI(kv.first).basename()  + ".log.txt";
+            auto log_path = "./logs/" + URI(kv.first).base_name()  + ".log.txt";
             stringToFile(log_path, kv.second.log);
         }
 

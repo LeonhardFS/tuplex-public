@@ -1,0 +1,189 @@
+//
+// Created by leonhards on 9/1/24.
+//
+
+#include "helper.h"
+#include "physical/execution/csvmonkey.h"
+
+namespace tuplex {
+
+    bool is_docker_installed() {
+        using namespace tuplex;
+        using namespace std;
+
+        // Check by running `docker --version`, whether locally docker is available.
+        // If not, skip tests.
+        Pipe p("docker --version");
+        p.pipe();
+        if(p.retval() == 0) {
+            auto p_stdout = p.stdout();
+            trim(p_stdout);
+            cout<<"Found "<<p_stdout<<"."<<endl;
+            return true;
+        }
+        return false;
+    }
+
+    std::string minio_data_location() {
+        using namespace tuplex;
+
+        // create location if needed
+        auto absolute_path = URI("../resources/data").toPath();
+        if(!dirExists(absolute_path.c_str())) {
+            std::filesystem::create_directories(absolute_path);
+        }
+        return absolute_path;
+    }
+
+    std::tuple<Aws::Auth::AWSCredentials, Aws::Client::ClientConfiguration> local_s3_credentials(const std::string& access_key, const std::string& secret_key, int port) {
+        Aws::Auth::AWSCredentials credentials(access_key.c_str(), secret_key.c_str(), "");
+        Aws::Client::ClientConfiguration config;
+        config.endpointOverride = "http://localhost:" + std::to_string(port);
+        config.enableEndpointDiscovery = false;
+        // need to disable signing https://docs.aws.amazon.com/IAM/latest/UserGuide/create-signed-request.html.
+        config.verifySSL = false;
+        config.connectTimeoutMs = 1500; // 1.5s timeout (local machine)
+        return std::make_tuple(credentials, config);
+    }
+
+    std::vector<std::string> list_containers(bool only_active) {
+        using namespace std;
+        stringstream ss;
+        ss<<"docker ps ";
+        if(!only_active)
+            ss<<" -a ";
+        ss<<" --format=json";
+
+        Pipe p(ss.str());
+        p.pipe();
+        if(p.retval() != 0) {
+            throw std::runtime_error("Failed to list docker containers: " + p.stderr());
+        } else {
+            string json_str = p.stdout();
+            std::vector<std::string> names;
+            std::string line;
+            std::stringstream input; input<<json_str;
+            while(std::getline(input, line)) {
+                auto j = nlohmann::json::parse(line);
+
+                names.push_back(j["Names"].get<std::string>());
+            }
+
+            return names;
+        }
+    }
+
+    bool stop_container(const std::string& container_name) {
+        using namespace std;
+        stringstream ss;
+        ss<<"docker stop "<<container_name;
+        Pipe p(ss.str());
+        p.pipe();
+        if(p.retval() != 0) {
+            cerr<<"Failed stopping container "<<container_name<<": "<<p.stderr()<<endl;
+            return false;
+        } else {
+            cout<<"Stopped container "<<container_name<<"."<<endl;
+#ifndef NDEBUG
+            cout<<p.stdout()<<endl;
+#endif
+            return true;
+        }
+    }
+
+    bool remove_container(const std::string& container_name) {
+        using namespace std;
+        stringstream ss;
+        ss<<"docker rm "<<container_name;
+        Pipe p(ss.str());
+        p.pipe();
+        if(p.retval() != 0) {
+            cerr<<"Failed removing container "<<container_name<<": "<<p.stderr()<<endl;
+            return false;
+        } else {
+            cout<<"Removed container "<<container_name<<"."<<endl;
+#ifndef NDEBUG
+            cout<<p.stdout()<<endl;
+#endif
+            return true;
+        }
+    }
+
+    bool start_local_s3_server() {
+        using namespace std;
+
+        // check if container with the name already exists, if so stop & remove.
+        auto container_names = list_containers();
+        if(std::find(container_names.begin(), container_names.end(), MINIO_DOCKER_CONTAINER_NAME) != container_names.end()) {
+            cout<<"Found existing oontainer named "<<MINIO_DOCKER_CONTAINER_NAME<<", stopping and removing container."<<endl;
+            stop_container(MINIO_DOCKER_CONTAINER_NAME);
+            remove_container(MINIO_DOCKER_CONTAINER_NAME);
+        }
+
+        stringstream ss;
+        // General form is docker run [OPTIONS] IMAGE [COMMAND] [ARG...]
+        ss<<"docker run -p 9000:"<<MINIO_S3_ENDPOINT_PORT<<" -p 9001:"<<MINIO_S3_CONSOLE_PORT
+          <<" -e \"MINIO_ROOT_USER="<<MINIO_ACCESS_KEY<<"\""
+          <<" -e \"MINIO_ROOT_PASSWORD="<<MINIO_SECRET_KEY<<"\""
+          <<" --name \""<<MINIO_DOCKER_CONTAINER_NAME<<"\""
+          <<" -d " // detached mode.
+          <<" quay.io/minio/minio server /data --console-address \":"<<MINIO_S3_CONSOLE_PORT<<"\"";
+
+        Pipe p(ss.str());
+        p.pipe();
+        if(p.retval() != 0) {
+            cerr<<"Failed starting local s3 server: "<<p.stderr()<<endl;
+            return false;
+        } else {
+            cout<<"Started local s3 server."<<endl;
+#ifndef NDEBUG
+            cout<<p.stdout()<<endl;
+#endif
+            return true;
+        }
+    }
+
+
+
+    bool stop_local_s3_server() {
+        using namespace std;
+
+        if(!stop_container(MINIO_DOCKER_CONTAINER_NAME))
+            return false;
+        if(!remove_container(MINIO_DOCKER_CONTAINER_NAME))
+            return false;
+
+        return true;
+    }
+
+    size_t csv_row_count(const std::string &path) {
+        // parse CSV from path, and count rows.
+        csvmonkey::MappedFileCursor stream;
+        csvmonkey::CsvReader<csvmonkey::MappedFileCursor> reader(stream);
+
+        stream.open(path.c_str());
+        csvmonkey::CsvCursor &row = reader.row();
+        if (!reader.read_row()) {
+            throw std::runtime_error("Cannot read header row");
+        }
+
+        size_t row_count = 0;
+        while (reader.read_row()) {
+            row_count++;
+        }
+        return row_count;
+    }
+
+    size_t csv_row_count_for_pattern(const std::string &pattern) {
+        using namespace std;
+        auto output_uris = glob(pattern);
+        cout << "Found " << pluralize(output_uris.size(), "output file") << endl;
+        size_t total_row_count = 0;
+        for (auto path: output_uris) {
+            auto row_count = csv_row_count(path);
+            cout << "-- file " << path << ": " << pluralize(row_count, "row") << endl;
+            total_row_count += row_count;
+        }
+        return total_row_count;
+    }
+}
