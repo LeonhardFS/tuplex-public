@@ -11,6 +11,7 @@
 #include <Timer.h>
 
 #include "helper.h"
+#include "ee/worker/WorkerBackend.h"
 
 // tuplex files
 #include <UDF.h>
@@ -419,20 +420,21 @@ TEST_F(S3LocalTests, TestGithubPipeline) {
     }
     cout<<"Upload took "<<std::fixed<<std::setprecision(1)<<timer.time()<<"s."<<endl;
 
-    // Check files are existing:
+    // Step 2: Check files are existing:
     string input_pattern = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + "*.json.sample";
     auto uris = VirtualFileSystem::fromURI(input_pattern).glob(input_pattern);
     EXPECT_EQ(uris.size(), files_to_upoad.size());
 
     auto output_path = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + "output";
 
-    // create context according to settings
+    // Step 3: Create Tuplex context according to settings
     auto co = microIntegOptions();
     Context ctx(co);
     runtime::init(co.RUNTIME_LIBRARY().toPath());
 
     cout<<"Saving files to "<<output_path<<endl;
 
+    // Step 4: execute pipeline (inprocess with default config)
     github_pipeline(ctx, input_pattern, output_path);
 
     // glob output files (should be equal amount, as 1 request per file)
@@ -442,7 +444,67 @@ TEST_F(S3LocalTests, TestGithubPipeline) {
 
     EXPECT_EQ(output_uris.size(), files_to_upoad.size());
 
-    // Check csv counts to make sure these are correct.
+    // Step 5: Check csv counts to make sure these are correct.
     auto total_row_count = csv_row_count_for_pattern(output_path + "/*.csv");
     EXPECT_EQ(total_row_count, 378);
+}
+
+TEST_F(S3LocalTests, TestGithubPipelineObjectCompileAndProcess) {
+    // This test is similar to TestGithubPipeline, however here the requests are only collected.
+    using namespace tuplex;
+    using namespace std;
+
+    // Test github pipeline with small sample files.
+    // Step 1: Upload all files into bucket.
+    // test file, write some stuff to it.
+
+    auto files_to_upoad = glob("../resources/hyperspecialization/github_daily/*.json.sample");
+    for(const auto&path : files_to_upoad) {
+        auto target_uri = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + URI(path).base_name();
+        VirtualFileSystem::copy(path, target_uri);
+    }
+
+    string input_pattern = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + "*.json.sample";
+    auto output_path = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + "output";
+
+    // Step 2: Create Tuplex context according to settings
+    auto co = microIntegOptions();
+    Context ctx(co);
+    runtime::init(co.RUNTIME_LIBRARY().toPath());
+
+    // Step 3: Configure backend to only emit requests
+    ASSERT_TRUE(ctx.backend());
+    auto wb = static_cast<WorkerBackend*>(ctx.backend());
+    wb->setRequestMode(true);
+
+    // Step 4: execute pipeline (inprocess with default config)
+    github_pipeline(ctx, input_pattern, output_path);
+
+    // Receive pending requests & clear.
+    auto requests = wb->pendingRequests(true);
+
+    EXPECT_EQ(requests.size(), files_to_upoad.size());
+    ASSERT_FALSE(requests.empty());
+
+    // Compute sizes for each request to see how large they are.
+    for(unsigned i = 0; i < requests.size(); ++i) {
+        std::string json_str;
+        google::protobuf::util::MessageToJsonString(requests[i], &json_str);
+        auto bin_str = requests[i].SerializeAsString();
+        auto base64_str = encodeAWSBase64(bin_str);
+        cout<<"-- request "<<(i + 1)<<":  json: "<<sizeToMemString(json_str.size())<<" bin: "<<sizeToMemString(bin_str.size())<<" base64: "<<sizeToMemString(base64_str.size())<<endl;
+    }
+
+
+
+//    // glob output files (should be equal amount, as 1 request per file)
+//    auto output_uris = VirtualFileSystem::fromURI(input_pattern).glob(output_path + "/*.csv");
+//
+//    cout<<"Found "<<pluralize(output_uris.size(), "output file")<<" in local S3 file system."<<endl;
+//
+//    EXPECT_EQ(output_uris.size(), files_to_upoad.size());
+//
+//    // Step 5: Check csv counts to make sure these are correct.
+//    auto total_row_count = csv_row_count_for_pattern(output_path + "/*.csv");
+//    EXPECT_EQ(total_row_count, 378);
 }

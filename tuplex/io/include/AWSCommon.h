@@ -84,6 +84,12 @@ namespace tuplex {
         auto logTail =  ss.str();
         return logTail;
     }
+
+    inline std::string encodeAWSBase64(const std::string& data) {
+        // TODO: Use simdutf https://github.com/simdutf/simdutf?tab=readme-ov-file#base64 in the future.
+        return Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::ByteBuffer(
+                reinterpret_cast<const unsigned char *>(data.c_str()), data.size())).c_str();
+    }
 }
 
 // Amazon frequently changes the parameters of lambda functions,
