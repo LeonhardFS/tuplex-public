@@ -495,12 +495,27 @@ TEST_F(S3LocalTests, TestGithubPipelineObjectCompileAndProcess) {
         cout<<"-- request "<<(i + 1)<<":  json: "<<sizeToMemString(json_str.size())<<" bin: "<<sizeToMemString(bin_str.size())<<" base64: "<<sizeToMemString(base64_str.size())<<endl;
     }
 
+    // change mode now of request to only compile and return code as object.
+    auto request = requests[0];
+    request.set_requestmode(REQUEST_MODE_COMPILE_AND_RETURN_OBJECT_CODE | REQUEST_MODE_COMPILE_ONLY);
 
+    // Issue request to worker (via helper function) and retrieve response.
+    auto response = process_request_with_worker(co.EXPERIMENTAL_WORKER_PATH(), co.SCRATCH_DIR().toPath(), request);
 
-//    // glob output files (should be equal amount, as 1 request per file)
-//    auto output_uris = VirtualFileSystem::fromURI(input_pattern).glob(output_path + "/*.csv");
-//
-//    cout<<"Found "<<pluralize(output_uris.size(), "output file")<<" in local S3 file system."<<endl;
+    // check result code is ok.
+    cout<<"Status of request: "<<response.status()<<endl;
+
+    // print stuff
+    {
+        std::string json_str;
+        google::protobuf::util::MessageToJsonString(response, &json_str);
+        cout<<"Response\n:"<<json_str<<endl;
+    }
+
+    // glob output files (should be equal amount, as 1 request per file)
+    auto output_uris = VirtualFileSystem::fromURI(input_pattern).glob(output_path + "/*.csv");
+
+    cout<<"Found "<<pluralize(output_uris.size(), "output file")<<" in local S3 file system."<<endl;
 //
 //    EXPECT_EQ(output_uris.size(), files_to_upoad.size());
 //

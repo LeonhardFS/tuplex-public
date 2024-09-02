@@ -21,7 +21,6 @@
 #include <regex>
 
 namespace tuplex {
-
     class LogicalPlan;
     class PhysicalPlan;
     class PhysicalStage;
@@ -122,6 +121,8 @@ namespace tuplex {
                               size_t numThreads,
                               const URI &spillURI,
                               size_t buf_spill_size);
+
+    extern std::string find_worker(const std::string& path_hint);
 }
 
 #endif //TUPLEX_WORKERBACKEND_H

@@ -4,6 +4,7 @@
 
 #include "helper.h"
 #include "physical/execution/CSVReader.h"
+#include "ee/worker/WorkerBackend.h"
 
 namespace tuplex {
 
@@ -183,5 +184,54 @@ namespace tuplex {
             total_row_count += row_count;
         }
         return total_row_count;
+    }
+
+    static std::string runCommand(const std::string& cmd) {
+        std::array<char, 128> buffer;
+        std::string result;
+        std::shared_ptr<FILE> pipe(popen(cmd.c_str(), "r"), pclose);
+        if (!pipe) throw std::runtime_error("popen() failed!");
+        while (!feof(pipe.get())) {
+            if (fgets(buffer.data(), 128, pipe.get()) != nullptr)
+                result += buffer.data();
+        }
+        return result;
+    }
+
+    messages::InvocationResponse process_request_with_worker(const std::string& worker_path, const std::string& scratch_dir, const messages::InvocationRequest& request) {
+        auto& logger = Logger::instance().logger("test");
+
+        auto actual_worker_path = find_worker(worker_path);
+        logger.info("Found worker executable " + actual_worker_path);
+
+
+        // ensure cache dir exists.
+        VirtualFileSystem::fromURI(scratch_dir).create_dir(scratch_dir);
+
+        auto process_id = 0;
+        auto request_no = 1;
+        Timer timer;
+        auto message_path = URI(scratch_dir).join("message_process_" + std::to_string(process_id) + "_" + std::to_string(request_no-1) + ".json");
+        auto stats_path = URI(scratch_dir).join("message_stats_" + std::to_string(process_id) + "_" + std::to_string(request_no-1) + ".json");
+
+        std::string json_message;
+        google::protobuf::util::MessageToJsonString(request, &json_message);
+
+        // save to file
+        stringToFile(message_path, json_message);
+
+        auto cmd = actual_worker_path + " -m " + message_path.toPath() + " -o " + stats_path.toPath();
+        auto res_stdout = runCommand(cmd);
+
+        // parse stats as answer out
+        auto stats = nlohmann::json::parse(fileToString(stats_path));
+        auto worker_invocation_duration = timer.time();
+        stats["request_total_time"] = worker_invocation_duration;
+
+        std::cout<<"Response:\n"<<stats.dump(2)<<std::endl;
+
+        messages::InvocationResponse response;
+        google::protobuf::util::JsonStringToMessage(fileToString(stats_path), &response);
+        return response;
     }
 }
