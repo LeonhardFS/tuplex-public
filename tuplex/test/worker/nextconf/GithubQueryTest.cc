@@ -1047,6 +1047,8 @@ namespace tuplex {
         path = "/home/leonhards/projects/tuplex-public/tuplex/cmake-build-debug-w-cereal/dist/bin/request_200.json";
         path = "/home/leonhards/projects/tuplex-public/benchmarks/nextconf/hyperspecialization/flights/request_200.json";
 
+        path= "/home/leonhards/projects/2nd-copy/benchmarks/nextconf/hyperspecialization/github/request_2.json";
+
         auto json_message = fileToString(path);
         ASSERT_FALSE(json_message.empty());
 

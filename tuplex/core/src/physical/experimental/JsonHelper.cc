@@ -282,6 +282,27 @@ namespace tuplex {
             assert(key);
             assert(out);
 
+
+            #warning "FOr final benchmarming, remove this code here!!!"
+            // additional checking here:
+            // TODO: remove this.
+            if(!key) {
+                std::cerr<<"Invalid key given in JsonItem_getStringAndSize: "<<key<<std::endl;
+            }
+            if(!item) {
+                std::cerr << "Invalid JsonItem *item given in JsonItem_getStringAndSize for key: " << key << std::endl;
+            }
+
+            // row no=  [i64] : 6180
+            //row no=  [i64] : 6181
+            //row no=  [i64] : 6182
+            //row no=  [i64] : 6183
+            // Invalid item given in JsonItem_getStringAndSize: type
+            if(!item) { // <-- this should never happen. Fixed here.
+                std::cerr<<"Returning ExceptionCode::NULLERROR"<<std::endl;
+                return ecToI64(ExceptionCode::NULLERROR);
+            }
+
             simdjson::error_code error = simdjson::SUCCESS;
             std::string_view sv_value;
             item->o[key].get_string().tie(sv_value, error);

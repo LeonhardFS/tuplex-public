@@ -247,15 +247,15 @@ namespace python {
         auto pArgs = PyTuple_New(1);
         PyTuple_SetItem(pArgs, 0, PyBytes_FromStringAndSize(mem, size));
         auto pFuncLambda = PyObject_CallObject(pFunc, pArgs);
-        assert(pFuncLambda);
-
-        assert(PyCallable_Check(pFuncLambda));
-
+        // Check for errors, print if needed.
         if(PyErr_Occurred()) {
             PyErr_Print();
             PyErr_Clear();
             return nullptr;
         }
+
+        assert(pFuncLambda);
+        assert(PyCallable_Check(pFuncLambda));
 
         return pFuncLambda;
     }

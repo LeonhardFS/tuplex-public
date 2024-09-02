@@ -100,6 +100,10 @@ int main(int argc, char* argv[]) {
                 logger.info("Save json statistics to " + output_response_path);
                 stringToFile(output_response_path, app->jsonStats());
             }
+
+            // TODO: protobuf response, save if required.
+            // app->response();
+
             logger.debug("message found");
         }
         app->shutdown();

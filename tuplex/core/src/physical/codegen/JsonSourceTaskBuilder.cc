@@ -511,9 +511,6 @@ namespace tuplex {
             // _env->debugPrint(builder, "parsed row");
 
 
-
-
-
 #ifdef JSON_PARSER_TRACE_MEMORY
              _env->printValue(builder, rowNumber(builder), "row no= ");
 #endif

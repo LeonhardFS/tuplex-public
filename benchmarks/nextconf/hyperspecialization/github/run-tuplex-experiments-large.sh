@@ -56,11 +56,17 @@ fi
 
 echo "-- Using ${N_PROCESSORS} to build Tuplex."
 
+BUILD_TYPE=Release
+#BUILD_TYPE=Debug
+BUILD_TYPE=RelWithDebInfo
+
 # Unix
 if [[ "$OSTYPE" =~ ^linux ]]; then
     LLVM_DIR=/opt/llvm-16.0.6
     echo ">>> Building w. yyjson"
-    cd $BUILD_DIR && cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_CEREAL=ON -DPython3_EXECUTABLE=$PYTHON3_EXECUTABLE -DUSE_YYJSON_INSTEAD=ON -DSKIP_AWS_TESTS=ON -DBUILD_WITH_ORC=ON -DAWS_S3_TEST_BUCKET='tuplex-test' -DLLVM_ROOT_DIR=$LLVM_DIR $TUPLEX_DIR && make -j${N_PROCESSORS} tuplex && make -j${N_PROCESSORS} tuplex-worker && cd ..
+    cd $BUILD_DIR && cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DBUILD_WITH_CEREAL=ON -DPython3_EXECUTABLE=$PYTHON3_EXECUTABLE -DUSE_YYJSON_INSTEAD=ON -DSKIP_AWS_TESTS=ON -DBUILD_WITH_ORC=ON -DAWS_S3_TEST_BUCKET='tuplex-test' -DLLVM_ROOT_DIR=$LLVM_DIR $TUPLEX_DIR && make -j${N_PROCESSORS} tuplex && make -j${N_PROCESSORS} tuplex-worker && cd ..
+
+    cd $BUILD_DIR/..
 
     #echo ">>> Building w. cjson"
     #cd $ALT_BUILD_DIR && cmake -DCMAKE_BUILD_TYPE=Release -DUSE_YYJSON_INSTEAD=OFF -DSKIP_AWS_TESTS=ON -DBUILD_WITH_ORC=ON -DAWS_S3_TEST_BUCKET='tuplex-test' -DLLVM_ROOT_DIR=$LLVM_DIR $TUPLEX_DIR && make -j${N_PROCESSORS} tuplex_github && cd ..
@@ -102,14 +108,14 @@ mkdir -p ${RESULT_DIR}
 run_benchmarks() {
   run=$1
 
-  echo ">>> Running python baseline"
-  mode=python
-  ${PYTHON} runtuplex-new.py --mode python --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
-                             --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
-                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
-                             --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
-
-  exit 0
+  #echo ">>> Running python baseline"
+  #mode=python
+  #${PYTHON} runtuplex-new.py --mode python --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
+  #                           --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
+  #                           --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
+  #                           --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
+  #
+  #exit 0
 
   echo ">>> Running tuplex with hyper, sparse structs"
   mode=tuplex-hyper-sparse-structs

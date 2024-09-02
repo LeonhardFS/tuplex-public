@@ -513,6 +513,11 @@ namespace python {
 
          }
 
+         StructEntry(const std::string &_key, const Type& _key_type,
+                     const Type _value_type, bool always_present):key(_key), keyType(_key_type), valueType(_value_type), presence(always_present ? ALWAYS_PRESENT : MAYBE_PRESENT) {
+
+         }
+
         inline bool isUndefined() const {
             return key.empty() && keyType == Type() && valueType == Type();
         }

@@ -47,7 +47,6 @@
 
 #include "PerfEvent.hpp"
 #include "logical/LogicalPlan.h"
-#include "physical/execution/csvmonkey.h"
 #include <boost/filesystem/operations.hpp>
 
 #include <spdlog/sinks/ostream_sink.h>

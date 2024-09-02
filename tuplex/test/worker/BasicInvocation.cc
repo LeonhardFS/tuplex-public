@@ -45,7 +45,6 @@
 
 #include "nextconf/PerfEvent.hpp"
 #include "logical/LogicalPlan.h"
-#include "physical/execution/csvmonkey.h"
 #include "../core/TestUtils.h"
 
 // dummy so linking works
@@ -773,11 +772,11 @@ TEST(BasicInvocation, FlightsConstantSamplingTest) {
 
                 // not ok?
                 if(ok_cols.find(column_name) == ok_cols.end())
-                    bad_paths.insert(path.basename());
+                    bad_paths.insert(path.base_name());
             }
         }
 
-        const_results.push_back(std::make_tuple(path.basename(), const_str));
+        const_results.push_back(std::make_tuple(path.base_name(), const_str));
 
         cout<<ss.str()<<endl;
     }
@@ -2509,10 +2508,10 @@ TEST(BasicInvocation, GithubSensititivity) {
     });
 
     for(const auto& path : paths) {
-        string hyper_output_uri = local_work_dir + "/hyper/" + path.basename();
+        string hyper_output_uri = local_work_dir + "/hyper/" + path.base_name();
         hyper_messages.push_back(message_for_path(hyper_json_message, path, hyper_output_uri));
 
-        string global_output_uri = local_work_dir + "/general/" + path.basename();
+        string global_output_uri = local_work_dir + "/general/" + path.base_name();
         global_messages.push_back(message_for_path(global_json_message, path, global_output_uri));
 
         pos++;
@@ -2699,10 +2698,10 @@ TEST(BasicInvocation, FlightsSensititivity) {
     });
 
     for(const auto& path : paths) {
-        string hyper_output_uri = local_work_dir + "/hyper/" + path.basename();
+        string hyper_output_uri = local_work_dir + "/hyper/" + path.base_name();
         hyper_messages.push_back(message_for_path(hyper_json_message, path, hyper_output_uri));
 
-        string global_output_uri = local_work_dir + "/general/" + path.basename();
+        string global_output_uri = local_work_dir + "/general/" + path.base_name();
         global_messages.push_back(message_for_path(global_json_message, path, global_output_uri));
 
         pos++;
