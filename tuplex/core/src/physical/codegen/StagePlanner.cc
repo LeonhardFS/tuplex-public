@@ -572,7 +572,8 @@ namespace tuplex {
 
             // project columns, also need to update check indices (checks refer to output column indices).
             if(!conf.columns.empty()) {
-                auto columns_before = inputNode->columns(); // output columns.
+                // !!! use here input columns, not output columns.
+                auto columns_before = inputNode->inputColumns(); // output columns.
 
                 // step 1: validate checks
                 for(const auto& check : _checks) {
@@ -581,11 +582,11 @@ namespace tuplex {
                             throw std::runtime_error("Check " + check.to_string() + " has invalid index " + std::to_string(idx));
                 }
 
-                // step 2: reselect relevant columns
+                // step 2: reselect relevant columns (i.e. perform selection pushdown).
                 std::dynamic_pointer_cast<FileInputOperator>(inputNode)->selectColumns(conf.columns);
 
                 // step 3: update checks (their indices) to new columns
-                auto columns_after = inputNode->columns();
+                auto columns_after = inputNode->inputColumns();
                 for(auto& check : _checks) {
                     for(auto& idx : check.colNos) {
                         auto new_idx = indexInVector(columns_before[idx], columns_after);
@@ -749,7 +750,7 @@ namespace tuplex {
             return vec_prepend(_inputNode, _operators);
         }
 
-        std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::constantFoldingOptimization(const std::vector<Row>& sample) {
+        std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::constantFoldingOptimization(const std::vector<Row>& sample, const std::vector<std::string>& sample_columns) {
             using namespace std;
             vector<shared_ptr<LogicalOperator>> opt_ops;
 
@@ -783,6 +784,7 @@ namespace tuplex {
             // note that this sample is WITHOUT any projection pushdown, i.e. full columns
             DetectionStats ds;
             ds.detect(sample);
+            assert(!sample_columns.empty());
 
             {
                 assert(!sample.empty());
@@ -835,6 +837,14 @@ namespace tuplex {
 
                     constant_type = simplifyConstantType(constant_type);
 
+                    // check if empty tuple, list, dict, ... -> skip. Parser will handle this.
+                    if(constant_type.underlying() == python::Type::EMPTYDICT || constant_type.underlying() == python::Type::EMPTYTUPLE
+                    || constant_type.underlying() == python::Type::EMPTYLIST || constant_type.underlying() == python::Type::EMPTYSET)
+                        continue;
+
+                    // which column is considered constant.
+                    auto column_name = sample_columns[idx];
+
                     // original index is from ALL available rows in input node
                     size_t original_idx = 0;
                     if(inputNode->type() == LogicalOperatorType::FILEINPUT)
@@ -855,10 +865,14 @@ namespace tuplex {
                     if(constant_type == python::Type::NULLVALUE && opt_schema_col_type == python::Type::NULLVALUE) {
                         // skip
                     } else {
-                        if(constant_type.isConstantValued())
-                            checks.emplace_back(NormalCaseCheck::ConstantCheck(original_idx, constant_type));
-                        else if(constant_type == python::Type::NULLVALUE) {
-                            checks.emplace_back(NormalCaseCheck::NullCheck(original_idx));
+                        if(constant_type.isConstantValued()) {
+                            auto check = NormalCaseCheck::ConstantCheck(original_idx, constant_type);
+                            check.colNames.push_back(column_name);
+                            checks.emplace_back(check);
+                        } else if(constant_type == python::Type::NULLVALUE) {
+                            auto check = NormalCaseCheck::NullCheck(original_idx);
+                            check.colNames.push_back(column_name);
+                            checks.emplace_back(check);
                         } else {
                             logger.error("invalid constant type to check for: " + constant_type.desc());
                         }
@@ -868,7 +882,6 @@ namespace tuplex {
             } else {
                 logger.debug("skipped check generation, because input node is empty.");
             }
-
 
             // folding is done now in two steps:
             // 1. propagate the new input type through the ASTs, i.e. make certain fields constant
@@ -881,31 +894,6 @@ namespace tuplex {
 
             logger.debug("specialized output-type of " + inputNode->name() + " from " +
                          inputNode->getOutputSchema().getRowType().desc() + " to " + projected_specialized_row_type.desc());
-
-            // check which input columns are required and remove checks. --> this requires to use ORIGINAL indices.
-            // --> this requires pushdown to work before!
-            auto acc_cols = acc_cols_before_opt;
-            std::vector<NormalCaseCheck> projected_checks;
-            for(const auto& col_idx : acc_cols) {
-                // changed acc cols to retrieve original indices, below is commented old code:
-                //  auto original_col_idx =  inputNode->type() == LogicalOperatorType::FILEINPUT ?
-                //          std::dynamic_pointer_cast<FileInputOperator>(inputNode)->reverseProjectToReadIndex(col_idx)
-                //          : col_idx;
-                // new
-                auto original_col_idx = col_idx;
-               for(const auto& check : checks) {
-                   if(check.isSingleColCheck() && check.colNo() == original_col_idx) {
-                       projected_checks.emplace_back(check); // need to adjust internal colNo? => no, keep for now.
-                   } else if(!check.isSingleColCheck()) {
-                       throw std::runtime_error("multi-col check not supported yet");
-                   }
-               }
-            }
-            logger.debug("normal case detection requires "
-                         + pluralize(checks.size(), "check")
-                         + ", given current logical optimizations "
-                         + pluralize(projected_checks.size(), "check")
-                         + " are required to detect normal case.");
 
             // set input type for input node
             auto input_type_before = inputNode->getOutputSchema().getRowType();
@@ -1013,6 +1001,45 @@ namespace tuplex {
 
                 logger.debug(ss.str());
             }
+
+            // Project checks (because columns may have been removed)
+            // check which input columns are required and remove checks. --> this requires to use ORIGINAL indices.
+            // --> this requires pushdown to work before!
+            auto acc_cols = acc_cols_before_opt;
+            std::vector<NormalCaseCheck> projected_checks;
+
+            // reproject checks, get for this actual input columns of operator.
+            auto current_input_columns = opt_ops.front()->inputColumns();
+            for(auto check : checks) {
+                if(!check.colNames.empty()) {
+                    check.colNos.clear();
+                    for(auto name : check.colNames) {
+                        check.colNos.push_back(indexInVector(name, current_input_columns));
+                    }
+                }
+                projected_checks.push_back(check);
+            }
+
+//            for(const auto& col_idx : acc_cols) {
+//                // changed acc cols to retrieve original indices, below is commented old code:
+//                //  auto original_col_idx =  inputNode->type() == LogicalOperatorType::FILEINPUT ?
+//                //          std::dynamic_pointer_cast<FileInputOperator>(inputNode)->reverseProjectToReadIndex(col_idx)
+//                //          : col_idx;
+//                // new
+//                auto original_col_idx = col_idx;
+//                for(const auto& check : checks) {
+//                    if(check.isSingleColCheck() && check.colNo() == original_col_idx) {
+//                        projected_checks.emplace_back(check); // need to adjust internal colNo? => no, keep for now.
+//                    } else if(!check.isSingleColCheck()) {
+//                        throw std::runtime_error("multi-col check not supported yet");
+//                    }
+//                }
+//            }
+            logger.debug("normal case detection requires "
+                         + pluralize(checks.size(), "check")
+                         + ", given current logical optimizations "
+                         + pluralize(projected_checks.size(), "check")
+                         + " are required to detect normal case.");
 
 
             {
@@ -1345,7 +1372,7 @@ namespace tuplex {
                     // perform only when input op is present (could do later, but requires sample!)
                     if(_inputNode && _inputNode->type() == LogicalOperatorType::FILEINPUT) {
                         logger.info("Performing constant folding optimization (sample size=" + std::to_string(sample.size()) + ")");
-                        optimized_operators = constantFoldingOptimization(sample);
+                        optimized_operators = constantFoldingOptimization(sample, sample_columns);
 
                         // overwrite internal operators to apply subsequent optimizations
                         _inputNode = _inputNode ? optimized_operators.front() : nullptr;
@@ -2720,7 +2747,9 @@ namespace tuplex {
                             }
 
                             // no need for parents etc.
-                            _checks.push_back(filterToCheck(filter_node));
+                            auto check = filterToCheck(filter_node);
+                            check.colNames = acc_column_names; // <-- accessed column names?
+                            _checks.push_back(check);
                             filter_promo_applied = true;
 
                             assert(current_input_sample.size() == indices_to_keep.size());

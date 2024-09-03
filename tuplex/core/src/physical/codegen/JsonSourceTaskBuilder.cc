@@ -96,27 +96,45 @@ namespace tuplex {
         std::vector<int>
         JsonSourceTaskBuilder::columns_required_for_checks(const std::vector<NormalCaseCheck> &checks) const {
             std::set<int> columns;
-            for(const auto& check : checks) {
-                switch(check.type) {
-                    case CheckType::CHECK_CONSTANT: {
-                        if(!check.isSingleColCheck())
-                            throw std::runtime_error("only single col constant check yet supported.");
 
-                        std::stringstream ss;
-                        ss<<"Found normal case check (constant) for column "<<check.colNo();
-                        logger().debug(ss.str());
-                        columns.insert(check.colNo());
-                        break;
+            auto columns_to_read = _normal_case_columns; // ? is this correct ?
+
+            for(const auto& check : checks) {
+
+                // see whether names are available, if so index using names. Much better.
+                if(!check.colNames.empty()) {
+                    for(auto name : check.colNames) {
+                        auto idx = indexInVector(name, columns_to_read);
+                        if(idx < 0) {
+                            std::stringstream ss;
+                            ss<<__FILE__<<":"<<__LINE__<<" can not find column required by check "<<check.to_string()<<" "<<name<<" in columns to read "<<columns_to_read;
+                            throw std::runtime_error(ss.str());
+                        }
+
+                        columns.insert(idx);
                     }
-                    case CheckType::CHECK_FILTER: {
-                        // deserialize filter and access its columns
-                        for(const auto& col_no: check.colNos)
-                            columns.insert(col_no);
-                        break;
-                    }
-                    default:
-                        throw std::runtime_error("Found check " + check.to_string() + " for which columns required can't be determined.");
                 }
+
+//                switch(check.type) {
+//                    case CheckType::CHECK_CONSTANT: {
+//                        if(!check.isSingleColCheck())
+//                            throw std::runtime_error("only single col constant check yet supported.");
+//
+//                        std::stringstream ss;
+//                        ss<<"Found normal case check (constant) for column "<<check.colNo();
+//                        logger().debug(ss.str());
+//                        columns.insert(check.colNo());
+//                        break;
+//                    }
+//                    case CheckType::CHECK_FILTER: {
+//                        // deserialize filter and access its columns
+//                        for(const auto& col_no: check.colNos)
+//                            columns.insert(col_no);
+//                        break;
+//                    }
+//                    default:
+//                        throw std::runtime_error("Found check " + check.to_string() + " for which columns required can't be determined.");
+//                }
             }
 
             auto ret = std::vector<int>{columns.begin(), columns.end()};
@@ -124,10 +142,19 @@ namespace tuplex {
             return ret;
         }
 
+        static python::Type remove_constant_types(const python::Type& tuple_type) {
+            assert(tuple_type.isTupleType());
+            auto col_types = tuple_type.parameters();
+            for(auto& type: col_types)
+                if(type.isConstantValued())
+                    type = type.underlying();
+            return python::Type::makeTupleType(col_types);
+        }
+
         std::tuple<FlattenedTuple, std::unordered_map<int, int>>
-        JsonSourceTaskBuilder::parse_selected_columns(const IRBuilder &builder,
-                                                      const std::vector<int> &columns_to_parse, llvm::Value *parser,
-                                                      llvm::BasicBlock *bbBadParse) const {
+        JsonSourceTaskBuilder::parse_selected_columns_for_checks(const IRBuilder &builder,
+                                                                 const std::vector<int> &columns_to_parse, llvm::Value *parser,
+                                                                 llvm::BasicBlock *bbBadParse) const {
             using namespace llvm;
             assert(parser);
             assert(bbBadParse);
@@ -142,8 +169,11 @@ namespace tuplex {
 
             auto tuple_row_type = row_type.isRowType() ? row_type.get_columns_as_tuple_type() : row_type;
             assert(row_type_compatible_with_columns(tuple_row_type, col_names_to_parse));
-            auto ft = json_parseRow(*_env.get(), builder, tuple_row_type, col_names_to_parse, true, false, parser, bbBadParse);
 
+            // rRemove constant type or other optimized types from input row type.
+            // the input/output type may be configured to yield _Constant[...] types. However, these are the results
+            // of the checks passing - if a check is a constant check, parse it here.
+            auto ft = json_parseRow(*_env.get(), builder, remove_constant_types(tuple_row_type), col_names_to_parse, true, false, parser, bbBadParse);
 
             std::unordered_map<int, int> m;
             for(unsigned i = 0; i < columns_to_parse.size(); ++i) {
@@ -194,7 +224,9 @@ namespace tuplex {
             // parse here into single flattened tuple & map
             FlattenedTuple ft_for_checks(_env.get());
             std::unordered_map<int, int> col_to_check_col_map;
-            std::tie(ft_for_checks, col_to_check_col_map) = parse_selected_columns(builder, required_cols_for_check, parser, bbBadRow);
+            std::tie(ft_for_checks, col_to_check_col_map) = parse_selected_columns_for_checks(builder,
+                                                                                              required_cols_for_check,
+                                                                                              parser, bbBadRow);
 
             for(const auto& check : checks) {
                 if(check.type == CheckType::CHECK_FILTER) {
@@ -383,6 +415,7 @@ namespace tuplex {
                         auto c_val = parseBoolString(constant_value);
                         check_cond = builder.CreateICmpEQ(_env->boolConst(c_val), val.val);
                     } else if(python::Type::STRING == elementType) {
+                        assert(val.size);
                         // direct compare (size + content)
                         check_cond = builder.CreateICmpEQ(val.size, _env->i64Const(constant_value.size() + 1));
                         check_cond = builder.CreateAnd(check_cond, _env->fixedSizeStringCompare(builder, val.val, constant_value));

@@ -1096,7 +1096,7 @@ namespace tuplex {
                 // rewrite all resolvers which follow
                 rewriteAllFollowingResolvers(op, rewriteMap);
 #ifdef TRACE_LOGICAL_OPTIMIZATION
-                cout<<"AFTER R "<<op->name()<<" input type: "<<op->getInputSchema().getRowType().desc()<<endl;
+                cout<<"AFTER "<<op->name()<<" input type: "<<op->getInputSchema().getRowType().desc()<<endl;
 #endif
                 return ret;
             }

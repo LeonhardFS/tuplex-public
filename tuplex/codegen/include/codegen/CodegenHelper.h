@@ -830,6 +830,7 @@ namespace tuplex {
         struct NormalCaseCheck {
 
             std::vector<size_t> colNos; ///! multiple columns
+            std::vector<std::string> colNames; // column names (optional, might make things easier).
             CheckType type;
 
             ///! the column number to check for
@@ -847,11 +848,12 @@ namespace tuplex {
             _iMin(std::numeric_limits<int64_t>::min()),
             _iMax(std::numeric_limits<int64_t>::max()) {}
 
-            NormalCaseCheck(const NormalCaseCheck& other) : colNos(other.colNos), type(other.type),
+            NormalCaseCheck(const NormalCaseCheck& other) : colNos(other.colNos), colNames(other.colNames), type(other.type),
             _constantType(other._constantType), _iMin(other._iMin), _iMax(other._iMax), _serializedCheck(other._serializedCheck) {}
 
             NormalCaseCheck& operator = (const NormalCaseCheck& other) {
                 colNos = other.colNos;
+                colNames = other.colNames;
                 type = other.type;
                 // private members
                 _constantType = other._constantType;
@@ -893,6 +895,18 @@ namespace tuplex {
                 return c;
             }
 
+            inline void setColumns(const std::vector<std::string>& names) {
+                colNames.clear();
+                for(auto& idx : colNos) {
+                    if(idx >= names.size()) {
+                        std::stringstream ss;
+                        ss<<__FILE__<<":"<<__LINE__<<" invalid column index "<<idx<<", can not access columns "<<names;
+                        throw std::runtime_error(ss.str());
+                    }
+                    colNames.push_back(names[idx]);
+                }
+            }
+
             /*!
              * generates a condition yielding true if check was passed, false else
              * @param builder
@@ -929,7 +943,7 @@ namespace tuplex {
 
 #ifdef BUILD_WITH_CEREAL
             template<class Archive> void serialize(Archive & ar) {
-                    ar(colNos, type, _constantType, _iMin, _iMax, _serializedCheck);
+                    ar(colNos, colNames, type, _constantType, _iMin, _iMax, _serializedCheck);
             }
 #endif
 
@@ -937,6 +951,7 @@ namespace tuplex {
         nlohmann::json to_json() const {
             nlohmann::json j;
             j["colNos"] = colNos;
+            j["colNames"] = colNames;
             j["type"] = static_cast<int>(type);
             j["constantType"] = _constantType.desc();
             j["iMin"] = _iMin;
@@ -948,6 +963,7 @@ namespace tuplex {
         static NormalCaseCheck from_json(nlohmann::json j) {
             NormalCaseCheck c;
             c.colNos = j["colNo"].get<std::vector<size_t>>();
+            c.colNames = j["colNames"].get<std::vector<std::string>>();
             c.type = static_cast<CheckType>(j["colNo"].get<int>());
             c._constantType = python::decodeType(j["constantType"].get<std::string>());
             c._iMin = j["iMin"].get<int64_t>();

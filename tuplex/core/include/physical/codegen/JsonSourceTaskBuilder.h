@@ -81,10 +81,10 @@ namespace tuplex {
 
             std::vector<int> columns_required_for_checks(const std::vector<NormalCaseCheck>& checks) const;
 
-            std::tuple<FlattenedTuple, std::unordered_map<int, int>> parse_selected_columns(const IRBuilder& builder,
-                                                                                            const std::vector<int>& columns_to_parse,
-                                                                                            llvm::Value* parser,
-                                                                                            llvm::BasicBlock* bbBadParse) const;
+            std::tuple<FlattenedTuple, std::unordered_map<int, int>> parse_selected_columns_for_checks(const IRBuilder& builder,
+                                                                                                       const std::vector<int>& columns_to_parse,
+                                                                                                       llvm::Value* parser,
+                                                                                                       llvm::BasicBlock* bbBadParse) const;
 
             inline llvm::Value* incVar(const IRBuilder& builder, llvm::Value* var, llvm::Value* what_to_add) {
                 llvm::Value* val = builder.CreateLoad(builder.getInt64Ty(), var);

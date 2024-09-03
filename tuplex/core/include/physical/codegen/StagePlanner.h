@@ -308,7 +308,8 @@ namespace tuplex {
             /*!
              * perform constant folding optimization using sample.
              */
-            std::vector<std::shared_ptr<LogicalOperator>> constantFoldingOptimization(const std::vector<Row>& sample);
+            std::vector<std::shared_ptr<LogicalOperator>> constantFoldingOptimization(const std::vector<Row>& sample,
+                                                                                      const std::vector<std::string>& sample_columns);
 
             /*!
              * perform sparsification of structured dictionaries.
