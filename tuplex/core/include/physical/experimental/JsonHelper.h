@@ -21,8 +21,8 @@ namespace tuplex {
     namespace codegen {
 
         // TODO: make this an option.
-        // could also use simdjson::SIMDJSON_MAXSIZE_BYTES.
-        static const size_t simdjson_parser_max_document_size = 64 * 1024 * 1024; // maximum of 64MB.
+        // could also use simdjson::SIMDJSON_MAXSIZE_BYTES. (4GB)
+        static const size_t simdjson_parser_max_document_size = simdjson::SIMDJSON_MAXSIZE_BYTES; // 64 * 1024 * 1024; // maximum of 64MB.
 
         inline std::string view_to_string(const std::string_view &v) {
             return std::string{v.begin(), v.end()};
