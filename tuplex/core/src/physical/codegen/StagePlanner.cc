@@ -2647,6 +2647,14 @@ namespace tuplex {
                 return false;
             }
 
+            // Need to pushdown filters (so canPromoteFilter check works).
+            //             // basically use just on this stage the logical optimization pipeline
+            //            auto logical_opt = std::make_unique<LogicalOptimizer>(options());
+            //
+            //            // logically optimize pipeline, this performs reordering/projection pushdown etc.
+            //            opt_ops = logical_opt->optimize(opt_ops, true); // inplace optimization
+
+
             size_t original_sample_size = 0;
             std::vector<Row> original_sample;
             if(_inputNode->type() == LogicalOperatorType::FILEINPUT) {

@@ -1524,22 +1524,22 @@ namespace tuplex {
                 // Note: this requires adjustment of getting rid of unused params in UDFs when
                 //       multi-param syntax is used...
                 // @TODO: fix this.
-                // // new code:
-                // // withcolumn adds values based on all other columns. Thus, it's safe to pushdown a filter
-                // // if the newly added column is not part of the columns the filter requires
-                // auto it = std::find(accessedColumns.begin(), accessedColumns.end(), idx);
-                // return it != accessedColumns.end();
+                 // new code:
+                 // withcolumn adds values based on all other columns. Thus, it's safe to pushdown a filter
+                 // if the newly added column is not part of the columns the filter requires
+                 auto it = std::find(accessedColumns.begin(), accessedColumns.end(), idx);
+                 return it != accessedColumns.end();
 
-                // old code:
-                // check whether sets are disjoint and also index not used
-                parentColsAccessed.push_back(idx); // just add to set for check
-
-                std::vector<size_t> commonCols;
-                std::set_intersection(accessedColumns.begin(), accessedColumns.end(), parentColsAccessed.begin(),
-                                      parentColsAccessed.end(), std::back_inserter(commonCols));
-
-                // if intersection is empty, then no dependence. Else, dependence
-                return !commonCols.empty();
+//                // old code:
+//                // check whether sets are disjoint and also index not used
+//                parentColsAccessed.push_back(idx); // just add to set for check
+//
+//                std::vector<size_t> commonCols;
+//                std::set_intersection(accessedColumns.begin(), accessedColumns.end(), parentColsAccessed.begin(),
+//                                      parentColsAccessed.end(), std::back_inserter(commonCols));
+//
+//                // if intersection is empty, then no dependence. Else, dependence
+//                return !commonCols.empty();
             }
 
             case LogicalOperatorType::JOIN: {

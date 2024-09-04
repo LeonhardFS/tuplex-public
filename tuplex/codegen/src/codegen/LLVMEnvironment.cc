@@ -1040,8 +1040,17 @@ namespace tuplex {
                 return SerializableValue(nullptr, nullptr, i1Const(true));
 
             // constants...
-            if(elementType.isConstantValued())
+            if(elementType.isConstantValued()) {
+
+                // Special cases: single, fixed element types
+                std::vector<python::Type> single_types{python::Type::EMPTYTUPLE, python::Type::EMPTYDICT, python::Type::EMPTYLIST, python::Type::EMPTYSET};
+                for(const auto& single_type : single_types)
+                    if(elementType.underlying() == single_type)
+                        return dummyValue(builder, single_type);
+
                 return constantValuedTypeToLLVM(builder, elementType);
+            }
+
 
             // single valued elements are represented through nullptr
             if(elementType.isSingleValued()) // i.e., empty tuple, empty dict, ...
