@@ -779,6 +779,24 @@ namespace tuplex {
             return vec_prepend(_inputNode, _operators);
         }
 
+        python::Type simplify_constant_single_types(const python::Type& tuple_type) {
+            assert(tuple_type.isTupleType());
+
+            static std::vector<python::Type> single_types{python::Type::EMPTYTUPLE, python::Type::EMPTYDICT, python::Type::EMPTYLIST, python::Type::EMPTYSET};
+
+            auto col_types = tuple_type.parameters();
+            for(auto& type : col_types) {
+                if(type.isConstantValued()) {
+                    for(auto single_type : single_types)
+                        if(type.underlying() == single_type) {
+                            type = single_type;
+                            break;
+                        }
+                }
+            }
+            return python::Type::makeTupleType(col_types);
+        }
+
         std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::constantFoldingOptimization(const std::vector<Row>& sample, const std::vector<std::string>& sample_columns) {
             using namespace std;
             vector<shared_ptr<LogicalOperator>> opt_ops;
@@ -920,6 +938,9 @@ namespace tuplex {
             // => get mapping from original to pushed down for input types.
             // i.e. create dummy and fill in
             auto projected_specialized_row_type = get_specialized_row_type(inputNode, ds);
+
+            // simplify things like _Constant[{}] because they make not really much sense
+            projected_specialized_row_type = simplify_constant_single_types(projected_specialized_row_type);
 
             logger.debug("specialized output-type of " + inputNode->name() + " from " +
                          inputNode->getOutputSchema().getRowType().desc() + " to " + projected_specialized_row_type.desc());
