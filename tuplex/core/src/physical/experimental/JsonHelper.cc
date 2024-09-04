@@ -168,7 +168,7 @@ namespace tuplex {
                 }
 
                 std::stringstream ss;
-                ss<<error; // <-- can get error description like this
+                ss<<__FILE__<<":"<<__LINE__<<" "<<error; // <-- can get error description like this
 
                 // // can line retrieved?
                 // std::string full_row;
