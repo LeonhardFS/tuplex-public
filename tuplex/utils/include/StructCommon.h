@@ -142,6 +142,8 @@ namespace tuplex {
     }
 
     extern bool is_field_present(const Field& f, const access_path_t& path);
+
+    extern Field get_struct_field_by_path(const Field& f, const access_path_t& path);
 }
 
 #endif //TUPLEX_STRUCTCOMMON_H

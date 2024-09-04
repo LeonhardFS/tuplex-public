@@ -53,7 +53,45 @@ namespace tuplex {
 //             QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", false, true, false, 294195},
 //             QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", true, true, false, 294195},
 //             QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", true, true, true, 294195},
-             QueryConfiguration{"large_benchmark", "/hot/data/github_download/monthly/*.json", true, true, true, 12409995}
+//             QueryConfiguration{"large_benchmark", "/hot/data/github_download/monthly/*.json", true, true, true, 12409995}
+
+// TODO: test 2012 with NO filter promo.
+
+                    QueryConfiguration{"large_benchmark_2011", "/hot/data/github_download/monthly/2011*.json", true, true,
+                                       true, 59537},
+                    QueryConfiguration{"large_benchmark_2012", "/hot/data/github_download/monthly/2012*.json", true, true,
+                                       true, 156987},
+                    QueryConfiguration{"large_benchmark_2013", "/hot/data/github_download/monthly/2013*.json", true, true,
+                                       true, 293269},
+                    QueryConfiguration{"large_benchmark_2014", "/hot/data/github_download/monthly/2014*.json", true, true,
+                                       true, 426691},
+                    QueryConfiguration{
+                            "large_benchmark_2015", "/hot/data/github_download/monthly/2015*.json", true, true, true,
+                            666978},
+                    QueryConfiguration{
+                            "large_benchmark_2016", "/hot/data/github_download/monthly/2016*.json", true, true, true,
+                            858213},
+                    QueryConfiguration{
+                            "large_benchmark_2017", "/hot/data/github_download/monthly/2017*.json", true, true, true,
+                            1119311},
+                    QueryConfiguration{
+                            "large_benchmark_2018", "/hot/data/github_download/monthly/2018*.json", true, true, true,
+                            1219730},
+                    QueryConfiguration{
+                            "large_benchmark_2019", "/hot/data/github_download/monthly/2019*.json", true, true, true,
+                            1598862},
+                    QueryConfiguration{
+                            "large_benchmark_2020", "/hot/data/github_download/monthly/2020*.json", true, true, true,
+                            1824278},
+                    QueryConfiguration{
+                            "large_benchmark_2021", "/hot/data/github_download/monthly/2021*.json", true, true, true,
+                            808228},
+                    QueryConfiguration{
+                            "large_benchmark_2022", "/hot/data/github_download/monthly/2022*.json", true, true, true,
+                            1877724},
+                    QueryConfiguration{
+                            "large_benchmark_2023", "/hot/data/github_download/monthly/2023*.json", true, true, true,
+                            1500187},
             });
 
 // see https://github.com/google/googletest/blob/main/docs/advanced.md#specifying-names-for-value-parameterized-test-parameters

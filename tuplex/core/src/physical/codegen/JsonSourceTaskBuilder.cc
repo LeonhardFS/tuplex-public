@@ -195,7 +195,7 @@ namespace tuplex {
             assert(rowNumber && rowNumber->getType() == _env->i64Type());
             assert(parser && parser->getType() == _env->i8ptrType());
 
-            // _env->printValue(builder, rowNumber, "normal-case check for row=");
+            // _env->printValue(builder, rowNumber, "normal-case check(s) for row=");
 
             // which checks are available?
             auto checks = this->checks();
@@ -265,6 +265,12 @@ namespace tuplex {
                     std::vector<std::string> acc_column_names;
                     std::vector<python::Type> acc_col_types;
                     std::tie(acc_col_types, acc_column_names) = get_column_types_and_names(acc_cols);
+
+                    // This is a check, there should be NO optimized types.
+                    // Optimized types are the result of passing checks of (unoptimized) types.
+                    for(const auto& col_type : acc_col_types) {
+                        assert(!col_type.isOptimizedType());
+                    }
 
                     // however, these here should show correct columns/types.
                     ss<<"filter input columns: "<<acc_column_names<<"\n";
@@ -368,7 +374,7 @@ namespace tuplex {
                         builder.CreateCondBr(filterCond, bbCheckPassed, bbSkipRow);
 
                         builder.SetInsertPoint(exceptionBlock);
-                        // env().printValue(builder, builder.CreateLoad(ecVar), "filter check failed with exception of ec=");
+                        // env().printValue(builder, builder.CreateLoad(_env->i64Type(), ecVar), "filter check failed with exception of ec=");
                         builder.CreateBr(bbCheckFailed);
 
                         builder.SetInsertPoint(bbFilterBadParse);
@@ -384,10 +390,24 @@ namespace tuplex {
 
                     builder.SetInsertPoint(bbCheckFailed);
                     // env().debugPrint(builder, "promoted filter check failed.");
+
+                    {
+                        // std::stringstream ss;
+                        // ss<<"Check "<<check.to_string()<<" colunms: "<<check.colNames<<" passed: ";
+                        // _env->printValue(builder, _env->i1Const(false), ss.str());
+                    }
+
                     builder.CreateBr(bbBadRow);
 
                     // continue on normal case path!
                     builder.SetInsertPoint(bbCheckPassed);
+
+                    {
+                        // std::stringstream ss;
+                        // ss<<"Check "<<check.to_string()<<" colunms: "<<check.colNames<<" passed: ";
+                        // _env->printValue(builder, _env->i1Const(true), ss.str());
+                    }
+
                     // env().debugPrint(builder, "promoted filter check passed.");
 
                     // create reduced input type for quick parsing
@@ -416,9 +436,15 @@ namespace tuplex {
                         check_cond = builder.CreateICmpEQ(_env->boolConst(c_val), val.val);
                     } else if(python::Type::STRING == elementType) {
                         assert(val.size);
+                        auto str_value_to_compare_against = str_value_from_python_raw_value(constant_value);
+
                         // direct compare (size + content)
-                        check_cond = builder.CreateICmpEQ(val.size, _env->i64Const(constant_value.size() + 1));
-                        check_cond = builder.CreateAnd(check_cond, _env->fixedSizeStringCompare(builder, val.val, constant_value));
+                        check_cond = builder.CreateICmpEQ(val.size, _env->i64Const(str_value_to_compare_against.size() + 1));
+                        check_cond = builder.CreateAnd(check_cond, _env->fixedSizeStringCompare(builder, val.val, str_value_to_compare_against));
+
+                        // std::stringstream ss;
+                        // ss<<"Check "<<check.to_string()<<" colunms: "<<check.colNames<<" passed: ";
+                        // _env->printValue(builder, check_cond, ss.str());
                     } else {
                         throw std::runtime_error("Check with type " + check.constant_type().desc() + " not yet supported");
                     }
@@ -436,10 +462,12 @@ namespace tuplex {
                     throw std::runtime_error("Check " + check.to_string() + " not supported for JsonSourceTaskBuilder");
                 }
             }
+
+            // _env->debugPrint(builder, "normal checks done. Continue processing row. ");
         }
 
         std::tuple<std::vector<python::Type>, std::vector<std::string>>
-        JsonSourceTaskBuilder::get_column_types_and_names(const std::vector<size_t> &acc_cols) const {
+        JsonSourceTaskBuilder::get_column_types_and_names(const std::vector<size_t> &acc_cols, bool return_with_optimized_types) const {
             std::vector<std::string> acc_column_names;
             std::vector<python::Type> acc_col_types;
             for(auto idx : acc_cols) {
@@ -450,6 +478,13 @@ namespace tuplex {
                 } else {
                     acc_column_names.push_back(_normal_case_columns[idx]);
                     acc_col_types.push_back(_inputRowType.parameters()[idx]);
+                }
+            }
+
+            // deoptimize
+            if(!return_with_optimized_types) {
+                for(auto& type : acc_col_types) {
+                    type = deoptimizedType(type);
                 }
             }
 

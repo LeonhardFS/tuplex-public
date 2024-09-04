@@ -249,7 +249,6 @@ namespace tuplex {
         return is_field_present(str_ptr, str_size, path);
     }
 
-
     void flatten_recursive_helper(flattened_struct_dict_entry_list_t &entries,
                                   const python::Type &dict_type,
                                   std::vector<std::pair<std::string, python::Type>> prefix,
@@ -867,6 +866,37 @@ namespace tuplex {
         return ret_str;
     }
 
+    Field yyjson_to_tuplex(yyjson_val* j) {
+        if(!j)
+            throw std::runtime_error("invalid j (is <nullptr>) in yyjson_to_tuplex");
+
+        if(yyjson_is_null(j))
+            return Field::null();
+
+        if(yyjson_is_bool(j))
+            return Field(yyjson_get_bool(j));
+
+        if(yyjson_is_sint(j))
+            return Field(yyjson_get_sint(j));
+
+        if(yyjson_is_int(j))
+            return Field((int64_t)yyjson_get_int(j));
+
+        if(yyjson_is_num(j))
+            return Field(yyjson_get_real(j));
+
+        if(yyjson_is_str(j))
+            return Field(yyjson_get_str(j));
+
+        if(yyjson_is_arr(j) && yyjson_arr_size(j) == 0)
+            return Field::empty_list();
+
+        if(yyjson_is_obj(j) && yyjson_obj_size(j) == 0)
+            return Field::empty_dict();
+
+        throw std::runtime_error("Could not extract field from yyjson");
+    }
+
     Field extract_field_from_json_with_type(yyjson_val* j, const python::Type& value_type) {
         if(!j)
             throw std::runtime_error("invalid j (is <nullptr>) in extract_field_from_json_with_type.");
@@ -995,6 +1025,10 @@ namespace tuplex {
         }
 
 
+        // if UNKNOWN, map JSON type to Tuplex type using standard mapping:
+        if(value_type == python::Type::UNKNOWN) {
+           return yyjson_to_tuplex(j);
+        }
 
         throw std::runtime_error("unsupported type " + value_type.desc() + ", can not extract data from json " +
                                          yyjson_val_to_string(j));
@@ -1966,5 +2000,16 @@ namespace tuplex {
         }
 
         return v;
+    }
+
+    Field get_struct_field_by_path(const Field& f, const access_path_t& path) {
+        assert(is_field_present(f, path));
+
+        assert(f.getType().isStructuredDictionaryType());
+        assert(f.getPtr() && f.getPtrSize() > 0);
+        const char* str_ptr = reinterpret_cast<const char*>(f.getPtr());
+        auto str_size = f.getPtrSize();
+
+        return get_struct_dict_field_by_path(str_ptr, str_size, path, python::Type::UNKNOWN);
     }
 }

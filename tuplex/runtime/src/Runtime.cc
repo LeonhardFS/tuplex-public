@@ -304,8 +304,6 @@ extern "C" void rtfree(void *ptr) noexcept {
     // do nothing...
 }
 
-// #define TRACE_MEMORY
-
 extern "C" void rtfree_all() noexcept {
     if(!heap)
         heap = new MemoryHeap();

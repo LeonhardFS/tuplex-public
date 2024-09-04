@@ -498,6 +498,8 @@ namespace tuplex {
 
                             // different type?
                             auto expected_type = sparse_type.get_column_type(i);
+                            bool is_option = expected_type.isOptionType();
+                            expected_type = expected_type.withoutOption();
                             auto expected_pairs = expected_type.get_struct_pairs();
                             if(field.getType().withoutOption() != expected_type) {
 
@@ -528,9 +530,31 @@ namespace tuplex {
                                         } else if(kv_pair.presence == python::NOT_PRESENT) {
                                             // ensure that kv_pair is not present, else relax to maybe present.
                                             if(field_present) {
-                                                cout<<column_name<<": Path "<<access_path_to_str(path)<<" present, relax struct pair for key "<<kv_pair.key<<" to maybe present"<<endl;
-                                                relaxation_found = true;
-                                                kv_pair = python::StructEntry(kv_pair.key, kv_pair.keyType, kv_pair.valueType, python::MAYBE_PRESENT);
+
+                                                // NOT_PRESENT uses often ~> PYOBJECT. Yet this can get compiled to => PYOBJECT easily.
+                                                // infer therefore the type from the field.
+                                                auto value_type = kv_pair.valueType;
+                                                if(python::Type::PYOBJECT == value_type) {
+                                                    // find from field the type
+                                                    value_type = python::Type::UNKNOWN;
+                                                    try {
+                                                        auto field_element = get_struct_field_by_path(field, path);
+                                                        if(field_element.getType() != python::Type::PYOBJECT)
+                                                            value_type = field_element.getType();
+                                                    } catch(const std::exception& path) {
+                                                        //... nothing, simply silent exception.
+                                                    }
+                                                }
+
+                                                if(value_type != python::Type::UNKNOWN) {
+                                                    cout<<column_name<<": Path "<<access_path_to_str(path)<<" present, relax struct pair for key "<<kv_pair.key<<" to maybe present"<<endl;
+                                                    relaxation_found = true;
+                                                    kv_pair = python::StructEntry(kv_pair.key, kv_pair.keyType, value_type, python::MAYBE_PRESENT);
+                                                }
+                                            } else {
+                                                //// check that not is pyobject. If not simplify.
+                                                //if(kv_pair.valueType != python::Type::PYOBJECT)
+                                                //    kv_pair = python::StructEntry(kv_pair.key, kv_pair.keyType, python::Type::PYOBJECT, python::NOT_PRESENT);
                                             }
                                         }
                                     }
@@ -538,6 +562,11 @@ namespace tuplex {
                                     // relaxation found? => update sparse type!
                                     if(relaxation_found) {
                                         auto new_expected_type = python::Type::makeStructuredDictType(expected_pairs, expected_type.isSparseStructuredDictionaryType());
+
+                                        // If previous type was identified as optional, carry over here.
+                                        if(is_option)
+                                            new_expected_type = python::Type::makeOptionType(new_expected_type);
+
                                         // create new sparse type
                                         auto column_names = sparse_type.get_column_names();
                                         auto column_types = sparse_type.get_column_types();

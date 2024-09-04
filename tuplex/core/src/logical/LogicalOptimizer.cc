@@ -1748,6 +1748,9 @@ namespace tuplex {
                 }
                 auto type = col_types[i];
 
+                bool is_option = type.isOptionType();
+                type = type.withoutOption();
+
                 // dict or sparse dict?
 //                if(type.isStructuredDictionaryType() || type.isSparseStructuredDictionaryType())
 //                    type = type.makeNonSparse(true);
@@ -1807,6 +1810,9 @@ namespace tuplex {
 
                 }
 
+                // restore option.
+                if(is_option)
+                    type = python::Type::makeOptionType(type);
 
                 cout<<"Adding type for column #"<<i<<": "<<type.desc()<<endl;
                 reduced_types.push_back(type);

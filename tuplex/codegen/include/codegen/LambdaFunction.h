@@ -138,7 +138,16 @@ namespace tuplex {
              * helper to stop generation in expressions
              * @return
              */
-            inline bool hasExited() const { return _body == nullptr; }
+            inline bool hasExited() const {
+                if(!_body)
+                    return true;
+
+                // Also early exit if current block ends with ret.
+                if(blockContainsRet(_body))
+                    return true;
+
+                return false;
+            }
 
             /*!
              * finishes current basicblock and exits it with exception.

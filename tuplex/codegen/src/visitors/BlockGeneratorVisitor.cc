@@ -4128,7 +4128,7 @@ namespace tuplex {
                     addInstruction(el.val, el.size, el.is_null);
                     _lfb->setLastBlock(builder.GetInsertBlock());
                 }
-            } else if (value.val->getType() == _env->getMatchObjectPtrType() &&
+            } else if (value.val && value.val->getType() == _env->getMatchObjectPtrType() &&
                        value_type == python::Type::MATCHOBJECT) {
                 auto ind = builder.CreateMul(_env->i64Const(2), index.val);
                 auto match_object = value.val;
@@ -4143,6 +4143,16 @@ namespace tuplex {
                 _lfb->setLastBlock(builder.GetInsertBlock());
                 addInstruction(ret.val, ret.size);
             } else {
+
+                // option types?
+                if(value_type.isOptionType()) {
+                    // None indexed produces
+                    // TypeError: 'NoneType' object is not subscriptable
+                    assert(value.is_null);
+                    _lfb->addException(builder, ExceptionCode::TYPEERROR, value.is_null, "'NoneType' object is not subscriptable");
+                    value_type = value_type.withoutOption();
+                }
+
                 // check if value is of struct dict type
                 if(value_type.isStructuredDictionaryType()) {
                     SerializableValue ret;
@@ -4195,10 +4205,27 @@ namespace tuplex {
                     // special behavior compared to struct dict, i.e. if key is not found -> normal-case exception.
                     SerializableValue ret;
                     if(subscriptSparseStructDict(builder, &ret, value_type, value, index_type, index, sub->_expression.get())) {
+                        // block open? i.e. no early exit? If not, return.
+                        if(!blockOpen(builder.GetInsertBlock()))
+                            return;
+
                         _lfb->setLastBlock(builder.GetInsertBlock());
                         addInstruction(ret.val, ret.size, ret.is_null);
                         return;
                     }
+                }
+
+                if(value_type == python::Type::PYOBJECT) {
+                    _lfb->setLastBlock(builder.GetInsertBlock());
+                    // deoptimization -> go to general case/interpreter case.
+                    _lfb->exitWithException(ExceptionCode::NORMALCASEVIOLATION, "[] on pyobject.");
+                    return;
+//                    _lfb->addException(builder, ExceptionCode::NORMALCASEVIOLATION, _env->i1Const(true), "[] on pyobject.");
+//                    auto dummy = _env->dummyValue(builder, sub->getInferredType());
+//                    _lfb->setLastBlock(builder.GetInsertBlock());
+//                    addInstruction(dummy.val, dummy.size, dummy.is_null);
+//                    return;
+                    // check what the result is supposed to be, use dummy to continue compilation.
                 }
 
                 // undefined
@@ -4206,8 +4233,14 @@ namespace tuplex {
                 ss << "unsupported type encountered with [] operator.";
                 ss << "\nindex type: " << sub->_expression->getInferredType().desc();
                 ss << "\nvalue type: " << sub->_value->getInferredType().desc();
-                ss << "\nindex llvm type: " << _env->getLLVMTypeName(index.val->getType());
-                ss << "\nvalue llvm type: " << _env->getLLVMTypeName(value.val->getType());
+                if(index.val)
+                    ss << "\nindex llvm type: " << _env->getLLVMTypeName(index.val->getType());
+                else
+                    ss << "\nindex llvm type: <nullptr>";
+                if(value.val)
+                    ss << "\nvalue llvm type: " << _env->getLLVMTypeName(value.val->getType());
+                else
+                    ss << "\nvalue llvm type: <nullptr>";
                 error(ss.str());
             }
         }
@@ -4346,7 +4379,7 @@ namespace tuplex {
                 auto it = std::find(columns.begin(), columns.end(), key);
                 int idx = it - columns.begin();
                 if(it == columns.end()) {
-                    _lfb->exitWithException(ExceptionCode::KEYERROR);
+                    _lfb->exitWithException(ExceptionCode::KEYERROR, "KeyError: Row does not contain key " + key);
                     return true;
                 }
                 // if not, fetch from FlattenedTuple index
@@ -4391,7 +4424,7 @@ namespace tuplex {
             if(element_type == python::Type::UNKNOWN) {
                 _logger.debug("did not find entry under key=" + key + " in dict.");
                 // generate key error
-                _lfb->exitWithException(ExceptionCode::KEYERROR);
+                _lfb->exitWithException(ExceptionCode::KEYERROR, "KeyError: [] on StructDict with key=" + key);
                 return true;
             }
 
@@ -4454,7 +4487,7 @@ namespace tuplex {
             // check if not present
             if(python::NOT_PRESENT == struct_dict_type_get_presence(value_type.makeNonSparse(), path)) {
                 // generate key error
-                _lfb->exitWithException(ExceptionCode::KEYERROR); // Definitive KeyError.
+                _lfb->exitWithException(ExceptionCode::KEYERROR, "KeyError: key " + key + " not present."); // Definitive KeyError.
                 return true;
             }
 
@@ -4463,7 +4496,7 @@ namespace tuplex {
             if(element_type == python::Type::UNKNOWN) {
                 _logger.debug("did not find entry under key=" + key + " in dict of type " + value_type.desc() + ".");
                 // generate key error
-                _lfb->exitWithException(ExceptionCode::NORMALCASEVIOLATION); // can not decide. So no definitive KeyError.
+                _lfb->exitWithException(ExceptionCode::NORMALCASEVIOLATION); // can not decide. So no definitive KeyError, instead deoptimize.
                 return true;
             }
 
