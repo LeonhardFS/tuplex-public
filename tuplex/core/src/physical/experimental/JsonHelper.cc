@@ -145,6 +145,7 @@ namespace tuplex {
 
             // some weird error may happen IFF batch size is too small.
             // -> out of capacity. Could be detected here and then by manually hacking the iterator
+            // increase batch / i.e. reinitialize parser.
             // @TODO.
 
             simdjson::error_code error;
@@ -153,7 +154,8 @@ namespace tuplex {
             simdjson::dom::element_type line_type;
             doc.type().tie(line_type, error);
             if(error) {
-
+                // In debug mode, extensive error handling.
+#ifndef NDEBUG
                 // special case: empty line
                 if(simdjson::error_code::TAPE_ERROR == error) {
                     // can line be retrieved?
@@ -170,14 +172,13 @@ namespace tuplex {
                 std::stringstream ss;
                 ss<<__FILE__<<":"<<__LINE__<<" "<<error; // <-- can get error description like this
 
-                // // can line retrieved?
-                // std::string full_row;
-                // {
-                //     std::stringstream ss;
-                //     ss << j->it.source() << std::endl;
-                //     full_row = ss.str();
-                // }
-#ifndef NDEBUG
+                if(simdjson::error_code::CAPACITY == error) {
+                    // If this error appears, adjust SIMDJSON_BATCH_SIZE to be larger!
+                    ss<< " unprocessed bytes at the end: " << j->stream.truncated_bytes()<<std::endl;
+                    ss<<" simdjson currently configured with SIMDJSON_BATCH_SIZE="<<SIMDJSON_BATCH_SIZE<<std::endl;
+                    ss<<" increase SIMDJSON_BATCH_SIZE by at least "<<(j->stream.truncated_bytes() - SIMDJSON_BATCH_SIZE)<<" to parse document"<<std::endl;
+                }
+
                 throw std::runtime_error(ss.str());
 #endif
                 return 0xFFFFFFFF;

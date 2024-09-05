@@ -454,3 +454,17 @@ TEST(TypeSys, DictEquality) {
     EXPECT_NE(empty_struct, empty_sparse);
     EXPECT_NE(empty_sparse, python::Type::EMPTYDICT);
 }
+
+TEST(TypeSys, UninitializedDecodeEncode) {
+    using namespace tuplex;
+    auto t = python::Type::fromHash(-1);
+    auto str = t.encode();
+    EXPECT_EQ(str, "uninitialized");
+    EXPECT_EQ(python::Type::decode(str), t);
+}
+
+TEST(TypeSys, UnknownHash) {
+    using namespace tuplex;
+    // make sure this holds;
+    ASSERT_EQ(python::Type::UNKNOWN.hash(), 0);
+}

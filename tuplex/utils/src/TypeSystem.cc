@@ -2449,7 +2449,7 @@ namespace python {
 
     // TODO: more efficient encoding using binary representation?
     std::string Type::encode() const {
-        if(_hash > 0) {
+        if(_hash >= 0) {
             auto& factory = TypeFactory::instance();
             // use super simple encoding scheme here.
             // -> i.e. primitives use desc
@@ -2513,10 +2513,9 @@ namespace python {
                     return Type::UNKNOWN.encode();
                 }
             }
-        } else if (_hash <= 0)
-            return "unknown";
-        else
+        } else {
             return "uninitialized";
+        }
     }
 
     bool Type::all_struct_pairs_optional() const {

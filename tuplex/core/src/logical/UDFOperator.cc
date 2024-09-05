@@ -47,6 +47,8 @@ namespace tuplex {
 
         // list?
         if(t.isListType()) {
+            if(t == python::Type::EMPTYLIST)
+                return false;
             if(isOrContainsExceptionType(t.elementType()));
         }
 

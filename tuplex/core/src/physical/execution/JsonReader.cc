@@ -78,6 +78,8 @@ namespace tuplex {
         _rangeEnd = 0;
         _originalRangeStart = 0;
         _originalRangeEnd = 0;
+
+        _total_bytes_parsed = 0;
     }
 
     void JsonReader::setRange(size_t start, size_t end) {
@@ -102,6 +104,8 @@ namespace tuplex {
         auto fp = VirtualFileSystem::open_file(inputFilePath, VirtualFileMode::VFS_READ);
         if(!fp)
             throw std::runtime_error("could not open " + inputFilePath.toPath() + " in read mode.");
+
+        _total_bytes_parsed = 0;
 
         bool useRange = _rangeStart < _rangeEnd;
         if(useRange && _rangeStart != 0) {
@@ -309,6 +313,7 @@ namespace tuplex {
         std::stringstream ss;
         ss<<"in buffer length: "<<_inBufferLength<<" clamped buf length: "<<buf_length<<std::endl;
         ss<<"full buf is utf8: "<<std::boolalpha<<full_buf_is_utf8<<" clamped buf: "<<clamped_buf_is_utf8<<std::endl;
+        ss<<"bytes parsed since start: "<<_total_bytes_parsed<<" total bytes to read: "<<(_rangeEnd - _rangeStart)<<" bytes left: "<<(_rangeEnd - _rangeStart) - _total_bytes_parsed<<std::endl;
         if(!clamped_buf_is_utf8) {
             ss<<"last 16 bytes of buffer: ";
             core::hexdump(ss, _inputBuffer + _inBufferLength - 16, 16);
@@ -321,7 +326,7 @@ namespace tuplex {
 #endif
         int64_t num_normal_rows = 0, num_bad_rows = 0;
         assert(_functor);
-        auto bytesParsed = _functor(_userData, _inputBuffer, buf_length, &num_normal_rows, &num_bad_rows, !eof);
+        auto bytesParsed = _functor(_userData, _inputBuffer, static_cast<int64_t>(buf_length), &num_normal_rows, &num_bad_rows, !eof);
 
         // restore
         if(is_clamped)
@@ -343,6 +348,8 @@ namespace tuplex {
             err<<"Json read failed with code " + std::to_string(-bytesParsed);
             throw std::runtime_error(err.str());
         }
+
+        _total_bytes_parsed += bytesParsed;
 
         return bytesParsed;
     }
