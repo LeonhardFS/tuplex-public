@@ -200,7 +200,6 @@ namespace tuplex {
 
     };
 
-
     size_t csv_row_count(const std::string &path) {
         // parse CSV from path, and count rows.
         csvmonkey::MappedFileCursor stream;
@@ -264,7 +263,7 @@ namespace tuplex {
                 co.set(kv.first, kv.second);
 
         // this allows large files to be processed without splitting.
-        co.set("tuplex.inputSplitSize", "20G");
+        co.set("tuplex.inputSplitSize", "500G"); // set extreme large so there's no split.
         co.set("tuplex.experimental.worker.workerBufferSize",
                "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
 
