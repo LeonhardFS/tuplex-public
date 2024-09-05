@@ -34,26 +34,26 @@ namespace tuplex {
 
     std::vector<QueryConfiguration> g_configurations_to_test(
             {
-//                QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false,
-//                                false, false, 378},
-//             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false,
-//                                true, false, 378},
-//             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true,
-//                                false, false, 378},
-//             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true,
-//                                true, false, 378},
-//             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false,
-//                                false, true, 378},
-//             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false,
-//                                true, true, 378},
-//             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true,
-//                                false, true, 378},
-//             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true,
-//                                true, true, 378},
-//             QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", false, true, false, 294195},
-//             QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", true, true, false, 294195},
-//             QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", true, true, true, 294195},
-//             QueryConfiguration{"large_benchmark", "/hot/data/github_download/monthly/*.json", true, true, true, 12409995}
+                QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false,
+                                false, false, 378},
+             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false,
+                                true, false, 378},
+             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true,
+                                false, false, 378},
+             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true,
+                                true, false, 378},
+             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false,
+                                false, true, 378},
+             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", false,
+                                true, true, 378},
+             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true,
+                                false, true, 378},
+             QueryConfiguration{"small_sample", "../resources/hyperspecialization/github_daily/*.json.sample", true,
+                                true, true, 378},
+             QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", false, true, false, 294195},
+             QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", true, true, false, 294195},
+             QueryConfiguration{"benchmark", "/hot/data/github_daily/*.json", true, true, true, 294195},
+             QueryConfiguration{"large_benchmark", "/hot/data/github_download/monthly/*.json", true, true, true, 12409995},
 
 // TODO: test 2012 with NO filter promo.
 
@@ -270,6 +270,9 @@ namespace tuplex {
 
         // activate sparsify structs.
         co.set("tuplex.optimizer.sparsifyStructs", boolToString(test_conf.use_sparsify_structs));
+
+        // deactivate opportuneCompilation as it is buggy.
+        co.set("tuplex.experimental.opportuneCompilation", "false");
 
         // check with generic dict as well.
         // @TODO.

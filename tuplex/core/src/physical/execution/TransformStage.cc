@@ -933,7 +933,7 @@ namespace tuplex {
         // load to LLVM module for IR formats.
         llvm::LLVMContext ctx;
         std::unique_ptr<llvm::Module> slow_path_mod;
-        switch(fastPathCodeFormat()) {
+        switch(slowPathCodeFormat()) {
             case codegen::CodeFormat::LLVM_IR_BITCODE: {
                 slow_path_mod = codegen::bitCodeToModule(ctx, slow_path_code);
                 if(!slow_path_mod)

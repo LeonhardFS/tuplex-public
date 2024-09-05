@@ -530,6 +530,10 @@ namespace tuplex {
 
         // opportune compilation? --> do this here b.c. lljit is not thread-safe yet?
         // kick off general case compile then
+
+        // opportune general path compilation is broken, turn off for now.
+        assert(!_settings.opportuneGeneralPathCompilation);
+
         if(_settings.opportuneGeneralPathCompilation && _settings.useCompiledGeneralPath) {
             // create new thread to compile slow path (in parallel to running fast path)
             _resolverCompileThread.reset(new std::thread([this](TransformStage* tstage) {

@@ -315,7 +315,7 @@ namespace tuplex {
             using namespace llvm;
 
             // Note: check llvm11 for parallel codegen https://llvm.org/doxygen/ParallelCG_8cpp_source.html
-            auto res = parseBitcodeFile(llvm::MemoryBufferRef(llvm::StringRef((char*)buf, bufSize), "<module>"), context);
+            auto res = parseBitcodeFile(llvm::MemoryBufferRef(llvm::StringRef((const char*)buf, bufSize), "<module>"), context);
 
             // check if any errors occurred during module parsing
             if (!res) {
