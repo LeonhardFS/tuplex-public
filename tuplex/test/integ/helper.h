@@ -60,7 +60,7 @@ namespace tuplex {
 
     extern std::string minio_data_location();
 
-    extern messages::InvocationResponse process_request_with_worker(const std::string& worker_path, const std::string& scratch_dir, const messages::InvocationRequest& request);
+    extern messages::InvocationResponse process_request_with_worker(const std::string& worker_path, const std::string& scratch_dir, const messages::InvocationRequest& request, bool invoke_process=true);
 }
 
 #endif //TUPLEX_HELPER_H

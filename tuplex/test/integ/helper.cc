@@ -198,31 +198,35 @@ namespace tuplex {
         return result;
     }
 
-    messages::InvocationResponse process_request_with_worker(const std::string& worker_path, const std::string& scratch_dir, const messages::InvocationRequest& request) {
+    messages::InvocationResponse process_request_with_worker(const std::string& worker_path,
+                                                             const std::string& scratch_dir,
+                                                             const messages::InvocationRequest& request,
+                                                             bool invoke_process) {
         auto& logger = Logger::instance().logger("test");
-
-        auto actual_worker_path = find_worker(worker_path);
-        logger.info("Found worker executable " + actual_worker_path);
-
-
-        // ensure cache dir exists.
-        VirtualFileSystem::fromURI(scratch_dir).create_dir(scratch_dir);
-
-        auto process_id = 0;
-        auto request_no = 1;
-        Timer timer;
-        auto message_path = URI(scratch_dir).join("message_process_" + std::to_string(process_id) + "_" + std::to_string(request_no-1) + ".json");
-        auto stats_path = URI(scratch_dir).join("message_stats_" + std::to_string(process_id) + "_" + std::to_string(request_no-1) + ".json");
-        auto response_path = URI(scratch_dir).join("message_response_" + std::to_string(process_id) + "_" + std::to_string(request_no-1) + ".json");
 
         std::string json_message;
         google::protobuf::util::MessageToJsonString(request, &json_message);
 
-        // save to file
-        stringToFile(message_path, json_message);
+        if(invoke_process) {
+            auto actual_worker_path = find_worker(worker_path);
+            logger.info("Found worker executable " + actual_worker_path);
 
-        auto cmd = actual_worker_path + " -m " + message_path.toPath() + " -s " + stats_path.toPath() + " -o " + response_path.toPath();
-        auto res_stdout = runCommand(cmd);
+
+            // ensure cache dir exists.
+            VirtualFileSystem::fromURI(scratch_dir).create_dir(scratch_dir);
+
+            auto process_id = 0;
+            auto request_no = 1;
+            Timer timer;
+            auto message_path = URI(scratch_dir).join("message_process_" + std::to_string(process_id) + "_" + std::to_string(request_no-1) + ".json");
+            auto stats_path = URI(scratch_dir).join("message_stats_" + std::to_string(process_id) + "_" + std::to_string(request_no-1) + ".json");
+            auto response_path = URI(scratch_dir).join("message_response_" + std::to_string(process_id) + "_" + std::to_string(request_no-1) + ".json");
+
+            // save to file
+            stringToFile(message_path, json_message);
+
+            auto cmd = actual_worker_path + " -m " + message_path.toPath() + " -s " + stats_path.toPath() + " -o " + response_path.toPath();
+            auto res_stdout = runCommand(cmd);
 
 //        // parse stats as answer out
 //        auto stats = nlohmann::json::parse(fileToString(stats_path));
@@ -231,8 +235,15 @@ namespace tuplex {
 //
 //        std::cout<<"Response:\n"<<stats.dump(2)<<std::endl;
 
-        messages::InvocationResponse response;
-        google::protobuf::util::JsonStringToMessage(fileToString(response_path), &response);
-        return response;
+            messages::InvocationResponse response;
+            google::protobuf::util::JsonStringToMessage(fileToString(response_path), &response);
+            return response;
+        } else {
+            auto app = std::make_unique<WorkerApp>(WorkerSettings());
+            app->globalInit(true);
+
+            app->processJSONMessage(json_message);
+            return app->response();
+        }
     }
 }

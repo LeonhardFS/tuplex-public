@@ -394,7 +394,7 @@ namespace tuplex {
         auto co = ContextOptions::defaults();
 
         co.set("tuplex.backend", "worker");
-
+        co.set("tuplex.experimental.opportuneCompilation", "false");
         return co;
     }
 }
@@ -500,6 +500,7 @@ TEST_F(S3LocalTests, TestGithubPipelineObjectCompileAndProcess) {
     request.set_requestmode(REQUEST_MODE_COMPILE_AND_RETURN_OBJECT_CODE | REQUEST_MODE_COMPILE_ONLY);
 
     // Issue request to worker (via helper function) and retrieve response.
+    // Doesn't matter here whether process or not. Only get the (object) code.
     auto response = process_request_with_worker(co.EXPERIMENTAL_WORKER_PATH(), co.SCRATCH_DIR().toPath(), request);
 
     // check result code is ok.
@@ -526,7 +527,8 @@ TEST_F(S3LocalTests, TestGithubPipelineObjectCompileAndProcess) {
     }
 
     // Issue request to worker again with object code this time.
-    response = process_request_with_worker(co.EXPERIMENTAL_WORKER_PATH(), co.SCRATCH_DIR().toPath(), request);
+    // Because here S3 is configured locally, use WorkerApp in this process.
+    response = process_request_with_worker(co.EXPERIMENTAL_WORKER_PATH(), co.SCRATCH_DIR().toPath(), request, false);
 
     // check result code is ok.
     cout<<"Status of request: "<<response.status()<<endl;
@@ -535,6 +537,10 @@ TEST_F(S3LocalTests, TestGithubPipelineObjectCompileAndProcess) {
     auto output_uris = VirtualFileSystem::fromURI(input_pattern).glob(output_path + "/*.csv");
 
     cout<<"Found "<<pluralize(output_uris.size(), "output file")<<" in local S3 file system."<<endl;
+
+    // there must be one file now (because of the request).
+    EXPECT_EQ(output_uris.size(), 1);
+
 //
 //    EXPECT_EQ(output_uris.size(), files_to_upoad.size());
 //

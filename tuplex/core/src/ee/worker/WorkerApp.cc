@@ -539,8 +539,8 @@ namespace tuplex {
             // internally sets modules from IR/bitcode to object code.
             tstage->compileToObjectCode(target_triple, cpu);
 
-            assert(tstage->fastPathCodeFormat() == CodeFormat::OBJECT_CODE);
-            assert(tstage->slowPathCodeFormat() == CodeFormat::OBJECT_CODE);
+            assert(tstage->fastPathCodeFormat() == codegen::CodeFormat::OBJECT_CODE);
+            assert(tstage->slowPathCodeFormat() == codegen::CodeFormat::OBJECT_CODE);
             auto object_code_fast_path = tstage->fastPathCode();
             auto object_code_slow_path = tstage->slowPathCode();
 
