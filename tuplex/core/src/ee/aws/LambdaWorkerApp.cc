@@ -1010,32 +1010,14 @@ namespace tuplex {
     tuplex::messages::InvocationResponse LambdaWorkerApp::generateResponse() {
         tuplex::messages::InvocationResponse result;
 
+        // WorkerApp base class fill.
+        fill_response_with_state(result);
+
+        // Lambda specific added messages.
         result.set_status(tuplex::messages::InvocationResponse_Status_SUCCESS);
         result.set_type(_messageType);
 
-        if(!_statistics.empty()) {
-            auto& last = _statistics.back();
-            // set metrics (num rows etc.)
-            result.set_taskexecutiontime(last.totalTime);
-            result.set_numrowswritten(last.numNormalOutputRows);
-            result.set_numexceptions(last.numExceptionOutputRows);
-
-            // set input row statistics
-            auto path_stats = new tuplex::messages::CodePathStats();
-            path_stats->set_normal(last.codePathStats.rowsOnNormalPathCount);
-            path_stats->set_general(last.codePathStats.rowsOnGeneralPathCount);
-            path_stats->set_interpreter(last.codePathStats.rowsOnInterpreterPathCount);
-            path_stats->set_unresolved(last.codePathStats.unresolvedRowsCount);
-            path_stats->set_normal_input_schema(normalCaseInputType().encode());
-            path_stats->set_normal_output_schema(normalCaseOutputType().encode());
-            path_stats->set_general_input_schema(generalCaseInputType().encode());
-            path_stats->set_general_output_schema(generalCaseOutputType().encode());
-            result.set_allocated_rowstats(path_stats);
-
-        }
-
         // message specific results
-        //if(_messageType == tuplex::messages::MessageType::MT_WARMUP) {
         for(const auto& c_info : _invokedContainers) {
             auto element = result.add_invokedcontainers();
             c_info.fill(element);
@@ -1045,36 +1027,12 @@ namespace tuplex {
             auto element = result.add_invokedrequests();
             r_info.fill(element);
         }
-       // }
 
        // add which outputs from which inputs this query produced
         for(const auto& uri : _input_uris)
             result.add_inputuris(uri);
         for(const auto& uri : _output_uris)
             result.add_outputuris(uri);
-
-        // set exception counts
-        for(const auto& keyval : exception_counts()) {
-            // compress keys
-            assert(std::get<0>(keyval.first) < std::numeric_limits<int32_t>::max() && std::get<1>(keyval.first) < std::numeric_limits<int32_t>::max());
-            auto key = std::get<0>(keyval.first) << 32 | std::get<1>(keyval.first);
-            (*result.mutable_exceptioncounts())[key] = keyval.second;
-        }
-
-        // TODO: other stuff...
-//        for(const auto& uri : inputURIs) {
-//            result.add_inputuris(uri.toPath());
-//        }
-//        result.add_outputuris(outputURI.toPath());
-//        result.set_taskexecutiontime(taskTime);
-//        for(const auto& keyval : timer.timings) {
-//            (*result.mutable_breakdowntimes())[keyval.first] = keyval.second;
-//        }
-
-        // save whichever metrics are interesting.
-        for(const auto& keyval : _timeDict) {
-            (*result.mutable_breakdowntimes())[keyval.first] = keyval.second;
-        }
 
         return result;
     }

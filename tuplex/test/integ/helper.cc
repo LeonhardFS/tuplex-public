@@ -213,6 +213,7 @@ namespace tuplex {
         Timer timer;
         auto message_path = URI(scratch_dir).join("message_process_" + std::to_string(process_id) + "_" + std::to_string(request_no-1) + ".json");
         auto stats_path = URI(scratch_dir).join("message_stats_" + std::to_string(process_id) + "_" + std::to_string(request_no-1) + ".json");
+        auto response_path = URI(scratch_dir).join("message_response_" + std::to_string(process_id) + "_" + std::to_string(request_no-1) + ".json");
 
         std::string json_message;
         google::protobuf::util::MessageToJsonString(request, &json_message);
@@ -220,18 +221,18 @@ namespace tuplex {
         // save to file
         stringToFile(message_path, json_message);
 
-        auto cmd = actual_worker_path + " -m " + message_path.toPath() + " -o " + stats_path.toPath();
+        auto cmd = actual_worker_path + " -m " + message_path.toPath() + " -s " + stats_path.toPath() + " -o " + response_path.toPath();
         auto res_stdout = runCommand(cmd);
 
-        // parse stats as answer out
-        auto stats = nlohmann::json::parse(fileToString(stats_path));
-        auto worker_invocation_duration = timer.time();
-        stats["request_total_time"] = worker_invocation_duration;
-
-        std::cout<<"Response:\n"<<stats.dump(2)<<std::endl;
+//        // parse stats as answer out
+//        auto stats = nlohmann::json::parse(fileToString(stats_path));
+//        auto worker_invocation_duration = timer.time();
+//        stats["request_total_time"] = worker_invocation_duration;
+//
+//        std::cout<<"Response:\n"<<stats.dump(2)<<std::endl;
 
         messages::InvocationResponse response;
-        google::protobuf::util::JsonStringToMessage(fileToString(stats_path), &response);
+        google::protobuf::util::JsonStringToMessage(fileToString(response_path), &response);
         return response;
     }
 }

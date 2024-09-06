@@ -37,6 +37,7 @@ int main(int argc, char* argv[]) {
 
     std::string logPath;
     std::string output_response_path;
+    std::string output_stats_path;
     bool isDaemon = false; // do not start in daemon mode
     unsigned int port = 9000; // default port
     std::string message; // no message to process
@@ -51,6 +52,7 @@ int main(int argc, char* argv[]) {
     cli.add_argument(lyra::opt(port, "port").name("-p").name("--port").help("port on which worker should listen for messages"));
     cli.add_argument(lyra::opt(message, "message").name("-m").name("--message").help("single message in JSON for worker to process, auto-shutdown after message or path to file holding a message"));
     cli.add_argument(lyra::opt(output_response_path, "outputResponse").name("-o").name("--output-response").help("output response in JSON format to path, overwrites existing file."));
+    cli.add_argument(lyra::opt(output_stats_path, "stats").name("-s").name("--output-stats").help("output statistics in JSON format to path, overwrites existing file."));
     cli.add_argument(lyra::opt(timeout, "timeout").name("-t").name("--timeout").help("if set to non-zero, timeout in ms after which worker will auto-shutdown"));
 
     auto result = cli.parse({argc, argv});
@@ -98,11 +100,15 @@ int main(int argc, char* argv[]) {
             rc = app->processJSONMessage(message);
             if(!output_response_path.empty()) {
                 logger.info("Save json statistics to " + output_response_path);
-                stringToFile(output_response_path, app->jsonStats());
+                stringToFile(output_stats_path, app->jsonStats());
             }
 
-            // TODO: protobuf response, save if required.
-            // app->response();
+            if(!output_response_path.empty()) {
+                logger.info("Save response to " + output_response_path);
+                std::string json_response;
+                google::protobuf::util::MessageToJsonString(app->response(), &json_response);
+                stringToFile(output_response_path, json_response);
+            }
 
             logger.debug("message found");
         }

@@ -346,6 +346,11 @@ namespace tuplex {
         inline std::string jsonStats() const {
             return _lastStat;
         }
+
+        inline messages::InvocationResponse response() const {
+            return _response;
+        }
+
     protected:
 
         std::vector<MessageStatistic> _statistics; // statistics per message
@@ -422,6 +427,14 @@ namespace tuplex {
         Aws::SDKOptions _aws_options;
 #endif
 
+        // The message response to return.
+        messages::InvocationResponse _response;
+
+        /*!
+         * fill response object with current data.
+         * @param response
+         */
+        virtual void fill_response_with_state(messages::InvocationResponse& response);
 
         void registerSymbolsFromStageWithCompilers(TransformStage& stage);
 

@@ -58,7 +58,7 @@ echo "-- Using ${N_PROCESSORS} to build Tuplex."
 
 BUILD_TYPE=Release
 #BUILD_TYPE=Debug
-BUILD_TYPE=RelWithDebInfo
+#BUILD_TYPE=RelWithDebInfo
 
 # Unix
 if [[ "$OSTYPE" =~ ^linux ]]; then
@@ -108,14 +108,12 @@ mkdir -p ${RESULT_DIR}
 run_benchmarks() {
   run=$1
 
-  #echo ">>> Running python baseline"
-  #mode=python
-  #${PYTHON} runtuplex-new.py --mode python --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
-  #                           --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
-  #                           --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
-  #                           --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
-  #
-  #exit 0
+  echo ">>> Running python baseline"
+  mode=python
+  ${PYTHON} runtuplex-new.py --mode python --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
+                             --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
+                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
+                             --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
 
   echo ">>> Running tuplex with hyper, sparse structs"
   mode=tuplex-hyper-sparse-structs
@@ -136,7 +134,7 @@ python3 validate.py "${RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-h
 # Actual benchmark now.
 
 # Run a couple runs here.
-NUM_RUNS=${NUM_RUNS:-5}
+NUM_RUNS=${NUM_RUNS:-3}
 
 for ((r = 1; r <= NUM_RUNS; r++)); do
   echo "-- RUN ${r}/${NUM_RUNS}"

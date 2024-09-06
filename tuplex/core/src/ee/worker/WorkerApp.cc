@@ -368,6 +368,11 @@ namespace tuplex {
     }
 
     int WorkerApp::processMessage(const tuplex::messages::InvocationRequest& req) {
+
+        // Reset response.
+        _response = messages::InvocationResponse();
+        _response.set_type(req.type());
+
         _messageCount++;
 
         if(req.type() == messages::MessageType::MT_ENVIRONMENTINFO) {
@@ -402,6 +407,7 @@ namespace tuplex {
         if(req.settings().has_useinterpreteronly() && req.settings().useinterpreteronly()) {
             logger().info("WorkerApp is processing everything in single-threaded python/fallback mode.");
             auto rc = processTransformStageInPythonMode(tstage.get(), parts, outputURI);
+            fill_response_with_state(_response);
             _lastStat = jsonStat(req, tstage.get()); // generate stats before returning.
             return rc;
         }
@@ -500,11 +506,12 @@ namespace tuplex {
             logger().info("fast code path size after hyperspecialization: " + sizeToMemString(tstage->fastPathCode().size()));
             markTime("hyperspecialization_time", timer.time());
             if(tstage->fastPathCode().empty()) {
+                fill_response_with_state(_response);
 #ifndef NDEBUG
                 logger().error("there is no fast-code path, need fast code path to parse properly. Erroring out.");
                 return WORKER_ERROR_COMPILATION_FAILED;
 #else
-                logger().error("Hyper-specializastion could not produce a fast-path, using interpreter mode as fallback.");
+                logger().error("Hyper-specialization could not produce a fast-path, using interpreter mode as fallback.");
                 auto rc = processTransformStageInPythonMode(tstage.get(), parts, outputURI);
                 _lastStat = jsonStat(req, tstage.get()); // generate stats before returning.
                 return rc;
@@ -523,10 +530,48 @@ namespace tuplex {
         // if not, compile given code & process using both compile code & fallback
         // optimize via LLVM when in hyper mode.
         Timer compileTimer;
-        auto syms = compileTransformStage(*tstage, useHyperSpecialization(req));
-        if(!syms)
+        std::shared_ptr<TransformStage::JITSymbols> syms;
+
+        if(req.requestmode() & REQUEST_MODE_COMPILE_AND_RETURN_OBJECT_CODE) {
+            std::string target_triple = llvm::sys::getDefaultTargetTriple();
+            std::string cpu = "native"; // <-- native target cpu
+
+            // internally sets modules from IR/bitcode to object code.
+            tstage->compileToObjectCode(target_triple, cpu);
+
+            assert(tstage->fastPathCodeFormat() == CodeFormat::OBJECT_CODE);
+            assert(tstage->slowPathCodeFormat() == CodeFormat::OBJECT_CODE);
+            auto object_code_fast_path = tstage->fastPathCode();
+            auto object_code_slow_path = tstage->slowPathCode();
+
+            // save to response
+            auto id_gen = _response.resources_size();
+            auto resource = _response.add_resources();
+            if(resource) {
+                resource->set_id(std::to_string(id_gen++));
+                resource->set_payload(object_code_fast_path);
+                resource->set_type(static_cast<uint32_t>(ResourceType::OBJECT_CODE_NORMAL_CASE));
+            }
+            // this may be optional.
+            if(!object_code_slow_path.empty()) {
+                resource = _response.add_resources();
+                if(resource) {
+                    resource->set_id(std::to_string(id_gen++));
+                    resource->set_payload(object_code_slow_path);
+                    resource->set_type(static_cast<uint32_t>(ResourceType::OBJECT_CODE_GENERAL_CASE));
+                }
+            }
+        }
+
+        syms = compileTransformStage(*tstage, useHyperSpecialization(req));
+        if(!syms) {
+            fill_response_with_state(_response);
             return WORKER_ERROR_COMPILATION_FAILED;
+        }
         markTime("compile_time", compileTimer.time());
+
+        // If desired, return fast-path as object code.
+
 
         // opportune compilation? --> do this here b.c. lljit is not thread-safe yet?
         // kick off general case compile then
@@ -551,7 +596,14 @@ namespace tuplex {
                 _codePathStats.generalCaseType = _stage_general_input_type;
         }
 
+        // only compile? Do not process, just return compiled object code.
+        if(req.requestmode() & REQUEST_MODE_COMPILE_ONLY) {
+            fill_response_with_state(_response);
+            return WORKER_OK;
+        }
+
         auto rc = processTransformStage(tstage.get(), syms, parts, outputURI);
+        fill_response_with_state(_response);
         _lastStat = jsonStat(req, tstage.get()); // generate stats before returning.
         return rc;
     }
@@ -3522,5 +3574,41 @@ namespace tuplex {
         }
 
         shutdown();
+    }
+
+    void WorkerApp::fill_response_with_state(messages::InvocationResponse &response) {
+        if(!_statistics.empty()) {
+            auto& last = _statistics.back();
+            // set metrics (num rows etc.)
+            response.set_taskexecutiontime(last.totalTime);
+            response.set_numrowswritten(last.numNormalOutputRows);
+            response.set_numexceptions(last.numExceptionOutputRows);
+
+            // set input row statistics
+            auto path_stats = new tuplex::messages::CodePathStats();
+            path_stats->set_normal(last.codePathStats.rowsOnNormalPathCount);
+            path_stats->set_general(last.codePathStats.rowsOnGeneralPathCount);
+            path_stats->set_interpreter(last.codePathStats.rowsOnInterpreterPathCount);
+            path_stats->set_unresolved(last.codePathStats.unresolvedRowsCount);
+            path_stats->set_normal_input_schema(normalCaseInputType().encode());
+            path_stats->set_normal_output_schema(normalCaseOutputType().encode());
+            path_stats->set_general_input_schema(generalCaseInputType().encode());
+            path_stats->set_general_output_schema(generalCaseOutputType().encode());
+            response.set_allocated_rowstats(path_stats);
+
+        }
+
+        // set exception counts
+        for(const auto& keyval : exception_counts()) {
+            // compress keys
+            assert(std::get<0>(keyval.first) < std::numeric_limits<int32_t>::max() && std::get<1>(keyval.first) < std::numeric_limits<int32_t>::max());
+            auto key = std::get<0>(keyval.first) << 32 | std::get<1>(keyval.first);
+            (*_response.mutable_exceptioncounts())[key] = keyval.second;
+        }
+
+        // save whichever metrics are interesting.
+        for(const auto& keyval : _timeDict) {
+            (*_response.mutable_breakdowntimes())[keyval.first] = keyval.second;
+        }
     }
 }

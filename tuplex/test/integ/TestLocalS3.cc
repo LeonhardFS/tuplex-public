@@ -512,6 +512,25 @@ TEST_F(S3LocalTests, TestGithubPipelineObjectCompileAndProcess) {
         cout<<"Response\n:"<<json_str<<endl;
     }
 
+    // Now issue request again, but this time with object code provided and skip compilation.
+    // @TODO: Need to update types as well?
+    request.set_requestmode(REQUEST_MODE_SKIP_COMPILE);
+    auto object_code_fast_path = find_resources_by_type(response, ResourceType::OBJECT_CODE_NORMAL_CASE).front().payload();
+    request.mutable_stage()->mutable_fastpath()->set_code(object_code_fast_path);
+    request.mutable_stage()->mutable_fastpath()->set_codeformat(::messages::CodeFormat::OBJECT_CODE);
+
+    if(!find_resources_by_type(response, ResourceType::OBJECT_CODE_GENERAL_CASE).empty()) {
+        auto object_code_slow_path = find_resources_by_type(response, ResourceType::OBJECT_CODE_GENERAL_CASE).front().payload();
+        request.mutable_stage()->mutable_slowpath()->set_code(object_code_slow_path);
+        request.mutable_stage()->mutable_slowpath()->set_codeformat(::messages::CodeFormat::OBJECT_CODE);
+    }
+
+    // Issue request to worker again with object code this time.
+    response = process_request_with_worker(co.EXPERIMENTAL_WORKER_PATH(), co.SCRATCH_DIR().toPath(), request);
+
+    // check result code is ok.
+    cout<<"Status of request: "<<response.status()<<endl;
+
     // glob output files (should be equal amount, as 1 request per file)
     auto output_uris = VirtualFileSystem::fromURI(input_pattern).glob(output_path + "/*.csv");
 

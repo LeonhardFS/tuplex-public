@@ -1443,7 +1443,6 @@ namespace tuplex {
         llvm::LLVMContext ctx;
         auto mod = path.codeFormat == codegen::CodeFormat::LLVM_IR_BITCODE ? codegen::bitCodeToModule(ctx, path.code) : codegen::stringToModule(ctx, path.code);
 
-
         auto object_code = codegen::compileToObjectFile(*mod);
         path.code = std::string(object_code.begin(), object_code.end());
         path.codeFormat = codegen::CodeFormat::OBJECT_CODE;

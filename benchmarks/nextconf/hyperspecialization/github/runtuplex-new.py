@@ -206,7 +206,7 @@ def run_with_tuplex(args):
 
 
     # manipulate here to contrain granularity
-    input_split_size = "2GB"
+    input_split_size = "500GB" # as large as possible
     num_processes = 8
 
     import tuplex

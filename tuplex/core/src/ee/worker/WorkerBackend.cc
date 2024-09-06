@@ -501,7 +501,7 @@ namespace tuplex {
                     // save to file
                     stringToFile(message_path, json_message);
 
-                    auto cmd = worker_path + " -m " + message_path.toPath() + " -o " + stats_path.toPath();
+                    auto cmd = worker_path + " -m " + message_path.toPath() + " -s " + stats_path.toPath();
                     auto res_stdout = runCommand(cmd);
 
                     // parse stats as answer out
