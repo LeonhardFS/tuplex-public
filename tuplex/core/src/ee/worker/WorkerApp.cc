@@ -425,7 +425,7 @@ namespace tuplex {
         }
 
         // using hyper-specialization?
-        if(useHyperSpecialization(req)) {
+        if(useHyperSpecialization(req)  && !(req.requestmode() & REQUEST_MODE_SKIP_COMPILE)) {
 
             // check if encoded AST is compatible...
             if(!astFormatCompatible(req))

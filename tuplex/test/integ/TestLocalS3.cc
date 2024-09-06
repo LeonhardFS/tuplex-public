@@ -531,7 +531,7 @@ TEST_F(S3LocalTests, TestGithubPipelineObjectCompileAndProcess) {
     response = process_request_with_worker(co.EXPERIMENTAL_WORKER_PATH(), co.SCRATCH_DIR().toPath(), request, false);
 
     // check result code is ok.
-    cout<<"Status of request: "<<response.status()<<endl;
+    cout<<"Status of request: "<<response.status()<<endl;nvo
 
     // glob output files (should be equal amount, as 1 request per file)
     auto output_uris = VirtualFileSystem::fromURI(input_pattern).glob(output_path + "/*.csv");
