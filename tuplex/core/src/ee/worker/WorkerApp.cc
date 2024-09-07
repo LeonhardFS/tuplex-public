@@ -541,23 +541,23 @@ namespace tuplex {
 
             assert(tstage->fastPathCodeFormat() == codegen::CodeFormat::OBJECT_CODE);
             assert(tstage->slowPathCodeFormat() == codegen::CodeFormat::OBJECT_CODE);
-            auto object_code_fast_path = tstage->fastPathCode();
-            auto object_code_slow_path = tstage->slowPathCode();
+            auto fast_path_message = tstage->fast_path_to_protobuf();
+            auto slow_path_message = tstage->slow_path_to_protobuf();
 
             // save to response
             auto id_gen = _response.resources_size();
             auto resource = _response.add_resources();
             if(resource) {
                 resource->set_id(std::to_string(id_gen++));
-                resource->set_payload(object_code_fast_path);
+                resource->set_payload(fast_path_message.SerializeAsString());
                 resource->set_type(static_cast<uint32_t>(ResourceType::OBJECT_CODE_NORMAL_CASE));
             }
             // this may be optional.
-            if(!object_code_slow_path.empty()) {
+            if(!tstage->slowPathCode().empty()) {
                 resource = _response.add_resources();
                 if(resource) {
                     resource->set_id(std::to_string(id_gen++));
-                    resource->set_payload(object_code_slow_path);
+                    resource->set_payload(slow_path_message.SerializeAsString());
                     resource->set_type(static_cast<uint32_t>(ResourceType::OBJECT_CODE_GENERAL_CASE));
                 }
             }

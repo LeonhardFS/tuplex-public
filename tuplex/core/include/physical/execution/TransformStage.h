@@ -294,6 +294,18 @@ namespace tuplex {
         codegen::CodeFormat fastPathCodeFormat() const { return _fastCodePath.codeFormat; }
         codegen::CodeFormat slowPathCodeFormat() const { return _slowCodePath.codeFormat; }
 
+        inline messages::CodePath fast_path_to_protobuf() const {
+            messages::CodePath m;
+            _fastCodePath.fill(&m);
+            return m;
+        }
+
+        inline messages::CodePath slow_path_to_protobuf() const {
+            messages::CodePath m;
+            _slowCodePath.fill(&m);
+            return m;
+        }
+
         Schema generalCaseInputSchema() const {
             return this->_generalCaseInputSchema;
         }

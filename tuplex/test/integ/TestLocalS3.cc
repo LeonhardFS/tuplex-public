@@ -469,6 +469,10 @@ TEST_F(S3LocalTests, TestGithubPipelineObjectCompileAndProcess) {
 
     // Step 2: Create Tuplex context according to settings
     auto co = microIntegOptions();
+
+    // activate hyperspecialization here:
+    co.set("tuplex.experimental.hyperspecialization", "true");
+
     Context ctx(co);
     runtime::init(co.RUNTIME_LIBRARY().toPath());
 
@@ -501,7 +505,8 @@ TEST_F(S3LocalTests, TestGithubPipelineObjectCompileAndProcess) {
 
     // Issue request to worker (via helper function) and retrieve response.
     // Doesn't matter here whether process or not. Only get the (object) code.
-    auto response = process_request_with_worker(co.EXPERIMENTAL_WORKER_PATH(), co.SCRATCH_DIR().toPath(), request);
+    // When hyper is active, can't use process though.
+    auto response = process_request_with_worker(co.EXPERIMENTAL_WORKER_PATH(), co.SCRATCH_DIR().toPath(), request, false);
 
     // check result code is ok.
     cout<<"Status of request: "<<response.status()<<endl;
@@ -513,17 +518,22 @@ TEST_F(S3LocalTests, TestGithubPipelineObjectCompileAndProcess) {
         cout<<"Response\n:"<<json_str<<endl;
     }
 
+
+    // TODO: in request, the function Name is empty. I.e. _fastCodePath.funcStageName. This is part of encoded_data.
+    // ==> need to fix this! Best to return in resource complete StageCodePath encoded!!!
+
     // Now issue request again, but this time with object code provided and skip compilation.
     // @TODO: Need to update types as well?
     request.set_requestmode(REQUEST_MODE_SKIP_COMPILE);
     auto object_code_fast_path = find_resources_by_type(response, ResourceType::OBJECT_CODE_NORMAL_CASE).front().payload();
-    request.mutable_stage()->mutable_fastpath()->set_code(object_code_fast_path);
-    request.mutable_stage()->mutable_fastpath()->set_codeformat(::messages::CodeFormat::OBJECT_CODE);
+    ::messages::CodePath fast_path_message;
+    fast_path_message.ParseFromString(object_code_fast_path);
+    request.mutable_stage()->mutable_fastpath()->CopyFrom(fast_path_message);
 
     if(!find_resources_by_type(response, ResourceType::OBJECT_CODE_GENERAL_CASE).empty()) {
         auto object_code_slow_path = find_resources_by_type(response, ResourceType::OBJECT_CODE_GENERAL_CASE).front().payload();
-        request.mutable_stage()->mutable_slowpath()->set_code(object_code_slow_path);
-        request.mutable_stage()->mutable_slowpath()->set_codeformat(::messages::CodeFormat::OBJECT_CODE);
+        ::messages::CodePath slow_path_message;
+        request.mutable_stage()->mutable_slowpath()->CopyFrom(slow_path_message);
     }
 
     // Issue request to worker again with object code this time.

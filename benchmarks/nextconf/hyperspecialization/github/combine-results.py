@@ -128,9 +128,9 @@ def expand_tuplex_df(df_tplx):
         if t.get('hyper_active') is not None:
             more_data = {'hyper': t.get('hyper_active'),
                          'request_time_in_s': t['request_total_time'],
-                         'compile_time_in_s': t['timings']['compile_time'],
-                         'fast_path_execution_time_in_s':t['timings']['fast_path_execution_time'],
-                         'general_and_interpreter_time_in_s':t['timings']['general_and_interpreter_time'],
+                         'compile_time_in_s': t['timings'].get('compile_time'),
+                         'fast_path_execution_time_in_s':t['timings'].get('fast_path_execution_time'),
+                         'general_and_interpreter_time_in_s':t['timings'].get('general_and_interpreter_time'),
                          'hyperspecialization_time':t['timings'].get('hyperspecialization_time'),}
             data.update(more_data)
 
