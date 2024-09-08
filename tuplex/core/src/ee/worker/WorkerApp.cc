@@ -375,6 +375,13 @@ namespace tuplex {
 
         _messageCount++;
 
+        // adjust environment
+        if(!req.env().empty()) {
+            if(!adjust_environment({req.env().begin(), req.env().end()}))
+                return WORKER_ERROR_ENVIRONMENT;
+        }
+
+
         if(req.type() == messages::MessageType::MT_ENVIRONMENTINFO) {
             return processEnvironmentInfoMessage();
         }
@@ -3609,5 +3616,28 @@ namespace tuplex {
         for(const auto& keyval : _timeDict) {
             (*_response.mutable_breakdowntimes())[keyval.first] = keyval.second;
         }
+    }
+
+    bool WorkerApp::adjust_environment(const std::unordered_map<std::string, std::string> &env) {
+
+        // check if AWS keys are present, then re-register S3 filesystem using new keys.
+        if(env.find("AWS_ENDPOINT_URL_S3") != env.end()) {
+            // Update registered S3 file system.
+            auto endpoint = env.at("AWS_ENDPOINT_URL_S3");
+            auto secret_key = env.at("AWS_SECRET_ACCESS_KEY");
+            auto access_key = env.at("AWS_ACCESS_KEY_ID");
+
+            VirtualFileSystem::removeS3FileSystem();
+            NetworkSettings ns;
+            ns.endpointOverride = endpoint;
+            if(endpoint.find("localhost") != std::string::npos) {
+                ns.verifySSL = false;
+                ns.useVirtualAddressing = false;
+                ns.signPayloads = false;
+            }
+            VirtualFileSystem::addS3FileSystem(access_key, secret_key, "", "", ns);
+            VirtualFileSystem::addS3FileSystem();
+        }
+        return true;
     }
 }

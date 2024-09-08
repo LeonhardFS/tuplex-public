@@ -30,6 +30,7 @@
 #define WORKER_ERROR_GLOBAL_INIT 112
 #define WORKER_ERROR_MISSING_PYTHON_CODE 113
 #define WORKER_ERROR_INCOMPATIBLE_AST_FORMAT 114
+#define WORKER_ERROR_ENVIRONMENT 115
 
 // give 32MB standard buf size, 8MB for exceptions and hash
 #define WORKER_DEFAULT_BUFFER_SIZE 33554432
@@ -763,6 +764,8 @@ namespace tuplex {
         }
 
         void preCacheS3(const std::vector<FilePart>& parts);
+
+        bool adjust_environment(const std::unordered_map<std::string, std::string>& env);
     };
 
 
