@@ -281,6 +281,7 @@ namespace tuplex {
             size_t cur_size = 0;
             while (cur_size < uri_size) {
                 messages::InvocationRequest req;
+                fill_env(req);
                 req.set_type(messages::MessageType::MT_TRANSFORM);
                 auto pb_stage = tstage->to_protobuf();
 
@@ -633,6 +634,14 @@ namespace tuplex {
         }
         throw std::runtime_error("failed to ensure a worker path for path '" + exe_path + "'");
         return "";
+    }
+
+    void WorkerBackend::fill_env(messages::InvocationRequest &request) {
+        if(!_environmentOverwrite.empty()) {
+            for(const auto& key_value : _environmentOverwrite) {
+                (*request.mutable_env())[key_value.first] = key_value.second;
+            }
+        }
     }
 
 }

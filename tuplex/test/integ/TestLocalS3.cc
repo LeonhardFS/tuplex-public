@@ -449,7 +449,8 @@ TEST_F(S3LocalTests, TestGithubPipeline) {
     EXPECT_EQ(total_row_count, 378);
 }
 
-TEST_F(S3LocalTests, TestGithubPipelineObjectCompileAndProcess) {
+
+void test_github_pipeline_with_object_code_shipped(const std::string& testName, bool use_process) {
     // This test is similar to TestGithubPipeline, however here the requests are only collected.
     using namespace tuplex;
     using namespace std;
@@ -481,6 +482,19 @@ TEST_F(S3LocalTests, TestGithubPipelineObjectCompileAndProcess) {
     auto wb = static_cast<WorkerBackend*>(ctx.backend());
     wb->setRequestMode(true);
 
+    std::unordered_map<std::string, std::string> env;
+    if(use_process) {
+        // overwrite with minio S3 variables.
+        // cf. https://docs.aws.amazon.com/cli/v1/userguide/cli-configure-endpoints.html#endpoints-service-specific-table for table
+        // and https://docs.aws.amazon.com/cli/v1/userguide/cli-configure-envvars.html.
+        auto [local_credentials, local_config] = local_s3_credentials();
+
+        env["AWS_SECRET_ACCESS_KEY"] = local_credentials.GetAWSSecretKey();
+        env["AWS_ACCESS_KEY_ID"] = local_credentials.GetAWSAccessKeyId();
+        env["AWS_ENDPOINT_URL_S3"] = local_config.endpointOverride;
+    }
+    wb->setEnvironment(env);
+
     // Step 4: execute pipeline (inprocess with default config)
     github_pipeline(ctx, input_pattern, output_path);
 
@@ -500,48 +514,51 @@ TEST_F(S3LocalTests, TestGithubPipelineObjectCompileAndProcess) {
     }
 
     // change mode now of request to only compile and return code as object.
-    auto request = requests[0];
-    request.set_requestmode(REQUEST_MODE_COMPILE_AND_RETURN_OBJECT_CODE | REQUEST_MODE_COMPILE_ONLY);
+    for(auto request : requests) {
+        request.set_requestmode(REQUEST_MODE_COMPILE_AND_RETURN_OBJECT_CODE | REQUEST_MODE_COMPILE_ONLY);
 
-    // Issue request to worker (via helper function) and retrieve response.
-    // Doesn't matter here whether process or not. Only get the (object) code.
-    // When hyper is active, can't use process though.
-    auto response = process_request_with_worker(co.EXPERIMENTAL_WORKER_PATH(), co.SCRATCH_DIR().toPath(), request, false);
+        // Issue request to worker (via helper function) and retrieve response.
+        // Doesn't matter here whether process or not. Only get the (object) code.
+        // When hyper is active, can't use process though.
+        auto response = process_request_with_worker(co.EXPERIMENTAL_WORKER_PATH(), co.SCRATCH_DIR().toPath(), request, use_process);
 
-    // check result code is ok.
-    cout<<"Status of request: "<<response.status()<<endl;
+        // check result code is ok.
+        cout<<"Status of request: "<<response.status()<<endl;
 
-    // print stuff
-    {
-        std::string json_str;
-        google::protobuf::util::MessageToJsonString(response, &json_str);
-        cout<<"Response\n:"<<json_str<<endl;
+        // print stuff
+        {
+            std::string json_str;
+            google::protobuf::util::MessageToJsonString(response, &json_str);
+            cout<<"Response\n:"<<json_str<<endl;
+        }
+
+
+        // TODO: in request, the function Name is empty. I.e. _fastCodePath.funcStageName. This is part of encoded_data.
+        // ==> need to fix this! Best to return in resource complete StageCodePath encoded!!!
+
+        // Now issue request again, but this time with object code provided and skip compilation.
+        // @TODO: Need to update types as well?
+        request.set_requestmode(REQUEST_MODE_SKIP_COMPILE);
+        auto object_code_fast_path = find_resources_by_type(response, ResourceType::OBJECT_CODE_NORMAL_CASE).front().payload();
+        ::messages::CodePath fast_path_message;
+        fast_path_message.ParseFromString(object_code_fast_path);
+        request.mutable_stage()->mutable_fastpath()->CopyFrom(fast_path_message);
+
+        if(!find_resources_by_type(response, ResourceType::OBJECT_CODE_GENERAL_CASE).empty()) {
+            auto object_code_slow_path = find_resources_by_type(response, ResourceType::OBJECT_CODE_GENERAL_CASE).front().payload();
+            ::messages::CodePath slow_path_message;
+            request.mutable_stage()->mutable_slowpath()->CopyFrom(slow_path_message);
+        }
+
+        // Issue request to worker again with object code this time.
+        // Because here S3 is configured locally, use WorkerApp in this process.
+        response = process_request_with_worker(co.EXPERIMENTAL_WORKER_PATH(), co.SCRATCH_DIR().toPath(), request, use_process);
+
+        // check result code is ok.
+        cout<<"Status of request: "<<response.status()<<endl;
+
+        EXPECT_EQ(response.status(), 0);
     }
-
-
-    // TODO: in request, the function Name is empty. I.e. _fastCodePath.funcStageName. This is part of encoded_data.
-    // ==> need to fix this! Best to return in resource complete StageCodePath encoded!!!
-
-    // Now issue request again, but this time with object code provided and skip compilation.
-    // @TODO: Need to update types as well?
-    request.set_requestmode(REQUEST_MODE_SKIP_COMPILE);
-    auto object_code_fast_path = find_resources_by_type(response, ResourceType::OBJECT_CODE_NORMAL_CASE).front().payload();
-    ::messages::CodePath fast_path_message;
-    fast_path_message.ParseFromString(object_code_fast_path);
-    request.mutable_stage()->mutable_fastpath()->CopyFrom(fast_path_message);
-
-    if(!find_resources_by_type(response, ResourceType::OBJECT_CODE_GENERAL_CASE).empty()) {
-        auto object_code_slow_path = find_resources_by_type(response, ResourceType::OBJECT_CODE_GENERAL_CASE).front().payload();
-        ::messages::CodePath slow_path_message;
-        request.mutable_stage()->mutable_slowpath()->CopyFrom(slow_path_message);
-    }
-
-    // Issue request to worker again with object code this time.
-    // Because here S3 is configured locally, use WorkerApp in this process.
-    response = process_request_with_worker(co.EXPERIMENTAL_WORKER_PATH(), co.SCRATCH_DIR().toPath(), request, false);
-
-    // check result code is ok.
-    cout<<"Status of request: "<<response.status()<<endl;
 
     // glob output files (should be equal amount, as 1 request per file)
     auto output_uris = VirtualFileSystem::fromURI(input_pattern).glob(output_path + "/*.csv");
@@ -549,12 +566,17 @@ TEST_F(S3LocalTests, TestGithubPipelineObjectCompileAndProcess) {
     cout<<"Found "<<pluralize(output_uris.size(), "output file")<<" in local S3 file system."<<endl;
 
     // there must be one file now (because of the request).
-    EXPECT_EQ(output_uris.size(), 1);
+    EXPECT_EQ(output_uris.size(), files_to_upoad.size());
 
-//
-//    EXPECT_EQ(output_uris.size(), files_to_upoad.size());
-//
-//    // Step 5: Check csv counts to make sure these are correct.
-//    auto total_row_count = csv_row_count_for_pattern(output_path + "/*.csv");
-//    EXPECT_EQ(total_row_count, 378);
+    // Step 5: Check csv counts to make sure these are correct.
+    auto total_row_count = csv_row_count_for_pattern(output_path + "/*.csv");
+    EXPECT_EQ(total_row_count, 378);
+}
+
+TEST_F(S3LocalTests, TestGithubPipelineObjectCompile) {
+    test_github_pipeline_with_object_code_shipped(testName, false);
+}
+
+TEST_F(S3LocalTests, TestGithubPipelineObjectCompileAndProcess) {
+    test_github_pipeline_with_object_code_shipped(testName, true);
 }

@@ -3595,7 +3595,6 @@ namespace tuplex {
             path_stats->set_general_input_schema(generalCaseInputType().encode());
             path_stats->set_general_output_schema(generalCaseOutputType().encode());
             response.set_allocated_rowstats(path_stats);
-
         }
 
         // set exception counts

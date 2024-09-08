@@ -53,6 +53,14 @@ namespace tuplex {
             _emitRequestsOnly = emitOnly;
         }
 
+        /*!
+         * sets additional environment keys to be sent as part of request.
+         * @param env key=value environment key pairs.
+         */
+        void setEnvironment(const std::unordered_map<std::string, std::string>& env) {
+            _environmentOverwrite = env;
+        }
+
         inline std::vector<messages::InvocationRequest> pendingRequests(bool clear=true) {
             if(clear) {
                 auto v = _pendingRequests;
@@ -98,6 +106,7 @@ namespace tuplex {
 
         std::vector<messages::InvocationRequest> _pendingRequests;
         bool _emitRequestsOnly;
+        std::unordered_map<std::string, std::string> _environmentOverwrite;
 
         /*!
          * returns a scratch dir. If none is stored/found, abort
@@ -114,6 +123,9 @@ namespace tuplex {
                                             nlohmann::json *out_stats_array,
                                             nlohmann::json *out_req_array, size_t *out_total_input_rows,
                                             size_t *out_total_output_rows, size_t num_processes_to_use) const;
+
+        /*! add environment keys, global configs */
+        void fill_env(messages::InvocationRequest& request);
     };
 
     extern void config_worker(messages::WorkerSettings *ws,

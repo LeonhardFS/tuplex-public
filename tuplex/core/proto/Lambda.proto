@@ -149,6 +149,9 @@ message InvocationRequest {
 
     // how the request should be carried out (options etc.)
     uint64 requestMode = 11;
+
+    // Environment overwrite.
+    map<string, string> env = 12;
 }
 
 
