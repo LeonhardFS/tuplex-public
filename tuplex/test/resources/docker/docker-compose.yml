@@ -34,3 +34,15 @@ services:
 
     depends_on:
       - minio
+
+  # FastAPI mocking AWS Lambda service.
+  rest:
+    build:
+      context: ./rest
+      dockerfile: Dockerfile
+
+    ports:
+      - 8090:8090
+
+    depends_on:
+      - lambda

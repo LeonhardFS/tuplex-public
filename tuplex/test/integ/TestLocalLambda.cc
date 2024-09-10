@@ -128,6 +128,7 @@ namespace tuplex {
 class LambdaLocalTest : public ::testing::Test {
 public:
     static std::string yaml_path;
+    static std::string lambda_endpoint;
 protected:
     std::string testName;
     std::string bucketName;
@@ -240,6 +241,7 @@ protected:
 };
 
 std::string LambdaLocalTest::yaml_path = "../resources/docker/docker-compose.yml";
+std::string LambdaLocalTest::lambda_endpoint = "http://localhost:" + std::to_string(8090);
 
 TEST_F(LambdaLocalTest, ConnectionTestInvoke) {
     using namespace std;
@@ -255,7 +257,7 @@ TEST_F(LambdaLocalTest, ConnectionTestInvoke) {
     std::tie(credentials, config) = local_s3_credentials();
 
     // Overwrite lambda endpoint.
-    config.endpointOverride =  "http://localhost:" + std::to_string(8080);
+    config.endpointOverride = lambda_endpoint;
 
     std::shared_ptr<Aws::Lambda::LambdaClient> client = make_shared<Aws::Lambda::LambdaClient>(credentials, config);
 
@@ -292,6 +294,45 @@ TEST_F(LambdaLocalTest, ConnectionTestInvoke) {
 //        for (const auto &f: funcs) {
 //            cout<<"Found function: "<<f.GetFunctionName().c_str()<<endl;
 //        }
+    }
+    EXPECT_TRUE(outcome.IsSuccess());
+}
+
+TEST_F(LambdaLocalTest, ListFunctions) {
+    using namespace std;
+    using namespace tuplex;
+
+    // Basic Lambda invoke to check whether docker stack is launched, and that Lambda responds.
+
+    cout<<"Connecting via AWS Lambda client..."<<endl;
+
+    // Test with AWS Lambda client.
+    Aws::Auth::AWSCredentials credentials;
+    Aws::Client::ClientConfiguration config;
+    std::tie(credentials, config) = local_s3_credentials();
+
+    // Overwrite lambda endpoint.
+    config.endpointOverride = lambda_endpoint;
+
+    std::shared_ptr<Aws::Lambda::LambdaClient> client = make_shared<Aws::Lambda::LambdaClient>(credentials, config);
+
+    Aws::Lambda::Model::ListFunctionsRequest list_req;
+    auto outcome = client->ListFunctions(list_req);
+    if (!outcome.IsSuccess()) {
+        std::stringstream ss;
+        ss << outcome.GetError().GetExceptionName().c_str() << ", "
+           << outcome.GetError().GetMessage().c_str();
+    } else {
+        // check whether function is contained
+        auto funcs = outcome.GetResult().GetFunctions();
+
+        EXPECT_EQ(funcs.size(), 1);
+
+        // search for the function of interest
+        for (const auto &f: funcs) {
+            cout<<"Found function: "<<f.GetFunctionName().c_str()<<endl;
+            EXPECT_EQ(f.GetFunctionName(), "tplxlam"); // <-- mock should reflect default name.
+        }
     }
     EXPECT_TRUE(outcome.IsSuccess());
 }
