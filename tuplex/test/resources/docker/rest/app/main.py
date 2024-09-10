@@ -3,10 +3,36 @@
 from typing import Union
 
 import sysconfig
+import boto3
+import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request, Response, Depends
 
-app = FastAPI()
+app = FastAPI(debug=True)
+
+async def get_body(request: Request):
+    return await request.body()
+
+# Let any exception return a response with the traceback.
+@app.exception_handler(Exception)
+async def debug_exception_handler(request: Request, exc: Exception):
+    import traceback
+
+    return Response(
+        content="".join(
+            traceback.format_exception(
+                etype=type(exc), value=exc, tb=exc.__traceback__
+            )
+        )
+    )
+
+
+
+from pydantic import BaseModel
+
+
+class InvokeRequest(BaseModel):
+    payload: bytes
 
 
 @app.get("/")
@@ -123,3 +149,38 @@ def list_functions(FunctionVersion:str='ALL', Marker:str=None, MasterRegion:str=
         ],
         # "NextMarker": "string", not included - pagination doesn't need to be tested.
     }
+
+# src: https://docs.aws.amazon.com/lambda/latest/api/API_Invoke.html
+# POST /2015-03-31/functions/FunctionName/invocations?Qualifier=Qualifier HTTP/1.1
+@app.post("/2015-03-31/functions/{function_name}/invocations")
+def invoke(payload: bytes = Depends(get_body), Qualifier: str = None, FunctionName: str = None, ClientContext: str=None, InvocationType:str=None, LogType:str=None):
+    # Pass to the actual lambda docker container.
+    # May want to spin up a few so recursive calls work.
+
+    # Use boto3 for signing etc.
+    lam = boto3.client('lambda',
+                       endpoint_url='http://lambda:8080', # check port in docker-compose.yml
+                       aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID', 'AKIAIOSFODNN7EXAMPLE'),
+                       aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY', 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'),
+                       region_name=os.environ.get('AWS_REGION', os.environ.get('AWS_DEFAULT_REGION', 'local')))
+
+    kwargs = {}
+    if InvocationType:
+        kwargs['InvocationType'] = InvocationType,
+    if LogType:
+        kwargs['LogType'] = LogType,
+    if ClientContext:
+        kwargs['ClientContext'] = ClientContext,
+    if payload:
+        kwargs['Payload'] = payload,
+    if Qualifier:
+        kwargs['Qualifier'] = Qualifier
+
+    # Function name is by default always "function" for the runtime emulator.
+    response = lam.invoke(FunctionName="function",
+                          **kwargs)
+
+    # Payload is returned as botocore.response.StreamingBody, convert to string.
+    response = response['Payload'].read()
+
+    return response
