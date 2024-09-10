@@ -22,6 +22,7 @@
 #include <aws/core/utils/json/JsonSerializer.h>
 #include <aws/core/utils/memory/stl/AWSStringStream.h>
 #include <aws/core/utils/HashingUtils.h>
+#include <aws/core/utils/logging/LogLevel.h>
 
 namespace tuplex {
 
@@ -54,7 +55,7 @@ namespace tuplex {
     /*!
     calls Aws::InitAPI()
     */
-    extern bool initAWSSDK();
+    extern bool initAWSSDK(Aws::Utils::Logging::LogLevel log_level=Aws::Utils::Logging::LogLevel::Warn);
 
     /*!
      * initializes AWS SDK globally (lazy) and add S3 FileSystem.

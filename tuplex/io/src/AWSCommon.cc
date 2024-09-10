@@ -64,7 +64,7 @@ private:
 
 namespace tuplex {
 
-    bool initAWSSDK() {
+    bool initAWSSDK(Aws::Utils::Logging::LogLevel log_level) {
         if(!isAWSInitialized) {
 
 //        // hookup to Tuplex logger...
@@ -84,8 +84,6 @@ namespace tuplex {
 //                    Aws::Utils::Logging::LogLevel::Trace,
 //                    "aws sdk"));
 #ifndef NDEBUG
-        auto log_level = Aws::Utils::Logging::LogLevel::Trace;
-        log_level = Aws::Utils::Logging::LogLevel::Info;
         auto log_system = Aws::MakeShared<Aws::Utils::Logging::ConsoleLogSystem>("tuplex", log_level);
         Aws::Utils::Logging::InitializeAWSLogging(log_system);
 #endif

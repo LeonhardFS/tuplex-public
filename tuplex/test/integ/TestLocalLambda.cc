@@ -176,7 +176,7 @@ protected:
 
         // init AWS SDK
         cout<<"Initializing AWS SDK"<<endl;
-        initAWSSDK();
+        initAWSSDK(Aws::Utils::Logging::LogLevel::Trace);
 
         // Docker-compose yaml file.
         if(!fileExists(yaml_path)) {
