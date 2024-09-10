@@ -13,7 +13,8 @@ namespace tuplex {
         UNKNOWN = 0,
         LOG = 1,
         OBJECT_CODE_NORMAL_CASE=2,
-        OBJECT_CODE_GENERAL_CASE=3
+        OBJECT_CODE_GENERAL_CASE=3,
+        ENVIRONMENT_JSON=4,
     };
 
     // request modes:

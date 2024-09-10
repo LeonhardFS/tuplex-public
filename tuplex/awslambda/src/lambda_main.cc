@@ -334,12 +334,12 @@ tuplex::messages::InvocationResponse lambda_main(aws::lambda_runtime::invocation
     if(!app)
         return make_exception("invalid worker app");
 
-    // perform global init (this is a lazy function)
+    // Perform global init (this is a lazy function).
     int rc = app->globalInit(false);
     if(rc != WORKER_OK)
         return make_exception("failed processing with code " + std::to_string(rc));
 
-    // process message
+    // Process message.
     rc = app->processJSONMessage(lambda_req.payload.c_str());
     if(rc != WORKER_OK)
         return make_exception("failed processing with code " + std::to_string(rc));

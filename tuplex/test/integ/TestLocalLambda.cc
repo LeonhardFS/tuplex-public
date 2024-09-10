@@ -253,11 +253,16 @@ TEST_F(LambdaLocalTest, ConnectionTestInvoke) {
 
     // Test with AWS Lambda client.
     Aws::Auth::AWSCredentials credentials;
-    Aws::Client::ClientConfiguration config;
-    std::tie(credentials, config) = local_s3_credentials();
+    Aws::Client::ClientConfiguration s3_config;
+    std::tie(credentials, s3_config) = local_s3_credentials();
 
+    Aws::Client::ClientConfiguration config;
     // Overwrite lambda endpoint.
     config.endpointOverride = lambda_endpoint;
+
+    // Need to use long timeouts, Lambdas may take a while.
+    config.connectTimeoutMs = 30 * 1000.0; // 30s connect timeout.
+    config.requestTimeoutMs = 60 * 1000.0; // 60s timeout.
 
     std::shared_ptr<Aws::Lambda::LambdaClient> client = make_shared<Aws::Lambda::LambdaClient>(credentials, config);
 
@@ -273,12 +278,17 @@ TEST_F(LambdaLocalTest, ConnectionTestInvoke) {
     // For more requests, need to implement additional Lambda REST endpoints.
 
     Aws::Lambda::Model::InvokeRequest invoke_req;
-    invoke_req.SetFunctionName("function");
+    invoke_req.SetFunctionName("tplxlam");
     invoke_req.SetInvocationType(Aws::Lambda::Model::InvocationType::RequestResponse);
     // logtype to extract log data??
-    //req.SetLogtype(Aws::Lambda::Model::LogType::None);
+    invoke_req.SetLogType(Aws::Lambda::Model::LogType::Tail);
     std::string json_buf;
-    // google::protobuf::util::MessageToJsonString(req, &json_buf);
+
+    // Send basic Environment request message.
+    ::messages::InvocationRequest req;
+    req.set_type(::messages::MessageType::MT_ENVIRONMENTINFO);
+
+    google::protobuf::util::MessageToJsonString(req, &json_buf);
     invoke_req.SetBody(stringToAWSStream(json_buf));
     invoke_req.SetContentType("application/javascript");
     auto outcome = client->Invoke(invoke_req);
@@ -287,13 +297,27 @@ TEST_F(LambdaLocalTest, ConnectionTestInvoke) {
         ss << outcome.GetError().GetExceptionName().c_str() << ", "
            << outcome.GetError().GetMessage().c_str();
     } else {
-//        // check whether function is contained
-//        auto funcs = outcome.GetResult().GetFunctions();
-//
-//        // search for the function of interest
-//        for (const auto &f: funcs) {
-//            cout<<"Found function: "<<f.GetFunctionName().c_str()<<endl;
-//        }
+        // Get result, and display environment:
+
+        // write response
+        auto &result = outcome.GetResult();
+        auto statusCode = result.GetStatusCode();
+        std::string version = result.GetExecutedVersion().c_str();
+
+        // parse payload
+        stringstream ss;
+        auto &stream = const_cast<Aws::Lambda::Model::InvokeResult &>(result).GetPayload();
+        ss << stream.rdbuf();
+        string data = ss.str();
+        ::messages::InvocationResponse response;
+        google::protobuf::util::JsonStringToMessage(data, &response);
+
+        EXPECT_EQ(statusCode, 200); // should be 200 for ok.
+        ASSERT_EQ(response.resources_size(), 1); // 1 resource for encoded JSON
+        ASSERT_EQ(response.resources(0).type(), static_cast<uint32_t>(ResourceType::ENVIRONMENT_JSON));
+
+        auto j = nlohmann::json::parse(response.resources(0).payload());
+        cout<<"Environment information message:\n"<<j.dump(2)<<endl;
     }
     EXPECT_TRUE(outcome.IsSuccess());
 }

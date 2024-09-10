@@ -353,16 +353,34 @@ namespace tuplex {
 
     int WorkerApp::processEnvironmentInfoMessage() {
 
-        // query llvm
+        // Query llvm (version etc.).
         auto j = codegen::compileEnvironmentAsJson();
 
-        // add python specific information
+        // Add python specific information
         j["python"] = PY_VERSION;
         std::string version_string = "unknown";
         python::lockGIL();
         python::cloudpickleVersion(version_string);
         python::unlockGIL();
         j["cloudpickleVersion"] = version_string;
+
+        // Check which serialization mode is used.
+#ifdef BUILD_WITH_CEREAL
+        j["astSerializationFormat"] = "cereal";
+#else
+        j["astSerializationFormat"] = "json";
+#endif
+
+        // Add to response result as Resource.
+        auto id_gen = _response.resources_size();
+        auto resource = _response.add_resources();
+        if(resource) {
+            resource->set_id(std::to_string(id_gen++));
+            resource->set_payload(j.dump());
+            resource->set_type(static_cast<uint32_t>(ResourceType::ENVIRONMENT_JSON));
+        }
+
+        // Do not call here fill_response_with_state(,,,), no process state needs to be serialized.
 
         return WORKER_OK;
     }

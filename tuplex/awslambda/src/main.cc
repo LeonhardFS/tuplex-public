@@ -99,29 +99,22 @@ int main() {
     using namespace aws::lambda_runtime;
     using namespace tuplex;
 
-    // record start timestamp
+    // Record start timestamp.
     g_start_timestamp = current_utc_timestamp();
 
-    // init logger to only act with stdout sink (no file logging!)
+    // Init logger to only act with stdout sink (no file logging!).
     auto log_sink = std::make_shared<tuplex::memory_sink_mt>();
     auto log_id = uuidToString(container_id());
     Logger::init({std::make_shared<spdlog::sinks::ansicolor_stdout_sink_mt>(), log_sink});
 
-    // install sigsev handler to throw C++ exception which is caught in handler...
+    // Install SIGSEV handler to throw C++ exception which is caught in handler.
     tuplex::SignalHandling sh; // <-- tuplex modified version of original backward signalhandling.
-
-//    struct sigaction sigact;
-//    sigact.sa_sigaction = sigsev_handler;
-//    sigact.sa_flags = SA_RESTART | SA_SIGINFO;
-//
-//    // set sigabort too
-//    sigaction(SIGABRT, &sigact, nullptr);
 
     // initialize LambdaWorkerApp
     init_app();
     if(!get_app()) {
-        run_handler([&,log_sink, log_id](invocation_request const& req) {
-            auto proto_msg = make_exception("failed to initiailize worker application");
+        run_handler([&, log_sink, log_id](invocation_request const& req) {
+            auto proto_msg = make_exception("Failed to initialize worker application.");
             log_sink->add_to_proto_message(proto_msg, log_id);
             log_sink->reset();
             return invocation_response::success(proto_to_json(proto_msg),
@@ -137,52 +130,15 @@ int main() {
         // add to json (?)
         return invocation_response::success(proto_to_json(proto_msg),
                                             "application/json");
+
     });
-//
-//    //    // old:
-//    //    global_init();
-//    //    reset_executor_setup();
-//
-//    // signal(SIGSEGV, sigsev_handler);
-//    if(sigaction(SIGSEGV, &sigact, nullptr) != 0) {
-//
-//        run_handler([log_sink, log_id](invocation_request const& req) {
-//            auto proto_msg = make_exception("could not add sigsev handler");
-//            log_sink->add_to_proto_message(proto_msg, log_id);
-//            log_sink->reset();
-//            return invocation_response::success(proto_to_json(proto_msg),
-//                                                "application/json");
-//        });
-//
-//    } else {
-//
-//        // Lambda basically invokes multiple times the handler, hence can use this to cache results
-//        // i.e. compiled code...
-//
-//        // init here globally things
-//        // idea is to use a global class, LambdaApplication
-//        // which has init, shutdown and invocation request...
-//        // ==> need this too for correct stats & Co
-//
-//
-//        // i.e. create the following way a class:
-//        // Constructor setups apis, compiler, runtime etc.
-//        // then, use a LRU cache (i.e. when putting a new unseen ir code function in)
-//        // for compiled functions
-//        // this avoids costly recompilation of functions!
-//
-//        // also, don't forget to reset stats counters for each invocation
-//
-//
-//    }
 
     // flush buffers
     std::cout.flush();
     std::cerr.flush();
 
-    // run cleanup from app? => doesn't matter. just let it get killed...
+    // run cleanup from app? => Ultimately, doesn't matter. Just let the process get killed...
     get_app()->shutdown();
-    // global_cleanup();
 
     return 0;
 }

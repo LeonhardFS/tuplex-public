@@ -36,6 +36,7 @@ services:
       - minio
 
   # FastAPI mocking AWS Lambda service.
+  # Go to http://localhost:8090/docs, to debug (mock) API.
   rest:
     build:
       context: ./rest
