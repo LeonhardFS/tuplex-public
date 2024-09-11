@@ -346,7 +346,7 @@ tuplex::messages::InvocationResponse lambda_main(aws::lambda_runtime::invocation
 
     // get last response/message?
     // --> what about global stats? @TODO
-    auto ret = app->generateResponse();
+    auto ret = app->response();
 
     // fill in global stats (Lambda specific)
     fillInGlobals(&ret);

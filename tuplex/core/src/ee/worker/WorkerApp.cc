@@ -353,6 +353,7 @@ namespace tuplex {
     }
 
     int WorkerApp::processEnvironmentInfoMessage() {
+        logger().info("Got Environment information message to process.");
 
         // Query llvm (version etc.).
         auto j = codegen::compileEnvironmentAsJson();
@@ -371,6 +372,9 @@ namespace tuplex {
 #else
         j["astSerializationFormat"] = "json";
 #endif
+
+        _response.set_type(messages::MessageType::MT_ENVIRONMENTINFO);
+        _response.set_status(messages::InvocationResponse_Status_SUCCESS);
 
         // Add to response result as Resource.
         auto id_gen = _response.resources_size();

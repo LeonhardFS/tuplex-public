@@ -411,9 +411,9 @@ namespace tuplex {
         _globallyInitialized = true;
 
 #ifdef BUILD_WITH_CEREAL
-        logger().info("Lambda is using Cereal AST serialization");
+        logger().info("Lambda is using Cereal AST serialization.");
 #else
-        logger().info("Lambda is using JSON AST serialization");
+        logger().info("Lambda is using JSON AST serialization.");
 #endif
 
         return WORKER_OK;
@@ -1007,7 +1007,11 @@ namespace tuplex {
         callback_ctx->app->decRequests();
     }
 
+    // this function is deprecated.
     tuplex::messages::InvocationResponse LambdaWorkerApp::generateResponse() {
+
+        // TODO: save this type of information at the END to _response.
+
         tuplex::messages::InvocationResponse result;
 
         // WorkerApp base class fill.

@@ -83,4 +83,7 @@ fi
 # end code here...
 popd > /dev/null
 
+# Copy tplxlam.zip to tuplex/test/resources/docker/lambda
+cp ${LOCAL_BUILD_FOLDER}/tplxlam.zip ${SRC_FOLDER}/test/resources/docker/lambda
+
 # TODO: can use upx to compress everything and make it tinier!
