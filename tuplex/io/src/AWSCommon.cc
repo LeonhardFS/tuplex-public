@@ -240,6 +240,10 @@ namespace tuplex {
         config.verifySSL = ns.verifySSL;
 
         if(!ns.endpointOverride.empty()) {
+
+            // disable discovery
+            config.enableEndpointDiscovery = false;
+
             if(strStartsWith(ns.endpointOverride, "http://")) {
                 config.endpointOverride = ns.endpointOverride.substr(std::string("http://").size());
                 config.scheme = Aws::Http::Scheme::HTTP;

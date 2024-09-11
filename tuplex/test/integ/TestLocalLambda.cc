@@ -51,7 +51,10 @@ namespace tuplex {
         }
     }
 
-    bool wait_for_stack(const std::string& yaml_path, int max_tries=10, double sleep_delay=0.2) {
+    bool wait_for_stack(const std::string& yaml_path, std::unordered_set<std::string> names, int max_tries=10, double sleep_delay=0.2) {
+        // TODO: Need to wait for ALL services to come online.
+        // --> explicit wait.
+
         using namespace std;
 
         // docker compose ps
@@ -187,10 +190,10 @@ protected:
 
         // File-watch, check status and rebuild if necessary (todo).
         cout<<"Starting local lambda stack"<<endl;
-        start_local_lambda_stack(yaml_path);
+        // start_local_lambda_stack(yaml_path);
 
         auto MAX_DOCKER_STACK_CONNECT_RETRIES=10;
-        if(!wait_for_stack(yaml_path, MAX_DOCKER_STACK_CONNECT_RETRIES))
+        if(!wait_for_stack(yaml_path, {"docker-rest-1", "docker-lambda-1", "minio"}, MAX_DOCKER_STACK_CONNECT_RETRIES))
             GTEST_SKIP()<<"Docker stack not up running after "<<MAX_DOCKER_STACK_CONNECT_RETRIES<<" retries";
 
 //        cout<<"Starting local MinIO test."<<endl;
@@ -233,7 +236,7 @@ protected:
         python::closeInterpreter();
 
         cout<<"Stopping local lambda stack"<<endl;
-        stop_local_lambda_stack(yaml_path);
+        // stop_local_lambda_stack(yaml_path);
 
         cout<<"Shutting down AWSSDK"<<endl;
         shutdownAWS();
@@ -258,7 +261,11 @@ TEST_F(LambdaLocalTest, ConnectionTestInvoke) {
 
     Aws::Client::ClientConfiguration config;
     // Overwrite lambda endpoint.
-    config.endpointOverride = lambda_endpoint;
+    NetworkSettings ns;
+    ns.endpointOverride = lambda_endpoint;
+    ns.signPayloads = false;
+    ns.useVirtualAddressing = false;
+    applyNetworkSettings(ns, config);
 
     // Need to use long timeouts, Lambdas may take a while.
     config.connectTimeoutMs = 30 * 1000.0; // 30s connect timeout.
@@ -287,15 +294,20 @@ TEST_F(LambdaLocalTest, ConnectionTestInvoke) {
     // Send basic Environment request message.
     ::messages::InvocationRequest req;
     req.set_type(::messages::MessageType::MT_ENVIRONMENTINFO);
-
     google::protobuf::util::MessageToJsonString(req, &json_buf);
+
     invoke_req.SetBody(stringToAWSStream(json_buf));
     invoke_req.SetContentType("application/javascript");
     auto outcome = client->Invoke(invoke_req);
     if (!outcome.IsSuccess()) {
         std::stringstream ss;
-        ss << outcome.GetError().GetExceptionName().c_str() << ", "
+        // // Get payload.
+        // auto& stream = const_cast<Aws::Lambda::Model::InvokeResult&>(outcome.GetResult()).GetPayload();
+        // ss<<"payload: "<<stream.rdbuf() << endl;
+         ss << "error: "<<outcome.GetError().GetExceptionName().c_str() << ", "
            << outcome.GetError().GetMessage().c_str();
+
+         cerr<<ss.str()<<endl;
     } else {
         // Get result, and display environment:
 
@@ -310,8 +322,8 @@ TEST_F(LambdaLocalTest, ConnectionTestInvoke) {
         ss << stream.rdbuf();
         string data = ss.str();
         ::messages::InvocationResponse response;
-        google::protobuf::util::JsonStringToMessage(data, &response);
-
+        auto status = google::protobuf::util::JsonStringToMessage(data, &response);
+        EXPECT_TRUE(status.ok());
         EXPECT_EQ(statusCode, 200); // should be 200 for ok.
         ASSERT_EQ(response.resources_size(), 1); // 1 resource for encoded JSON
         ASSERT_EQ(response.resources(0).type(), static_cast<uint32_t>(ResourceType::ENVIRONMENT_JSON));

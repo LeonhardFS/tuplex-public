@@ -214,7 +214,8 @@ namespace tuplex {
         tuplex::messages::InvocationRequest req;
         auto rc = google::protobuf::util::JsonStringToMessage(message, &req);
         if(!rc.ok()) {
-            logger.error("could not parse json into protobuf message, bad parse for request - invalid format?");
+            logger.error("Could not parse json into protobuf message, bad parse for request - invalid format?");
+            logger.error("Bad json message:\n" + message);
             return WORKER_ERROR_INVALID_JSON_MESSAGE;
         }
 
