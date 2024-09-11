@@ -388,7 +388,7 @@ namespace tuplex {
         // do this by initializing a dummy symbol table
         auto sym_table = SymbolTable::createFromEnvironment(nullptr);
         if(sym_table) {
-           logger().info("initialized type system with builtin types.");
+           logger().info("Initialized type system with builtin types.");
         }
 
         // init python & set explicitly python home for Lambda

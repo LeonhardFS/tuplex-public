@@ -70,6 +70,9 @@ namespace tuplex {
             if(p.retval() != 0) {
                 throw std::runtime_error("Failed to list docker compose containers: " + p.stderr());
             } else {
+
+                unordered_set<string> services_up;
+
                 string json_str = p.stdout();
                 std::vector<std::string> names;
                 std::string line;
@@ -80,12 +83,28 @@ namespace tuplex {
                     if(j_line.is_array() && j_line.empty())
                         continue;
                     j = j_line;
+
+                    for(auto el : j_line) {
+                        services_up.insert(el["Name"].get<string>());
+                    }
                 }
 
                 if(j.empty()) {
                     not_up_yet = true;
                 } else {
-                    not_up_yet = false;
+
+                    // Check if all services are up, if not: print out
+                    set<string> intersect;
+                    set_intersection(services_up.begin(), services_up.end(), names.begin(), names.end(),
+                                     std::inserter(intersect, intersect.begin()));
+
+                    if(intersect.size() == names.size())
+                        not_up_yet = false;
+                    else {
+                        cout<<"--> Requested services: "<<vector<string>{names.begin(), names.end()}<<endl;
+                        cout<<"    Currently running: "<<vector<string>{intersect.begin(), intersect.end()}<<endl;
+                        not_up_yet = true;
+                    }
                 }
             }
             try_count++;
@@ -190,37 +209,36 @@ protected:
 
         // File-watch, check status and rebuild if necessary (todo).
         cout<<"Starting local lambda stack"<<endl;
-        // start_local_lambda_stack(yaml_path);
+        start_local_lambda_stack(yaml_path);
 
         auto MAX_DOCKER_STACK_CONNECT_RETRIES=10;
         if(!wait_for_stack(yaml_path, {"docker-rest-1", "docker-lambda-1", "minio"}, MAX_DOCKER_STACK_CONNECT_RETRIES))
             GTEST_SKIP()<<"Docker stack not up running after "<<MAX_DOCKER_STACK_CONNECT_RETRIES<<" retries";
 
-//        cout<<"Starting local MinIO test."<<endl;
-//        auto data_location = minio_data_location();
-//
-//        cout<<"MinIO data location: "<<data_location<<endl;
-//
-//        cout<<"Starting MinIO docker container"<<endl;
-//        auto rc = start_local_s3_server();
-//        ASSERT_TRUE(rc);
-//
-//        // Add minio S3 Filesystem to tuplex.
-//        Aws::Auth::AWSCredentials credentials;
-//        Aws::Client::ClientConfiguration config;
-//        std::tie(credentials, config) = local_s3_credentials();
-//        NetworkSettings ns;
-//        ns.endpointOverride = config.endpointOverride.c_str();
-//        ns.verifySSL = false;
-//        ns.useVirtualAddressing = false;
-//        ns.signPayloads = false;
-//        VirtualFileSystem::addS3FileSystem(credentials.GetAWSAccessKeyId().c_str(), credentials.GetAWSSecretKey().c_str(), "", "", ns);
-//
-//
-//        // create test bucket (because everything is in-memory so far)
-//        rc = create_test_bucket(LOCAL_TEST_BUCKET_NAME);
-//        ASSERT_TRUE(rc);
+        cout<<"Starting local MinIO test."<<endl;
+        auto data_location = minio_data_location();
 
+        cout<<"MinIO data location: "<<data_location<<endl;
+
+        cout<<"Starting MinIO docker container"<<endl;
+        auto rc = start_local_s3_server();
+        ASSERT_TRUE(rc);
+
+        // Add minio S3 Filesystem to tuplex.
+        Aws::Auth::AWSCredentials credentials;
+        Aws::Client::ClientConfiguration config;
+        std::tie(credentials, config) = local_s3_credentials();
+        NetworkSettings ns;
+        ns.endpointOverride = config.endpointOverride.c_str();
+        ns.verifySSL = false;
+        ns.useVirtualAddressing = false;
+        ns.signPayloads = false;
+        VirtualFileSystem::addS3FileSystem(credentials.GetAWSAccessKeyId().c_str(), credentials.GetAWSSecretKey().c_str(), "", "", ns);
+
+
+        // create test bucket (because everything is in-memory so far)
+        rc = create_test_bucket(LOCAL_TEST_BUCKET_NAME);
+        ASSERT_TRUE(rc);
 
         cout<<"Initializing interpreter and releasing GIL"<<endl;
         python::initInterpreter();
@@ -231,14 +249,14 @@ protected:
         using namespace std;
         using namespace tuplex;
 
-        cout<<"Shutting down interpreter"<<endl;
+        cout<<"Shutting down interpreter."<<endl;
         python::lockGIL();
         python::closeInterpreter();
 
-        cout<<"Stopping local lambda stack"<<endl;
-        // stop_local_lambda_stack(yaml_path);
+        cout<<"Stopping local lambda stack."<<endl;
+        stop_local_lambda_stack(yaml_path);
 
-        cout<<"Shutting down AWSSDK"<<endl;
+        cout<<"Shutting down AWSSDK."<<endl;
         shutdownAWS();
     }
 };
@@ -301,9 +319,6 @@ TEST_F(LambdaLocalTest, ConnectionTestInvoke) {
     auto outcome = client->Invoke(invoke_req);
     if (!outcome.IsSuccess()) {
         std::stringstream ss;
-        // // Get payload.
-        // auto& stream = const_cast<Aws::Lambda::Model::InvokeResult&>(outcome.GetResult()).GetPayload();
-        // ss<<"payload: "<<stream.rdbuf() << endl;
          ss << "error: "<<outcome.GetError().GetExceptionName().c_str() << ", "
            << outcome.GetError().GetMessage().c_str();
 
@@ -325,10 +340,19 @@ TEST_F(LambdaLocalTest, ConnectionTestInvoke) {
         auto status = google::protobuf::util::JsonStringToMessage(data, &response);
         EXPECT_TRUE(status.ok());
         EXPECT_EQ(statusCode, 200); // should be 200 for ok.
-        ASSERT_EQ(response.resources_size(), 1); // 1 resource for encoded JSON
-        ASSERT_EQ(response.resources(0).type(), static_cast<uint32_t>(ResourceType::ENVIRONMENT_JSON));
+        ASSERT_EQ(response.resources_size(), 2); // 1 resource for encoded JSON, 1 resource for LOG.
+        // Note: order does not matter.
+        auto env_resource = response.resources(0);
+        auto log_resource = response.resources(1);
 
-        auto j = nlohmann::json::parse(response.resources(0).payload());
+        ASSERT_EQ(env_resource.type(), static_cast<uint32_t>(ResourceType::ENVIRONMENT_JSON));
+        ASSERT_EQ(log_resource.type(), static_cast<uint32_t>(ResourceType::LOG));
+
+        // Log:
+        cout<<"Log of Lambda invocation:\n"
+            <<decompress_string(log_resource.payload());
+
+        auto j = nlohmann::json::parse(env_resource.payload());
         cout<<"Environment information message:\n"<<j.dump(2)<<endl;
     }
     EXPECT_TRUE(outcome.IsSuccess());
