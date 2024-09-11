@@ -413,7 +413,7 @@ namespace tuplex {
 #ifdef BUILD_WITH_CEREAL
         logger().info("Lambda is using Cereal AST serialization");
 #else
-        logger().info("Lambda is using JSON AST serializastion");
+        logger().info("Lambda is using JSON AST serialization");
 #endif
 
         return WORKER_OK;

@@ -3,40 +3,21 @@
 import asyncio
 import json
 import logging
-from typing import Union
+from typing import Union, List, Dict, Any
 
 import sysconfig
 import boto3
 import os
 
-from fastapi import FastAPI, HTTPException, Request, Response, Depends
-from fastapi.responses import JSONResponse
+from flask import Flask, jsonify, request
 
-app = FastAPI(debug=True)
+app = Flask(__name__)
 
 logger = logging.getLogger(__name__)
 
-# Let any exception return a response with the traceback.
-@app.exception_handler(Exception)
-async def debug_exception_handler(request: Request, exc: Exception):
-    import traceback
-
-    return JSONResponse(
-        status_code=200,
-        content={"message":"".join(
-            traceback.format_exception(
-                etype=type(exc), value=exc, tb=exc.__traceback__
-            )
-        )}
-    )
-
-@app.get("/")
-def read_root():
-    return {"Hello": "World"}
-
 
 # src: https://docs.aws.amazon.com/lambda/latest/api/API_ListFunctions.html
-@app.get("/2015-03-31/functions/")
+@app.route("/2015-03-31/functions/")
 def list_functions(FunctionVersion:str='ALL', Marker:str=None, MasterRegion:str=None, MaxItems:int=50):
 
     # Check under which architecture docker runs,
@@ -46,7 +27,7 @@ def list_functions(FunctionVersion:str='ALL', Marker:str=None, MasterRegion:str=
     is_x86_64 = sysconfig_platform.endswith('x86_64')
     arch = 'x86_64' if is_x86_64 else 'arm64'
 
-    return {
+    return jsonify({
         "Functions": [
             {
                 "Architectures": [arch],
@@ -143,19 +124,18 @@ def list_functions(FunctionVersion:str='ALL', Marker:str=None, MasterRegion:str=
             }
         ],
         # "NextMarker": "string", not included - pagination doesn't need to be tested.
-    }
+    })
 
 # src: https://docs.aws.amazon.com/lambda/latest/api/API_Invoke.html
 # POST /2015-03-31/functions/FunctionName/invocations?Qualifier=Qualifier HTTP/1.1
-@app.post("/2015-03-31/functions/{function_name}/invocations")
-async def invoke(function_name, request: Request, Qualifier: str = None, ClientContext: str=None, InvocationType:str=None, LogType:str=None):
+@app.route("/2015-03-31/functions/<function_name>/invocations", methods=['POST'])
+def invoke(function_name):
 
-    payload = await request.body()
+    # Extract data from body.
+    raw_payload=request.get_data()
+    payload = json.loads(raw_payload.decode())
 
-    logger.info(f"Payload received is: {payload}")
-
-    print(f"Payload received is: {payload}")
-    print(f"request: {request}")
+    logger.debug(f"Payload: {payload}")
 
     # Pass to the actual lambda docker container.
     # May want to spin up a few so recursive calls work.
@@ -168,19 +148,14 @@ async def invoke(function_name, request: Request, Qualifier: str = None, ClientC
                        region_name=os.environ.get('AWS_REGION', os.environ.get('AWS_DEFAULT_REGION', 'local')))
 
     kwargs = {}
-    if InvocationType:
-        kwargs['InvocationType'] = InvocationType,
-    if LogType:
-        kwargs['LogType'] = LogType,
-    if ClientContext:
-        kwargs['ClientContext'] = ClientContext,
-    if payload:
-        kwargs['Payload'] = payload,
-    if Qualifier:
-        kwargs['Qualifier'] = Qualifier
+    for name in ['InvocationType', 'LogType', 'ClientContext', 'Qualifier']:
+        value = request.args.get(name)
+        if value:
+            kwargs[name] = value
 
     # Function name is by default always "function" for the runtime emulator.
     response = lam.invoke(FunctionName="function",
+                          Payload=raw_payload,
                           **kwargs)
 
     # Payload is returned as botocore.response.StreamingBody, convert to string.
@@ -188,4 +163,7 @@ async def invoke(function_name, request: Request, Qualifier: str = None, ClientC
 
     response = json.loads(response)
 
-    return response
+    return jsonify(response)
+
+if __name__ == '__main__':
+    app.run()

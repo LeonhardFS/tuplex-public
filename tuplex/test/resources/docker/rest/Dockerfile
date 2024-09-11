@@ -8,4 +8,12 @@ RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 
 COPY ./app /code/app
 
-CMD ["fastapi", "run", "app/main.py", "--port", "8090"]
+EXPOSE 8090
+
+# Debug setting
+# ENV FLASK_APP=app/main.py
+# ENV FLASK_DEBUG=TRUE
+# CMD ["python", "-m", "flask", "run", "--host=0.0.0.0", "--port=8090"]
+
+# Production setting
+CMD ["gunicorn", "--chdir", "/code/app", "--bind", "0.0.0.0:8090", "--log-level", "info", "main:app"]
