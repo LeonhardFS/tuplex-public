@@ -82,7 +82,7 @@ namespace tuplex {
                 }
 
                 // @TODO: function name should come from options!
-                _ee = std::make_unique<AwsLambdaBackend>(*this, AWSCredentials::get(), "tuplex-lambda-runner");
+                _ee = std::make_unique<AwsLambdaBackend>(*this, AWSCredentials::get(), _options.AWS_LAMBDA_NAME());
 #endif
                 break;
             }

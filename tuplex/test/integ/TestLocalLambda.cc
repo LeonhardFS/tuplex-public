@@ -396,3 +396,23 @@ TEST_F(LambdaLocalTest, ListFunctions) {
     }
     EXPECT_TRUE(outcome.IsSuccess());
 }
+
+TEST_F(LambdaLocalTest, SimpleEndToEndTest) {
+    using namespace std;
+    using namespace tuplex;
+
+    // Create a mini test context with Lambda backend for Tuplex.
+    auto co = ContextOptions::defaults();
+    co.set("tuplex.backend", "lambda");
+    co.set("tuplex.aws.scratchDir", LOCAL_TEST_BUCKET_NAME + "/scratch");
+    co.set("tuplex.aws.endpoint", lambda_endpoint);
+    co.set("tuplex.aws.name", "tplxlam"); // <-- need to set this, default is different. Purposefully test with other name.
+
+    Context ctx(co);
+    auto v = ctx.parallelize({Row(1), Row(2), Row(3)}).map(UDF("lambda x: x + 1")).collectAsVector();
+    ASSERT_EQ(v.size(), 3);
+    vector<int> ref{2, 3, 4};
+    for(unsigned i = 0; i < v.size(); ++i) {
+        EXPECT_EQ(v[i].getInt(0), ref[i]);
+    }
+}

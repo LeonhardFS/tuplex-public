@@ -15,6 +15,8 @@ app = Flask(__name__)
 
 logger = logging.getLogger(__name__)
 
+# Global variables.
+CURRENT_CONCURRENCY=1
 
 # src: https://docs.aws.amazon.com/lambda/latest/api/API_ListFunctions.html
 @app.route("/2015-03-31/functions/")
@@ -125,6 +127,43 @@ def list_functions(FunctionVersion:str='ALL', Marker:str=None, MasterRegion:str=
         ],
         # "NextMarker": "string", not included - pagination doesn't need to be tested.
     })
+
+# src: https://docs.aws.amazon.com/lambda/latest/api/API_GetFunctionConcurrency.html
+@app.route("/2019-09-30/functions/<function_name>/concurrency", methods=["GET"])
+def concurrency(function_name):
+    global CURRENT_CONCURRENCY
+    return jsonify({"ReservedConcurrentExecutions": CURRENT_CONCURRENCY})
+
+# src: https://docs.aws.amazon.com/lambda/latest/api/API_GetAccountSettings.html
+@app.route("/2016-08-19/account-settings/", methods=["GET"])
+def account_settings():
+
+    # TODO: For meaningful numbers, take a look at https://docs.aws.amazon.com/lambda/latest/api/API_AccountLimit.html
+    return jsonify({{
+        "AccountLimit": {
+            "CodeSizeUnzipped": 1000,
+            "CodeSizeZipped": 1000,
+            "ConcurrentExecutions": 5,
+            "TotalCodeSize": 1000,
+            "UnreservedConcurrentExecutions": 5
+        },
+        "AccountUsage": {
+            "FunctionCount": 1,
+            "TotalCodeSize": 150
+        }
+    }})
+
+# src: https://docs.aws.amazon.com/lambda/latest/api/API_PutFunctionConcurrency.html
+@app.route("/2017-10-31/functions/<function_name>/concurrency", methods=["PUT"])
+def put_concurrency(function_name):
+    global CURRENT_CONCURRENCY
+
+    raw_payload=request.get_data()
+    payload = json.loads(raw_payload.decode())
+
+    CURRENT_CONCURRENCY = payload["ReservedConcurrentExecutions"]
+
+    return concurrency(function_name)
 
 # src: https://docs.aws.amazon.com/lambda/latest/api/API_Invoke.html
 # POST /2015-03-31/functions/FunctionName/invocations?Qualifier=Qualifier HTTP/1.1

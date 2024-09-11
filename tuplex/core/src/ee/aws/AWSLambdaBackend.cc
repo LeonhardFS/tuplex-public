@@ -82,15 +82,19 @@ namespace tuplex {
         else
             clientConfig.region = _options.AWS_REGION().c_str(); // hard-coded here
 
-        // verify zone
-        if (!isValidAWSZone(clientConfig.region.c_str())) {
-            logger().warn("Specified AWS zone '" + std::string(clientConfig.region.c_str()) +
-                          "' is not a valid AWS zone. Defaulting to " + _credentials.default_region + " zone.");
-            clientConfig.region = _credentials.default_region.c_str();
+        auto ns = _options.AWS_NETWORK_SETTINGS();
+        if(!_options.AWS_LAMBDA_ENDPOINT().empty()) {
+            ns.endpointOverride = _options.AWS_LAMBDA_ENDPOINT();
+        } else {
+            // verify zone
+            if (!isValidAWSZone(clientConfig.region.c_str())) {
+                logger().warn("Specified AWS zone '" + std::string(clientConfig.region.c_str()) +
+                              "' is not a valid AWS zone. Defaulting to " + _credentials.default_region + " zone.");
+                clientConfig.region = _credentials.default_region.c_str();
+            }
         }
 
         //clientConfig.userAgent = "tuplex"; // should be perhaps set as well.
-        auto ns = _options.AWS_NETWORK_SETTINGS();
         applyNetworkSettings(ns, clientConfig);
 
         // change aws settings here
@@ -156,7 +160,7 @@ namespace tuplex {
             }
         }
 
-        logger().info("Using Lambda running on " + _functionArchitecture);
+        logger().info("Using Lambda running on " + _functionArchitecture + ".");
 #ifdef BUILD_WITH_CEREAL
         logger().info("Lambda client uses Cereal AST serialization format.");
 #else
