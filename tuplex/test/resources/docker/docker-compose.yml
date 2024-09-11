@@ -15,8 +15,14 @@ services:
       - "9000:9000"
       - "9001:9001"
     environment:
-      MINIO_ROOT_USER: admin
-      MINIO_ROOT_PASSWORD: test1234
+      # MINIO_ROOT_USER: admin
+      # MINIO_ROOT_PASSWORD: test1234
+
+      # Use S3 keys, defined in helper.h.
+      # same as AWS_ACCESS_KEY
+      MINIO_ROOT_USER: "AKIAIOSFODNN7EXAMPLE"
+      # same as AWS_SECRET_ACCESS_KEY
+      MINIO_ROOT_PASSWORD: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
     # Add volume here if desired to persist data.
     #volumes:
     #  - ~/minio/data:/data
