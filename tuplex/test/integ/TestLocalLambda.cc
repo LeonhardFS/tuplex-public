@@ -175,7 +175,7 @@ protected:
         Aws::S3::Model::CreateBucketRequest request;
         request.SetBucket(name);
 
-        auto impl =VirtualFileSystem::getS3FileSystemImpl();
+        auto impl = VirtualFileSystem::getS3FileSystemImpl();
         if(!impl) {
             cerr<<"No S3 filesystem registered to tuplex yet."<<endl;
         }
@@ -184,7 +184,7 @@ protected:
         if(outcome.IsSuccess()) {
             return true;
         } else {
-            cerr<<"Failed creating bucket "<<name<<". Details: " + std::string(outcome.GetError().GetMessage().c_str());
+            cerr<<"Failed creating bucket "<<name<<". Details: " + std::string(outcome.GetError().GetMessage().c_str())<<endl;
             return false;
         }
     }
@@ -215,15 +215,6 @@ protected:
         if(!wait_for_stack(yaml_path, {"docker-rest-1", "docker-lambda-1", "minio"}, MAX_DOCKER_STACK_CONNECT_RETRIES))
             GTEST_SKIP()<<"Docker stack not up running after "<<MAX_DOCKER_STACK_CONNECT_RETRIES<<" retries";
 
-        cout<<"Starting local MinIO test."<<endl;
-        auto data_location = minio_data_location();
-
-        cout<<"MinIO data location: "<<data_location<<endl;
-
-        cout<<"Starting MinIO docker container"<<endl;
-        auto rc = start_local_s3_server();
-        ASSERT_TRUE(rc);
-
         // Add minio S3 Filesystem to tuplex.
         Aws::Auth::AWSCredentials credentials;
         Aws::Client::ClientConfiguration config;
@@ -237,7 +228,7 @@ protected:
 
 
         // create test bucket (because everything is in-memory so far)
-        rc = create_test_bucket(LOCAL_TEST_BUCKET_NAME);
+        auto rc = create_test_bucket(LOCAL_TEST_BUCKET_NAME);
         ASSERT_TRUE(rc);
 
         cout<<"Initializing interpreter and releasing GIL"<<endl;
