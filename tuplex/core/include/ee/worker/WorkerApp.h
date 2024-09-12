@@ -348,8 +348,13 @@ namespace tuplex {
             return _lastStat;
         }
 
-        inline messages::InvocationResponse response() const {
-            return _response;
+        inline messages::InvocationResponse response(bool consume=true) {
+            auto msg = _response;
+            if(consume) {
+                // reset response.
+                _response.Clear();
+            }
+            return msg;
         }
 
     protected:

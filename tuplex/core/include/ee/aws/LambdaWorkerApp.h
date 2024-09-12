@@ -110,6 +110,7 @@ namespace tuplex {
             _requests.clear();
             _output_uris.clear();
             _input_uris.clear();
+            _response.Clear();
         }
 
         // self-invocation to scale-out

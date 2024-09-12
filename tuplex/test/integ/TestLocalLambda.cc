@@ -199,6 +199,11 @@ protected:
         if(!is_docker_installed())
             GTEST_SKIP() << "Docker not found, can not initialize test suite.";
 
+        // Stop existing running containers.
+        vector<string> containers_to_stop{"docker-rest-1", "docker-lambda-1", "minio"};
+        for(const auto& name: containers_to_stop)
+            stop_container(name);
+
         // init AWS SDK
         cout<<"Initializing AWS SDK"<<endl;
         initAWSSDK(Aws::Utils::Logging::LogLevel::Trace);
@@ -261,6 +266,9 @@ std::string LambdaLocalTest::lambda_endpoint = "http://localhost:" + std::to_str
 TEST_F(LambdaLocalTest, ConnectionTestInvoke) {
     using namespace std;
     using namespace tuplex;
+
+    // Note: If you're using pyenv, make sure the embedded python is build using
+    //       PYTHON_CONFIGURE_OPTS="--enable-shared" pyenv install --force 3.11.6
 
     // Basic Lambda invoke to check whether docker stack is launched, and that Lambda responds.
 

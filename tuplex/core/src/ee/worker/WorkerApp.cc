@@ -208,6 +208,9 @@ namespace tuplex {
     int WorkerApp::processJSONMessage(const std::string &message) {
         auto& logger = this->logger();
 
+        // clear response.
+        _response.Clear();
+
         // logger.info("JSON request: " + message);
 
         // parse JSON into protobuf
@@ -393,7 +396,7 @@ namespace tuplex {
     int WorkerApp::processMessage(const tuplex::messages::InvocationRequest& req) {
 
         // Reset response.
-        _response = messages::InvocationResponse();
+        _response.Clear();
         _response.set_type(req.type());
 
         _messageCount++;
