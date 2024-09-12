@@ -474,7 +474,7 @@ namespace tuplex {
             vector<python::StructEntry> kv_pairs; kv_pairs.reserve(num_columns);
             for(unsigned j = 0; j < num_columns; ++j) {
                 python::StructEntry entry;
-                entry.alwaysPresent = true;
+                entry.presence = python::StructPresence::ALWAYS_PRESENT;
                 entry.key = escape_to_python_str(column_names[i][j]);
                 entry.keyType = python::Type::STRING;
                 entry.valueType = rows[i].getType(j);

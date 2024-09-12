@@ -24,7 +24,7 @@ if [ "${DOCKER_PYTHON3_VERSION%.*}" -ne "${PYTHON3_VERSION%.*}" ]; then
   exit 1
 fi
 
-BUILD_WITH_CEREAL="${BUILD_WITH_CEREAL:-OFF}"
+BUILD_WITH_CEREAL="${BUILD_WITH_CEREAL:-ON}"
 if [ $BUILD_WITH_CEREAL == 'ON' ]; then
   echo " -- building with cereal support"
 else

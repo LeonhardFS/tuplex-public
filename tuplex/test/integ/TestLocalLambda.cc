@@ -169,7 +169,7 @@ protected:
     }
 
 
-    static bool create_test_bucket(const std::string& name) {
+    static bool create_test_bucket(const std::string& name, bool exists_ok=true) {
         using namespace tuplex;
         using namespace std;
         Aws::S3::Model::CreateBucketRequest request;
@@ -184,6 +184,9 @@ protected:
         if(outcome.IsSuccess()) {
             return true;
         } else {
+            // If bucket already exists, all good (given exists_ok flag is set).
+            if(exists_ok && outcome.GetError().GetErrorType() == Aws::S3::S3Errors::BUCKET_ALREADY_OWNED_BY_YOU || outcome.GetError().GetErrorType() == Aws::S3::S3Errors::BUCKET_ALREADY_EXISTS)
+                return true;
             cerr<<"Failed creating bucket "<<name<<". Details: " + std::string(outcome.GetError().GetMessage().c_str())<<endl;
             return false;
         }
@@ -345,6 +348,23 @@ TEST_F(LambdaLocalTest, ConnectionTestInvoke) {
 
         auto j = nlohmann::json::parse(env_resource.payload());
         cout<<"Environment information message:\n"<<j.dump(2)<<endl;
+
+        auto this_environment = codegen::compileEnvironmentAsJson();
+
+        // Add python specific information.
+        this_environment["python"] = PY_VERSION;
+        std::string version_string = "unknown";
+        python::lockGIL();
+        python::cloudpickleVersion(version_string);
+        python::unlockGIL();
+        this_environment["cloudpickleVersion"] = version_string;
+
+        // Check that serialization format (cereal/JSON) is identical.
+        // Check that python version matches (?)
+        // Check that LLVM version matches (?)
+        vector<string> keys_to_check{"astSerializationFormat", "cloudpickleVersion", "llvmVersion", "python"};
+        for(const auto& key : keys_to_check)
+            EXPECT_EQ(j[key], this_environment[key]);
     }
     EXPECT_TRUE(outcome.IsSuccess());
 }
@@ -400,6 +420,25 @@ TEST_F(LambdaLocalTest, SimpleEndToEndTest) {
     co.set("tuplex.aws.name", "tplxlam"); // <-- need to set this, default is different. Purposefully test with other name.
 
     Context ctx(co);
+
+    // Adjust S3 endpoint in Lambda by sending over environment as in local S3 tests.
+    ASSERT_TRUE(ctx.backend());
+    auto wb = static_cast<WorkerBackend*>(ctx.backend());
+    wb->setRequestMode(true);
+
+    std::unordered_map<std::string, std::string> env;
+    {
+        // overwrite with minio S3 variables.
+        // cf. https://docs.aws.amazon.com/cli/v1/userguide/cli-configure-endpoints.html#endpoints-service-specific-table for table
+        // and https://docs.aws.amazon.com/cli/v1/userguide/cli-configure-envvars.html.
+        auto [local_credentials, local_config] = local_s3_credentials();
+
+        env["AWS_SECRET_ACCESS_KEY"] = local_credentials.GetAWSSecretKey();
+        env["AWS_ACCESS_KEY_ID"] = local_credentials.GetAWSAccessKeyId();
+        env["AWS_ENDPOINT_URL_S3"] = local_config.endpointOverride;
+    }
+    wb->setEnvironment(env);
+
     auto v = ctx.parallelize({Row(1), Row(2), Row(3)}).map(UDF("lambda x: x + 1")).collectAsVector();
     ASSERT_EQ(v.size(), 3);
     vector<int> ref{2, 3, 4};

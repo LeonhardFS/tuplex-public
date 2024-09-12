@@ -57,8 +57,8 @@ namespace tuplex {
             if (type.isStructuredDictionaryType()) {
                 // recurse
                 auto kv_pairs = type.get_struct_pairs();
-                for (const auto &kv_pair: kv_pairs) {
-                    maybe_count += !kv_pair.alwaysPresent;
+                for (const auto &kv_pair: kv_pairs) {tatus
+                    maybe_count += kv_pair.presence == python::StructPresence::MAYBE_PRESENT;
 
                     // count optional key as well
                     if (kv_pair.keyType.isOptionType())
