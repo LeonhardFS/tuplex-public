@@ -35,6 +35,8 @@ find_path (DWARF_INCLUDE_DIR
         /usr/local/include
         /usr/local/include/libdwarf
         /opt/local/include
+        # Mac OS / brew use this weird path.
+        /usr/local/include/libdwarf-0
         /sw/include
         ENV CPATH) # PATH and INCLUDE will also work
 
