@@ -41,7 +41,10 @@ if(BUILD_WITH_ORC)
                 ExternalProject_Add (snappy_ep
                         URL "https://github.com/google/snappy/archive/${SNAPPY_VERSION}.tar.gz"
                         CMAKE_ARGS ${SNAPPY_CMAKE_ARGS}
-                        BUILD_BYPRODUCTS "${SNAPPY_STATIC_LIB}")
+                        BUILD_BYPRODUCTS "${SNAPPY_STATIC_LIB}"
+                        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+#                        PATCH_COMMAND git apply "${CMAKE_CURRENT_LIST_DIR}/patches/snappy.cc.diff"
+                )
 
                 set(SNAPPY_LIBRARIES ${SNAPPY_STATIC_LIB})
 

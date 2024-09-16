@@ -461,6 +461,9 @@ namespace tuplex {
                } else if(col_counts[i].size() == 1) {
                    col_types[i] = python::Type::fromHash(col_counts[i].begin()->second);
                } else {
+
+                   assert(col_counts[i].size() > 0);
+
                    // more than one count. Now it's getting tricky...
                    // is the first null and something else present? => use threshold to determine whether option type or not!
                    auto most_common_type = python::Type::fromHash(col_counts[i].begin()->second);
@@ -471,22 +474,23 @@ namespace tuplex {
                    if(python::Type::NULLVALUE == most_common_type) {
                        // second one present?
                        auto it = std::next(col_counts[i].begin());
-                       auto second_freq = it->first;
-                       auto second_type = python::Type::fromHash(it->second);
+                       if(it != col_counts[i].end()) {
+                           auto second_freq = it->first;
+                           auto second_type = python::Type::fromHash(it->second);
 
-                       // threshold?
-                       if(most_freq >= threshold * total_freq && use_nvo) {
-                           // null value
-                           col_types[i] = python::Type::NULLVALUE;
-                       } else {
-                           // create opt type to cover other cases...
-                           col_types[i] = python::Type::makeOptionType(second_type);
+                           // threshold?
+                           if(most_freq >= threshold * total_freq && use_nvo) {
+                               // null value
+                               col_types[i] = python::Type::NULLVALUE;
+                           } else {
+                               // create opt type to cover other cases...
+                               col_types[i] = python::Type::makeOptionType(second_type);
+                           }
                        }
                    } else {
                        // is there null value somewhere so Opt covers most of the cases?
-
                        auto it = col_counts[i].begin();
-                       while(it->second != python::Type::NULLVALUE.hash() && it != col_counts[i].end())
+                       while(it != col_counts[i].end() && it->second != python::Type::NULLVALUE.hash())
                            ++it;
 
                        // take original value

@@ -1,0 +1,13 @@
+diff --git snappy.cc snappy.cc
+index a2c39e4..0c71d3a 100644
+--- a/snappy.cc
++++ b/snappy.cc.patched
+@@ -1290,7 +1290,7 @@ std::pair<const uint8_t*, ptrdiff_t> DecompressBranchless(
+         DeferMemCopy(&deferred_src, &deferred_length, from, len);
+       }
+     } while (ip < ip_limit_min_slop &&
+-             (op + deferred_length) < op_limit_min_slop);
++            (unsigned long)(op + deferred_length) < (unsigned long)op_limit_min_slop);
+   exit:
+     ip--;
+     assert(ip <= ip_limit);

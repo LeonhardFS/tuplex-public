@@ -1037,6 +1037,11 @@ namespace tuplex {
 
             pass.run(mod);
 
+//            auto mach_file = llvm::object::ObjectFile::createMachOObjectFile(llvm::SmallVectorMemoryBuffer(buffer));
+//            auto data = mach_file.getData().str();
+//            return std::vector<uint8_t>(data.begin(), data.end());
+
+            // Works under linux, fails tests under mac OS.
             return std::vector<uint8_t>(buffer.begin(), buffer.end());
         }
 

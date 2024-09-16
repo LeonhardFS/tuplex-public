@@ -865,9 +865,19 @@ namespace tuplex {
 
             switch (tt) {
                 case TokenType::EQEQUAL: {
-                    // need to compare using strcmp
+                    // Need to compare using strcmp. Both L and R can't be nullptr.
                     FunctionType *ft = FunctionType::get(_env->i32Type(), {_env->i8ptrType(), _env->i8ptrType()},
                                                          false);
+#ifndef NDEBUG
+                    _env->printValue(builder, L, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " strcmp lhs: ");
+                    _env->printValue(builder, L, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " strcmp rhs: ");
+#endif
+
+                    // Check that neither L, R are null pointer constants.
+                    // They also can't be nullptr values, yet this can be only checked at runtime.
+                    assert(!llvm::isa<llvm::ConstantPointerNull>(L));
+                    assert(!llvm::isa<llvm::ConstantPointerNull>(R));
+
                     auto strcmp_f = _env->getModule()->getOrInsertFunction("strcmp", ft);
                     auto cmp_res = builder.CreateICmpEQ(builder.CreateCall(strcmp_f, {L, R}), _env->i32Const(0));
                     return _env->upcastToBoolean(builder, cmp_res);

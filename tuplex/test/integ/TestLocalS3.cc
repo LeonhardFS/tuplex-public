@@ -472,7 +472,11 @@ void test_github_pipeline_with_object_code_shipped(const std::string& testName, 
     auto co = microIntegOptions();
 
     // activate hyperspecialization here:
-    co.set("tuplex.experimental.hyperspecialization", "true");
+    // co.set("tuplex.experimental.hyperspecialization", "true");
+    co.set("tuplex.experimental.hyperspecialization", "false");
+    co.set("tuplex.experimental.traceExecution", "true");
+    co.set("tuplex.experimental.opportuneCompilation", "false");
+    // co.set("tuplex.useLLVMOptimizer", "false");
 
     Context ctx(co);
     runtime::init(co.RUNTIME_LIBRARY().toPath());
@@ -529,7 +533,7 @@ void test_github_pipeline_with_object_code_shipped(const std::string& testName, 
         {
             std::string json_str;
             google::protobuf::util::MessageToJsonString(response, &json_str);
-            cout<<"Response\n:"<<json_str<<endl;
+            // cout<<"Response:\n"<<json_str<<endl;
         }
 
 
