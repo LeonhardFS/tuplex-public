@@ -77,34 +77,34 @@ namespace tuplex {
                 std::vector<std::string> names;
                 std::string line;
                 std::stringstream input; input<<json_str;
-                auto j = nlohmann::json::array();
                 while(std::getline(input, line)) {
-                    auto j_line = nlohmann::json::parse(line);
-                    if(j_line.is_array() && j_line.empty())
+                    auto j = nlohmann::json::parse(line);
+                    if(j.is_array() && j.empty())
                         continue;
-                    j = j_line;
 
-                    for(auto el : j_line) {
-                        services_up.insert(el["Name"].get<string>());
+                    // there are two different formats:
+                    // 1. everything in an array
+                    // 2. ndjson
+                    if(j.is_array()) {
+                        for(auto el : j) {
+                            services_up.insert(el["Name"].get<string>());
+                        }
+                    } else {
+                        services_up.insert(j["Name"].get<string>());
                     }
                 }
 
-                if(j.empty()) {
+                // Check if all services are up, if not: print out
+                set<string> intersect;
+                set_intersection(services_up.begin(), services_up.end(), names.begin(), names.end(),
+                                 std::inserter(intersect, intersect.begin()));
+
+                if(intersect.size() == names.size())
+                    not_up_yet = false;
+                else {
+                    cout<<"--> Requested services: "<<vector<string>{names.begin(), names.end()}<<endl;
+                    cout<<"    Currently running: "<<vector<string>{intersect.begin(), intersect.end()}<<endl;
                     not_up_yet = true;
-                } else {
-
-                    // Check if all services are up, if not: print out
-                    set<string> intersect;
-                    set_intersection(services_up.begin(), services_up.end(), names.begin(), names.end(),
-                                     std::inserter(intersect, intersect.begin()));
-
-                    if(intersect.size() == names.size())
-                        not_up_yet = false;
-                    else {
-                        cout<<"--> Requested services: "<<vector<string>{names.begin(), names.end()}<<endl;
-                        cout<<"    Currently running: "<<vector<string>{intersect.begin(), intersect.end()}<<endl;
-                        not_up_yet = true;
-                    }
                 }
             }
             try_count++;
@@ -248,9 +248,11 @@ protected:
         using namespace std;
         using namespace tuplex;
 
-        cout<<"Shutting down interpreter."<<endl;
-        python::lockGIL();
-        python::closeInterpreter();
+        if(python::isInterpreterRunning()) {
+            cout<<"Shutting down interpreter."<<endl;
+            python::lockGIL();
+            python::closeInterpreter();
+        }
 
         cout<<"Stopping local lambda stack."<<endl;
         stop_local_lambda_stack(yaml_path);
@@ -262,6 +264,13 @@ protected:
 
 std::string LambdaLocalTest::yaml_path = "../resources/docker/docker-compose.yml";
 std::string LambdaLocalTest::lambda_endpoint = "http://localhost:" + std::to_string(8090);
+
+bool py3majmin_match(const std::string& v1, const std::string& v2) {
+    auto p1 = splitToArray(v1, '.');
+    auto p2 = splitToArray(v2, '.');
+
+    return p1[0] == p2[0] && p1[1] == p2[1];
+}
 
 TEST_F(LambdaLocalTest, ConnectionTestInvoke) {
     using namespace std;
@@ -367,12 +376,19 @@ TEST_F(LambdaLocalTest, ConnectionTestInvoke) {
         python::unlockGIL();
         this_environment["cloudpickleVersion"] = version_string;
 
+#ifdef BUILD_WITH_CEREAL
+        this_environment["astSerializationFormat"] = "cereal";
+#else
+        this_environment["astSerializationFormat"] = "json";
+#endif
+
         // Check that serialization format (cereal/JSON) is identical.
         // Check that python version matches (?)
         // Check that LLVM version matches (?)
-        vector<string> keys_to_check{"astSerializationFormat", "cloudpickleVersion", "llvmVersion", "python"};
+        vector<string> keys_to_check{"astSerializationFormat", "cloudpickleVersion", "llvmVersion"};
         for(const auto& key : keys_to_check)
             EXPECT_EQ(j[key], this_environment[key]);
+        EXPECT_TRUE(py3majmin_match(j["python"], this_environment["python"]));
     }
     EXPECT_TRUE(outcome.IsSuccess());
 }
