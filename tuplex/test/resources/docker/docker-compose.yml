@@ -41,6 +41,9 @@ services:
     depends_on:
       - minio
 
+    # The Lambda may exit or crash, restart then.
+    restart: always
+
   # FastAPI mocking AWS Lambda service.
   # Go to http://localhost:8090/docs, to debug (mock) API.
   rest:

@@ -393,16 +393,19 @@ namespace tuplex {
         service->_numPendingRequests.fetch_add(-1);
     }
 
-    void AwsLambdaInvocationService::waitForRequests(size_t sleepInterval) {
+    void AwsLambdaInvocationService::waitForRequests(std::chrono::duration<double, std::milli> sleep_interval) {
         // wait for requests to be finished & check periodically PyErrCheckSignals for Ctrl+C
 
-        size_t pendingTasks = 0;
+        int64_t pendingTasks = 0;
         while ((pendingTasks = _numPendingRequests.load(std::memory_order_acquire)) > 0) {
             // sleep
-            usleep(sleepInterval);
+            std::stringstream ss;
+            ss<<"Currently there are "<<pluralize(pendingTasks, "request")<<", sleeping for "<<sleep_interval.count()<<"ms, checking for signals + pending requests."<<std::endl;
+            logger().debug(ss.str());
+            std::this_thread::sleep_for(sleep_interval);
 
+            logger().debug("Checking for python signals, interpreter active: " + boolToString(python::isInterpreterRunning()));
             python::lockGIL();
-
             if (PyErr_CheckSignals() != 0) {
                 // stop requests & cleanup @TODO: cleanup on S3 with requests...
                 if (_client)

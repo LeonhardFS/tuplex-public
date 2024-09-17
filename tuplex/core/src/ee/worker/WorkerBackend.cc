@@ -14,13 +14,12 @@ namespace tuplex {
     std::string find_worker(const std::string& path_hint);
 
     WorkerBackend::WorkerBackend(const tuplex::Context &context,
-                                 const std::string &exe_path) : IBackend(context),
+                                 const std::string &exe_path) : IRequestBackend(context),
                                                                 _worker_exe_path(exe_path),
                                                                 _options(context.getOptions()),
                                                                 _deleteScratchDirOnShutdown(false),
                                                                 _logger(Logger::instance().logger("worker")),
-                                                                _scratchDir(URI::INVALID),
-                                                                _emitRequestsOnly(false) {
+                                                                _scratchDir(URI::INVALID) {
 
         _driver.reset(new Executor(_options.DRIVER_MEMORY(),
                                    _options.PARTITION_SIZE(),
@@ -634,14 +633,6 @@ namespace tuplex {
         }
         throw std::runtime_error("failed to ensure a worker path for path '" + exe_path + "'");
         return "";
-    }
-
-    void WorkerBackend::fill_env(messages::InvocationRequest &request) {
-        if(!_environmentOverwrite.empty()) {
-            for(const auto& key_value : _environmentOverwrite) {
-                (*request.mutable_env())[key_value.first] = key_value.second;
-            }
-        }
     }
 
 }

@@ -11,7 +11,8 @@
 #include <Timer.h>
 
 #include "helper.h"
-#include "ee/worker/WorkerBackend.h"
+#include <ee/worker/WorkerBackend.h>
+#include <ee/aws/AWSLambdaBackend.h>
 
 // tuplex files
 #include <UDF.h>
@@ -27,6 +28,10 @@
 using namespace tuplex;
 
 static const std::string LOCAL_TEST_BUCKET_NAME="local-bucket";
+
+// set to true if test suite should start stack. For debugging may be easier
+// to start the stack manually, and then
+static const bool START_DOCKER_COMPOSE_STACK=false;
 
 namespace tuplex {
     bool start_local_lambda_stack(const std::string& yaml_path) {
@@ -199,10 +204,12 @@ protected:
         if(!is_docker_installed())
             GTEST_SKIP() << "Docker not found, can not initialize test suite.";
 
-        // Stop existing running containers.
-        vector<string> containers_to_stop{"docker-rest-1", "docker-lambda-1", "minio"};
-        for(const auto& name: containers_to_stop)
-            stop_container(name);
+         // Stop existing running containers.
+        if(START_DOCKER_COMPOSE_STACK) {
+             vector<string> containers_to_stop{"docker-rest-1", "docker-lambda-1", "minio"};
+             for(const auto& name: containers_to_stop)
+                 stop_container(name);
+        }
 
         // init AWS SDK
         cout<<"Initializing AWS SDK"<<endl;
@@ -216,8 +223,10 @@ protected:
         }
 
         // File-watch, check status and rebuild if necessary (todo).
-        cout<<"Starting local lambda stack"<<endl;
-        start_local_lambda_stack(yaml_path);
+        if(START_DOCKER_COMPOSE_STACK) {
+             cout<<"Starting local lambda stack"<<endl;
+             start_local_lambda_stack(yaml_path);
+        }
 
         auto MAX_DOCKER_STACK_CONNECT_RETRIES=10;
         if(!wait_for_stack(yaml_path, {"docker-rest-1", "docker-lambda-1", "minio"}, MAX_DOCKER_STACK_CONNECT_RETRIES))
@@ -254,8 +263,10 @@ protected:
             python::closeInterpreter();
         }
 
-        cout<<"Stopping local lambda stack."<<endl;
-        stop_local_lambda_stack(yaml_path);
+        if(START_DOCKER_COMPOSE_STACK) {
+             cout<<"Stopping local lambda stack."<<endl;
+             stop_local_lambda_stack(yaml_path);
+        }
 
         cout<<"Shutting down AWSSDK."<<endl;
         shutdownAWS();
@@ -447,7 +458,8 @@ TEST_F(LambdaLocalTest, SimpleEndToEndTest) {
 
     // Adjust S3 endpoint in Lambda by sending over environment as in local S3 tests.
     ASSERT_TRUE(ctx.backend());
-    auto wb = static_cast<WorkerBackend*>(ctx.backend());
+    auto wb = dynamic_cast<AwsLambdaBackend*>(ctx.backend());
+    ASSERT_TRUE(wb);
     wb->setRequestMode(true);
 
     std::unordered_map<std::string, std::string> env;
@@ -459,7 +471,8 @@ TEST_F(LambdaLocalTest, SimpleEndToEndTest) {
 
         env["AWS_SECRET_ACCESS_KEY"] = local_credentials.GetAWSSecretKey();
         env["AWS_ACCESS_KEY_ID"] = local_credentials.GetAWSAccessKeyId();
-        env["AWS_ENDPOINT_URL_S3"] = local_config.endpointOverride;
+        // The docker network uses internally "minio" as hostname for the S3 service.
+        env["AWS_ENDPOINT_URL_S3"] = "http://minio:9000";
     }
     wb->setEnvironment(env);
 

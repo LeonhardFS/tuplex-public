@@ -773,7 +773,9 @@ namespace tuplex {
 
         size_t numInputRowsProcessed = 0;
         auto numCodes = std::max(1ul, _numThreads);
+        // @TODO: use vector<...> here? Is that thread-safe?
         auto processCodes = new int[numCodes];
+        auto processErrorMessages = new std::string[numCodes];
         memset(processCodes, WORKER_OK, sizeof(int) * numCodes);
         Timer fastPathTimer;
         // process data (single-threaded or via thread pool!)
@@ -795,11 +797,14 @@ namespace tuplex {
                     numInputRowsProcessed += inputRowCount;
                 }
             } catch(const std::exception& e) {
-                logger().error("exception occurred in single-threaded mode: " + std::string(e.what()));
+                auto err_msg = "exception occurred in single-threaded mode: " + std::string(e.what());
+                logger().error(err_msg);
                 processCodes[0] = WORKER_ERROR_EXCEPTION;
+                processErrorMessages[0] = err_msg;
             } catch(...) {
                 logger().error("unknown exception occurred in single-threaded mode.");
                 processCodes[0] = WORKER_ERROR_EXCEPTION;
+                processErrorMessages[0] = "unknown catch(...) exception.";
             }
             runtime::releaseRunTimeMemory();
 
@@ -833,7 +838,7 @@ namespace tuplex {
             std::vector<size_t> v_inputRowCount(_numThreads, 0);
 
             for(int i = 1; i < _numThreads; ++i) {
-                threads.emplace_back([this, tstage, &syms, &processCodes, &v_inputRowCount](int threadNo, const std::vector<FilePart>& parts) {
+                threads.emplace_back([this, tstage, &syms, &processCodes, &processErrorMessages, &v_inputRowCount](int threadNo, const std::vector<FilePart>& parts) {
                     logger().debug("thread (" + std::to_string(threadNo) + ") started.");
 
                     runtime::setRunTimeMemory(_settings.runTimeMemory, _settings.runTimeMemoryDefaultBlockSize);
@@ -848,11 +853,14 @@ namespace tuplex {
                             v_inputRowCount[threadNo] += inputRowCount;
                         }
                     } catch(const std::exception& e) {
-                        logger().error(std::string("exception recorded: ") + e.what());
+                        auto err_msg = std::string("exception recorded: ") + e.what();
+                        logger().error(err_msg);
                         processCodes[threadNo] = WORKER_ERROR_EXCEPTION;
+                        processErrorMessages[threadNo] = err_msg;
                     } catch(...) {
                         logger().error("unknown exception encountered, abort.");
                         processCodes[threadNo] = WORKER_ERROR_EXCEPTION;
+                        processErrorMessages[threadNo] = "unknown catch(...) exception.";
                     }
 
                     logger().debug("thread (" + std::to_string(threadNo) + ") done.");
@@ -914,10 +922,15 @@ namespace tuplex {
             }
         }
         delete [] processCodes;
+
+        // condense error messages if they exist.
+        auto err_msg = condense_err_message(processErrorMessages, numCodes);
+
+        delete [] processErrorMessages;
         if(failed) {
             // save invoke message to scratch
             storeInvokeRequest();
-
+            _response.set_errormessage(err_msg);
             return WORKER_ERROR_PIPELINE_FAILED;
         }
         logger().info("fast path took: " + std::to_string(fastPathTimer.time()) + "s");
@@ -3656,13 +3669,17 @@ namespace tuplex {
             VirtualFileSystem::removeS3FileSystem();
             NetworkSettings ns;
             ns.endpointOverride = endpoint;
-            if(endpoint.find("localhost") != std::string::npos) {
+
+            // Amazon endpoints end with .amazonaws.com.
+            // For a list of available endpoints, cf. https://docs.aws.amazon.com/general/latest/gr/s3.html
+            // For non-Aws endpoints (i.e., local minio) disable SSL.
+            if(endpoint.find(".amazonaws.com") == std::string::npos) {
                 ns.verifySSL = false;
                 ns.useVirtualAddressing = false;
                 ns.signPayloads = false;
             }
             VirtualFileSystem::addS3FileSystem(access_key, secret_key, "", "", ns);
-            VirtualFileSystem::addS3FileSystem();
+            logger().info("Updated S3 endpoint to " + endpoint + ".");
         }
         return true;
     }

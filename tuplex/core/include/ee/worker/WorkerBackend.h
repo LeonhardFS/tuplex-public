@@ -6,7 +6,7 @@
 #define TUPLEX_WORKERBACKEND_H
 
 
-#include "../IBackend.h"
+#include "../IRequestBackend.h"
 #include <vector>
 #include <physical/execution/TransformStage.h>
 #include <physical/execution/HashJoinStage.h>
@@ -32,7 +32,7 @@ namespace tuplex {
      */
     extern std::string ensure_worker_path(const std::string& exe_path);
 
-    class WorkerBackend : public IBackend {
+    class WorkerBackend : public IRequestBackend {
     public:
         WorkerBackend() = delete;
         ~WorkerBackend() override;
@@ -41,34 +41,6 @@ namespace tuplex {
 
         Executor* driver() override { return _driver.get(); }
         void execute(PhysicalStage* stage) override;
-
-
-        // Helpers for testing.
-
-        /*!
-         * if true, requests are only created but not posted.
-         * @param emitOnly
-         */
-        void setRequestMode(bool emitOnly) {
-            _emitRequestsOnly = emitOnly;
-        }
-
-        /*!
-         * sets additional environment keys to be sent as part of request.
-         * @param env key=value environment key pairs.
-         */
-        void setEnvironment(const std::unordered_map<std::string, std::string>& env) {
-            _environmentOverwrite = env;
-        }
-
-        inline std::vector<messages::InvocationRequest> pendingRequests(bool clear=true) {
-            if(clear) {
-                auto v = _pendingRequests;
-                _pendingRequests.clear();
-                return v;
-            }
-            return _pendingRequests;
-        }
 
     protected:
         ContextOptions _options;
@@ -104,10 +76,6 @@ namespace tuplex {
         bool _deleteScratchDirOnShutdown;
         std::string _worker_exe_path;
 
-        std::vector<messages::InvocationRequest> _pendingRequests;
-        bool _emitRequestsOnly;
-        std::unordered_map<std::string, std::string> _environmentOverwrite;
-
         /*!
          * returns a scratch dir. If none is stored/found, abort
          * @param hints one or more directories (typically buckets) where a temporary cache region could be stored.
@@ -123,9 +91,6 @@ namespace tuplex {
                                             nlohmann::json *out_stats_array,
                                             nlohmann::json *out_req_array, size_t *out_total_input_rows,
                                             size_t *out_total_output_rows, size_t num_processes_to_use) const;
-
-        /*! add environment keys, global configs */
-        void fill_env(messages::InvocationRequest& request);
     };
 
     extern void config_worker(messages::WorkerSettings *ws,

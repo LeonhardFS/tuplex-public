@@ -116,7 +116,8 @@ namespace tuplex {
             _mbms += billedDurationInMs * memorySizeInMb;
         }
 
-        void waitForRequests(size_t sleepInterval=100*1000);
+
+        void waitForRequests(std::chrono::duration<double, std::milli> sleep_interval=std::chrono::duration<double, std::milli>(100.0));
 
         bool invokeAsync(const AwsLambdaRequest& req,
                          std::function<void(const AwsLambdaRequest&, const AwsLambdaResponse&)> onSuccess=[](const AwsLambdaRequest& req, const AwsLambdaResponse& resp) {},

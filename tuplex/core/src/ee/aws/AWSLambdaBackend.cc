@@ -978,6 +978,7 @@ namespace tuplex {
 
         // transform to request
         messages::InvocationRequest req;
+        fill_env(req);
         req.set_type(messages::MessageType::MT_TRANSFORM);
         auto pb_stage = tstage->to_protobuf();
         for (auto count: recursive_invocations)
@@ -1211,6 +1212,7 @@ namespace tuplex {
             size_t cur_size = 0;
             while (cur_size < uri_size) {
                 messages::InvocationRequest req;
+                fill_env(req);
                 req.set_type(messages::MessageType::MT_TRANSFORM);
                 auto pb_stage = tstage->to_protobuf();
 
@@ -1289,7 +1291,8 @@ namespace tuplex {
 
     AwsLambdaBackend::AwsLambdaBackend(const Context &context,
                                        const AWSCredentials &credentials,
-                                       const std::string &functionName) : IBackend(context), _credentials(credentials),
+                                       const std::string &functionName) : IRequestBackend(context),
+                                                                          _credentials(credentials),
                                                                           _functionName(functionName),
                                                                           _options(context.getOptions()),
                                                                           _logger(Logger::instance().logger(

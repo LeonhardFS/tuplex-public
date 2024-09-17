@@ -771,6 +771,26 @@ namespace tuplex {
         void preCacheS3(const std::vector<FilePart>& parts);
 
         bool adjust_environment(const std::unordered_map<std::string, std::string>& env);
+
+        inline std::string condense_err_message(std::string* processErrorMessages, int numCodes) {
+            assert(processErrorMessages);
+
+            std::stringstream ss;
+            for(unsigned i = 0; i < numCodes; ++i) {
+                auto err_msg = processErrorMessages[i];
+                trim(err_msg);
+                if(!err_msg.empty()) {
+                    if(numCodes > 1) {
+                        if(i == 0)
+                            ss<<"thread (main):\n";
+                        else
+                            ss<<"thread ("<<i<<"):\n";
+                    }
+                    ss<<err_msg<<std::endl;
+                }
+            }
+            return ss.str();
+        }
     };
 
 

@@ -13,7 +13,7 @@
 #ifndef TUPLEX_AWSLAMBDABACKEND_H
 #define TUPLEX_AWSLAMBDABACKEND_H
 
-#include "../IBackend.h"
+#include "../IRequestBackend.h"
 #include <vector>
 #include <physical/execution/TransformStage.h>
 #include <physical/execution/HashJoinStage.h>
@@ -73,7 +73,7 @@ namespace tuplex {
 
 
 
-    class AwsLambdaBackend : public IBackend {
+    class AwsLambdaBackend : public IRequestBackend {
     public:
         AwsLambdaBackend() = delete;
         ~AwsLambdaBackend() override;
