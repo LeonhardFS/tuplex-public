@@ -187,6 +187,21 @@ namespace tuplex {
 
     }
 
+    static std::string getObjectFormatTypeName(llvm::Triple::ObjectFormatType Kind) {
+        switch (Kind) {
+            case llvm::Triple::ObjectFormatType::UnknownObjectFormat: return "";
+            case llvm::Triple::ObjectFormatType::COFF: return "coff";
+            case llvm::Triple::ObjectFormatType::ELF: return "elf";
+            case llvm::Triple::ObjectFormatType::GOFF: return "goff";
+            case llvm::Triple::ObjectFormatType::MachO: return "macho";
+            case llvm::Triple::ObjectFormatType::Wasm: return "wasm";
+            case llvm::Triple::ObjectFormatType::XCOFF: return "xcoff";
+            case llvm::Triple::ObjectFormatType::DXContainer: return "dxcontainer";
+            case llvm::Triple::ObjectFormatType::SPIRV: return "spirv";
+        }
+        llvm_unreachable("unknown object format type");
+    }
+
     bool JITCompiler::compileObjectBuffer(const std::string &object_buffer, std::string dylib_name) {
 
         using namespace llvm;
@@ -202,6 +217,17 @@ namespace tuplex {
                                                                    llvm::file_magic::unknown);
         if(!obj_file)
             throw std::runtime_error("could not create object file from memory contents");
+
+#ifndef NDEBUG
+        // print some object information out.
+        {
+            std::stringstream ss;
+            ss<<"Object file is relocatable: "<<obj_file.get()->isRelocatableObject()<<std::endl;
+            ss<<"Object file arch: "<<llvm::Triple::getArchTypeName(obj_file.get()->getArch()).str()<<std::endl;
+            ss<<"Object file type: "<<getObjectFormatTypeName(obj_file.get()->getTripleObjectFormat())<<std::endl;
+            std::cout<<ss.str()<<std::endl;
+        }
+#endif
 
         // create for this module own jitlib
         auto& ES = _lljit->getExecutionSession();

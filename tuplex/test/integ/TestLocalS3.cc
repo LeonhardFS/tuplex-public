@@ -446,27 +446,34 @@ TEST_F(S3LocalTests, TestGithubPipeline) {
 
     // Step 5: Check csv counts to make sure these are correct.
     auto total_row_count = csv_row_count_for_pattern(output_path + "/*.csv");
+
+    // Looks like header may be missing??
+
     EXPECT_EQ(total_row_count, 378);
 }
 
 
-void test_github_pipeline_with_object_code_shipped(const std::string& testName, bool use_process) {
+void test_github_pipeline_with_object_code_shipped(const std::string& testName, bool use_process, bool use_s3=true) {
     // This test is similar to TestGithubPipeline, however here the requests are only collected.
     using namespace tuplex;
     using namespace std;
 
+    string input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
+    string output_path = "./" + testName + "/output";
+
     // Test github pipeline with small sample files.
     // Step 1: Upload all files into bucket.
     // test file, write some stuff to it.
+    auto files_to_upload = glob(input_pattern);
+    if(use_s3) {
+        for(const auto& path : files_to_upload) {
+            auto target_uri = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + URI(path).base_name();
+            VirtualFileSystem::copy(path, target_uri);
+        }
 
-    auto files_to_upoad = glob("../resources/hyperspecialization/github_daily/*.json.sample");
-    for(const auto&path : files_to_upoad) {
-        auto target_uri = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + URI(path).base_name();
-        VirtualFileSystem::copy(path, target_uri);
+        input_pattern = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + "*.json.sample";
+        output_path = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + "output";
     }
-
-    string input_pattern = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + "*.json.sample";
-    auto output_path = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + "output";
 
     // Step 2: Create Tuplex context according to settings
     auto co = microIntegOptions();
@@ -474,7 +481,7 @@ void test_github_pipeline_with_object_code_shipped(const std::string& testName, 
     // activate hyperspecialization here:
     // co.set("tuplex.experimental.hyperspecialization", "true");
     co.set("tuplex.experimental.hyperspecialization", "false");
-    co.set("tuplex.experimental.traceExecution", "true");
+    // co.set("tuplex.experimental.traceExecution", "true");
     co.set("tuplex.experimental.opportuneCompilation", "false");
     // co.set("tuplex.useLLVMOptimizer", "false");
 
@@ -505,7 +512,7 @@ void test_github_pipeline_with_object_code_shipped(const std::string& testName, 
     // Receive pending requests & clear.
     auto requests = wb->pendingRequests(true);
 
-    EXPECT_EQ(requests.size(), files_to_upoad.size());
+    EXPECT_EQ(requests.size(), files_to_upload.size());
     ASSERT_FALSE(requests.empty());
 
     // Compute sizes for each request to see how large they are.
@@ -570,17 +577,30 @@ void test_github_pipeline_with_object_code_shipped(const std::string& testName, 
     cout<<"Found "<<pluralize(output_uris.size(), "output file")<<" in local S3 file system."<<endl;
 
     // there must be one file now (because of the request).
-    EXPECT_EQ(output_uris.size(), files_to_upoad.size());
+    EXPECT_EQ(output_uris.size(), files_to_upload.size());
 
     // Step 5: Check csv counts to make sure these are correct.
     auto total_row_count = csv_row_count_for_pattern(output_path + "/*.csv");
     EXPECT_EQ(total_row_count, 378);
 }
 
+TEST_F(S3LocalTests, TestGithubPipelineObjectCompileWithLocalFS) {
+#ifdef __APPLE__
+    GTEST_SKIP() << "LLVM object files broken under macOS, see https://github.com/MonoMod/MonoMod/blob/reorganize/src/MonoMod.Core/Platforms/Architectures/x86_64/llvm.patch and https://github.com/llvm/llvm-project/issues/60966 which likely point to the cause. Works however under tsan/asan/ubsan.";
+#endif
+    test_github_pipeline_with_object_code_shipped(testName, false, false);
+}
+
 TEST_F(S3LocalTests, TestGithubPipelineObjectCompile) {
+#ifdef __APPLE__
+    GTEST_SKIP() << "LLVM object files broken under macOS, see https://github.com/MonoMod/MonoMod/blob/reorganize/src/MonoMod.Core/Platforms/Architectures/x86_64/llvm.patch and https://github.com/llvm/llvm-project/issues/60966 which likely point to the cause. Works however under tsan/asan/ubsan.";
+#endif
     test_github_pipeline_with_object_code_shipped(testName, false);
 }
 
 TEST_F(S3LocalTests, TestGithubPipelineObjectCompileAndProcess) {
+#ifdef __APPLE__
+    GTEST_SKIP() << "LLVM object files broken under macOS, see https://github.com/MonoMod/MonoMod/blob/reorganize/src/MonoMod.Core/Platforms/Architectures/x86_64/llvm.patch and https://github.com/llvm/llvm-project/issues/60966 which likely point to the cause. Works however under tsan/asan/ubsan.";
+#endif
     test_github_pipeline_with_object_code_shipped(testName, true);
 }
