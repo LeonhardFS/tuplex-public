@@ -1120,10 +1120,10 @@ namespace tuplex {
                                                            const size_t numThreads,
                                                            const std::vector<std::tuple<std::string, std::size_t>> &uri_infos,
                                                            const RequestConfig &conf) {
-        // check config is valid
-        if(!conf.valid()) {
-            throw std::runtime_error("given request config is not valid.");
-        }
+//        // check config is valid
+//        if(!conf.valid()) {
+//            throw std::runtime_error("given request config is not valid.");
+//        }
 
         std::vector<AwsLambdaRequest> requests;
         std::vector<URI> request_uris;

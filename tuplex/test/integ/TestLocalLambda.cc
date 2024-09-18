@@ -173,7 +173,7 @@ protected:
 
     }
 
-    inline Context create_lambda_context() {
+    inline Context create_lambda_context(const std::unordered_map<std::string, std::string>& conf_override={}) {
 
         // Create a mini test context with Lambda backend for Tuplex.
         auto co = ContextOptions::defaults();
@@ -181,6 +181,11 @@ protected:
         co.set("tuplex.aws.scratchDir", LOCAL_TEST_BUCKET_NAME + "/scratch");
         co.set("tuplex.aws.endpoint", lambda_endpoint);
         co.set("tuplex.aws.name", "tplxlam"); // <-- need to set this, default is different. Purposefully test with other name.
+
+        // Overwrite settings with conf_override.
+        for(const auto& kv : conf_override) {
+            co.set(kv.first, kv.second);
+        }
 
         Context ctx(co);
 
@@ -530,4 +535,42 @@ TEST_F(LambdaLocalTest, MiniGithub) {
     // Step 5: Check csv counts to make sure these are correct.
     auto total_row_count = csv_row_count_for_pattern(output_path + "/*.csv");
     EXPECT_EQ(total_row_count, 378);
+}
+
+TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvoke) {
+    using namespace std;
+    using namespace tuplex;
+
+    string input_pattern = "../resources/hyperspecialization/github_daily/2020-10-15.json.sample";
+    uint64_t input_file_size = 0;
+    VirtualFileSystem::fromURI(input_pattern).file_size(input_pattern, input_file_size);
+
+    // upload to S3.
+    cout<<"Upload file to S3."<<endl;
+    auto target_uri = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + URI(input_pattern).base_name();
+    VirtualFileSystem::copy(input_pattern, target_uri);
+    input_pattern = target_uri;
+    auto output_path = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + "output";
+    cout<<"Stored file as: "<<input_pattern<<endl;
+
+    // Get size and split into parts.
+    int n_parts = 5;
+
+    cout<<"Found file with size "<<input_file_size<<"B, splitting into "<<pluralize(n_parts, "part")<<endl;
+    auto parts = splitIntoEqualParts(n_parts, {URI(input_pattern)}, {input_file_size}, 1024);
+    for(const auto& thread_parts : parts) {
+        for(auto part : thread_parts)
+            cout<<"part "<<part.partNo<<": "<<part.uri<<":"<<part.rangeStart<<"-"<<part.rangeEnd<<endl;
+    }
+
+    // Now perform github incl. specialization:
+    cout<<"Creating Lambda context."<<endl;
+    std::unordered_map<std::string, std::string> conf;
+    conf["tuplex.aws.lambdaInvocationStrategy"] = "tree";
+    conf["tuplex.aws.maxConcurrency"] = "10"; // use 10 as maximum parallelism.
+    conf["tuplex.experimental.minimumSizeToSpecialize"] = "0"; // disable minimum size.
+    auto ctx = create_lambda_context(conf);
+
+    cout<<"Starting Github (mini) pipeline."<<endl;
+    github_pipeline(ctx, input_pattern, output_path);
 }

@@ -35,6 +35,13 @@ enum CodeFormat {
     OBJECT_CODE = 2;
 }
 
+// An optional message containing information on which file a Lambda should specialize on.
+message SpecializationUnit {
+    repeated string inputURIS = 1;
+    repeated uint64 inputSizes = 2;
+    uint64 sampleMode = 3;
+}
+
 message CodePath {
     CodeFormat codeFormat = 1;
     bytes code = 2;
@@ -98,6 +105,9 @@ message TransformStage {
     // how many lambdas should each Lambda invoke? Recursive, i.e. {1, 1, 1} means the first Lambda invokes another
     // lambda, that again another etc. The total wait time thereby is baseDelay * depth
     repeated uint32 invocationCount = 32;
+
+    // Specialization unit (optional, must be set if hyper is active - else the input uri will be used).
+    optional SpecializationUnit specializationUnit = 33;
 }
 
 message WorkerSettings {
@@ -140,14 +150,14 @@ message InvocationRequest {
     MessageType type = 5;
     WorkerSettings settings = 6;
 
-    // optional resources attached with this message
+    // Optional resources attached with this message.
     repeated Resource resources = 7;
 
     optional TransformStage stage = 8;
     optional WarmupMessage warmup = 9;
     bool verboseLogging = 10;
 
-    // how the request should be carried out (options etc.)
+    // How the request should be carried out (options etc.).
     uint64 requestMode = 11;
 
     // Environment overwrite.
