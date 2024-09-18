@@ -173,6 +173,40 @@ protected:
 
     }
 
+    inline Context create_lambda_context() {
+
+        // Create a mini test context with Lambda backend for Tuplex.
+        auto co = ContextOptions::defaults();
+        co.set("tuplex.backend", "lambda");
+        co.set("tuplex.aws.scratchDir", LOCAL_TEST_BUCKET_NAME + "/scratch");
+        co.set("tuplex.aws.endpoint", lambda_endpoint);
+        co.set("tuplex.aws.name", "tplxlam"); // <-- need to set this, default is different. Purposefully test with other name.
+
+        Context ctx(co);
+
+        // Adjust S3 endpoint in Lambda by sending over environment as in local S3 tests.
+        assert(ctx.backend());
+        auto wb = dynamic_cast<AwsLambdaBackend*>(ctx.backend());
+        assert(wb);
+        wb->setRequestMode(true);
+
+        std::unordered_map<std::string, std::string> env;
+        {
+            // overwrite with minio S3 variables.
+            // cf. https://docs.aws.amazon.com/cli/v1/userguide/cli-configure-endpoints.html#endpoints-service-specific-table for table
+            // and https://docs.aws.amazon.com/cli/v1/userguide/cli-configure-envvars.html.
+            auto [local_credentials, local_config] = local_s3_credentials();
+
+            env["AWS_SECRET_ACCESS_KEY"] = local_credentials.GetAWSSecretKey();
+            env["AWS_ACCESS_KEY_ID"] = local_credentials.GetAWSAccessKeyId();
+            // The docker network uses internally "minio" as hostname for the S3 service.
+            env["AWS_ENDPOINT_URL_S3"] = "http://minio:9000";
+        }
+        wb->setEnvironment(env);
+
+        return std::move(ctx);
+    }
+
 
     static bool create_test_bucket(const std::string& name, bool exists_ok=true) {
         using namespace tuplex;
@@ -447,34 +481,7 @@ TEST_F(LambdaLocalTest, SimpleEndToEndTest) {
     using namespace std;
     using namespace tuplex;
 
-    // Create a mini test context with Lambda backend for Tuplex.
-    auto co = ContextOptions::defaults();
-    co.set("tuplex.backend", "lambda");
-    co.set("tuplex.aws.scratchDir", LOCAL_TEST_BUCKET_NAME + "/scratch");
-    co.set("tuplex.aws.endpoint", lambda_endpoint);
-    co.set("tuplex.aws.name", "tplxlam"); // <-- need to set this, default is different. Purposefully test with other name.
-
-    Context ctx(co);
-
-    // Adjust S3 endpoint in Lambda by sending over environment as in local S3 tests.
-    ASSERT_TRUE(ctx.backend());
-    auto wb = dynamic_cast<AwsLambdaBackend*>(ctx.backend());
-    ASSERT_TRUE(wb);
-    wb->setRequestMode(true);
-
-    std::unordered_map<std::string, std::string> env;
-    {
-        // overwrite with minio S3 variables.
-        // cf. https://docs.aws.amazon.com/cli/v1/userguide/cli-configure-endpoints.html#endpoints-service-specific-table for table
-        // and https://docs.aws.amazon.com/cli/v1/userguide/cli-configure-envvars.html.
-        auto [local_credentials, local_config] = local_s3_credentials();
-
-        env["AWS_SECRET_ACCESS_KEY"] = local_credentials.GetAWSSecretKey();
-        env["AWS_ACCESS_KEY_ID"] = local_credentials.GetAWSAccessKeyId();
-        // The docker network uses internally "minio" as hostname for the S3 service.
-        env["AWS_ENDPOINT_URL_S3"] = "http://minio:9000";
-    }
-    wb->setEnvironment(env);
+    auto ctx = create_lambda_context();
 
     auto v = ctx.parallelize({Row(1), Row(2), Row(3)}).map(UDF("lambda x: x + 1")).collectAsVector();
     ASSERT_EQ(v.size(), 3);

@@ -112,6 +112,8 @@ namespace tuplex {
         // disable copying
         Context(const Context& other) = delete;
 
+        Context(Context&& other) = default;
+
         int id() const { return _id; }
 
         // create from array
