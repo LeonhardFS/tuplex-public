@@ -383,6 +383,16 @@ namespace tuplex {
         {
             std::lock_guard<std::mutex> lock(_mutex);
             _tasks.push_back(resp);
+
+#ifndef NDEBUG
+            // print response as JSON for easy debugging (selected fields).
+            std::string response_as_string;
+            google::protobuf::util::MessageToJsonString(resp.response, &response_as_string);
+            std::stringstream ss;
+            auto j = nlohmann::json::parse(response_as_string);
+            ss<<"Got response for task:\n"<<j.dump(2)<<std::endl;
+            logger().debug(ss.str());
+#endif
         }
     }
 

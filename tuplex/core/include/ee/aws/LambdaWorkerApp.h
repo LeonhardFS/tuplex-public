@@ -90,6 +90,8 @@ namespace tuplex {
         std::string _functionName;
         NetworkSettings _networkSettings;
         tuplex::AWSCredentials _credentials;
+    protected:
+        void fill_with_result(messages::InvocationResponse& response);
     private:
 
         struct Metrics {

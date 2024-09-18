@@ -783,6 +783,10 @@ namespace tuplex {
                 // output uris from worker app
                 for(const auto& uri : output_uris())
                     _output_uris.push_back(uri.toString());
+
+                // add output uris.
+                // @TODO: return small results as part of the request.
+                fill_with_result(_response);
             }
 
             return rc;
@@ -797,6 +801,25 @@ namespace tuplex {
         // ==> need other optimizations as well -.-
 
         return WORKER_OK;
+    }
+
+    void LambdaWorkerApp::fill_with_result(messages::InvocationResponse& response) {
+        // message specific results
+        for(const auto& c_info : _invokedContainers) {
+            auto element = response.add_invokedcontainers();
+            c_info.fill(element);
+        }
+
+        for(const auto& r_info : _requests) {
+            auto element = response.add_invokedrequests();
+            r_info.fill(element);
+        }
+
+        // add which outputs from which inputs this query produced
+        for(const auto& uri : _input_uris)
+            response.add_inputuris(uri);
+        for(const auto& uri : _output_uris)
+            response.add_outputuris(uri);
     }
 
     void LambdaWorkerApp::prepareResponseFromSelfInvocations() {
