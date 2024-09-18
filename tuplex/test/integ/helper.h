@@ -14,6 +14,7 @@
 #include "tracing/TraceVisitor.h"
 
 #include <AWSCommon.h>
+#include <Context.h>
 #include <VirtualFileSystem.h>
 #include <S3Cache.h>
 #include <filesystem>
@@ -61,6 +62,8 @@ namespace tuplex {
     extern std::string minio_data_location();
 
     extern messages::InvocationResponse process_request_with_worker(const std::string& worker_path, const std::string& scratch_dir, const messages::InvocationRequest& request, bool invoke_process=true);
+
+    extern void github_pipeline(Context& ctx, const std::string& input_pattern, const std::string& output_path);
 }
 
 #endif //TUPLEX_HELPER_H

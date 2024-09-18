@@ -490,3 +490,44 @@ TEST_F(LambdaLocalTest, SimpleEndToEndTest) {
         EXPECT_EQ(v[i].getInt(0), ref[i]);
     }
 }
+
+TEST_F(LambdaLocalTest, MiniGithub) {
+    using namespace std;
+    using namespace tuplex;
+
+    string input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
+    string output_path = "./" + testName + "/output";
+
+    // Test github pipeline with small sample files.
+    // Step 1: Upload all files into bucket.
+    // test file, write some stuff to it.
+
+    auto files_to_upload = glob(input_pattern);
+    cout<<"Uploading "<<pluralize(files_to_upload.size(), "file")<<" to S3."<<endl;
+    for(const auto& path : files_to_upload) {
+        auto target_uri = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + URI(path).base_name();
+        VirtualFileSystem::copy(path, target_uri);
+    }
+
+    input_pattern = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + "*.json.sample";
+    output_path = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + "output";
+
+    cout<<"Creating Lambda context."<<endl;
+    auto ctx = create_lambda_context();
+
+    cout<<"Starting Github (mini) pipeline."<<endl;
+    github_pipeline(ctx, input_pattern, output_path);
+
+    cout<<"Checking result."<<endl;
+    // glob output files (should be equal amount, as 1 request per file)
+    auto output_uris = VirtualFileSystem::fromURI(input_pattern).glob(output_path + "/*.csv");
+
+    cout<<"Found "<<pluralize(output_uris.size(), "output file")<<" in local S3 file system."<<endl;
+
+    // there must be one file now (because of the request).
+    EXPECT_EQ(output_uris.size(), files_to_upload.size());
+
+    // Step 5: Check csv counts to make sure these are correct.
+    auto total_row_count = csv_row_count_for_pattern(output_path + "/*.csv");
+    EXPECT_EQ(total_row_count, 378);
+}

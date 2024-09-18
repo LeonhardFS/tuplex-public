@@ -356,39 +356,6 @@ TEST_F(S3LocalTests, FileSeek) {
 }
 
 namespace tuplex {
-    void github_pipeline(Context& ctx, const std::string& input_pattern, const std::string& output_path) {
-        using namespace std;
-        // start pipeline incl. output
-        auto repo_id_code = "def extract_repo_id(row):\n"
-                            "    if 2012 <= row['year'] <= 2014:\n"
-                            "        \n"
-                            "        if row['type'] == 'FollowEvent':\n"
-                            "            return row['payload']['target']['id']\n"
-                            "        \n"
-                            "        if row['type'] == 'GistEvent':\n"
-                            "            return row['payload']['id']\n"
-                            "        \n"
-                            "        repo = row.get('repository')\n"
-                            "        \n"
-                            "        if repo is None:\n"
-                            "            return None\n"
-                            "        return repo.get('id')\n"
-                            "    else:\n"
-                            "        repo =  row.get('repo')\n"
-                            "        if repo:\n"
-                            "            return repo.get('id')\n"
-                            "        else:\n"
-                            "            return None\n";
-
-        ctx.json(input_pattern, true, true)
-                .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
-                .withColumn("repo_id", UDF(repo_id_code))
-                .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
-                .withColumn("commits", UDF("lambda row: row['payload'].get('commits')"))
-                .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
-                .selectColumns(vector<string>{"type", "repo_id", "year", "number_of_commits"})
-                .tocsv(output_path);
-    }
 
     ContextOptions microIntegOptions() {
         auto co = ContextOptions::defaults();
