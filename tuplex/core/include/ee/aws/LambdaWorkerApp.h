@@ -93,7 +93,7 @@ namespace tuplex {
     protected:
         void fill_with_result(messages::InvocationResponse& response);
 
-        int invokeRecursivelyAsync(int num_to_invoke) override;
+        int invokeRecursivelyAsync(int num_to_invoke, const std::string& lambda_endpoint) override;
     private:
 
         // update network settings from current environment, or restores it to default AWS Lambda settings.
