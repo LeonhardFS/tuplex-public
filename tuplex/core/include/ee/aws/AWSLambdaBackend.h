@@ -259,6 +259,39 @@ namespace tuplex {
         inline URI tempStageURI(int stageNo) const {
             return URI(_options.AWS_SCRATCH_DIR() + "/temporary_stage_output/" + "stage_" + std::to_string(stageNo));
         }
+
+        inline void fill_with_transform_stage(messages::InvocationRequest& req, const TransformStage* tstage) const;
+        inline void fill_with_worker_config(messages::InvocationRequest& req,
+                    const std::string& worker_spill_uri,
+                    int numThreads) const;
+
+        inline size_t compute_buf_spill_size(int numThreads) const {
+            // at least 1 thread.
+            numThreads = std::max(numThreads, 1);
+
+            // perhaps also use:  - 64 * numThreads ==> smarter buffer scaling necessary.
+            size_t buf_spill_size = (_options.AWS_LAMBDA_MEMORY() - 256) / numThreads * 1000 * 1024;
+
+            // limit to 128mb each
+            if (buf_spill_size > 128 * 1000 * 1024)
+                buf_spill_size = 128 * 1000 * 1024;
+
+            return buf_spill_size;
+        }
+
+        inline std::string spillURI() const {
+            auto scratchDir = _options.AWS_SCRATCH_DIR();
+            if(scratchDir.empty())
+                scratchDir = _options.SCRATCH_DIR().toPath();
+            return scratchDir + "/spill_folder";
+        }
+
+        inline void fill_specialization_unit(messages::SpecializationUnit& m,
+                                             const std::vector<std::tuple<URI,size_t>>& uri_infos,
+                                             const SamplingMode& sampling_mode);
+
+        // this may internally modify the remote mapping.
+        URI generate_output_base_uri(const TransformStage* tstage, int taskNo, int num_digits=-1, int part_no=-1, int num_digits_part=-1);
     };
 }
 

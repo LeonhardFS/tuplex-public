@@ -682,12 +682,7 @@ namespace tuplex {
         }
         logger().info("Lambda executors each use " + pluralize(numThreads, "thread"));
         auto spillURI = _options.AWS_SCRATCH_DIR() + "/spill_folder";
-        // perhaps also use:  - 64 * numThreads ==> smarter buffer scaling necessary.
-        size_t buf_spill_size = (_options.AWS_LAMBDA_MEMORY() - 256) / numThreads * 1000 * 1024;
-
-        // limit to 128mb each
-        if (buf_spill_size > 128 * 1000 * 1024)
-            buf_spill_size = 128 * 1000 * 1024;
+        auto buf_spill_size = compute_buf_spill_size(numThreads);
 
         logger().info("Setting buffer size for each thread to " + sizeToMemString(buf_spill_size));
 
@@ -702,6 +697,7 @@ namespace tuplex {
                 break;
             }
             case AwsLambdaExecutionStrategy::TREE: {
+                logger().info("Using tree invocation strategy (specialize per file and then distribute).");
 
                 // configure
                 RequestConfig conf;
@@ -730,11 +726,7 @@ namespace tuplex {
                 conf.specialization_unit_size = _options.EXPERIMENTAL_SPECIALIZATION_UNIT_SIZE();
                 conf.minimum_size_to_specialize = _options.EXPERIMENTAL_MINIMUM_SIZE_TO_SPECIALIZE();
                 conf.buf_spill_size = buf_spill_size;
-                auto requests = createSpecializingSelfInvokeRequests(tstage, optimizedBitcode, numThreads, uri_infos, conf);
-
-                throw std::runtime_error("not yet supported");
-//                requests = createSelfInvokingRequests(tstage, optimizedBitcode, numThreads, uri_infos, spillURI,
-//                                                      buf_spill_size);
+                requests = createSpecializingSelfInvokeRequests(tstage, optimizedBitcode, numThreads, uri_infos, conf);
                 break;
             }
             default:
@@ -742,6 +734,8 @@ namespace tuplex {
                 throw std::runtime_error("unknown invocation strategy '" + _options.AWS_LAMBDA_INVOCATION_STRATEGY() + "', abort");
                 break;
         }
+
+        // Start request invocation.
         if (!requests.empty()) {
             logger().info("Invoking " + pluralize(requests.size(), "request") + " ...");
 
@@ -1116,73 +1110,159 @@ namespace tuplex {
     }
 
     std::vector<AwsLambdaRequest>
-    AwsLambdaBackend::createSpecializingSelfInvokeRequests(const TransformStage *tstage, const std::string &bitCode,
+    AwsLambdaBackend::createSpecializingSelfInvokeRequests(const TransformStage *tstage,
+                                                           const std::string &bitCode,
                                                            const size_t numThreads,
                                                            const std::vector<std::tuple<std::string, std::size_t>> &uri_infos,
                                                            const RequestConfig &conf) {
-//        // check config is valid
-//        if(!conf.valid()) {
-//            throw std::runtime_error("given request config is not valid.");
-//        }
-
         std::vector<AwsLambdaRequest> requests;
         std::vector<URI> request_uris;
 
-        // now generation is quite simple. Go over files, and then check wrt to specialization size if they're large enough to get specialized on. Then issue appropriate number of requests.
-        for(auto uri_info : uri_infos) {
-            auto input_uri = std::get<0>(uri_info);
-            auto input_uri_size = std::get<1>(uri_info);
-
-            if(input_uri_size >= conf.minimum_size_to_specialize) {
-                // issue specialization query!
-
-                // how many queries to issue? could be that input uri needs to be split up into multiple files...!
-                // -> make sure each part is at least specialization unit size
-                assert(conf.specialization_unit_size >= conf.minimum_size_to_specialize);
-
-                size_t bytes_so_far = 0;
-                while(bytes_so_far < input_uri_size) {
-                    // part from bytes_so_far, bytes_so_far + specialization_unit_size
-
-                    // is this is the last part?
-                    if(bytes_so_far + 2 * conf.specialization_unit_size < input_uri_size) {
-                        request_uris.push_back(encodeRangeURI(input_uri, bytes_so_far, bytes_so_far + conf.specialization_unit_size));
-
-                        auto uri = input_uri;
-                        auto uri_size = input_uri_size;
-                        auto range_start = bytes_so_far;
-                        auto range_end = bytes_so_far + conf.specialization_unit_size;
-
-                        create_tree_based_hyperspecialization_request(tstage, bitCode, uri, uri_size,
-                                                                      range_start, range_end,
-                                                                      _options,
-                                                                      _remoteToLocalURIMapping);
-                        bytes_so_far += conf.specialization_unit_size;
-                    } else {
-                        // last part, issue and then that's it
-                        request_uris.push_back(encodeRangeURI(input_uri, bytes_so_far, input_uri_size));
-                        // create_tree_based_hyperspecialization_request(...)
-#warning "need to implement stuff here..."
-                        break;
-                        bytes_so_far = input_uri_size;
-                    }
-
-                    bytes_so_far += conf.specialization_unit_size;
-                }
-            } else {
-                // not large enough to warrant specialization. process in parallel
-                // i.e. just keep query as is, do not issue specialization request.
-                // create_tree_based_regular_request(...)
-#warning "need to implement stuff here..."
-                throw std::runtime_error("not yet supported");
-            }
+        // How many URIs are there?
+        {
+            std::stringstream ss;
+            ss<<"Found "<<pluralize(uri_infos.size(), "specialization unit")<<" to use.";
+            logger().info(ss.str());
         }
 
-        logger().info("Created " + std::to_string(requests.size()) + " LAMBDA requests.");
-        // how many thereof are regular? how many hperspecialziing?
-        // "thereof {} regular / {} specializing"
+        // Generate for each URI a specialization unit (and request).
+        int partno = 0;
+        int max_retries = 5; // @TODO: should be option.
+        auto num_digits = ilog10c(uri_infos.size());
 
-        return {};
+        assert(tstage);
+        auto sampling_mode = tstage->samplingMode();
+
+        // TODO: figure this here out.
+        int num_self_invoke = 3; // 3 parts.
+
+        for(auto uri_info : uri_infos) {
+            AwsLambdaRequest req;
+            req.retriesLeft = max_retries;
+            req.body.set_partnooffset(partno); // offset for parts.
+
+            fill_with_transform_stage(req.body, tstage);
+            fill_env(req.body);
+
+            // for different parts need different spill folders.
+            auto worker_spill_uri = spillURI() + "/lam" + fixedPoint(partno, num_digits); //+ fixedPoint(i, num_digits) + "/" + fixedPoint(part_no, num_digits_part);
+            fill_with_worker_config(req.body, worker_spill_uri, numThreads);
+
+            // @TODO: specialization unit.
+            fill_specialization_unit(*req.body.mutable_stage()->mutable_specializationunit(),
+                                     {uri_info}, sampling_mode);
+
+            // Split URI into equal chunks to parallelize then.
+            // Basically the Lambda worker will do self-invoke with the number of parts.
+            // Can limit then.
+            int n_parts = num_self_invoke + 1; // Let Lambda itself work on data as well.
+            // Split into parts.
+            auto split_parts = splitIntoEqualParts(n_parts, {std::get<0>(uri_info)}, {std::get<1>(uri_info)}, 1024);
+            std::vector<FilePart> parts;
+            for(const auto& thread_parts : split_parts) {
+                for(auto part : thread_parts) {
+                    part.partNo = parts.size();
+                    parts.push_back(part);
+                }
+            }
+
+            // go over parts and add them individually.
+            for(const auto& part : parts) {
+                auto inputURI = encodeRangeURI(part.uri, part.rangeStart, part.rangeEnd);
+                auto inputSize = part.size;
+                req.body.add_inputuris(inputURI);
+                req.body.add_inputsizes(inputSize);
+            }
+
+            // base output uri (?) -> maybe change this?
+            auto remote_output_uri = generate_output_base_uri(tstage, partno, num_digits);
+            req.body.set_baseoutputuri(remote_output_uri.toString());
+
+            requests.push_back(req);
+        }
+
+
+//        // now generation is quite simple. Go over files, and then check wrt to specialization size if they're large enough to get specialized on. Then issue appropriate number of requests.
+//        for(auto uri_info : uri_infos) {
+//            auto input_uri = std::get<0>(uri_info);
+//            auto input_uri_size = std::get<1>(uri_info);
+//
+//            if(input_uri_size >= conf.minimum_size_to_specialize) {
+//                // issue specialization query!
+//
+//                // how many queries to issue? could be that input uri needs to be split up into multiple files...!
+//                // -> make sure each part is at least specialization unit size
+//                assert(conf.specialization_unit_size >= conf.minimum_size_to_specialize);
+//
+//                size_t bytes_so_far = 0;
+//                while(bytes_so_far < input_uri_size) {
+//                    // part from bytes_so_far, bytes_so_far + specialization_unit_size
+//
+//                    // is this is the last part?
+//                    if(bytes_so_far + 2 * conf.specialization_unit_size < input_uri_size) {
+//                        request_uris.push_back(encodeRangeURI(input_uri, bytes_so_far, bytes_so_far + conf.specialization_unit_size));
+//
+//                        auto uri = input_uri;
+//                        auto uri_size = input_uri_size;
+//                        auto range_start = bytes_so_far;
+//                        auto range_end = bytes_so_far + conf.specialization_unit_size;
+//
+//                        create_tree_based_hyperspecialization_request(tstage, bitCode, uri, uri_size,
+//                                                                      range_start, range_end,
+//                                                                      _options,
+//                                                                      _remoteToLocalURIMapping);
+//                        bytes_so_far += conf.specialization_unit_size;
+//                    } else {
+//                        // last part, issue and then that's it
+//                        request_uris.push_back(encodeRangeURI(input_uri, bytes_so_far, input_uri_size));
+//                        // create_tree_based_hyperspecialization_request(...)
+//#warning "need to implement stuff here..."
+//                        break;
+//                        bytes_so_far = input_uri_size;
+//                    }
+//
+//                    bytes_so_far += conf.specialization_unit_size;
+//                }
+//            } else {
+//                // not large enough to warrant specialization. process in parallel
+//                // i.e. just keep query as is, do not issue specialization request.
+//                // create_tree_based_regular_request(...)
+//#warning "need to implement stuff here..."
+//                throw std::runtime_error("not yet supported");
+//            }
+//        }
+//
+//        logger().info("Created " + std::to_string(requests.size()) + " LAMBDA requests.");
+//        // how many thereof are regular? how many hperspecialziing?
+//        // "thereof {} regular / {} specializing"
+
+        return requests;
+    }
+
+    void AwsLambdaBackend::fill_specialization_unit(messages::SpecializationUnit& m,
+                                                    const std::vector<std::tuple<URI,size_t>>& uri_infos,
+                                                    const SamplingMode& sampling_mode) {
+        for(auto entry : uri_infos) {
+            m.add_inputuris(std::get<0>(entry).toString());
+            m.add_inputsizes(std::get<1>(entry));
+        }
+        m.set_samplemode(static_cast<uint64_t>(sampling_mode));
+    }
+
+    void AwsLambdaBackend::fill_with_worker_config(messages::InvocationRequest& req,
+                                                   const std::string& worker_spill_uri,
+                                                   int numThreads) const {
+        // worker config
+        auto ws = std::make_unique<messages::WorkerSettings>();
+        config_worker(ws.get(), _options, numThreads, worker_spill_uri, compute_buf_spill_size(numThreads));
+        req.set_allocated_settings(ws.release());
+        req.set_verboselogging(_options.AWS_VERBOSE_LOGGING());
+    }
+
+    void AwsLambdaBackend::fill_with_transform_stage(messages::InvocationRequest& req, const TransformStage* tstage) const {
+        req.set_type(messages::MessageType::MT_TRANSFORM);
+        auto pb_stage = tstage->to_protobuf();
+        req.set_allocated_stage(pb_stage.release());
     }
 
     std::vector<AwsLambdaRequest>
@@ -1221,15 +1301,18 @@ namespace tuplex {
             int part_no = 0;
             size_t cur_size = 0;
             while (cur_size < uri_size) {
-                messages::InvocationRequest req;
-                fill_env(req);
-                req.set_type(messages::MessageType::MT_TRANSFORM);
-                auto pb_stage = tstage->to_protobuf();
 
                 auto rangeStart = cur_size;
                 auto rangeEnd = std::min(cur_size + splitSize, uri_size);
 
-                req.set_allocated_stage(pb_stage.release());
+                messages::InvocationRequest req;
+
+                auto worker_spill_uri = spillURI + "/lam" + fixedPoint(i, num_digits) + "/" + fixedPoint(part_no, num_digits_part);
+                fill_with_transform_stage(req, tstage);
+
+                // add other core data to the request.
+                fill_env(req);
+                fill_with_worker_config(req, worker_spill_uri, numThreads);
 
                 // add request for this
                 auto inputURI = std::get<0>(info);
@@ -1238,51 +1321,12 @@ namespace tuplex {
                 req.add_inputuris(inputURI);
                 req.add_inputsizes(inputSize);
 
-                // worker config
-                auto ws = std::make_unique<messages::WorkerSettings>();
-                auto worker_spill_uri = spillURI + "/lam" + fixedPoint(i, num_digits) + "/" + fixedPoint(part_no, num_digits_part);
-                config_worker(ws.get(), _options, numThreads, worker_spill_uri, buf_spill_size);
-                req.set_allocated_settings(ws.release());
-                req.set_verboselogging(_options.AWS_VERBOSE_LOGGING());
-
                 // output uri of job? => final one? parts?
                 // => create temporary if output is local! i.e. to memory etc.
                 int taskNo = i;
-                if (tstage->outputMode() == EndPointMode::MEMORY) {
-                    // create temp file in scratch dir!
-                    req.set_baseoutputuri(scratchDir(hintsFromTransformStage(tstage)).join_path(
-                            "output.part" + fixedLength(taskNo, num_digits) + "_" +
-                            fixedLength(part_no, num_digits_part)).toString());
-                } else if (tstage->outputMode() == EndPointMode::FILE) {
-                    // create output URI based on taskNo
-                    auto uri = outputURI(tstage->outputPathUDF(), tstage->outputURI(), taskNo, tstage->outputFormat());
-                    auto remote_output_uri = uri.toPath();
 
-                    // is it a local file URI as target? if so, generate dummy uri under spill folder for this job & add mapping
-                    if(uri.isLocal()) {
-                        auto tmp_uri = scratchDir(hintsFromTransformStage(tstage)).join_path(
-                                "output.part" + fixedLength(taskNo, num_digits) + "_" +
-                                fixedLength(part_no, num_digits_part)).toString();
-
-                        remote_output_uri = tmp_uri;
-
-                        // add extension to mapping
-                        auto output_fmt = tstage->outputFormat();
-                        auto ext = defaultFileExtension(output_fmt);
-                        tmp_uri += "." + ext; // done in worker app, fix in the future.
-                        _remoteToLocalURIMapping[tmp_uri] = uri;
-                    }
-
-                    req.set_baseoutputuri(remote_output_uri);
-                } else if (tstage->outputMode() == EndPointMode::HASHTABLE) {
-                    // there's two options now, either this is an end-stage (i.e., unique/aggregateByKey/...)
-                    // or an intermediate stage where a temp hash-table is required.
-                    // in any case, because compute is done on Lambda materialize hash-table as temp file.
-                    auto temp_uri = tempStageURI(tstage->number());
-                    req.set_baseoutputuri(temp_uri.toString());
-                } else throw std::runtime_error("unknown output endpoint in lambda backend");
-
-
+                auto remote_output_uri = generate_output_base_uri(tstage, taskNo, num_digits, part_no, num_digits_part);
+                req.set_baseoutputuri(remote_output_uri.toString());
 
                 AwsLambdaRequest aws_req;
                 aws_req.body = req;
@@ -1297,6 +1341,51 @@ namespace tuplex {
         logger().info("Created " + std::to_string(requests.size()) + " LAMBDA requests.");
 
         return requests;
+    }
+
+    URI AwsLambdaBackend::generate_output_base_uri(const TransformStage* tstage, int taskNo, int num_digits, int part_no, int num_digits_part) {
+
+        // Adjust amount of digits to print, default to regular printing if not set.
+        if(num_digits <= 0 || ilog10c(taskNo) > num_digits)
+            num_digits = ilog10c(taskNo);
+        if(part_no >= 0 && (num_digits_part <= 0 || ilog10c(part_no) > num_digits_part))
+            num_digits_part = ilog10c(part_no);
+
+        if (tstage->outputMode() == EndPointMode::MEMORY) {
+            // create temp file in scratch dir!
+            return scratchDir(hintsFromTransformStage(tstage)).join_path(
+                    "output.part" + fixedLength(taskNo, num_digits) + "_" +
+                    fixedLength(part_no, num_digits_part));
+        } else if (tstage->outputMode() == EndPointMode::FILE) {
+            // create output URI based on taskNo
+            auto uri = outputURI(tstage->outputPathUDF(), tstage->outputURI(), taskNo, tstage->outputFormat());
+            auto remote_output_uri = uri.toPath();
+
+            // is it a local file URI as target? if so, generate dummy uri under spill folder for this job & add mapping
+            if(uri.isLocal()) {
+                auto part_str ="output.part" + fixedLength(taskNo, num_digits);
+                if(part_no >= 0)
+                    part_str += "_" + fixedLength(part_no, num_digits_part);
+
+                auto tmp_uri = scratchDir(hintsFromTransformStage(tstage)).join_path(part_str).toString();
+
+                remote_output_uri = tmp_uri;
+
+                // Add extension to mapping.
+                auto output_fmt = tstage->outputFormat();
+                auto ext = defaultFileExtension(output_fmt);
+                tmp_uri += "." + ext; // done in worker app, fix in the future.
+                _remoteToLocalURIMapping[tmp_uri] = uri;
+            }
+            return remote_output_uri;
+
+        } else if (tstage->outputMode() == EndPointMode::HASHTABLE) {
+            // there's two options now, either this is an end-stage (i.e., unique/aggregateByKey/...)
+            // or an intermediate stage where a temp hash-table is required.
+            // in any case, because compute is done on Lambda materialize hash-table as temp file.
+            auto temp_uri = tempStageURI(tstage->number());
+            return temp_uri.toString();
+        } else throw std::runtime_error("unknown output endpoint in lambda backend");
     }
 
     AwsLambdaBackend::AwsLambdaBackend(const Context &context,

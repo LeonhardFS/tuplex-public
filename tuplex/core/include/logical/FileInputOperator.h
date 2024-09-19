@@ -442,6 +442,8 @@ namespace tuplex {
 
         bool isDataSource() override { return true; }
 
+        inline SamplingMode samplingMode() const { return _samplingMode; }
+
         /*!
          * get the partitions where the parallelized data is stored.
          * @return vector of partitions.
