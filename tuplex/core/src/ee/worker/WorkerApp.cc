@@ -393,30 +393,22 @@ namespace tuplex {
         return WORKER_OK;
     }
 
-    int WorkerApp::processMessage(const tuplex::messages::InvocationRequest& req) {
 
-        // Reset response.
-        _response.Clear();
-        _response.set_type(req.type());
-
-        _messageCount++;
-
-        // adjust environment
-        if(!req.env().empty()) {
-            if(!adjust_environment({req.env().begin(), req.env().end()}))
-                return WORKER_ERROR_ENVIRONMENT;
-        }
-
-
-        if(req.type() == messages::MessageType::MT_ENVIRONMENTINFO) {
-            return processEnvironmentInfoMessage();
-        }
-
+    int WorkerApp::setup_transform_stage(const tuplex::messages::InvocationRequest& req,
+                                         std::shared_ptr<TransformStage>& tstage,
+                                         std::shared_ptr<TransformStage::JITSymbols>& syms) {
         // reset buffers
         resetThreadEnvironments();
 
+        tstage.reset();
+        syms.reset();
+
+        URI outputURI = outputURIFromReq(req);
+        auto parts = partsFromMessage(req);
+
         // only transform stage yet supported, in the future support other stages as well!
-        auto tstage = TransformStage::from_protobuf(req.stage());
+        tstage = std::move(TransformStage::from_protobuf(req.stage()));
+
         _inputOperatorID = tstage->fileInputOperatorID();
 
         // update initial received schemas for stage
@@ -424,12 +416,6 @@ namespace tuplex {
         _stage_normal_output_type = tstage->normalCaseOutputSchema().getRowType();
         _stage_general_input_type = tstage->inputSchema().getRowType();
         _stage_general_output_type = tstage->outputSchema().getRowType();
-
-        URI outputURI = outputURIFromReq(req);
-        auto parts = partsFromMessage(req);
-
-        if(0 != _settings.s3PreCacheSize)
-            preCacheS3(parts);
 
         // reset types
         _normalCaseRowType = tstage->normalCaseInputSchema().getRowType();
@@ -563,8 +549,6 @@ namespace tuplex {
         // if not, compile given code & process using both compile code & fallback
         // optimize via LLVM when in hyper mode.
         Timer compileTimer;
-        std::shared_ptr<TransformStage::JITSymbols> syms;
-
         if(req.requestmode() & REQUEST_MODE_COMPILE_AND_RETURN_OBJECT_CODE) {
             std::string target_triple = llvm::sys::getDefaultTargetTriple();
             std::string cpu = "native"; // <-- native target cpu
@@ -635,10 +619,73 @@ namespace tuplex {
             return WORKER_OK;
         }
 
-        auto rc = processTransformStage(tstage.get(), syms, parts, outputURI);
+        return WORKER_CONTINUE;
+    }
+
+    int WorkerApp::processMessage(const tuplex::messages::InvocationRequest& req) {
+
+        // Reset response.
+        _response.Clear();
+        _response.set_type(req.type());
+
+        _messageCount++;
+
+        // adjust environment
+        if(!req.env().empty()) {
+            if(!adjust_environment({req.env().begin(), req.env().end()}))
+                return WORKER_ERROR_ENVIRONMENT;
+        }
+
+        if(req.type() == messages::MessageType::MT_ENVIRONMENTINFO) {
+            return processEnvironmentInfoMessage();
+        }
+
+        auto parts = partsFromMessage(req);
+
+        // Start S3 pre-caching.
+        if(0 != _settings.s3PreCacheSize) {
+            logger().info("Precache " + pluralize(parts.size(), "object") + " from S3.");
+            preCacheS3(parts);
+        }
+
+        // Setup processing for Transform Stage, early exit if needed.
+        std::shared_ptr<TransformStage::JITSymbols> syms;
+        std::shared_ptr<TransformStage> tstage;
+        auto rc = setup_transform_stage(req, tstage, syms);
+        if(rc != WORKER_CONTINUE)
+            return rc;
+
+
+        // So far all of this has been setup.
+        // Does request call for self-invocation?
+        // If so, fire off self-requests (async) and wait for result.
+        if(req.has_stage() && req.stage().invocationcount_size() > 0) {
+            std::stringstream ss;
+            ss << "Invoking ";
+            for (auto count: req.stage().invocationcount())
+                ss << count << ", ";
+            ss << "Lambdas recursively.";
+            logger().info(ss.str());
+
+            // First stage to invoke.
+            int num_to_invoke = req.stage().invocationcount(0);
+            // @TODO: pass data / process data and so on.
+            invokeRecursivelyAsync(num_to_invoke, "");
+        }
+
+        // Start processing Transform Stage.
+        URI outputURI = outputURIFromReq(req);
+        rc = processTransformStage(tstage.get(), syms, parts, outputURI);
         fill_response_with_state(_response);
         _lastStat = jsonStat(req, tstage.get()); // generate stats before returning.
         return rc;
+    }
+
+    int WorkerApp::invokeRecursivelyAsync(int num_to_invoke, const std::string& lambda_endpoint) {
+        logger().info("For now recursively invoking " + pluralize(num_to_invoke, "request") + ".");
+        logger().info("Recursive invocation not supported on WorkerBackend yet.");
+
+        return WORKER_OK;
     }
 
     void WorkerApp::preCacheS3(const std::vector<FilePart> &parts) {

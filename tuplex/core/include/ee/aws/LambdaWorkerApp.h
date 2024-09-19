@@ -92,7 +92,12 @@ namespace tuplex {
         tuplex::AWSCredentials _credentials;
     protected:
         void fill_with_result(messages::InvocationResponse& response);
+
+        int invokeRecursivelyAsync(int num_to_invoke) override;
     private:
+
+        // update network settings from current environment, or restores it to default AWS Lambda settings.
+        void update_network_settings(const std::unordered_map<std::string, std::string> &env={});
 
         struct Metrics {
             double global_init_time;

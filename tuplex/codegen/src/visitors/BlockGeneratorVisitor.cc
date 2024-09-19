@@ -869,8 +869,8 @@ namespace tuplex {
                     FunctionType *ft = FunctionType::get(_env->i32Type(), {_env->i8ptrType(), _env->i8ptrType()},
                                                          false);
 #ifndef NDEBUG
-                    _env->printValue(builder, L, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " strcmp lhs: ");
-                    _env->printValue(builder, L, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " strcmp rhs: ");
+                    // _env->printValue(builder, L, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " strcmp lhs: ");
+                    // _env->printValue(builder, L, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " strcmp rhs: ");
 #endif
 
                     // Check that neither L, R are null pointer constants.

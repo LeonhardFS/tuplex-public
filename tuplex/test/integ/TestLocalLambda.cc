@@ -206,6 +206,8 @@ protected:
             env["AWS_ACCESS_KEY_ID"] = local_credentials.GetAWSAccessKeyId();
             // The docker network uses internally "minio" as hostname for the S3 service.
             env["AWS_ENDPOINT_URL_S3"] = "http://minio:9000";
+            // For the lambda, the endpoint within docker is called "".
+            env["AWS_ENDPOINT_URL_LAMBDA"] = "http://rest:8090";
         }
         wb->setEnvironment(env);
 

@@ -374,8 +374,7 @@ namespace tuplex {
         _credentials.session_token = session_token;
         _credentials.default_region = region;
 
-        _networkSettings.verifySSL = verifySSL;
-        _networkSettings.caFile = caFile;
+        update_network_settings();
 
         VirtualFileSystem::addS3FileSystem(access_key, secret_key, session_token, region.c_str(), _networkSettings,
                                            true, true);
@@ -417,6 +416,31 @@ namespace tuplex {
 #endif
 
         return WORKER_OK;
+    }
+
+    void LambdaWorkerApp::update_network_settings(const std::unordered_map<std::string, std::string> &env) {
+        _networkSettings = NetworkSettings();
+        _networkSettings.verifySSL = verifySSL;
+        _networkSettings.caFile = caFile;
+
+        if(env.find("AWS_ENDPOINT_URL_S3") != env.end()) {
+
+            // Overwrite lambda endpoint.
+            auto endpoint = env.at("AWS_ENDPOINT_URL_LAMBDA");
+
+            // Amazon endpoints end with .amazonaws.com.
+            // For a list of available endpoints, cf. https://docs.aws.amazon.com/general/latest/gr/lambda.html
+            // For non-Aws endpoints (i.e., local rest) disable SSL.
+            if(endpoint.find(".amazonaws.com") == std::string::npos) {
+                NetworkSettings ns;
+                ns.verifySSL = false;
+                ns.useVirtualAddressing = false;
+                ns.signPayloads = false;
+                _networkSettings = ns;
+            }
+            _networkSettings.endpointOverride = endpoint;
+            logger().info("Updated Lambda endpoint to " + endpoint + ".");
+        }
     }
 
     int LambdaWorkerApp::processMessage(const tuplex::messages::InvocationRequest& req) {
@@ -1149,7 +1173,7 @@ namespace tuplex {
         // init Lambda client
         Aws::Client::ClientConfiguration clientConfig;
 
-        logger().info("Modifying lambda");
+        logger().info("Modifying lambda.");
 
         size_t lambdaToLambdaTimeOutInMs = 800; // 200 should be sufficient, yet sometimes lambdas break with broken pipe
         std::string tag = "tuplex-lambda";
@@ -1164,7 +1188,7 @@ namespace tuplex {
         // will return toomanyrequestsexception
         clientConfig.maxConnections = max_connections;
 
-        logger().info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Creating thread executor Pool");
+        logger().info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Creating thread executor Pool.");
 
         // to avoid thread exhaust of system, use pool thread executor with 8 threads
         clientConfig.executor = Aws::MakeShared<Aws::Utils::Threading::PooledThreadExecutor>(tag.c_str(), max_connections);
@@ -1180,8 +1204,90 @@ namespace tuplex {
 
         _outstandingRequests = 0;
 
-        logger().info("config done, now creating object");
+        logger().info("Lambda config done, now creating object.");
         return Aws::MakeShared<Aws::Lambda::LambdaClient>(tag.c_str(), cred, clientConfig);
+    }
+
+    int LambdaWorkerApp::invokeRecursivelyAsync(int num_to_invoke, const std::string& lambda_endpoint) {
+        logger().info("For now recursively invoking " + pluralize(num_to_invoke, "request") + ".");
+
+        logger().info("Creating Lambda client.");
+        // invoke
+        double timeout = 25.0; // timeout in seconds
+        auto max_retries = 3;
+
+        // adjust settings based on request
+        if(!lambda_endpoint.empty())
+            update_network_settings({std::make_pair("AWS_ENDPOINT_URL_LAMBDA", lambda_endpoint)});
+
+        auto lambdaClient = createClient(timeout, num_to_invoke);
+
+        // simply sent MT_ENVIRONMENTINFO messages for now, keep it easy.
+        if(!lambdaClient)
+            return WORKER_ERROR_LAMBDA_CLIENT;
+
+        Aws::Lambda::Model::InvokeRequest invoke_req;
+        invoke_req.SetFunctionName("tplxlam"); // TODO: this function?
+        invoke_req.SetInvocationType(Aws::Lambda::Model::InvocationType::RequestResponse);
+        // logtype to extract log data??
+        invoke_req.SetLogType(Aws::Lambda::Model::LogType::Tail);
+        std::string json_buf;
+
+        // Send basic Environment request message.
+        ::messages::InvocationRequest req;
+        req.set_type(::messages::MessageType::MT_ENVIRONMENTINFO);
+        google::protobuf::util::MessageToJsonString(req, &json_buf);
+
+        invoke_req.SetBody(stringToAWSStream(json_buf));
+        invoke_req.SetContentType("application/javascript");
+        auto outcome = lambdaClient->Invoke(invoke_req);
+        if (!outcome.IsSuccess()) {
+            std::stringstream ss;
+            ss << "error: "<<outcome.GetError().GetExceptionName().c_str() << ", "
+               << outcome.GetError().GetMessage().c_str();
+
+            cerr<<ss.str()<<endl;
+        } else {
+            // Get result, and display environment:
+
+            // write response
+            auto &result = outcome.GetResult();
+            auto statusCode = result.GetStatusCode();
+            std::string version = result.GetExecutedVersion().c_str();
+
+            // parse payload
+            {
+                stringstream ss;
+                auto &stream = const_cast<Aws::Lambda::Model::InvokeResult &>(result).GetPayload();
+                ss << stream.rdbuf();
+                string data = ss.str();
+                ::messages::InvocationResponse response;
+                auto status = google::protobuf::util::JsonStringToMessage(data, &response);
+            }
+            //EXPECT_TRUE(status.ok());
+            //EXPECT_EQ(statusCode, 200); // should be 200 for ok.
+            //ASSERT_EQ(response.resources_size(), 2); // 1 resource for encoded JSON, 1 resource for LOG.
+
+            // Note: order does not matter.
+            auto env_resource = response.resources(0);
+            auto log_resource = response.resources(1);
+
+            assert(env_resource.type(), static_cast<uint32_t>(ResourceType::ENVIRONMENT_JSON));
+            assert(log_resource.type(), static_cast<uint32_t>(ResourceType::LOG));
+
+            // Log:
+            //cout<<"Log of Lambda invocation:\n"
+            //    <<decompress_string(log_resource.payload());
+
+            std::stringstream ss;
+            auto j = nlohmann::json::parse(env_resource.payload());
+            ss<<"Environment information message:\n"<<j.dump(2)<<endl;
+            logger().info("Lambda request returned environment:\n" + ss.str());
+        }
+
+        logger().info("Recursive invoke done.");
+
+        return WORKER_OK;
     }
 
     std::vector<ContainerInfo> normalizeInvokedContainers(const std::vector<ContainerInfo>& containers) {

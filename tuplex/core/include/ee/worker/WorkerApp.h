@@ -15,6 +15,7 @@
 
 // error codes
 #define WORKER_OK 0
+#define WORKER_CONTINUE -1
 #define WORKER_ERROR_INVALID_JSON_MESSAGE 100
 #define WORKER_ERROR_NO_PYTHON_HOME 101
 #define WORKER_ERROR_NO_TUPLEX_RUNTIME 102
@@ -31,6 +32,7 @@
 #define WORKER_ERROR_MISSING_PYTHON_CODE 113
 #define WORKER_ERROR_INCOMPATIBLE_AST_FORMAT 114
 #define WORKER_ERROR_ENVIRONMENT 115
+#define WORKER_ERROR_LAMBDA_CLIENT 116
 
 // give 32MB standard buf size, 8MB for exceptions and hash
 #define WORKER_DEFAULT_BUFFER_SIZE 33554432
@@ -391,6 +393,10 @@ namespace tuplex {
                                               const std::vector<FilePart>& input_parts,
                                               const URI& output_uri);
 
+        int setup_transform_stage(const tuplex::messages::InvocationRequest& req,
+                                             std::shared_ptr<TransformStage>& tstage,
+                                             std::shared_ptr<TransformStage::JITSymbols>& syms);
+
         tuplex::messages::InvocationResponse executeTransformTask(const TransformStage* tstage);
 
         std::vector<FilePart> partsFromMessage(const tuplex::messages::InvocationRequest& req, bool silent=false);
@@ -411,6 +417,14 @@ namespace tuplex {
         std::vector<URI> output_uris() const {
             return _output_uris; // return where data has been written to (for response)
         }
+
+        // Recursive invocation:
+        virtual int invokeRecursivelyAsync(int num_to_invoke, const std::string& lambda_endpoint);
+
+
+        // Recursive invocation end:
+
+
 
         // stage types
         python::Type _stage_normal_input_type;

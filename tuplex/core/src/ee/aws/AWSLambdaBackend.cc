@@ -1178,6 +1178,9 @@ namespace tuplex {
             auto remote_output_uri = generate_output_base_uri(tstage, partno, num_digits);
             req.body.set_baseoutputuri(remote_output_uri.toString());
 
+            // set self invocation, i.e. recurse.
+            req.body.mutable_stage()->add_invocationcount(num_self_invoke);
+
             requests.push_back(req);
         }
 
