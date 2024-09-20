@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import sys
 from tkinter.constants import CURRENT
 from typing import Union, List, Dict, Any
 
@@ -10,25 +11,51 @@ import sysconfig
 import boto3
 import os
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response
 
 app = Flask(__name__)
 
+stream_handler = logging.StreamHandler(sys.stdout)
+logging.basicConfig(level=logging.INFO,
+                    handlers=[logging.FileHandler("my_log.log", mode='w'),
+                              stream_handler])
 logger = logging.getLogger(__name__)
 
-# Global variables.
-CURRENT_CONCURRENCY=1
-CURRENT_MEMORY_SIZE=3000
-CURRENT_TIMEOUT=1000
+# Global variables. --> not shared across workers.
+CURRENT_CONCURRENCY = 1
+CURRENT_MEMORY_SIZE = 3000
+CURRENT_TIMEOUT = 1000
+
+from threading import Lock
+
+lock = Lock()
+
+AVAILABLE_WORKERS = {'lambda'}
+
+
+def get_worker():
+    global AVAILABLE_WORKERS
+
+    with lock:
+        try:
+            return AVAILABLE_WORKERS.pop()
+        except:
+            return None
+
+
+def make_worker_available(name):
+    global AVAILABLE_WORKERS
+    with lock:
+        AVAILABLE_WORKERS.add(name)
+
 
 # src: https://docs.aws.amazon.com/lambda/latest/api/API_ListFunctions.html
 @app.route("/2015-03-31/functions/")
-def list_functions(FunctionVersion:str='ALL', Marker:str=None, MasterRegion:str=None, MaxItems:int=50):
-
+def list_functions(FunctionVersion: str = 'ALL', Marker: str = None, MasterRegion: str = None, MaxItems: int = 50):
     global CURRENT_MEMORY_SIZE
     global CURRENT_TIMEOUT
 
-    logger.debug("Got list_functions.")
+    logger.info("Got list_functions.")
 
     # Check under which architecture docker runs,
     # it's either x86_64 or arm64.
@@ -53,7 +80,7 @@ def list_functions(FunctionVersion:str='ALL', Marker:str=None, MasterRegion:str=
                         "Message": "string"
                     },
                     "Variables": {
-                        "string" : "string"
+                        "string": "string"
                     }
                 },
                 "EphemeralStorage": {
@@ -74,8 +101,8 @@ def list_functions(FunctionVersion:str='ALL', Marker:str=None, MasterRegion:str=
                         "Message": "string"
                     },
                     "ImageConfig": {
-                        "Command": [ "string" ],
-                        "EntryPoint": [ "string" ],
+                        "Command": ["string"],
+                        "EntryPoint": ["string"],
                         "WorkingDirectory": "string"
                     }
                 },
@@ -103,7 +130,7 @@ def list_functions(FunctionVersion:str='ALL', Marker:str=None, MasterRegion:str=
                 "PackageType": "string",
                 "RevisionId": "string",
                 "Role": "string",
-                "Runtime": "provided.al2", # use whichever dockerfile in lambda says.
+                "Runtime": "provided.al2",  # use whichever dockerfile in lambda says.
                 "RuntimeVersionConfig": {
                     "Error": {
                         "ErrorCode": "string",
@@ -127,8 +154,8 @@ def list_functions(FunctionVersion:str='ALL', Marker:str=None, MasterRegion:str=
                 "Version": "string",
                 "VpcConfig": {
                     "Ipv6AllowedForDualStack": True,
-                    "SecurityGroupIds": [ "string" ],
-                    "SubnetIds": [ "string" ],
+                    "SecurityGroupIds": ["string"],
+                    "SubnetIds": ["string"],
                     "VpcId": "string"
                 }
             }
@@ -136,16 +163,17 @@ def list_functions(FunctionVersion:str='ALL', Marker:str=None, MasterRegion:str=
         # "NextMarker": "string", not included - pagination doesn't need to be tested.
     })
 
+
 # src: https://docs.aws.amazon.com/lambda/latest/api/API_GetFunctionConcurrency.html
 @app.route("/2019-09-30/functions/<function_name>/concurrency", methods=["GET"])
 def concurrency(function_name):
     global CURRENT_CONCURRENCY
     return jsonify({"ReservedConcurrentExecutions": CURRENT_CONCURRENCY})
 
+
 # src: https://docs.aws.amazon.com/lambda/latest/api/API_GetAccountSettings.html
 @app.route("/2016-08-19/account-settings/", methods=["GET"])
 def account_settings():
-
     # TODO: For meaningful numbers, take a look at https://docs.aws.amazon.com/lambda/latest/api/API_AccountLimit.html
     return jsonify({{
         "AccountLimit": {
@@ -161,27 +189,28 @@ def account_settings():
         }
     }})
 
+
 # src: https://docs.aws.amazon.com/lambda/latest/api/API_PutFunctionConcurrency.html
 @app.route("/2017-10-31/functions/<function_name>/concurrency", methods=["PUT"])
 def put_concurrency(function_name):
     global CURRENT_CONCURRENCY
 
-    raw_payload=request.get_data()
+    raw_payload = request.get_data()
     payload = json.loads(raw_payload.decode())
 
     CURRENT_CONCURRENCY = payload["ReservedConcurrentExecutions"]
 
     return concurrency(function_name)
 
+
 # src: https://docs.aws.amazon.com/lambda/latest/api/API_UpdateFunctionConfiguration.html
 # PUT /2015-03-31/functions/FunctionName/configuration
 @app.route("/2015-03-31/functions/<function_name>/configuration", methods=['PUT'])
 def put_configuration(function_name):
-
     global CURRENT_MEMORY_SIZE
     global CURRENT_TIMEOUT
 
-    raw_payload=request.get_data()
+    raw_payload = request.get_data()
     payload = json.loads(raw_payload.decode())
 
     if payload.get("MemorySize"):
@@ -190,7 +219,7 @@ def put_configuration(function_name):
         CURRENT_TIMEOUT = payload["Timeout"]
 
     response = {
-        "Architectures": [ "string" ],
+        "Architectures": ["string"],
         "CodeSha256": "string",
         "CodeSize": 1000,
         "DeadLetterConfig": {
@@ -203,7 +232,7 @@ def put_configuration(function_name):
                 "Message": "string"
             },
             "Variables": {
-                "string" : "string"
+                "string": "string"
             }
         },
         "EphemeralStorage": {
@@ -224,8 +253,8 @@ def put_configuration(function_name):
                 "Message": "string"
             },
             "ImageConfig": {
-                "Command": [ "string" ],
-                "EntryPoint": [ "string" ],
+                "Command": ["string"],
+                "EntryPoint": ["string"],
                 "WorkingDirectory": "string"
             }
         },
@@ -277,52 +306,65 @@ def put_configuration(function_name):
         "Version": "string",
         "VpcConfig": {
             "Ipv6AllowedForDualStack": False,
-            "SecurityGroupIds": [ "string" ],
-            "SubnetIds": [ "string" ],
+            "SecurityGroupIds": ["string"],
+            "SubnetIds": ["string"],
             "VpcId": "string"
         }
     }
 
     return jsonify(response)
 
+
 # src: https://docs.aws.amazon.com/lambda/latest/api/API_Invoke.html
 # POST /2015-03-31/functions/FunctionName/invocations?Qualifier=Qualifier HTTP/1.1
 @app.route("/2015-03-31/functions/<function_name>/invocations", methods=['POST'])
 def invoke(function_name):
-
     # Extract data from body.
-    raw_payload=request.get_data()
+    raw_payload = request.get_data()
     payload = json.loads(raw_payload.decode())
 
-    logger.debug(f"Got invoke with payload: {payload}")
+    # logger.debug(f"Got invoke with payload: {payload}")
 
-    # Pass to the actual lambda docker container.
-    # May want to spin up a few so recursive calls work.
+    # Check whether worker is available, if not return 429 "TooManyRequestsException"
+    name = get_worker()
+    if name is None:
+        logger.info("All workers busy, limit exceeded.")
+        return Response("TooManyRequestsException", status=429)
 
-    # Use boto3 for signing etc.
-    lam = boto3.client('lambda',
-                       endpoint_url='http://lambda:8080', # check port in docker-compose.yml
-                       aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID', 'AKIAIOSFODNN7EXAMPLE'),
-                       aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY', 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'),
-                       region_name=os.environ.get('AWS_REGION', os.environ.get('AWS_DEFAULT_REGION', 'local')))
+    logger.info(f"Got worker {name} assigned to execute Lambda.")
 
-    kwargs = {}
-    for name in ['InvocationType', 'LogType', 'ClientContext', 'Qualifier']:
-        value = request.args.get(name)
-        if value:
-            kwargs[name] = value
+    try:
+        # Pass to the actual lambda docker container.
+        # May want to spin up a few so recursive calls work.
 
-    # Function name is by default always "function" for the runtime emulator.
-    response = lam.invoke(FunctionName="function",
-                          Payload=raw_payload,
-                          **kwargs)
+        # Use boto3 for signing etc.
+        lam = boto3.client('lambda',
+                           endpoint_url='http://lambda:8080',  # check port in docker-compose.yml
+                           aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID', 'AKIAIOSFODNN7EXAMPLE'),
+                           aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY',
+                                                                'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'),
+                           region_name=os.environ.get('AWS_REGION', os.environ.get('AWS_DEFAULT_REGION', 'local')))
 
-    # Payload is returned as botocore.response.StreamingBody, convert to string.
-    response = response['Payload'].read()
+        kwargs = {}
+        for name in ['InvocationType', 'LogType', 'ClientContext', 'Qualifier']:
+            value = request.args.get(name)
+            if value:
+                kwargs[name] = value
 
-    response = json.loads(response)
+        # Function name is by default always "function" for the runtime emulator.
+        response = lam.invoke(FunctionName="function",
+                              Payload=raw_payload,
+                              **kwargs)
+
+        # Payload is returned as botocore.response.StreamingBody, convert to string.
+        response = response['Payload'].read()
+
+        response = json.loads(response)
+    finally:
+        make_worker_available(name)
 
     return jsonify(response)
+
 
 if __name__ == '__main__':
     app.run()
