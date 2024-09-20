@@ -484,6 +484,39 @@ TEST_F(LambdaLocalTest, ListFunctions) {
     EXPECT_TRUE(outcome.IsSuccess());
 }
 
+TEST_F(LambdaLocalTest, CompactListFunctions) {
+    using namespace std;
+    using namespace tuplex;
+
+    // Test with AWS Lambda client.
+    Aws::Auth::AWSCredentials credentials;
+    Aws::Client::ClientConfiguration config;
+    config.endpointOverride = "http://localhost:" + std::to_string(8090);
+    config.enableEndpointDiscovery = false;
+    // need to disable signing https://docs.aws.amazon.com/IAM/latest/UserGuide/create-signed-request.html.
+    config.verifySSL = false;
+    config.connectTimeoutMs = 1500; // 1.5s timeout (local machine)
+    std::shared_ptr<Aws::Lambda::LambdaClient> client = make_shared<Aws::Lambda::LambdaClient>(credentials, config);
+
+    Aws::Lambda::Model::ListFunctionsRequest list_req;
+    auto outcome = client->ListFunctions(list_req);
+    std::stringstream ss;
+    if (!outcome.IsSuccess()) {
+        ss << outcome.GetError().GetExceptionName().c_str() << ", "
+           << outcome.GetError().GetMessage().c_str();
+    } else {
+        // check whether function is contained
+        auto funcs = outcome.GetResult().GetFunctions();
+        std::vector<std::string> v;
+        for (const auto &f: funcs) {
+            v.push_back(f.GetFunctionName().c_str());
+        }
+        ss<<v;
+    }
+    cout<<"List Result: "<<ss.str()<<endl;
+    ASSERT_FALSE(ss.str().empty());
+}
+
 TEST_F(LambdaLocalTest, SimpleEndToEndTest) {
     using namespace std;
     using namespace tuplex;

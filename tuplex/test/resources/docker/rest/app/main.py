@@ -28,6 +28,8 @@ def list_functions(FunctionVersion:str='ALL', Marker:str=None, MasterRegion:str=
     global CURRENT_MEMORY_SIZE
     global CURRENT_TIMEOUT
 
+    logger.debug("Got list_functions.")
+
     # Check under which architecture docker runs,
     # it's either x86_64 or arm64.
     sysconfig_platform = sysconfig.get_platform()
@@ -292,7 +294,7 @@ def invoke(function_name):
     raw_payload=request.get_data()
     payload = json.loads(raw_payload.decode())
 
-    logger.debug(f"Payload: {payload}")
+    logger.debug(f"Got invoke with payload: {payload}")
 
     # Pass to the actual lambda docker container.
     # May want to spin up a few so recursive calls work.
