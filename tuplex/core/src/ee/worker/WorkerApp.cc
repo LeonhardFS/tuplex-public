@@ -670,7 +670,16 @@ namespace tuplex {
             // First stage to invoke.
             int num_to_invoke = req.stage().invocationcount(0);
             // @TODO: pass data / process data and so on.
-            invokeRecursivelyAsync(num_to_invoke, "");
+            rc = invokeRecursivelyAsync(num_to_invoke, "");
+            if(rc != WORKER_OK) {
+                std::stringstream err;
+                err<<"Recursive async lambda invocation failed with code "
+                   <<rc<<". Aborting request.";
+                auto err_msg = err.str();
+                _response.set_errormessage(err_msg);
+                logger().error(err_msg);
+                return rc;
+            }
         }
 
         // Start processing Transform Stage.

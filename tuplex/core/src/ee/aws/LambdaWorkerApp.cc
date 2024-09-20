@@ -37,6 +37,8 @@
 #include <AWSCommon.h>
 #include <aws/lambda/LambdaClient.h>
 
+#include <cassert>
+
 namespace tuplex {
 
     // Lambda specific configuration
@@ -1188,11 +1190,17 @@ namespace tuplex {
         // will return toomanyrequestsexception
         clientConfig.maxConnections = max_connections;
 
-        logger().info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Creating thread executor Pool.");
+        logger().info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Creating thread executor Pool for Lambda client.");
 
         // to avoid thread exhaust of system, use pool thread executor with 8 threads
         clientConfig.executor = Aws::MakeShared<Aws::Utils::Threading::PooledThreadExecutor>(tag.c_str(), max_connections);
         clientConfig.region = _credentials.default_region.c_str();
+
+        // Can't have empty region, set to us-east-1 else.
+        if(clientConfig.region.empty()) {
+            logger().warn("Given region is " + escape_to_python_str(clientConfig.region.c_str()) + ", setting to us-east-1.");
+            clientConfig.region = "us-east-1";
+        }
 
         //clientConfig.userAgent = "tuplex"; // should be perhaps set as well.
         applyNetworkSettings(_networkSettings, clientConfig);
@@ -1207,6 +1215,30 @@ namespace tuplex {
         logger().info("Lambda config done, now creating object.");
         return Aws::MakeShared<Aws::Lambda::LambdaClient>(tag.c_str(), cred, clientConfig);
     }
+
+    std::vector<std::string> list_functions(const std::shared_ptr<Aws::Lambda::LambdaClient>& client,
+                                            std::ostream* os=nullptr) {
+        Aws::Lambda::Model::ListFunctionsRequest list_req;
+        auto outcome = client->ListFunctions(list_req);
+        if (!outcome.IsSuccess()) {
+            std::stringstream ss;
+            ss << outcome.GetError().GetExceptionName().c_str() << ", "
+            << outcome.GetError().GetMessage().c_str();
+            if(os)
+                *os << ss.str();
+            return {};
+        } else {
+            // check whether function is contained
+            auto funcs = outcome.GetResult().GetFunctions();
+            // search for the function of interest
+            std::vector<std::string> v;
+            for (const auto &f: funcs) {
+                v.push_back(f.GetFunctionName().c_str());
+            }
+            return v;
+        }
+    }
+
 
     int LambdaWorkerApp::invokeRecursivelyAsync(int num_to_invoke, const std::string& lambda_endpoint) {
         logger().info("For now recursively invoking " + pluralize(num_to_invoke, "request") + ".");
@@ -1226,6 +1258,14 @@ namespace tuplex {
         if(!lambdaClient)
             return WORKER_ERROR_LAMBDA_CLIENT;
 
+        logger().info("Lambda client created, listing functions:");
+        {
+            std::stringstream ss;
+            auto v = list_functions(lambdaClient, &ss);
+            ss<<"\nFound functions: "<<v<<std::endl;
+            logger().info(ss.str());
+        }
+
         Aws::Lambda::Model::InvokeRequest invoke_req;
         invoke_req.SetFunctionName("tplxlam"); // TODO: this function?
         invoke_req.SetInvocationType(Aws::Lambda::Model::InvocationType::RequestResponse);
@@ -1234,8 +1274,8 @@ namespace tuplex {
         std::string json_buf;
 
         // Send basic Environment request message.
-        ::messages::InvocationRequest req;
-        req.set_type(::messages::MessageType::MT_ENVIRONMENTINFO);
+        messages::InvocationRequest req;
+        req.set_type(messages::MessageType::MT_ENVIRONMENTINFO);
         google::protobuf::util::MessageToJsonString(req, &json_buf);
 
         invoke_req.SetBody(stringToAWSStream(json_buf));
@@ -1246,7 +1286,7 @@ namespace tuplex {
             ss << "error: "<<outcome.GetError().GetExceptionName().c_str() << ", "
                << outcome.GetError().GetMessage().c_str();
 
-            cerr<<ss.str()<<endl;
+            std::cerr<<ss.str()<<std::endl;
         } else {
             // Get result, and display environment:
 
@@ -1256,12 +1296,12 @@ namespace tuplex {
             std::string version = result.GetExecutedVersion().c_str();
 
             // parse payload
+            messages::InvocationResponse response;
             {
-                stringstream ss;
+                std::stringstream ss;
                 auto &stream = const_cast<Aws::Lambda::Model::InvokeResult &>(result).GetPayload();
                 ss << stream.rdbuf();
-                string data = ss.str();
-                ::messages::InvocationResponse response;
+                std::string data = ss.str();
                 auto status = google::protobuf::util::JsonStringToMessage(data, &response);
             }
             //EXPECT_TRUE(status.ok());
@@ -1272,8 +1312,8 @@ namespace tuplex {
             auto env_resource = response.resources(0);
             auto log_resource = response.resources(1);
 
-            assert(env_resource.type(), static_cast<uint32_t>(ResourceType::ENVIRONMENT_JSON));
-            assert(log_resource.type(), static_cast<uint32_t>(ResourceType::LOG));
+            assert(env_resource.type() == static_cast<uint32_t>(ResourceType::ENVIRONMENT_JSON));
+            assert(log_resource.type() == static_cast<uint32_t>(ResourceType::LOG));
 
             // Log:
             //cout<<"Log of Lambda invocation:\n"
@@ -1281,7 +1321,7 @@ namespace tuplex {
 
             std::stringstream ss;
             auto j = nlohmann::json::parse(env_resource.payload());
-            ss<<"Environment information message:\n"<<j.dump(2)<<endl;
+            ss<<"Environment information message:\n"<<j.dump(2)<<std::endl;
             logger().info("Lambda request returned environment:\n" + ss.str());
         }
 
