@@ -9,6 +9,7 @@ from typing import Union, List, Dict, Any
 
 import sysconfig
 import boto3
+import botocore
 import os
 
 from flask import Flask, jsonify, request, Response
@@ -30,8 +31,9 @@ from threading import Lock
 
 lock = Lock()
 
-AVAILABLE_WORKERS = {'lambda'}
-
+AVAILABLE_WORKERS = {'lambda-1', 'lambda-2'}
+LAMBDA_ENDPOINTS = {'lambda-1':'http://lambda-1:8080',
+                    'lambda-2':'http://lambda-2:8080'}
 
 def get_worker():
     global AVAILABLE_WORKERS
@@ -331,7 +333,8 @@ def invoke(function_name):
         logger.info("All workers busy, limit exceeded.")
         return Response("TooManyRequestsException", status=429)
 
-    logger.info(f"Got worker {name} assigned to execute Lambda.")
+    endpoint = LAMBDA_ENDPOINTS[name]
+    logger.info(f"Got worker {name} assigned to execute Lambda ({endpoint}).")
 
     try:
         # Pass to the actual lambda docker container.
@@ -339,14 +342,16 @@ def invoke(function_name):
 
         # Use boto3 for signing etc.
         lam = boto3.client('lambda',
-                           endpoint_url='http://lambda:8080',  # check port in docker-compose.yml
+                           endpoint_url=endpoint,  # check port in docker-compose.yml
                            aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID', 'AKIAIOSFODNN7EXAMPLE'),
                            aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY',
                                                                 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'),
                            region_name=os.environ.get('AWS_REGION', os.environ.get('AWS_DEFAULT_REGION', 'local')))
 
         kwargs = {}
-        for name in ['InvocationType', 'LogType', 'ClientContext', 'Qualifier']:
+        # keys = ['InvocationType', 'LogType', 'ClientContext', 'Qualifier']
+        keys = ['InvocationType', 'LogType', 'ClientContext']
+        for name in keys:
             value = request.args.get(name)
             if value:
                 kwargs[name] = value
@@ -360,6 +365,10 @@ def invoke(function_name):
         response = response['Payload'].read()
 
         response = json.loads(response)
+    except botocore.exceptions.EndpointConnectionError:
+        return Response("ResourceNotFoundException", status=404)
+    except Exception as e:
+        return Response(f"Exception: {e}", status=400)
     finally:
         make_worker_available(name)
 

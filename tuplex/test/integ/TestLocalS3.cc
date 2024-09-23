@@ -127,7 +127,7 @@ TEST_F(S3LocalTests, BasicConnectWithListBucket) {
     Aws::Client::ClientConfiguration config;
     std::tie(credentials, config) = local_s3_credentials();
 
-    std::shared_ptr<Aws::S3::S3Client> client = make_shared<Aws::S3::S3Client>(credentials, nullptr, config);
+    std::shared_ptr<Aws::S3::S3Client> client = s3_client_from_credentials_and_config(credentials, config);
 
     auto outcome = client->ListBuckets();
     EXPECT_TRUE(outcome.IsSuccess());

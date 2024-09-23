@@ -168,16 +168,37 @@ namespace python {
         gilMutex.lock();
         interpreterInitialized = true;
 
+
+        // With .pyenv, there may be an issue with the lib-dynload folder.
+        // If error happens for cloudpickle that _struct is not found, this means
+        // something is wrong with the module search path.
+        // Need to make sure lib-dynload is set as well (if it exists).
+        // -> have here small routine to fix up path.
+        // Another fix is to pass explicitly: PYTHON_HOME=/home/leonhards/.pyenv/versions/3.11.6 or so.
+        auto path_object = PySys_GetObject("path");
+        assert(PyList_Check(path_object));
+
+        // Convert to vector of strings.
+        std::vector<std::string> module_search_paths;
+        for(unsigned i = 0; i < PyList_Size(path_object); ++i) {
+            auto item = PyList_GET_ITEM(path_object, i);
+            Py_XINCREF(item);
+            module_search_paths.emplace_back(python::PyString_AsString(item));
+        }
+
+        // Now, append fixed lib-dynload path. This is a hotfix... TODO: make this better.
+        PyList_Append(path_object, python::PyString_FromString("/home/leonhards/.pyenv/versions/3.11.6/lib/python3.11/lib-dynload/"));
+
         // debug print important python variables
 #ifndef NDEBUG
         {
             std::cout<<"Initialized embedded Python "<<PY_MAJOR_VERSION<<"."<<PY_MINOR_VERSION<<"."<<PY_MICRO_VERSION<<std::endl;
-            // std::cout<<"Python home: "<<Py_GetPythonHome()<<std::endl;
+            std::cout<<"Python home: "<<Py_GetPythonHome()<<std::endl;
 
-            // // get sys path and print it
-            // auto path_object = PySys_GetObject("path");
-            // PyObject_Print(path_object, stdout, 0);
-            // std::cout<<std::endl;
+             // get sys path and print it
+             auto path_object = PySys_GetObject("path");
+             PyObject_Print(path_object, stdout, 0);
+             std::cout<<std::endl;
         }
 #endif
     }

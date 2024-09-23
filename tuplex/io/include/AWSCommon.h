@@ -23,6 +23,8 @@
 #include <aws/core/utils/memory/stl/AWSStringStream.h>
 #include <aws/core/utils/HashingUtils.h>
 #include <aws/core/utils/logging/LogLevel.h>
+#include <aws/core/auth/AWSCredentials.h>
+#include <aws/s3/S3Client.h>
 
 namespace tuplex {
 
@@ -91,6 +93,15 @@ namespace tuplex {
         return Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::ByteBuffer(
                 reinterpret_cast<const unsigned char *>(data.c_str()), data.size())).c_str();
     }
+
+    inline std::shared_ptr<Aws::S3::S3Client> s3_client_from_credentials_and_config(const Aws::Auth::AWSCredentials& credentials=Aws::Auth::AWSCredentials(),
+                                                                                    const Aws::Client::ClientConfiguration& config=Aws::Client::ClientConfiguration()) {
+        // AWS SDK sometimes has changes to constructors, fix that here.
+        return std::make_shared<Aws::S3::S3Client>(credentials, config);
+
+        // return std::make_shared<Aws::S3::S3Client>(credentials, nullptr, config);
+    }
+
 }
 
 // Amazon frequently changes the parameters of lambda functions,

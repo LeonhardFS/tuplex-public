@@ -5,7 +5,7 @@
 # check which architecture first, only for x86 check SSE
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
     IF(CMAKE_SYSTEM_NAME MATCHES "Linux")
-        EXEC_PROGRAM(cat ARGS "/proc/cpuinfo" OUTPUT_VARIABLE CPUINFO)
+        execute_process(COMMAND cat ARGS "/proc/cpuinfo" OUTPUT_VARIABLE CPUINFO)
 
         STRING(REGEX REPLACE "^.*(sse2).*$" "\\1" SSE_THERE ${CPUINFO})
         STRING(COMPARE EQUAL "sse2" "${SSE_THERE}" SSE2_TRUE)

@@ -30,13 +30,25 @@ services:
 
   # Use `curl "http://localhost:8080/2015-03-31/functions/function/invocations" -d '{}'` on host machine
   # or `curl "http://lambda:8080/2015-03-31/functions/function/invocations" -d '{}'` within docker containers.
-  lambda:
+  lambda-1:
     build:
       context: ./lambda
       dockerfile: Dockerfile
-
     ports:
-      - 8080:8080
+      - "8080:8080"
+
+    depends_on:
+      - minio
+
+    # The Lambda may exit or crash, restart then.
+    restart: always
+
+  lambda-2:
+    build:
+      context: ./lambda
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8080"
 
     depends_on:
       - minio
@@ -55,4 +67,22 @@ services:
       - 8090:8090
 
     depends_on:
-      - lambda
+      - lambda-1
+      - lambda-2
+
+#  # For debugging.
+#  jupyter:
+#    build:
+#      # other popular way here would be:
+#      # context: .
+#      # dockerfile: ./docker/jupyter.docker
+#      context: ./jupyter
+#      dockerfile: Dockerfile
+#    #volumes:
+#    #  - ./work:/home/jovyan/work
+#    ports:
+#      - 8888:8888
+#    container_name: jupyter_notebook
+#    command: "start-notebook.sh --NotebookApp.token="
+#    depends_on:
+#      - minio
