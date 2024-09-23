@@ -350,7 +350,7 @@ def invoke(function_name):
 
         kwargs = {}
         # keys = ['InvocationType', 'LogType', 'ClientContext', 'Qualifier']
-        keys = ['InvocationType', 'LogType', 'ClientContext']
+        keys = []#['InvocationType', 'LogType']
         for name in keys:
             value = request.args.get(name)
             if value:
