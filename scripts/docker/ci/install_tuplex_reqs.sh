@@ -4,10 +4,10 @@
 set -euxo pipefail
 
 # dependency versions
-AWSSDK_CPP_VERSION=1.11.164
+AWSSDK_CPP_VERSION=1.11.410
 ANTLR4_VERSION=4.13.1
 YAML_CPP_VERSION=0.8.0
-AWS_LAMBDA_CPP_VERSION=0.2.8
+AWS_LAMBDA_CPP_VERSION=0.2.10
 PCRE2_VERSION=10.42
 PROTOBUF_VERSION=24.3
 CELERO_VERSION=2.8.3
@@ -19,7 +19,7 @@ echo ">> Installing dependencies for Python version ${PYTHON_VERSION}"
 function version { echo "$@" | awk -F. '{ printf("%d%03d%03d%03d\n", $1,$2,$3,$4); }'; }
 
 # install python dependencies depending on version
-declare -A PYTHON_DEPENDENCIES=(["3.8"]="cloudpickle<2.0 cython numpy pandas" ["3.9"]="cloudpickle<2.0 numpy pandas" ["3.10"]="cloudpickle>2.0 numpy pandas" ["3.11"]="cloudpickle>2.0 numpy pandas")
+declare -A PYTHON_DEPENDENCIES=(["3.8"]="cloudpickle<2.0 cython numpy pandas" ["3.9"]="cloudpickle<2.0 numpy pandas" ["3.10"]="cloudpickle>=3.0 numpy pandas" ["3.11"]="cloudpickle>=3.0 numpy pandas" ["3.12"]="cloudpickle>=3.0 numpy pandas")
 PYTHON_REQUIREMENTS=$(echo "${PYTHON_DEPENDENCIES[$PYTHON_MAJMIN_VERSION]}")
 python3 -m pip install ${PYTHON_REQUIREMENTS}
 

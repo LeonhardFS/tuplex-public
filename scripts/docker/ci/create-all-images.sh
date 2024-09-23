@@ -11,7 +11,7 @@ while :; do
     shift
 done
 
-PYTHON_VERSIONS=(3.11.6 3.10.13 3.9.18 3.8.18)
+PYTHON_VERSIONS=(3.12.6 3.11.10 3.10.15 3.9.20 3.8.20)
 
 for python_version in "${PYTHON_VERSIONS[@]}"; do
   echo ">>> Building image for Python ${python_version}"
