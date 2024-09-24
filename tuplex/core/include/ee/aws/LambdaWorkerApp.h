@@ -12,6 +12,7 @@
 #define TUPLEX_LAMBDAWORKERAPP_H
 
 #include "../worker/WorkerApp.h"
+#include "AWSLambdaInvocationService.h"
 
 #ifdef BUILD_WITH_AWS
 
@@ -95,6 +96,10 @@ namespace tuplex {
 
         int invokeRecursivelyAsync(int num_to_invoke, const std::string& lambda_endpoint) override;
     private:
+
+        // Self-invoking AWS Lambda Invocation service.
+        std::unique_ptr<AwsLambdaInvocationService> _lambdaInvoker;
+
 
         // update network settings from current environment, or restores it to default AWS Lambda settings.
         void update_network_settings(const std::unordered_map<std::string, std::string> &env={});
@@ -202,8 +207,11 @@ namespace tuplex {
 
 
         std::shared_ptr<Aws::Lambda::LambdaClient> _lambdaClient;
-        std::shared_ptr<Aws::Lambda::LambdaClient> createClient(double timeout, size_t max_connections);
-
+        std::shared_ptr<Aws::Lambda::LambdaClient> createLambdaClient(Aws::Client::ClientConfiguration config, double timeout, size_t max_connections) const;
+        inline std::shared_ptr<Aws::Lambda::LambdaClient> createLambdaClient(double timeout, size_t max_connections) const {
+            Aws::Client::ClientConfiguration config;
+            return createLambdaClient(config, timeout, max_connections);
+        }
 
         struct LambdaRequestContext : public Aws::Client::AsyncCallerContext {
             LambdaWorkerApp *app;

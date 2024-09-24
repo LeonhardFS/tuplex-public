@@ -669,8 +669,12 @@ namespace tuplex {
 
             // First stage to invoke.
             int num_to_invoke = req.stage().invocationcount(0);
+            std::string lambda_endpoint;
+            if(req.env().end() != req.env().find(AWS_LAMBDA_ENDPOINT_KEY))
+                lambda_endpoint = req.env().at(AWS_LAMBDA_ENDPOINT_KEY);
+
             // @TODO: pass data / process data and so on.
-            rc = invokeRecursivelyAsync(num_to_invoke, "");
+            rc = invokeRecursivelyAsync(num_to_invoke, lambda_endpoint);
             if(rc != WORKER_OK) {
                 std::stringstream err;
                 err<<"Recursive async lambda invocation failed with code "

@@ -25,6 +25,7 @@
 #include <aws/core/utils/logging/LogLevel.h>
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>
+#include "nlohmann/json.hpp"
 
 namespace tuplex {
 
@@ -96,12 +97,52 @@ namespace tuplex {
 
     inline std::shared_ptr<Aws::S3::S3Client> s3_client_from_credentials_and_config(const Aws::Auth::AWSCredentials& credentials=Aws::Auth::AWSCredentials(),
                                                                                     const Aws::Client::ClientConfiguration& config=Aws::Client::ClientConfiguration()) {
+#if AWS_SDK_VERSION_MINOR <= 9
         // AWS SDK sometimes has changes to constructors, fix that here.
         return std::make_shared<Aws::S3::S3Client>(credentials, config);
-
-        // return std::make_shared<Aws::S3::S3Client>(credentials, nullptr, config);
+#else
+        // No endpoint provider.
+         return std::make_shared<Aws::S3::S3Client>(credentials, nullptr, config);
+#endif
     }
 
+
+    inline std::ostream& operator<<(std::ostream &os, const Aws::Client::ClientConfiguration& config) {
+        nlohmann::json j;
+        j["userAgent"] = config.userAgent;
+        j["scheme"] = config.scheme == Aws::Http::Scheme::HTTP ? "http" : "https";
+        j["useDualStack"] = config.useDualStack;
+        // j["useFIPS"] = config.
+        j["maxConnections"] = config.maxConnections;
+        j["httpRequestTimeoutMs"] = config.httpRequestTimeoutMs;
+        j["requestTimeoutMs"] = config.requestTimeoutMs;
+        j["connectTimeoutMs"] = config.connectTimeoutMs;
+        j["enableTcpKeepAlive"] = config.enableTcpKeepAlive;
+        j["tcpKeepAliveIntervalMs"] = config.tcpKeepAliveIntervalMs;
+        j["lowSpeedLimit"] = config.lowSpeedLimit;
+        j["retryStrategy"] = !config.retryStrategy ? "null" : "<unknown>";
+        j["endpointOverride"] = config.endpointOverride;
+        //  j["allowSystemProxy"] = config.allowSystemProxy;
+        j["proxyScheme"] = config.proxyScheme == Aws::Http::Scheme::HTTP ? "http" : "https";
+        j["proxyHost"] = config.proxyHost;
+        j["proxyPort"] = config.proxyPort;
+        j["proxyUserName"] = config.proxyUserName;
+        j["proxyPassword"] = config.proxyPassword;
+        j["proxySSLCertPath"] = config.proxySSLCertPath;
+        j["proxySSLCertType"] = config.proxySSLCertType;
+        j["proxySSLKeyPath"] = config.proxySSLKeyPath;
+        j["proxySSLKeyType"] = config.proxySSLKeyType;
+        j["proxySSLKeyPassword"] = config.proxySSLKeyPassword;
+        // j["nonProxyHosts"] = std::vector<std::string>{config.nonProxyHosts;
+        j["verifySSL"] = config.verifySSL;
+        j["caPath"] = config.caPath;
+        j["caFile"] = config.caFile;
+        // j["proxyCaFile"] = config.proxyCaFile;
+        os << j.dump(2); // print as JSON
+        return os;
+    }
+
+    static const std::string AWS_LAMBDA_ENDPOINT_KEY = "AWS_ENDPOINT_URL_LAMBDA";
 }
 
 // Amazon frequently changes the parameters of lambda functions,

@@ -425,10 +425,10 @@ namespace tuplex {
         _networkSettings.verifySSL = verifySSL;
         _networkSettings.caFile = caFile;
 
-        if(env.find("AWS_ENDPOINT_URL_S3") != env.end()) {
+        if(env.find(AWS_LAMBDA_ENDPOINT_KEY) != env.end()) {
 
             // Overwrite lambda endpoint.
-            auto endpoint = env.at("AWS_ENDPOINT_URL_LAMBDA");
+            auto endpoint = env.at(AWS_LAMBDA_ENDPOINT_KEY);
 
             // Amazon endpoints end with .amazonaws.com.
             // For a list of available endpoints, cf. https://docs.aws.amazon.com/general/latest/gr/lambda.html
@@ -893,78 +893,78 @@ namespace tuplex {
         _input_uris = input_uris;
     }
 
-    void LambdaWorkerApp::invokeLambda(double timeout, const std::vector<FilePart>& parts,
-                                  const URI& base_output_uri,
-                                  uint32_t partNoOffset,
-                                  const tuplex::messages::InvocationRequest& original_message,
-                                  size_t max_retries,
-                                  const std::vector<size_t>& invocation_counts) {
-
-        std::string tag = "tuplex-lambda";
-
-        // skip if empty
-        if(parts.empty())
-            return;
-
-        // create protobuf message
-        tuplex::messages::InvocationRequest req = original_message;
-        req.mutable_inputsizes()->Clear();
-        req.mutable_inputuris()->Clear();
-
-        for(const auto& part : parts) {
-            req.add_inputuris(encodeRangeURI(part.uri, part.rangeStart, part.rangeEnd));
-            assert(part.size != 0);
-            req.add_inputsizes(part.size);
-        }
-
-        req.set_baseoutputuri(base_output_uri.toString());
-        req.set_partnooffset(partNoOffset);
-
-        auto transform_message = req.mutable_stage();
-        transform_message->mutable_invocationcount()->Clear();
-        for(auto count : invocation_counts)
-            transform_message->add_invocationcount(count);
-
-        // changed protobuf message
-        // init client
-        if(!_lambdaClient) {
-            logger().error("internal error, need to initialize client first before invoking lambdas");
-            return;
-        }
-
-        std::string json_buf;
-        google::protobuf::util::MessageToJsonString(req, &json_buf);
-
-        // now create request (thread-safe)
-        SelfInvokeRequest invoke_req;
-        invoke_req.max_retries = max_retries;
-        invoke_req.retries = 0;
-        invoke_req.payload = json_buf;
-        auto requestNo = addRequest(invoke_req);
-
-        // invoke lambda
-        // construct invocation request
-        Aws::Lambda::Model::InvokeRequest lambda_req;
-        lambda_req.SetFunctionName(_functionName.c_str());
-        // note: may redesign lambda backend to work async, however then response only yields status code
-        // i.e., everything regarding state needs to be managed explicitly...
-        lambda_req.SetInvocationType(Aws::Lambda::Model::InvocationType::RequestResponse);
-        // logtype to extract log data??
-        //req.SetLogtype(Aws::Lambda::Model::LogType::None);
-        lambda_req.SetLogType(Aws::Lambda::Model::LogType::Tail);
-        lambda_req.SetBody(stringToAWSStream(invoke_req.payload));
-        lambda_req.SetContentType("application/javascript");
-
-        // invoke if time left permits
-        if(timeLeftOnLambda()) {
-            // update req start timestamp
-            auto& req = _invokeRequests[requestNo];
-            req.tsStart = current_utc_timestamp();
-            _lambdaClient->InvokeAsync(lambda_req,
-                                       lambdaCallback,
-                                       Aws::MakeShared<LambdaRequestContext>(tag.c_str(), this, requestNo));
-        }
-    }
+//    void LambdaWorkerApp::invokeLambda(double timeout, const std::vector<FilePart>& parts,
+//                                  const URI& base_output_uri,
+//                                  uint32_t partNoOffset,
+//                                  const tuplex::messages::InvocationRequest& original_message,
+//                                  size_t max_retries,
+//                                  const std::vector<size_t>& invocation_counts) {
+//
+//        std::string tag = "tuplex-lambda";
+//
+//        // skip if empty
+//        if(parts.empty())
+//            return;
+//
+//        // create protobuf message
+//        tuplex::messages::InvocationRequest req = original_message;
+//        req.mutable_inputsizes()->Clear();
+//        req.mutable_inputuris()->Clear();
+//
+//        for(const auto& part : parts) {
+//            req.add_inputuris(encodeRangeURI(part.uri, part.rangeStart, part.rangeEnd));
+//            assert(part.size != 0);
+//            req.add_inputsizes(part.size);
+//        }
+//
+//        req.set_baseoutputuri(base_output_uri.toString());
+//        req.set_partnooffset(partNoOffset);
+//
+//        auto transform_message = req.mutable_stage();
+//        transform_message->mutable_invocationcount()->Clear();
+//        for(auto count : invocation_counts)
+//            transform_message->add_invocationcount(count);
+//
+//        // changed protobuf message
+//        // init client
+//        if(!_lambdaClient) {
+//            logger().error("internal error, need to initialize client first before invoking lambdas");
+//            return;
+//        }
+//
+//        std::string json_buf;
+//        google::protobuf::util::MessageToJsonString(req, &json_buf);
+//
+//        // now create request (thread-safe)
+//        SelfInvokeRequest invoke_req;
+//        invoke_req.max_retries = max_retries;
+//        invoke_req.retries = 0;
+//        invoke_req.payload = json_buf;
+//        auto requestNo = addRequest(invoke_req);
+//
+//        // invoke lambda
+//        // construct invocation request
+//        Aws::Lambda::Model::InvokeRequest lambda_req;
+//        lambda_req.SetFunctionName(_functionName.c_str());
+//        // note: may redesign lambda backend to work async, however then response only yields status code
+//        // i.e., everything regarding state needs to be managed explicitly...
+//        lambda_req.SetInvocationType(Aws::Lambda::Model::InvocationType::RequestResponse);
+//        // logtype to extract log data??
+//        //req.SetLogtype(Aws::Lambda::Model::LogType::None);
+//        lambda_req.SetLogType(Aws::Lambda::Model::LogType::Tail);
+//        lambda_req.SetBody(stringToAWSStream(invoke_req.payload));
+//        lambda_req.SetContentType("application/javascript");
+//
+//        // invoke if time left permits
+//        if(timeLeftOnLambda()) {
+//            // update req start timestamp
+//            auto& req = _invokeRequests[requestNo];
+//            req.tsStart = current_utc_timestamp();
+//            _lambdaClient->InvokeAsync(lambda_req,
+//                                       lambdaCallback,
+//                                       Aws::MakeShared<LambdaRequestContext>(tag.c_str(), this, requestNo));
+//        }
+//    }
 
     void LambdaWorkerApp::lambdaOnSuccess(SelfInvokeRequest &request, const messages::InvocationResponse &response,
                                           const RequestInfo& desc) {
@@ -1171,49 +1171,50 @@ namespace tuplex {
         }
     }
 
-    std::shared_ptr<Aws::Lambda::LambdaClient> LambdaWorkerApp::createClient(double timeout, size_t max_connections) {
-        // init Lambda client
-        Aws::Client::ClientConfiguration clientConfig;
-
-        logger().info("Modifying lambda.");
+    std::shared_ptr<Aws::Lambda::LambdaClient> LambdaWorkerApp::createLambdaClient(Aws::Client::ClientConfiguration config,
+                                                                                   double timeout,
+                                                                                   size_t max_connections) const {
+        logger().info("Creating Lambda client (for self-invocation).");
 
         size_t lambdaToLambdaTimeOutInMs = 800; // 200 should be sufficient, yet sometimes lambdas break with broken pipe
         std::string tag = "tuplex-lambda";
 
-        clientConfig.requestTimeoutMs = static_cast<int>(timeout * 1000.0); // conv seconds to ms
-        clientConfig.connectTimeoutMs = lambdaToLambdaTimeOutInMs; // connection timeout
-
-        clientConfig.tcpKeepAliveIntervalMs = 15; // lower this
+        config.requestTimeoutMs = static_cast<int>(timeout * 1000.0); // conv seconds to ms
+        config.connectTimeoutMs = lambdaToLambdaTimeOutInMs; // connection timeout
+        config.tcpKeepAliveIntervalMs = 15; // lower this
 
         // tune client, according to https://docs.aws.amazon.com/sdk-for-cpp/v1/developer-guide/client-config.html
         // note: max connections should not exceed max concurrency if it is below 100, else aws lambda
         // will return toomanyrequestsexception
-        clientConfig.maxConnections = max_connections;
+        config.maxConnections = max_connections;
 
         logger().info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Creating thread executor Pool for Lambda client.");
 
         // to avoid thread exhaust of system, use pool thread executor with 8 threads
-        clientConfig.executor = Aws::MakeShared<Aws::Utils::Threading::PooledThreadExecutor>(tag.c_str(), max_connections);
-        clientConfig.region = _credentials.default_region.c_str();
+        config.executor = Aws::MakeShared<Aws::Utils::Threading::PooledThreadExecutor>(tag.c_str(), max_connections);
+        config.region = _credentials.default_region.c_str();
 
         // Can't have empty region, set to us-east-1 else.
-        if(clientConfig.region.empty()) {
-            logger().warn("Given region is " + escape_to_python_str(clientConfig.region.c_str()) + ", setting to us-east-1.");
-            clientConfig.region = "us-east-1";
+        if(config.region.empty()) {
+            logger().warn("Given region is " + escape_to_python_str(config.region.c_str()) + ", setting to us-east-1.");
+            config.region = "us-east-1";
         }
 
         //clientConfig.userAgent = "tuplex"; // should be perhaps set as well.
-        applyNetworkSettings(_networkSettings, clientConfig);
+        applyNetworkSettings(_networkSettings, config);
 
         // change aws settings here
         Aws::Auth::AWSCredentials cred(_credentials.access_key.c_str(),
                                        _credentials.secret_key.c_str(),
                                        _credentials.session_token.c_str());
 
-        _outstandingRequests = 0;
-
         logger().info("Lambda config done, now creating object.");
-        return Aws::MakeShared<Aws::Lambda::LambdaClient>(tag.c_str(), cred, clientConfig);
+
+        // std::stringstream ss;
+        // ss<<"AWS client config:\n"<<config<<std::endl;
+        // logger().info(ss.str());
+
+        return Aws::MakeShared<Aws::Lambda::LambdaClient>(tag.c_str(), cred, config);
     }
 
     std::vector<std::string> list_functions(const std::shared_ptr<Aws::Lambda::LambdaClient>& client,
@@ -1351,15 +1352,43 @@ namespace tuplex {
     int LambdaWorkerApp::invokeRecursivelyAsync(int num_to_invoke, const std::string& lambda_endpoint) {
         logger().info("For now recursively invoking " + pluralize(num_to_invoke, "request") + ".");
 
-        // Connect in local testing mode to the rest backend again.
-        logger().info(">>>> Starting single (list) request::");
-        simple_list_request();
-        logger().info("<<<< Single list request done.");
+        // adjust settings based on request
+        if(!lambda_endpoint.empty()) {
+            logger().info("Updating network settings.");
+            update_network_settings({std::make_pair("AWS_ENDPOINT_URL_LAMBDA", lambda_endpoint)});
+        }
 
-        // Now check again for simple environment message.
-        logger().info(">>>> Starting single (env) request::");
-        simple_env_request();
-        logger().info("<<<< Single env request done.");
+        logger().info("Creating Lambda invoker for recursive requests.");
+
+        // {
+        //     // Test with AWS Lambda client.
+        //     Aws::Auth::AWSCredentials credentials;
+        //     Aws::Client::ClientConfiguration config;
+        //     config.endpointOverride = "http://rest:" + std::to_string(8090);
+        //     config.enableEndpointDiscovery = false;
+        //     // need to disable signing https://docs.aws.amazon.com/IAM/latest/UserGuide/create-signed-request.html.
+        //     config.verifySSL = false;
+        //     config.connectTimeoutMs = 1500; // 1.5s timeout (local machine)
+        //     std::stringstream ss;
+        //     ss<<"Aws config that actually works:\n"<<config<<std::endl;
+        //     logger().info(ss.str());
+        // }
+
+        // std::shared_ptr<Aws::Lambda::LambdaClient> client = std::make_shared<Aws::Lambda::LambdaClient>(credentials, config);
+        double timeout = 180.0;
+        auto client = createLambdaClient(timeout, num_to_invoke);
+
+        _lambdaInvoker.reset(new AwsLambdaInvocationService(client, _functionName));
+
+//        // Connect in local testing mode to the rest backend again.
+//        logger().info(">>>> Starting single (list) request::");
+//        simple_list_request();
+//        logger().info("<<<< Single list request done.");
+//
+//        // Now check again for simple environment message.
+//        logger().info(">>>> Starting single (env) request::");
+//        simple_env_request();
+//        logger().info("<<<< Single env request done.");
 
 //
 //
@@ -1378,29 +1407,33 @@ namespace tuplex {
 //        if(!lambdaClient)
 //            return WORKER_ERROR_LAMBDA_CLIENT;
 //
-//        logger().info("Lambda client created, listing functions:");
-//        {
-//            std::stringstream ss;
-//            auto v = list_functions(lambdaClient, &ss);
-//            ss<<"\nFound functions: "<<v<<std::endl;
-//            logger().info(ss.str());
-//        }
-//
+        logger().info("Lambda client created, listing functions:");
+        {
+            std::stringstream ss;
+            auto v = list_functions(client, &ss);
+            ss<<"\nFound functions: "<<v<<std::endl;
+            logger().info(ss.str());
+        }
+
 //        Aws::Lambda::Model::InvokeRequest invoke_req;
 //        invoke_req.SetFunctionName("tplxlam"); // TODO: this function?
 //        invoke_req.SetInvocationType(Aws::Lambda::Model::InvocationType::RequestResponse);
 //        // logtype to extract log data??
 //        invoke_req.SetLogType(Aws::Lambda::Model::LogType::Tail);
 //        std::string json_buf;
-//
-//        // Send basic Environment request message.
-//        messages::InvocationRequest req;
-//        req.set_type(messages::MessageType::MT_ENVIRONMENTINFO);
-//        google::protobuf::util::MessageToJsonString(req, &json_buf);
-//
+
+        // Send basic Environment request message.
+        messages::InvocationRequest req;
+        req.set_type(messages::MessageType::MT_ENVIRONMENTINFO);
+        //google::protobuf::util::MessageToJsonString(req, &json_buf);
+
 //        invoke_req.SetBody(stringToAWSStream(json_buf));
 //        invoke_req.SetContentType("application/javascript");
-//        auto outcome = lambdaClient->Invoke(invoke_req);
+
+
+//
+//
+//        auto outcome = client->Invoke(invoke_req);
 //        if (!outcome.IsSuccess()) {
 //            std::stringstream ss;
 //            ss << "error: "<<outcome.GetError().GetExceptionName().c_str() << ", "
@@ -1424,9 +1457,6 @@ namespace tuplex {
 //                std::string data = ss.str();
 //                auto status = google::protobuf::util::JsonStringToMessage(data, &response);
 //            }
-//            //EXPECT_TRUE(status.ok());
-//            //EXPECT_EQ(statusCode, 200); // should be 200 for ok.
-//            //ASSERT_EQ(response.resources_size(), 2); // 1 resource for encoded JSON, 1 resource for LOG.
 //
 //            // Note: order does not matter.
 //            auto env_resource = response.resources(0);
@@ -1445,6 +1475,13 @@ namespace tuplex {
 //            logger().info("Lambda request returned environment:\n" + ss.str());
 //        }
 
+        // Simplified.
+        AwsLambdaRequest aws_req;
+        aws_req.body = req;
+        _lambdaInvoker->invokeAsync(aws_req);
+
+        logger().info("Waiting for requests to finish...");
+        _lambdaInvoker->waitForRequests();
         logger().info("Recursive invoke done.");
 
         return WORKER_OK;

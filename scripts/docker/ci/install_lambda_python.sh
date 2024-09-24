@@ -24,10 +24,12 @@ yum update -y && yum install -y ${YUM_PACKAGES}
 # change tasks, because hangs at test_faulthandler...
 export PROFILE_TASK="-m test.regrtest --pgo         test_collections         test_dataclasses         test_difflib         test_embed         test_float         test_functools         test_generators         test_int         test_itertools         test_json         test_logging         test_long         test_ordered_dict         test_pickle         test_pprint         test_re         test_set         test_statistics         test_struct         test_tabnanny         test_xml_etree"
 
+# cf. https://stackoverflow.com/questions/53543477/building-python-3-7-1-ssl-module-failed. May need to debug this.
+
 cd /tmp && wget https://www.python.org/ftp/python/${PYTHON3_VERSION}/Python-${PYTHON3_VERSION}.tgz && \
         tar xf Python-${PYTHON3_VERSION}.tgz     && \
         cd Python-${PYTHON3_VERSION} && \
-        ./configure --with-openssl=/usr/local --with-lto --prefix=/opt/lambda-python --enable-optimizations --enable-shared     && \
+        ./configure --with-openssl=/usr/local --with-openssl-rpath=auto --with-lto --prefix=/opt/lambda-python --enable-optimizations --enable-shared     && \
          make -j ${CPU_COUNT}     && make altinstall
 
 export LD_LIBRARY_PATH=/opt/lambda-python/lib:$LD_LIBRARY_PATH

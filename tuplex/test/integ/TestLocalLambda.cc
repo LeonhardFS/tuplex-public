@@ -270,7 +270,7 @@ protected:
         }
 
         auto MAX_DOCKER_STACK_CONNECT_RETRIES=10;
-        if(!wait_for_stack(yaml_path, {"docker-rest-1", "docker-lambda-1", "minio"}, MAX_DOCKER_STACK_CONNECT_RETRIES))
+        if(!wait_for_stack(yaml_path, {"docker-rest-1", "docker-lambda-1-1", "docker-lambda-2-1", "minio"}, MAX_DOCKER_STACK_CONNECT_RETRIES))
             GTEST_SKIP()<<"Docker stack not up running after "<<MAX_DOCKER_STACK_CONNECT_RETRIES<<" retries";
 
         // Add minio S3 Filesystem to tuplex.
