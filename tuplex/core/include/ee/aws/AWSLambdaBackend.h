@@ -177,8 +177,8 @@ namespace tuplex {
 
         // Lambda request callbacks
         void onLambdaSuccess(const AwsLambdaRequest& req, const AwsLambdaResponse& resp);
-        void onLambdaFailure(const AwsLambdaRequest& req, LambdaErrorCode err_code, const std::string& err_msg);
-        void onLambdaRetry(const AwsLambdaRequest& req, LambdaErrorCode retry_code, const std::string& retry_msg, bool decreasesRetryCount);
+        void onLambdaFailure(const AwsLambdaRequest& req, LambdaStatusCode err_code, const std::string& err_msg);
+        void onLambdaRetry(const AwsLambdaRequest& req, LambdaStatusCode retry_code, const std::string& retry_msg, bool decreasesRetryCount);
 
         URI _scratchDir;
         bool _deleteScratchDirOnShutdown;

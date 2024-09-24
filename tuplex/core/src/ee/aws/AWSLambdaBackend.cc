@@ -326,11 +326,11 @@ namespace tuplex {
 
       // invoke using callbacks!
       _service->invokeAsync(req, [this](const AwsLambdaRequest& req, const AwsLambdaResponse& resp) { onLambdaSuccess(req, resp); },
-                            [this](const AwsLambdaRequest& req, LambdaErrorCode code, const std::string& msg) { onLambdaFailure(req, code, msg); },
-                            [this](const AwsLambdaRequest& req, LambdaErrorCode code, const std::string& msg, bool b) { onLambdaRetry(req, code, msg, b); });
+                            [this](const AwsLambdaRequest& req, LambdaStatusCode code, const std::string& msg) { onLambdaFailure(req, code, msg); },
+                            [this](const AwsLambdaRequest& req, LambdaStatusCode code, const std::string& msg, bool b) { onLambdaRetry(req, code, msg, b); });
     }
 
-    void AwsLambdaBackend::onLambdaFailure(const AwsLambdaRequest &req, LambdaErrorCode err_code,
+    void AwsLambdaBackend::onLambdaFailure(const AwsLambdaRequest &req, LambdaStatusCode err_code,
                                            const std::string &err_msg) {
         // abort all requests
         _service->abortAllRequests(false);
@@ -339,7 +339,7 @@ namespace tuplex {
         logger().error(err_msg);
     }
 
-    void AwsLambdaBackend::onLambdaRetry(const AwsLambdaRequest &req, LambdaErrorCode retry_code,
+    void AwsLambdaBackend::onLambdaRetry(const AwsLambdaRequest &req, LambdaStatusCode retry_code,
                                          const std::string &retry_msg, bool decreasesRetryCount) {
 
         auto retries_left_str = req.retriesLeft == 1 ? "1 retry left" : std::to_string(req.retriesLeft) + " retries left";

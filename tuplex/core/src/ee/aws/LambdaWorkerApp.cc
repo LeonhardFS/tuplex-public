@@ -1240,115 +1240,6 @@ namespace tuplex {
         }
     }
 
-    void simple_list_request() {
-        std::cout<<"simple request start:"<<std::endl;
-        // Test with AWS Lambda client.
-        Aws::Auth::AWSCredentials credentials;
-        Aws::Client::ClientConfiguration config;
-        config.endpointOverride = "http://rest:" + std::to_string(8090);
-        config.enableEndpointDiscovery = false;
-        // need to disable signing https://docs.aws.amazon.com/IAM/latest/UserGuide/create-signed-request.html.
-        config.verifySSL = false;
-        config.connectTimeoutMs = 1500; // 1.5s timeout (local machine)
-        std::shared_ptr<Aws::Lambda::LambdaClient> client = std::make_shared<Aws::Lambda::LambdaClient>(credentials, config);
-
-        Aws::Lambda::Model::ListFunctionsRequest list_req;
-        auto outcome = client->ListFunctions(list_req);
-        std::stringstream ss;
-        if (!outcome.IsSuccess()) {
-            ss << outcome.GetError().GetExceptionName().c_str() << ", "
-               << outcome.GetError().GetMessage().c_str();
-        } else {
-            // check whether function is contained
-            auto funcs = outcome.GetResult().GetFunctions();
-            std::vector<std::string> v;
-            for (const auto &f: funcs) {
-                v.push_back(f.GetFunctionName().c_str());
-            }
-            ss<<v;
-        }
-
-        std::cout<<"Simple list result: "<<ss.str()<<std::endl;
-    }
-
-    void simple_env_request() {
-        using namespace std;
-
-        std::cout<<"simple env start:"<<std::endl;
-        // Test with AWS Lambda client.
-        Aws::Auth::AWSCredentials credentials;
-        Aws::Client::ClientConfiguration config;
-        config.endpointOverride = "http://rest:" + std::to_string(8090);
-        config.enableEndpointDiscovery = false;
-        // need to disable signing https://docs.aws.amazon.com/IAM/latest/UserGuide/create-signed-request.html.
-        config.verifySSL = false;
-        config.connectTimeoutMs = 1500; // 1.5s timeout (local machine)
-        std::shared_ptr<Aws::Lambda::LambdaClient> client = std::make_shared<Aws::Lambda::LambdaClient>(credentials, config);
-
-        // Request:
-        cout<<"Lambda client initialized, starting request"<<endl;
-
-        Aws::Lambda::Model::InvokeRequest invoke_req;
-        invoke_req.SetFunctionName("tplxlam"); // TODO: this function?
-        invoke_req.SetInvocationType(Aws::Lambda::Model::InvocationType::RequestResponse);
-        // logtype to extract log data??
-        invoke_req.SetLogType(Aws::Lambda::Model::LogType::Tail);
-        std::string json_buf;
-
-        // Send basic Environment request message.
-        messages::InvocationRequest req;
-        req.set_type(messages::MessageType::MT_ENVIRONMENTINFO);
-        google::protobuf::util::MessageToJsonString(req, &json_buf);
-
-        invoke_req.SetBody(stringToAWSStream(json_buf));
-        invoke_req.SetContentType("application/javascript");
-        auto outcome = client->Invoke(invoke_req);
-        if (!outcome.IsSuccess()) {
-            std::stringstream ss;
-            ss << "error: "<<outcome.GetError().GetExceptionName().c_str() << ", "
-               << outcome.GetError().GetMessage().c_str();
-
-            std::cerr<<ss.str()<<std::endl;
-        } else {
-            // Get result, and display environment:
-
-            // write response
-            auto &result = outcome.GetResult();
-            auto statusCode = result.GetStatusCode();
-            std::string version = result.GetExecutedVersion().c_str();
-
-            // parse payload
-            messages::InvocationResponse response;
-            {
-                std::stringstream ss;
-                auto &stream = const_cast<Aws::Lambda::Model::InvokeResult &>(result).GetPayload();
-                ss << stream.rdbuf();
-                std::string data = ss.str();
-                auto status = google::protobuf::util::JsonStringToMessage(data, &response);
-            }
-            //EXPECT_TRUE(status.ok());
-            //EXPECT_EQ(statusCode, 200); // should be 200 for ok.
-            //ASSERT_EQ(response.resources_size(), 2); // 1 resource for encoded JSON, 1 resource for LOG.
-
-            // Note: order does not matter.
-            auto env_resource = response.resources(0);
-            auto log_resource = response.resources(1);
-
-            assert(env_resource.type() == static_cast<uint32_t>(ResourceType::ENVIRONMENT_JSON));
-            assert(log_resource.type() == static_cast<uint32_t>(ResourceType::LOG));
-
-            // Log:
-            //cout<<"Log of Lambda invocation:\n"
-            //    <<decompress_string(log_resource.payload());
-
-            std::stringstream ss;
-            auto j = nlohmann::json::parse(env_resource.payload());
-            ss<<"Environment information message:\n"<<j.dump(2)<<std::endl;
-            cout<<"Lambda request returned environment:\n" + ss.str()<<endl;
-        }
-    }
-
-
     int LambdaWorkerApp::invokeRecursivelyAsync(int num_to_invoke, const std::string& lambda_endpoint) {
         logger().info("For now recursively invoking " + pluralize(num_to_invoke, "request") + ".");
 
@@ -1415,13 +1306,6 @@ namespace tuplex {
             logger().info(ss.str());
         }
 
-//        Aws::Lambda::Model::InvokeRequest invoke_req;
-//        invoke_req.SetFunctionName("tplxlam"); // TODO: this function?
-//        invoke_req.SetInvocationType(Aws::Lambda::Model::InvocationType::RequestResponse);
-//        // logtype to extract log data??
-//        invoke_req.SetLogType(Aws::Lambda::Model::LogType::Tail);
-//        std::string json_buf;
-
         // Send basic Environment request message.
         messages::InvocationRequest req;
         req.set_type(messages::MessageType::MT_ENVIRONMENTINFO);
@@ -1478,11 +1362,57 @@ namespace tuplex {
         // Simplified.
         AwsLambdaRequest aws_req;
         aws_req.body = req;
-        _lambdaInvoker->invokeAsync(aws_req);
+        _lambdaInvoker->invokeAsync(aws_req, [this](const AwsLambdaRequest &req, const AwsLambdaResponse &resp) {
+                                        {
+                                            std::stringstream ss;
+                                            ss << "LAMBDA request done (rc=" << resp.info.returnCode << ",duration=" << resp.info.durationInMs
+                                               << "ms" << ").";
+
+                                            logger().info(ss.str());
+                                            std::cout<<ss.str()<<std::endl;
+                                        }
+
+                                        logger().info("Got " + pluralize(resp.response.resources_size(), "resource") + ".");
+
+                                        auto env_resource = resp.response.resources(0);
+                                        auto log_resource = resp.response.resources(1);
+
+                                        assert(env_resource.type() == static_cast<uint32_t>(ResourceType::ENVIRONMENT_JSON));
+                                        assert(log_resource.type() == static_cast<uint32_t>(ResourceType::LOG));
+
+                                        // Log:
+                                        //cout<<"Log of Lambda invocation:\n"
+                                        //    <<decompress_string(log_resource.payload());
+
+                                        std::stringstream ss;
+                                        auto j = nlohmann::json::parse(env_resource.payload());
+                                        ss << "Environment information message:\n" << j.dump(2) << std::endl;
+                                        logger().info("Lambda request returned environment:\n" + ss.str());
+                                        std::cout<<ss.str()<<std::endl;
+                                    },
+                                    [this](const AwsLambdaRequest &req,
+                                           LambdaStatusCode err_code,
+                                           const std::string &err_msg) {
+                                        std::stringstream ss;
+                                        ss << "LAMBDA request failed with code=" << static_cast<int>(err_code) << ": "
+                                           << err_msg;
+                                        logger().error(ss.str());
+                                        std::cout<<ss.str()<<std::endl;
+                                    }, [this](const AwsLambdaRequest &req,
+                                              LambdaStatusCode retry_code,
+                                              const std::string &retry_reason,
+                                              bool willDecreaseRetryCount) {
+                    std::stringstream ss;
+                    ss << "Retry LAMBDA request with code=" << static_cast<int>(retry_code) << ": " << retry_reason;
+                    logger().info(ss.str());
+
+                    std::cerr<<ss.str()<<std::endl;
+                }
+        );
 
         logger().info("Waiting for requests to finish...");
         _lambdaInvoker->waitForRequests();
-        logger().info("Recursive invoke done.");
+        logger().info("Recursive invoke done, GBs: " + std::to_string(_lambdaInvoker->usedGBSeconds()) + " n_requests: " + std::to_string(_lambdaInvoker->numRequests()));
 
         return WORKER_OK;
     }

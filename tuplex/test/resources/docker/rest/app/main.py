@@ -1,13 +1,20 @@
 # (c) L. Spiegelberg 2017 - 2024
 # mocks AWS Lambda service for local testing using docker stack.
 import asyncio
+import base64
 import json
 import logging
+import random
 import sys
+import time
+import traceback
+import uuid
 from tkinter.constants import CURRENT
 from typing import Union, List, Dict, Any
 
 import sysconfig
+from uuid import uuid4
+
 import boto3
 import botocore
 import os
@@ -321,9 +328,15 @@ def put_configuration(function_name):
 # POST /2015-03-31/functions/FunctionName/invocations?Qualifier=Qualifier HTTP/1.1
 @app.route("/2015-03-31/functions/<function_name>/invocations", methods=['POST'])
 def invoke(function_name):
+    tinit_start = time.time()
+
     # Extract data from body.
     raw_payload = request.get_data()
     payload = json.loads(raw_payload.decode())
+
+    logging.info(f"request args: {request.args}")
+    logging.info(f"payload keys: {payload.keys()}")
+    logging.info(f"headers: {request.headers}")
 
     # logger.debug(f"Got invoke with payload: {payload}")
 
@@ -348,31 +361,73 @@ def invoke(function_name):
                                                                 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'),
                            region_name=os.environ.get('AWS_REGION', os.environ.get('AWS_DEFAULT_REGION', 'local')))
 
+
+        # The arguments are set within request headers.
+        arg_map = {'InvocationType': 'X-Amz-Invocation-Type',
+                   'LogType': 'X-Amz-Log-Type',
+                   'ClientContext': 'X-Amz-Client-Context'}
+
         kwargs = {}
-        # keys = ['InvocationType', 'LogType', 'ClientContext', 'Qualifier']
-        keys = []#['InvocationType', 'LogType']
-        for name in keys:
-            value = request.args.get(name)
+        for name, header_name in arg_map.items():
+            value = request.headers.get(header_name, request.headers.get(header_name.lower()))
             if value:
                 kwargs[name] = value
+
+        logger.info(f"kwargs to pass to invoke: {kwargs}")
+
+        tinit_time = 1000.0 * (time.time() - tinit_start)
+
+        tstart = time.time()
 
         # Function name is by default always "function" for the runtime emulator.
         response = lam.invoke(FunctionName="function",
                               Payload=raw_payload,
                               **kwargs)
 
-        # Payload is returned as botocore.response.StreamingBody, convert to string.
-        response = response['Payload'].read()
+        # Pass log etc. as headers
+        # X-Amz-Function-Error: FunctionError
+        # X-Amz-Log-Result: LogResult
+        # X-Amz-Executed-Version: ExecutedVersion
 
-        response = json.loads(response)
+        logging.info(f"Response received: {response}")
+
+        response_headers = {}
+        arg_map = {'FunctionError':'X-Amz-Function-Error', 'LogResult':'X-Amz-Log-Result', 'ExecutedVersion':'X-Amz-Executed-Version'}
+        status_code = response['StatusCode']
+        # Payload is returned as botocore.response.StreamingBody, convert to string.
+        payload = response['Payload'].read()
+
+        headers = {}
+        for name, header_name in arg_map.items():
+            value = response.get(name)
+            if value is not None:
+                headers[header_name] = value
+
+        # The Lambda runtime interface emulator does not support logtype properly yet -.-.
+        # cf. https://github.com/aws/aws-lambda-runtime-interface-emulator/blob/71388dd788b7a5519262391ce73fe6548dbaf86e/cmd/aws-lambda-rie/handlers.go#L186
+        # Fake a log therefore with some meaningful numbers
+        if 'LogType' in kwargs and kwargs['LogType'] == 'Tail':
+            logging.info("Producing fake log, because Amazon Lambda RIE does not support LogType=Tail yet.")
+            request_id = uuid.uuid4()
+            duration_ms = 1000.0 * (time.time() - tstart)
+            billed_duration_ms = int(duration_ms) + random.randint(0, 1000)
+            mem_size = 1536
+            max_mem_used = random.randint(100, mem_size-100)
+            fake_log = f"dummy log...\nEND RequestId: {request_id}\nREPORT RequestId: {request_id}\tDuration: {duration_ms:.2f} ms\tBilled Duration: {billed_duration_ms} ms\tMemory Size: {mem_size} MB\tMax Memory Used: {max_mem_used} MB\tInit Duration: {tinit_time:.2f} ms\t\n"
+
+            headers[arg_map['LogResult']] = base64.b64encode(fake_log.encode()).decode()
+
+        logging.info(f"Returning response with headers: {headers}")
+
+        return Response(response=payload,
+                        status=status_code, headers=headers, mimetype="application/json")
+
     except botocore.exceptions.EndpointConnectionError:
         return Response("ResourceNotFoundException", status=404)
     except Exception as e:
-        return Response(f"Exception: {e}", status=400)
+        return Response(f"Exception: {e}\nTraceback:\n{traceback.format_exc()}", status=400)
     finally:
         make_worker_available(name)
-
-    return jsonify(response)
 
 
 if __name__ == '__main__':
