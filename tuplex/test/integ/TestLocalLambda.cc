@@ -174,7 +174,8 @@ protected:
 
     }
 
-    inline Context create_lambda_context(const std::unordered_map<std::string, std::string>& conf_override={}) {
+    inline Context create_lambda_context(const std::unordered_map<std::string, std::string>& conf_override={},
+                                         const std::unordered_map<std::string, std::string>& env_override={}) {
 
         // Create a mini test context with Lambda backend for Tuplex.
         auto co = ContextOptions::defaults();
@@ -210,6 +211,10 @@ protected:
             // For the lambda, the endpoint within docker is called "".
             env["AWS_ENDPOINT_URL_LAMBDA"] = "http://rest:8090";
         }
+
+        for(const auto& kv : env_override)
+            env[kv.first] = kv.second;
+
         wb->setEnvironment(env);
 
         return std::move(ctx);
@@ -662,6 +667,11 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvokeWithAppDebug) {
     ASSERT_FALSE(requests.empty());
 
     auto request = requests.front();
+
+    // Overwrite lambda endpoint.
+    // "AWS_ENDPOINT_URL_LAMBDA" -> "http://localhost:8090"
+    request.mutable_env()->at("AWS_ENDPOINT_URL_LAMBDA") = "http://localhost:8090";
+
     string json_str;
     auto status = google::protobuf::util::MessageToJsonString(request, &json_str);
     EXPECT_TRUE(status.ok());
