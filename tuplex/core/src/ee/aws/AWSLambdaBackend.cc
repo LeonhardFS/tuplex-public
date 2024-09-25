@@ -750,7 +750,7 @@ namespace tuplex {
 #endif
 
             if(_emitRequestsOnly) {
-                logger().info("Skipping LAMBDA invocation, storing " + pluralize(requests.size(), "request") + " as pending.");
+                logger().info("Skipping actual LAMBDA invocation, storing " + pluralize(requests.size(), "request") + " as pending.");
                 _pendingRequests.clear();
                 for(const auto& aws_req : requests)
                     _pendingRequests.push_back(aws_req.body);

@@ -645,6 +645,7 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvokeWithAppDebug) {
     conf["tuplex.aws.lambdaInvocationStrategy"] = "tree";
     conf["tuplex.aws.maxConcurrency"] = "10"; // use 10 as maximum parallelism.
     conf["tuplex.experimental.minimumSizeToSpecialize"] = "0"; // disable minimum size.
+    conf["tuplex.experimental.opportuneCompilation"] = "false"; // disable, is buggy.
     auto ctx = create_lambda_context(conf);
 
     cout<<"Changing backend to emit requests only."<<endl;
@@ -667,12 +668,12 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvokeWithAppDebug) {
 
     // Create LambdaWorkerApp and invoke (locally) to Lambda backend - this allows to easily debug.
     auto app = std::make_shared<LambdaWorkerApp>();
-    app->globalInit(false);
+    app->WorkerApp::globalInit(false);
 
     auto rc = app->processJSONMessage(json_str);
     EXPECT_EQ(rc, WORKER_OK);
 
     auto ret = app->response();
 
-    app->shutdown();
+    app->WorkerApp::shutdown();
 }
