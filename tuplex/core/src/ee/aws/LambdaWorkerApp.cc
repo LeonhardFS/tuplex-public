@@ -1271,33 +1271,6 @@ namespace tuplex {
 
         _lambdaInvoker.reset(new AwsLambdaInvocationService(client, _functionName));
 
-//        // Connect in local testing mode to the rest backend again.
-//        logger().info(">>>> Starting single (list) request::");
-//        simple_list_request();
-//        logger().info("<<<< Single list request done.");
-//
-//        // Now check again for simple environment message.
-//        logger().info(">>>> Starting single (env) request::");
-//        simple_env_request();
-//        logger().info("<<<< Single env request done.");
-
-//
-//
-//        logger().info("Creating Lambda client.");
-//        // invoke
-//        double timeout = 25.0; // timeout in seconds
-//        auto max_retries = 3;
-//
-//        // adjust settings based on request
-//        if(!lambda_endpoint.empty())
-//            update_network_settings({std::make_pair("AWS_ENDPOINT_URL_LAMBDA", lambda_endpoint)});
-//
-//        auto lambdaClient = createClient(timeout, num_to_invoke);
-//
-//        // simply sent MT_ENVIRONMENTINFO messages for now, keep it easy.
-//        if(!lambdaClient)
-//            return WORKER_ERROR_LAMBDA_CLIENT;
-//
         logger().info("Lambda client created, listing functions:");
         {
             std::stringstream ss;
@@ -1309,55 +1282,6 @@ namespace tuplex {
         // Send basic Environment request message.
         messages::InvocationRequest req;
         req.set_type(messages::MessageType::MT_ENVIRONMENTINFO);
-        //google::protobuf::util::MessageToJsonString(req, &json_buf);
-
-//        invoke_req.SetBody(stringToAWSStream(json_buf));
-//        invoke_req.SetContentType("application/javascript");
-
-
-//
-//
-//        auto outcome = client->Invoke(invoke_req);
-//        if (!outcome.IsSuccess()) {
-//            std::stringstream ss;
-//            ss << "error: "<<outcome.GetError().GetExceptionName().c_str() << ", "
-//               << outcome.GetError().GetMessage().c_str();
-//
-//            std::cerr<<ss.str()<<std::endl;
-//        } else {
-//            // Get result, and display environment:
-//
-//            // write response
-//            auto &result = outcome.GetResult();
-//            auto statusCode = result.GetStatusCode();
-//            std::string version = result.GetExecutedVersion().c_str();
-//
-//            // parse payload
-//            messages::InvocationResponse response;
-//            {
-//                std::stringstream ss;
-//                auto &stream = const_cast<Aws::Lambda::Model::InvokeResult &>(result).GetPayload();
-//                ss << stream.rdbuf();
-//                std::string data = ss.str();
-//                auto status = google::protobuf::util::JsonStringToMessage(data, &response);
-//            }
-//
-//            // Note: order does not matter.
-//            auto env_resource = response.resources(0);
-//            auto log_resource = response.resources(1);
-//
-//            assert(env_resource.type() == static_cast<uint32_t>(ResourceType::ENVIRONMENT_JSON));
-//            assert(log_resource.type() == static_cast<uint32_t>(ResourceType::LOG));
-//
-//            // Log:
-//            //cout<<"Log of Lambda invocation:\n"
-//            //    <<decompress_string(log_resource.payload());
-//
-//            std::stringstream ss;
-//            auto j = nlohmann::json::parse(env_resource.payload());
-//            ss<<"Environment information message:\n"<<j.dump(2)<<std::endl;
-//            logger().info("Lambda request returned environment:\n" + ss.str());
-//        }
 
         // Simplified.
         AwsLambdaRequest aws_req;
