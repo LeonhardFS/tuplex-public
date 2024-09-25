@@ -1246,7 +1246,7 @@ namespace tuplex {
         // adjust settings based on request
         if(!lambda_endpoint.empty()) {
             logger().info("Updating network settings.");
-            update_network_settings({std::make_pair("AWS_ENDPOINT_URL_LAMBDA", lambda_endpoint)});
+            update_network_settings({std::make_pair(AWS_LAMBDA_ENDPOINT_KEY, lambda_endpoint)});
         }
 
         logger().info("Creating Lambda invoker for recursive requests.");
