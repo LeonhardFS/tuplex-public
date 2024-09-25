@@ -319,7 +319,7 @@ namespace tuplex {
         WorkerApp(const WorkerApp& other) =  delete;
 
         // create WorkerApp from settings
-        WorkerApp(const WorkerSettings& settings) : WorkerApp() {
+        explicit WorkerApp(const WorkerSettings& settings) : WorkerApp() {
 
             // set default reader size to 16MB
             _readerBufferSize = 16 * 1024 * 1024;
@@ -344,7 +344,7 @@ namespace tuplex {
 
         bool isInitialized() const;
 
-        virtual int globalInit(bool skip=false);
+        virtual int globalInit(bool skip);
 
         inline std::string jsonStats() const {
             return _lastStat;
@@ -372,11 +372,18 @@ namespace tuplex {
             _timeDict[label] = value;
         }
 
+        inline bool use_self_invocation(const tuplex::messages::InvocationRequest & req) const {
+            return req.has_stage() && req.stage().invocationcount_size() > 0;
+        }
+
         inline int64_t inputOperatorID() const { return _inputOperatorID; }
 
         WorkerSettings settingsFromMessage(const tuplex::messages::InvocationRequest& req);
 
         virtual int processMessage(const tuplex::messages::InvocationRequest& req);
+
+        virtual int waitForInvoker() const;
+        virtual void fill_response_with_self_invocation_state(messages::InvocationResponse& response) const;
 
         /*!
          * fetch information about worker environment as single JSON message (right now LLVM information)

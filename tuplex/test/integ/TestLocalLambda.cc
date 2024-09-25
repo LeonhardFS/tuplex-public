@@ -11,6 +11,7 @@
 #include <Timer.h>
 
 #include "helper.h"
+#include "ee/aws/LambdaWorkerApp.h"
 #include <ee/worker/WorkerBackend.h>
 #include <ee/aws/AWSLambdaBackend.h>
 
@@ -608,4 +609,70 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvoke) {
 
     cout<<"Starting Github (mini) pipeline."<<endl;
     github_pipeline(ctx, input_pattern, output_path);
+}
+
+TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvokeWithAppDebug) {
+    // This test allows to debug/step through a LambdaWorkerApp instance.
+    // It is similar to the end-to-end test GithubSplitTestWithSelfInvoke.
+    using namespace std;
+    using namespace tuplex;
+
+    string input_pattern = "../resources/hyperspecialization/github_daily/2020-10-15.json.sample";
+    uint64_t input_file_size = 0;
+    VirtualFileSystem::fromURI(input_pattern).file_size(input_pattern, input_file_size);
+
+    // upload to S3.
+    cout<<"Upload file to S3."<<endl;
+    auto target_uri = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + URI(input_pattern).base_name();
+    VirtualFileSystem::copy(input_pattern, target_uri);
+    input_pattern = target_uri;
+    auto output_path = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + "output";
+    cout<<"Stored file as: "<<input_pattern<<endl;
+
+    // Get size and split into parts.
+    int n_parts = 5;
+
+    cout<<"Found file with size "<<input_file_size<<"B, splitting into "<<pluralize(n_parts, "part")<<endl;
+    auto parts = splitIntoEqualParts(n_parts, {URI(input_pattern)}, {input_file_size}, 1024);
+    for(const auto& thread_parts : parts) {
+        for(auto part : thread_parts)
+            cout<<"part "<<part.partNo<<": "<<part.uri<<":"<<part.rangeStart<<"-"<<part.rangeEnd<<endl;
+    }
+
+    // Now perform github incl. specialization:
+    cout<<"Creating Lambda context."<<endl;
+    std::unordered_map<std::string, std::string> conf;
+    conf["tuplex.aws.lambdaInvocationStrategy"] = "tree";
+    conf["tuplex.aws.maxConcurrency"] = "10"; // use 10 as maximum parallelism.
+    conf["tuplex.experimental.minimumSizeToSpecialize"] = "0"; // disable minimum size.
+    auto ctx = create_lambda_context(conf);
+
+    cout<<"Changing backend to emit requests only."<<endl;
+    ASSERT_TRUE(ctx.backend());
+    auto wb = static_cast<AwsLambdaBackend*>(ctx.backend());
+    wb->setRequestMode(true);
+
+    cout<<"Starting Github (mini) pipeline."<<endl;
+    github_pipeline(ctx, input_pattern, output_path);
+
+    auto requests = wb->pendingRequests(true);
+
+    EXPECT_EQ(requests.size(), 1);
+    ASSERT_FALSE(requests.empty());
+
+    auto request = requests.front();
+    string json_str;
+    auto status = google::protobuf::util::MessageToJsonString(request, &json_str);
+    EXPECT_TRUE(status.ok());
+
+    // Create LambdaWorkerApp and invoke (locally) to Lambda backend - this allows to easily debug.
+    auto app = std::make_shared<LambdaWorkerApp>();
+    app->globalInit(false);
+
+    auto rc = app->processJSONMessage(json_str);
+    EXPECT_EQ(rc, WORKER_OK);
+
+    auto ret = app->response();
+
+    app->shutdown();
 }

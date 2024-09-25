@@ -1251,20 +1251,6 @@ namespace tuplex {
 
         logger().info("Creating Lambda invoker for recursive requests.");
 
-        // {
-        //     // Test with AWS Lambda client.
-        //     Aws::Auth::AWSCredentials credentials;
-        //     Aws::Client::ClientConfiguration config;
-        //     config.endpointOverride = "http://rest:" + std::to_string(8090);
-        //     config.enableEndpointDiscovery = false;
-        //     // need to disable signing https://docs.aws.amazon.com/IAM/latest/UserGuide/create-signed-request.html.
-        //     config.verifySSL = false;
-        //     config.connectTimeoutMs = 1500; // 1.5s timeout (local machine)
-        //     std::stringstream ss;
-        //     ss<<"Aws config that actually works:\n"<<config<<std::endl;
-        //     logger().info(ss.str());
-        // }
-
         // std::shared_ptr<Aws::Lambda::LambdaClient> client = std::make_shared<Aws::Lambda::LambdaClient>(credentials, config);
         double timeout = 180.0;
         auto client = createLambdaClient(timeout, num_to_invoke);
@@ -1334,11 +1320,27 @@ namespace tuplex {
                 }
         );
 
+        // requests are now queued up. Now wait for them using waitForInvoker() function.
+
+        return WORKER_OK;
+    }
+
+    int LambdaWorkerApp::waitForInvoker() const {
+        if(!_lambdaInvoker) {
+            return WORKER_ERROR_LAMBDA_CLIENT;
+        }
+
         logger().info("Waiting for requests to finish...");
         _lambdaInvoker->waitForRequests();
         logger().info("Recursive invoke done, GBs: " + std::to_string(_lambdaInvoker->usedGBSeconds()) + " n_requests: " + std::to_string(_lambdaInvoker->numRequests()));
 
+        // check results now.
+
         return WORKER_OK;
+    }
+
+    void LambdaWorkerApp::fill_response_with_self_invocation_state(messages::InvocationResponse& response) const {
+
     }
 
     std::vector<ContainerInfo> normalizeInvokedContainers(const std::vector<ContainerInfo>& containers) {

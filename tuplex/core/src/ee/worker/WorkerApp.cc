@@ -81,7 +81,7 @@ namespace tuplex {
         // general init here...
         // compiler already active? Else init
         logger().info("performing global initialization (Worker App)");
-        if(WORKER_OK != globalInit())
+        if(WORKER_OK != globalInit(false))
             return false;
 
         // before initializing compiler, make sure runtime has been loaded
@@ -659,7 +659,7 @@ namespace tuplex {
         // So far all of this has been setup.
         // Does request call for self-invocation?
         // If so, fire off self-requests (async) and wait for result.
-        if(req.has_stage() && req.stage().invocationcount_size() > 0) {
+        if(use_self_invocation(req)) {
             std::stringstream ss;
             ss << "Invoking ";
             for (auto count: req.stage().invocationcount())
@@ -689,9 +689,35 @@ namespace tuplex {
         // Start processing Transform Stage.
         URI outputURI = outputURIFromReq(req);
         rc = processTransformStage(tstage.get(), syms, parts, outputURI);
+
+        // If using self-invocation, wait for requests to finish.
+        if(use_self_invocation(req)) {
+            rc = waitForInvoker();
+            if(rc != WORKER_OK) {
+                std::stringstream err;
+                err<<"Recursive async lambda invocation failed with code "
+                   <<rc<<" while waiting for requests to finish. Aborting request.";
+                auto err_msg = err.str();
+                _response.set_errormessage(err_msg);
+                logger().error(err_msg);
+                return rc;
+            }
+
+            // add invoked containers to request.
+            fill_response_with_self_invocation_state(_response);
+        }
+
         fill_response_with_state(_response);
         _lastStat = jsonStat(req, tstage.get()); // generate stats before returning.
         return rc;
+    }
+
+    int WorkerApp::waitForInvoker() const {
+        return WORKER_OK;
+    }
+
+    void WorkerApp::fill_response_with_self_invocation_state(messages::InvocationResponse &response) const {
+
     }
 
     int WorkerApp::invokeRecursivelyAsync(int num_to_invoke, const std::string& lambda_endpoint) {

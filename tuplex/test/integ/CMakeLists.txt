@@ -7,7 +7,7 @@ SET(CMAKE_CXX_STANDARD 17)
 
 include(GoogleTest)
 FILE(GLOB SRCS *.cc)
-ADD_EXECUTABLE(testinteg ${SRCS})
+ADD_EXECUTABLE(testinteg ${SRCS} "../../core/src/ee/aws/LambdaWorkerApp.cc")
 target_include_directories(testinteg PUBLIC "../../worker/include")
 # find_package(pybind11 REQUIRED)
 

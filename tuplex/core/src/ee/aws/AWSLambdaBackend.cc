@@ -749,8 +749,16 @@ namespace tuplex {
             logger().debug("Debug files written (" + pluralize(requests.size(), "file") + ").");
 #endif
 
-            for (const auto &req: requests)
-                invokeAsync(req);
+            if(_emitRequestsOnly) {
+                logger().info("Skipping LAMBDA invocation, storing " + pluralize(requests.size(), "request") + " as pending.");
+                _pendingRequests.clear();
+                for(const auto& aws_req : requests)
+                    _pendingRequests.push_back(aws_req.body);
+                return; // <-- stop further processing, early abort.
+            } else {
+                for (const auto &req: requests)
+                    invokeAsync(req);
+            }
             logger().info("LAMBDA requesting took " + std::to_string(timer.time()) + "s");
         } else {
             logger().warn("No requests generated, skipping stage.");
@@ -791,7 +799,6 @@ namespace tuplex {
 
         // save request end! --> i.e. synchronization points!
         _endTimestamp = current_utc_timestamp();
-
 
         // check if any remote files are required to be downloaded
         if(!_remoteToLocalURIMapping.empty()) {

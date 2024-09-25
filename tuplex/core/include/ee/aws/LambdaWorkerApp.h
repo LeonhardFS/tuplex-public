@@ -46,6 +46,8 @@ namespace tuplex {
     /// Lambda specific Worker, inherits from base WorkerApp class
     class LambdaWorkerApp : public WorkerApp {
     public:
+        LambdaWorkerApp() = default;
+
         LambdaWorkerApp(const LambdaWorkerSettings& ws) : WorkerApp(ws), _outstandingRequests(0) {
 
             // for Lambda install sighandler for curl
@@ -56,9 +58,7 @@ namespace tuplex {
 
         int globalInit(bool skip) override;
 
-        ~LambdaWorkerApp() {
-
-        }
+        ~LambdaWorkerApp() {}
 
     protected:
         /// put here Lambda specific constants to easily update them
@@ -93,8 +93,9 @@ namespace tuplex {
         tuplex::AWSCredentials _credentials;
     protected:
         void fill_with_result(messages::InvocationResponse& response);
-
         int invokeRecursivelyAsync(int num_to_invoke, const std::string& lambda_endpoint) override;
+        int waitForInvoker() const override;
+        void fill_response_with_self_invocation_state(messages::InvocationResponse& response) const override;
     private:
 
         // Self-invoking AWS Lambda Invocation service.
@@ -238,7 +239,6 @@ namespace tuplex {
                              const std::string& errorMessage);
 
         void prepareResponseFromSelfInvocations();
-
     };
 
     extern std::vector<ContainerInfo> selfInvoke(const std::string& functionName,

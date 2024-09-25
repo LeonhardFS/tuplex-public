@@ -5,6 +5,14 @@
 #include "helper.h"
 #include "physical/execution/CSVReader.h"
 #include "ee/worker/WorkerBackend.h"
+#include <ee/aws/ContainerInfo.h>
+
+namespace tuplex {
+    ContainerInfo getThisContainerInfo() {
+        ContainerInfo info;
+        return info;
+    }
+}
 
 namespace tuplex {
 
