@@ -423,6 +423,7 @@ def invoke(function_name):
                         status=status_code, headers=headers, mimetype="application/json")
 
     except botocore.exceptions.EndpointConnectionError:
+        logging.error(f"Failed to connect to local Lambda endpoint: {endpoint}")
         return Response("ResourceNotFoundException", status=404)
     except Exception as e:
         return Response(f"Exception: {e}\nTraceback:\n{traceback.format_exc()}", status=400)
