@@ -58,6 +58,20 @@ def make_worker_available(name):
         AVAILABLE_WORKERS.add(name)
 
 
+
+# Error handling (here for S3): https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingRESTError.html
+# This is returned as XML document.
+# <?xml version="1.0" encoding="UTF-8"?>
+# <Error>
+#   <Code>NoSuchKey</Code>
+#   <Message>The resource you requested does not exist</Message>
+#   <Resource>/mybucket/myfoto.jpg</Resource>
+#   <RequestId>4442587FB7D0A2F9</RequestId>
+# </Error>
+# For Lambdas, errors seem JSON based. https://github.com/aws/aws-sdk-cpp/blob/main/generated/src/aws-cpp-sdk-lambda/source/LambdaErrors.cpp
+# I.e., a Json with "Type", "Message" keys.
+
+
 # src: https://docs.aws.amazon.com/lambda/latest/api/API_ListFunctions.html
 @app.route("/2015-03-31/functions/")
 def list_functions(FunctionVersion: str = 'ALL', Marker: str = None, MasterRegion: str = None, MaxItems: int = 50):
