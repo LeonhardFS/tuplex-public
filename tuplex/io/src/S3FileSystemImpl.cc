@@ -540,6 +540,9 @@ namespace tuplex {
         // fill in config
         config.region = credentials.default_region;
 
+        // Use modified strategy.
+        config.retryStrategy.reset(new ModifiedRetryStrategy());
+
         if(lambdaMode) {
             if(config.region.empty())
                 config.region = Aws::Environment::GetEnv("AWS_REGION");

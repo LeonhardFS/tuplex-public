@@ -255,6 +255,20 @@ namespace tuplex {
             }
         }
     }
+
+    bool ModifiedRetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors> &error,
+                                            long attemptedRetries) const {
+        auto base_should_retry = Aws::Client::DefaultRetryStrategy::ShouldRetry(error, attemptedRetries);
+        if(!base_should_retry)
+            return false;
+
+        // Check now what the error code is, is there a curl code?
+        std::string error_message = error.GetMessage().c_str();
+        if(error_message.find("Couldn't resolve host name") != std::string::npos && attemptedRetries >= 2)
+            return false;
+
+        return true;
+    }
 }
 
 #endif

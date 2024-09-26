@@ -24,6 +24,7 @@
 #include <aws/core/utils/HashingUtils.h>
 #include <aws/core/utils/logging/LogLevel.h>
 #include <aws/core/auth/AWSCredentials.h>
+#include <aws/core/client/DefaultRetryStrategy.h>
 #include <aws/s3/S3Client.h>
 #include "nlohmann/json.hpp"
 
@@ -143,6 +144,16 @@ namespace tuplex {
     }
 
     static const std::string AWS_LAMBDA_ENDPOINT_KEY = "AWS_ENDPOINT_URL_LAMBDA";
+
+    // cf. src/aws-cpp-sdk-core/source/client/DefaultRetryStrategy.cpp
+    // A lot of straightforward codes get retried for no reason, i.e. Curl code 6: Couldn't resolve host name
+    // Handle these better here.
+    class ModifiedRetryStrategy : public Aws::Client::DefaultRetryStrategy {
+    public:
+
+        bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
+
+    };
 }
 
 // Amazon frequently changes the parameters of lambda functions,
