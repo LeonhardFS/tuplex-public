@@ -673,7 +673,7 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvokeWithAppDebug) {
     // Overwrite lambda endpoint.
     // "AWS_ENDPOINT_URL_LAMBDA" -> "http://localhost:8090"
     request.mutable_env()->at("AWS_ENDPOINT_URL_LAMBDA") = "http://localhost:" + std::to_string(8090); // lambda/rest
-    request.mutable_env()->at("AWS_ENDPOINT_URL_S3") = "http://localhost:9000"; // minio
+    request.mutable_env()->at("AWS_ENDPOINT_URL_S3") = "http://minio:9000"; //"http://localhost:9000"; // minio
     string json_str;
     auto status = google::protobuf::util::MessageToJsonString(request, &json_str);
     EXPECT_TRUE(status.ok());
@@ -690,4 +690,8 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvokeWithAppDebug) {
     auto ret = app->response();
 
     app->WorkerApp::shutdown();
+
+    // Check output row count in S3:
+    auto total_row_count = csv_row_count_for_pattern(output_path + "/*.csv");
+    EXPECT_EQ(total_row_count, 378);
 }

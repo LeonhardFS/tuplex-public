@@ -95,7 +95,10 @@ namespace tuplex {
         tuplex::AWSCredentials _credentials;
     protected:
         void fill_with_result(messages::InvocationResponse& response);
-        int invokeRecursivelyAsync(int num_to_invoke, const std::string& lambda_endpoint) override;
+        int invokeRecursivelyAsync(int num_to_invoke,
+                                                            const std::string& lambda_endpoint,
+                                                            const messages::InvocationRequest& req_template,
+                                                            const std::vector<std::vector<FilePart>>& parts) override;
         int waitForInvoker() const override;
         void fill_response_with_self_invocation_state(messages::InvocationResponse& response) const override;
     private:

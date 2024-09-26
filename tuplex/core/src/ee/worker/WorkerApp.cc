@@ -660,12 +660,15 @@ namespace tuplex {
         // Does request call for self-invocation?
         // If so, fire off self-requests (async) and wait for result.
         if(use_self_invocation(req)) {
-            std::stringstream ss;
-            ss << "Invoking ";
-            for (auto count: req.stage().invocationcount())
-                ss << count << ", ";
-            ss << "Lambdas recursively.";
-            logger().info(ss.str());
+            {
+                std::stringstream ss;
+                ss << "Invoking ";
+                for (auto count: req.stage().invocationcount())
+                    ss << count << ", ";
+                ss << "Lambdas recursively.";
+                logger().info(ss.str());
+            }
+
 
             // First stage to invoke.
             int num_to_invoke = req.stage().invocationcount(0);
@@ -673,8 +676,32 @@ namespace tuplex {
             if(req.env().end() != req.env().find(AWS_LAMBDA_ENDPOINT_KEY))
                 lambda_endpoint = req.env().at(AWS_LAMBDA_ENDPOINT_KEY);
 
+
+            // Check how many parts there are, distribute between this worker and the Lambdas to invoke.
+            std::stringstream ss;
+            ss<<"Found "<<pluralize(parts.size(), "part")<<" to split between "<<pluralize(1 + num_to_invoke, "worker")<<".";
+            logger().info(ss.str());
+            std::vector<std::vector<FilePart>> worker_parts(num_to_invoke);
+            if(parts.size() == 1 + num_to_invoke) {
+
+                for(unsigned i = 0; i < worker_parts.size(); ++i)
+                    worker_parts[i].push_back(parts[i]);
+
+                // trivial assignment.
+                parts = {parts.back()};
+            } else {
+                // split up.
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Not yet implemented.");
+            }
+
+            // Prepare message to share (i.e., environment with compiled/not compiled code path).
+            messages::InvocationRequest self_invoke_request = req;
+            self_invoke_request.clear_inputsizes();
+            self_invoke_request.clear_inputuris();
+            self_invoke_request.mutable_stage()->clear_invocationcount();
+
             // @TODO: pass data / process data and so on.
-            rc = invokeRecursivelyAsync(num_to_invoke, lambda_endpoint);
+            rc = invokeRecursivelyAsync(num_to_invoke, lambda_endpoint, self_invoke_request, worker_parts);
             if(rc != WORKER_OK) {
                 std::stringstream err;
                 err<<"Recursive async lambda invocation failed with code "
@@ -720,7 +747,10 @@ namespace tuplex {
 
     }
 
-    int WorkerApp::invokeRecursivelyAsync(int num_to_invoke, const std::string& lambda_endpoint) {
+    int WorkerApp::invokeRecursivelyAsync(int num_to_invoke,
+                                             const std::string& lambda_endpoint,
+                                             const messages::InvocationRequest& req_template,
+                                             const std::vector<std::vector<FilePart>>& parts) {
         logger().info("For now recursively invoking " + pluralize(num_to_invoke, "request") + ".");
         logger().info("Recursive invocation not supported on WorkerBackend yet.");
 

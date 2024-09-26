@@ -447,6 +447,28 @@ namespace tuplex {
             c = std::tolower(c);
         return copy;
     }
+
+    /*!
+     * replace all occurences of string with new string.
+     * @param input
+     * @param needle
+     * @param replacement
+     * @return replaced string.
+     */
+    inline std::string strReplaceAll(std::string input, const std::string& needle, const std::string& replacement) {
+        // find first occurrence of needle.
+        size_t pos = input.find(needle);
+        // iterate & subsequently replace
+        while (pos != std::string::npos) {
+            input.replace(pos, needle.size(), replacement);
+
+            // Find the next occurrence of the substring
+            pos = input.find(needle,
+                             pos + replacement.size());
+        }
+        return input;
+    }
+
 }
 
 

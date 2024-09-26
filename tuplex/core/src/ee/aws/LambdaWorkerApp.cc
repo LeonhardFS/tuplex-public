@@ -11,6 +11,8 @@
 
 #include <ee/aws/LambdaWorkerApp.h>
 
+#include <StringUtils.h>
+
 // HACK
 #include <physical/codegen/StagePlanner.h>
 // planning
@@ -1240,7 +1242,67 @@ namespace tuplex {
         }
     }
 
-    int LambdaWorkerApp::invokeRecursivelyAsync(int num_to_invoke, const std::string& lambda_endpoint) {
+//    URI get_lambda_output_uri(const messages::InvocationRequest& req) {
+//        static
+//        // get output uri for THIS lambda
+//        std::string base_output_uri = req.baseoutputuri();
+//        URI output_uri;
+//        FileFormat out_format = proto_toFileFormat(req.stage().outputformat());
+//        auto file_ext = defaultFileExtension(out_format);
+//        uint32_t partno = 0;
+//        if(req.has_partnooffset()) {
+//            partno = req.partnooffset();
+//            output_uri = URI(base_output_uri).join("part" + std::to_string(partno));
+//        } else {
+//            output_uri = URI(base_output_uri).join(part_counter++);
+//        }
+//
+//        return output_uri;
+//    }
+
+
+    URI create_output_uri_from_first_part_uri(const URI& first_part_uri, int first_part_offset, int offset) {
+        // first_part_uri is an uri expected to have been created through generate_output_base_uri in AWSLambdaBackend.
+        // this means URIs will have the form s3://.../....part<first_part_offset>.<ext>
+        // Extract via regex the stored part number, if this fails -> create manually!
+
+        // regex: /s3:\/\/.*\/.*part(\d+)\..*/gm
+        std::regex r_exp("s3:\\/\\/.*\\/.*part(\\d+)\\..*");
+        std::smatch matches;
+        std::string str = first_part_uri.toString();
+        std::string str_part_no;
+        if(std::regex_search(str, matches, r_exp) && matches.size() == 2) {
+                std::ssub_match sub_match = matches[1];
+                str_part_no = sub_match.str();
+        } else
+          throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " could not extract part number from " + first_part_uri.toString());
+
+        auto extracted_part_no = std::stoi(str_part_no);
+        if(extracted_part_no != first_part_offset)
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " extracted part no does not match expected part no");
+        auto str_part = "part" + str_part_no;
+
+        auto n_digits = str_part_no.size();
+
+        // Replace now part with new part
+        return strReplaceAll(first_part_uri.toString(), str_part, "part" + fixedPoint(first_part_offset + offset, n_digits));
+    }
+
+    int LambdaWorkerApp::invokeRecursivelyAsync(int num_to_invoke,
+                                                   const std::string& lambda_endpoint,
+                                                   const messages::InvocationRequest& req_template,
+                                                   const std::vector<std::vector<FilePart>>& parts) {
+        if(parts.empty()) {
+            logger().info("No parts given, skip.");
+            return WORKER_OK;
+        }
+
+        // quick check, else need to redistribute.
+        if(parts.size() != num_to_invoke) {
+            logger().error("number of parts does not match number of workers to invoke. TODO: redistribute.");
+            return WORKER_ERROR_EXCEPTION;
+        }
+
         logger().info("For now recursively invoking " + pluralize(num_to_invoke, "request") + ".");
 
         // adjust settings based on request
@@ -1271,55 +1333,107 @@ namespace tuplex {
             logger().info(ss.str());
         }
 
-        // Send basic Environment request message.
-        messages::InvocationRequest req;
-        req.set_type(messages::MessageType::MT_ENVIRONMENTINFO);
+        // For each part, invoke new message.
+        if(req_template.type() != messages::MessageType::MT_TRANSFORM) {
+            logger().error("Unknown message type of template, can't self-invoke.");
+            return WORKER_ERROR_EXCEPTION;
+        }
 
-        // Simplified.
-        AwsLambdaRequest aws_req;
-        aws_req.body = req;
-        _lambdaInvoker->invokeAsync(aws_req, [this](const AwsLambdaRequest &req, const AwsLambdaResponse &resp) {
+        // Template must have a part offset assigned (i.e., client controls where to invoke what).
+        if(!req_template.has_partnooffset()) {
+            throw std::runtime_error("Template request in invokeRecursivelyAsync must have a partnooffset assigned.");
+        }
+
+        // Check that there are no further recursive invocations.
+        if(req_template.stage().invocationcount_size() != 0)
+            throw std::runtime_error("Recursive invocations found, for now only single-level supported.");
+
+        // For each file part, create new message & invoke recursively.
+        for(unsigned i = 0; i < parts.size(); ++i) {
+
+            auto part = parts[i];
+
+            AwsLambdaRequest aws_req;
+            aws_req.body = req_template;
+            aws_req.body.clear_inputuris();
+            aws_req.body.clear_inputsizes();
+            aws_req.body.clear_baseoutputuri();
+            aws_req.body.clear_partnooffset();
+
+            for(const auto& p : part) {
+                aws_req.body.add_inputuris(encodeRangeURI(p.uri, p.rangeStart, p.rangeEnd));
+                aws_req.body.add_inputsizes(p.size);
+            }
+
+            auto output_uri = create_output_uri_from_first_part_uri(req_template.baseoutputuri(), req_template.partnooffset(), i + 1);
+            aws_req.body.set_baseoutputuri(output_uri.toString());
+
+            {
+                std::stringstream ss;
+                ss<<"Created request "<<(i + 1)<<"/"<<parts.size()<<" with base output uri: "<<output_uri.toString();
+                logger().info(ss.str());
+            }
+
+            // Add to invoker (this will immediately start the request).
+            _lambdaInvoker->invokeAsync(aws_req,[this](const AwsLambdaRequest &req, const AwsLambdaResponse &resp) {
                                         {
                                             std::stringstream ss;
                                             ss << "LAMBDA request done (rc=" << resp.info.returnCode << ",duration=" << resp.info.durationInMs
                                                << "ms" << ").";
 
                                             logger().info(ss.str());
-                                        }
+                                        }} );
+        }
 
-                                        logger().info("Got " + pluralize(resp.response.resources_size(), "resource") + ".");
-
-                                        auto env_resource = resp.response.resources(0);
-                                        auto log_resource = resp.response.resources(1);
-
-                                        assert(env_resource.type() == static_cast<uint32_t>(ResourceType::ENVIRONMENT_JSON));
-                                        assert(log_resource.type() == static_cast<uint32_t>(ResourceType::LOG));
-
-                                        // Log:
-                                        //cout<<"Log of Lambda invocation:\n"
-                                        //    <<decompress_string(log_resource.payload());
-
-                                        std::stringstream ss;
-                                        auto j = nlohmann::json::parse(env_resource.payload());
-                                        ss << "Environment information message:\n" << j.dump(2) << std::endl;
-                                        logger().info(ss.str());
-                                    },
-                                    [this](const AwsLambdaRequest &req,
-                                           LambdaStatusCode err_code,
-                                           const std::string &err_msg) {
-                                        std::stringstream ss;
-                                        ss << "LAMBDA request failed with code=" << static_cast<int>(err_code) << ": "
-                                           << err_msg;
-                                        logger().error(ss.str());
-                                    }, [this](const AwsLambdaRequest &req,
-                                              LambdaStatusCode retry_code,
-                                              const std::string &retry_reason,
-                                              bool willDecreaseRetryCount) {
-                    std::stringstream ss;
-                    ss << "Retry LAMBDA request with code=" << static_cast<int>(retry_code) << ": " << retry_reason;
-                    logger().info(ss.str());
-                }
-        );
+//        // Send basic Environment request message.
+//        messages::InvocationRequest req;
+//        req.set_type(messages::MessageType::MT_ENVIRONMENTINFO);
+//
+//        // Simplified.
+//        AwsLambdaRequest aws_req;
+//        aws_req.body = req;
+//        _lambdaInvoker->invokeAsync(aws_req, [this](const AwsLambdaRequest &req, const AwsLambdaResponse &resp) {
+//                                        {
+//                                            std::stringstream ss;
+//                                            ss << "LAMBDA request done (rc=" << resp.info.returnCode << ",duration=" << resp.info.durationInMs
+//                                               << "ms" << ").";
+//
+//                                            logger().info(ss.str());
+//                                        }
+//
+//                                        logger().info("Got " + pluralize(resp.response.resources_size(), "resource") + ".");
+//
+//                                        auto env_resource = resp.response.resources(0);
+//                                        auto log_resource = resp.response.resources(1);
+//
+//                                        assert(env_resource.type() == static_cast<uint32_t>(ResourceType::ENVIRONMENT_JSON));
+//                                        assert(log_resource.type() == static_cast<uint32_t>(ResourceType::LOG));
+//
+//                                        // Log:
+//                                        //cout<<"Log of Lambda invocation:\n"
+//                                        //    <<decompress_string(log_resource.payload());
+//
+//                                        std::stringstream ss;
+//                                        auto j = nlohmann::json::parse(env_resource.payload());
+//                                        ss << "Environment information message:\n" << j.dump(2) << std::endl;
+//                                        logger().info(ss.str());
+//                                    },
+//                                    [this](const AwsLambdaRequest &req,
+//                                           LambdaStatusCode err_code,
+//                                           const std::string &err_msg) {
+//                                        std::stringstream ss;
+//                                        ss << "LAMBDA request failed with code=" << static_cast<int>(err_code) << ": "
+//                                           << err_msg;
+//                                        logger().error(ss.str());
+//                                    }, [this](const AwsLambdaRequest &req,
+//                                              LambdaStatusCode retry_code,
+//                                              const std::string &retry_reason,
+//                                              bool willDecreaseRetryCount) {
+//                    std::stringstream ss;
+//                    ss << "Retry LAMBDA request with code=" << static_cast<int>(retry_code) << ": " << retry_reason;
+//                    logger().info(ss.str());
+//                }
+//        );
 
         // requests are now queued up. Now wait for them using waitForInvoker() function.
 

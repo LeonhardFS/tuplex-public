@@ -1116,6 +1116,15 @@ namespace tuplex {
         return aws_req;
     }
 
+    int recursive_invocation_count(const messages::InvocationRequest& req) {
+        if(req.stage().invocationcount_size() != 0) {
+            assert(req.stage().invocationcount_size() == 1);
+            auto n_recursive = req.stage().invocationcount(0);
+            return n_recursive;
+        }
+        return 0;
+    }
+
     std::vector<AwsLambdaRequest>
     AwsLambdaBackend::createSpecializingSelfInvokeRequests(const TransformStage *tstage,
                                                            const std::string &bitCode,
@@ -1142,6 +1151,17 @@ namespace tuplex {
 
         // TODO: figure this here out.
         int num_self_invoke = 3; // 3 parts.
+
+        // @TODO: improve this.
+        auto base_output_uri = tstage->outputURI();
+
+        // Produce S3 output uris as follows for each request invoking n Lambdas overall:
+        // first request:
+        // <base_uri>/part0.csv
+        // ...
+        // <base_uri>/part{n}.csv
+
+        int current_part_offset = 0;
 
         for(auto uri_info : uri_infos) {
             AwsLambdaRequest req;
@@ -1181,16 +1201,34 @@ namespace tuplex {
                 req.body.add_inputsizes(inputSize);
             }
 
-            // base output uri (?) -> maybe change this?
-            auto remote_output_uri = generate_output_base_uri(tstage, partno, num_digits);
-            req.body.set_baseoutputuri(remote_output_uri.toString());
+            // no output yet, will be done in NEXT loop.
 
             // set self invocation, i.e. recurse.
             req.body.mutable_stage()->add_invocationcount(num_self_invoke);
-
             requests.push_back(req);
         }
 
+
+        // Step 2: generate output uris (consecutive)
+        int n_output_parts = 0;
+        // Count how many output parts there will be.
+        for(const auto& req : requests) {
+            n_output_parts++; // +1 for the request itself.
+            // Are there self-invocations? For each invocation count +1.
+            // Only 1 level supported yet.
+            n_output_parts += recursive_invocation_count(req.body);
+        }
+        int n_digits = ilog10c(n_output_parts);
+        logger().info("Recursive tree invocation will invoke in total " + pluralize(n_output_parts, "lambda") + " producing " + pluralize(n_output_parts, "part") + ".");
+
+        // Go over requests again & set part offsets.
+        int task_no = 0;
+        for(auto& req : requests) {
+            req.body.set_partnooffset(task_no);
+            auto lambda_output_uri = generate_output_base_uri(tstage, task_no, n_digits, 0, 0);
+            req.body.set_baseoutputuri(lambda_output_uri.toString());
+            task_no += 1 + recursive_invocation_count(req.body);
+        }
 
 //        // now generation is quite simple. Go over files, and then check wrt to specialization size if they're large enough to get specialized on. Then issue appropriate number of requests.
 //        for(auto uri_info : uri_infos) {

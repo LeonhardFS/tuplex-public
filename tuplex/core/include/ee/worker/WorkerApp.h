@@ -426,7 +426,10 @@ namespace tuplex {
         }
 
         // Recursive invocation:
-        virtual int invokeRecursivelyAsync(int num_to_invoke, const std::string& lambda_endpoint);
+        virtual int invokeRecursivelyAsync(int num_to_invoke,
+                                           const std::string& lambda_endpoint,
+                                           const messages::InvocationRequest& req_template,
+                                           const std::vector<std::vector<FilePart>>& parts);
 
 
         // Recursive invocation end:
