@@ -60,6 +60,8 @@ namespace tuplex {
 
         ~LambdaWorkerApp() {}
 
+        void setFunctionName(const std::string& name) { _functionName = name; }
+
     protected:
         /// put here Lambda specific constants to easily update them
         static const std::string caFile;

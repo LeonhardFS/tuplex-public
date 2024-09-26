@@ -1255,6 +1255,12 @@ namespace tuplex {
         double timeout = 180.0;
         auto client = createLambdaClient(timeout, num_to_invoke);
 
+        // Make sure functionName is not empty.
+        if(_functionName.empty()) {
+            logger().error("FunctionName not set for Lambda worker, can't start invocation service.");
+            return WORKER_ERROR_LAMBDA_CLIENT;
+        }
+
         _lambdaInvoker.reset(new AwsLambdaInvocationService(client, _functionName));
 
         logger().info("Lambda client created, listing functions:");
@@ -1279,7 +1285,6 @@ namespace tuplex {
                                                << "ms" << ").";
 
                                             logger().info(ss.str());
-                                            std::cout<<ss.str()<<std::endl;
                                         }
 
                                         logger().info("Got " + pluralize(resp.response.resources_size(), "resource") + ".");
@@ -1297,8 +1302,7 @@ namespace tuplex {
                                         std::stringstream ss;
                                         auto j = nlohmann::json::parse(env_resource.payload());
                                         ss << "Environment information message:\n" << j.dump(2) << std::endl;
-                                        logger().info("Lambda request returned environment:\n" + ss.str());
-                                        std::cout<<ss.str()<<std::endl;
+                                        logger().info(ss.str());
                                     },
                                     [this](const AwsLambdaRequest &req,
                                            LambdaStatusCode err_code,
@@ -1307,7 +1311,6 @@ namespace tuplex {
                                         ss << "LAMBDA request failed with code=" << static_cast<int>(err_code) << ": "
                                            << err_msg;
                                         logger().error(ss.str());
-                                        std::cout<<ss.str()<<std::endl;
                                     }, [this](const AwsLambdaRequest &req,
                                               LambdaStatusCode retry_code,
                                               const std::string &retry_reason,
@@ -1315,8 +1318,6 @@ namespace tuplex {
                     std::stringstream ss;
                     ss << "Retry LAMBDA request with code=" << static_cast<int>(retry_code) << ": " << retry_reason;
                     logger().info(ss.str());
-
-                    std::cerr<<ss.str()<<std::endl;
                 }
         );
 
@@ -1332,7 +1333,8 @@ namespace tuplex {
 
         logger().info("Waiting for requests to finish...");
         _lambdaInvoker->waitForRequests();
-        logger().info("Recursive invoke done, GBs: " + std::to_string(_lambdaInvoker->usedGBSeconds()) + " n_requests: " + std::to_string(_lambdaInvoker->numRequests()));
+        logger().info("Recursive invoke done, GBs: " + std::to_string(_lambdaInvoker->usedGBSeconds())
+        + " n_requests: " + std::to_string(_lambdaInvoker->numRequests()));
 
         // check results now.
 

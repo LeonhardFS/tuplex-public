@@ -70,6 +70,11 @@ def make_worker_available(name):
 # </Error>
 # For Lambdas, errors seem JSON based. https://github.com/aws/aws-sdk-cpp/blob/main/generated/src/aws-cpp-sdk-lambda/source/LambdaErrors.cpp
 # I.e., a Json with "Type", "Message" keys.
+def make_lambda_error(Type:str, Message:str, status:int=400) -> Response:
+    """ Creates Lambda compatible error message. """
+    payload = json.dumps({"Type": Type, "Message": Message})
+    return Response(response=payload,
+             status=status, mimetype="application/json")
 
 
 # src: https://docs.aws.amazon.com/lambda/latest/api/API_ListFunctions.html
@@ -348,20 +353,25 @@ def invoke(function_name):
     raw_payload = request.get_data()
     payload = json.loads(raw_payload.decode())
 
-    logging.info(f"request args: {request.args}")
-    logging.info(f"payload keys: {payload.keys()}")
-    logging.info(f"headers: {request.headers}")
+    # logging.info(f"request args: {request.args}")
+    # logging.info(f"payload keys: {payload.keys()}")
+    # logging.info(f"headers: {request.headers}")
 
     # logger.debug(f"Got invoke with payload: {payload}")
 
     # Check whether worker is available, if not return 429 "TooManyRequestsException"
-    name = get_worker()
-    if name is None:
+    worker_id = get_worker()
+    if worker_id is None:
         logger.info("All workers busy, limit exceeded.")
-        return Response("TooManyRequestsException", status=429)
+        return make_lambda_error(Type="TooManyRequestsException", Message="All workers busy, limit exceeded.", status=429)
 
-    endpoint = LAMBDA_ENDPOINTS[name]
-    logger.info(f"Got worker {name} assigned to execute Lambda ({endpoint}).")
+    endpoint = LAMBDA_ENDPOINTS.get(worker_id)
+    if endpoint is None:
+        message = f"Could not find endpoint {endpoint} in {list(LAMBDA_ENDPOINTS.keys())}."
+        logging.error(message)
+        return make_lambda_error(Type="ResourceNotFoundException", Message=message, status=404)
+
+    logger.info(f"Got worker {worker_id} assigned to execute Lambda ({endpoint}).")
 
     try:
         # Pass to the actual lambda docker container.
@@ -431,18 +441,24 @@ def invoke(function_name):
 
             headers[arg_map['LogResult']] = base64.b64encode(fake_log.encode()).decode()
 
-        logging.info(f"Returning response with headers: {headers}")
+        # logging.info(f"Returning response with headers: {headers}")
 
         return Response(response=payload,
                         status=status_code, headers=headers, mimetype="application/json")
 
     except botocore.exceptions.EndpointConnectionError:
-        logging.error(f"Failed to connect to local Lambda endpoint: {endpoint}")
-        return Response("ResourceNotFoundException", status=404)
+        message = f"Failed to connect to local Lambda endpoint: {endpoint}"
+        logging.error(message)
+        return make_lambda_error(Type="ResourceNotFoundException", Message=message, status=404)
     except Exception as e:
-        return Response(f"Exception: {e}\nTraceback:\n{traceback.format_exc()}", status=400)
+        message = f"Internal Exception within Flask REST service: {e}\nTraceback:\n{traceback.format_exc()}\n"
+        logging.error(message)
+        return make_lambda_error(Type="ServiceException",
+                        Message=message,
+                        status=400)
     finally:
-        make_worker_available(name)
+        logging.info(f"Request done, making worker {worker_id} available again.")
+        make_worker_available(worker_id)
 
 
 if __name__ == '__main__':

@@ -78,6 +78,12 @@ namespace tuplex {
         if (numElements < 0)
             numElements = std::numeric_limits<int64_t>::max();
 
+        // empty resultset or null?
+        if(!rs) {
+            Logger::instance().defaultLogger().debug("No resultset found, returning empty vector of rows.");
+            return {};
+        }
+
         // std::vector<Row> v;
         // while (rs->hasNextRow() && v.size() < numElements) {
         //     v.push_back(rs->getNextRow());

@@ -195,7 +195,6 @@ protected:
         assert(ctx.backend());
         auto wb = dynamic_cast<AwsLambdaBackend*>(ctx.backend());
         assert(wb);
-        wb->setRequestMode(true);
 
         std::unordered_map<std::string, std::string> env;
         {
@@ -260,7 +259,10 @@ protected:
 
         // init AWS SDK
         cout<<"Initializing AWS SDK"<<endl;
-        initAWSSDK(Aws::Utils::Logging::LogLevel::Trace);
+        // Increase log-level here to get more detailed output about individual requests.
+        // Else, leave at WARN.
+        // initAWSSDK(Aws::Utils::Logging::LogLevel::Trace);
+        initAWSSDK(Aws::Utils::Logging::LogLevel::Warn);
 
         // Docker-compose yaml file.
         if(!fileExists(yaml_path)) {
@@ -679,6 +681,8 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvokeWithAppDebug) {
     // Create LambdaWorkerApp and invoke (locally) to Lambda backend - this allows to easily debug.
     auto app = std::make_shared<LambdaWorkerApp>();
     app->WorkerApp::globalInit(false);
+
+    app->setFunctionName("tplxplam");
 
     auto rc = app->processJSONMessage(json_str);
     EXPECT_EQ(rc, WORKER_OK);

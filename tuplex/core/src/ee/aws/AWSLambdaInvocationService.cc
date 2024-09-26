@@ -240,8 +240,6 @@ namespace tuplex {
         auto tsStart = lctx->utc_start();
         auto service = lctx->getService(); assert(service);
 
-        std::cout<<"ASYNC CALLBACK: callback invoked"<<std::endl;
-
         // Note: lambda needs to be explicitly configured for async invocation
         // -> https://docs.aws.amazon.com/lambda/latest/dg/lambda-dg.pdf, unhandled
 
@@ -261,8 +259,6 @@ namespace tuplex {
             if (statusCode == static_cast<int>(Aws::Http::HttpResponseCode::TOO_MANY_REQUESTS) || // i.e. 429
                 statusCode == static_cast<int>(Aws::Http::HttpResponseCode::INTERNAL_SERVER_ERROR)) {  // i.e. 500
 
-                std::cout<<"ASYNC CALLBACK: outcome failed, rate limit with code="<<statusCode<<std::endl;
-
                 // this is a retry that doesn't change the retry count
                 auto retry_message = "LAMBDA task failed (" + req.input_desc() + ") with [" + std::to_string(statusCode) +
                                        "], invoking again.";
@@ -275,8 +271,6 @@ namespace tuplex {
                 return;
             } else {
 
-                std::cout<<"ASYNC CALLBACK: Lambda failed with code="<<statusCode<<std::endl;
-
                 // this is a true failure, report as such.
                 ss << "LAMBDA task failed (" + req.input_desc() + ") with [" << statusCode << "]"
                    << aws_outcome.GetError().GetExceptionName().c_str()
@@ -287,9 +281,6 @@ namespace tuplex {
                 return;
             }
         } else {
-
-            std::cout<<"ASYNC CALLBACK: Lambda ok."<<std::endl;
-
             // write response
             auto &result = aws_outcome.GetResult();
             statusCode = result.GetStatusCode();
@@ -298,8 +289,6 @@ namespace tuplex {
             string function_error = result.GetFunctionError().c_str();
             log = result.GetLogResult();
             auto decoded_log = decodeAWSBase64(log);
-
-            std::cout<<"ASYNC CALLBACK: status code="<<statusCode<<" function error: "<<function_error<<" log: "<<log<<std::endl;
 
             // extract info
             auto info = RequestInfo::parseFromLog(log);
@@ -312,12 +301,7 @@ namespace tuplex {
             // update cost info
             lctx->getService()->addCost(info.billedDurationInMs, info.memorySizeInMb);
 
-            std::cout<<"ASYNC CALLBACK: status code="<<statusCode<<" function error: "<<function_error<<" log: "<<log<<std::endl;
-            std::cout<<"decoded log: "<<decodeAWSBase64(log)<<std::endl;
-
             if (response.status() == messages::InvocationResponse_Status_SUCCESS) {
-
-                std::cout<<"ASYNC CALLBACK: response status is SUCCESS"<<std::endl;
 
                 // Check if special exit codes apply or not
                 // -> i.e. crash, timeout.
@@ -351,8 +335,6 @@ namespace tuplex {
                     }
                 } else {
 
-                    std::cout<<"ASYNC callback: returnCode is "<<info.returnCode<<"std::endl";
-
                     // did request fail on Lambda?
                     if (info.returnCode != 0) {
                         // stop execution
@@ -375,8 +357,6 @@ namespace tuplex {
                         return;
                     } else {
 
-                        std::cout<<"ASYNC callback: Lambda success, calling lctx->success."<<std::endl;
-
                         // worked, call callback!
                         AwsLambdaResponse full_response;
                         full_response.info = info;
@@ -393,8 +373,6 @@ namespace tuplex {
                     ss << " Function Error: " << function_error;
                 // print out log:
                 ss << "\nLog:\n" << decodeAWSBase64(log);
-
-                std::cout<<"ASYNC callback: "<<ss.str()<<std::endl;
 
                 lctx->fail(LambdaStatusCode::ERROR_UNKNOWN, ss.str());
                 // decrease wait counter

@@ -13,7 +13,7 @@
 namespace tuplex {
     class IRequestBackend : public IBackend {
     public:
-
+        IRequestBackend() = delete;
         IRequestBackend(const Context& context) : IBackend(context), _emitRequestsOnly(false) {}
 
         /*!
