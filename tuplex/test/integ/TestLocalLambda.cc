@@ -705,7 +705,7 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvokeWithAppDebug) {
 
     // Check output row count in S3:
     auto total_row_count = csv_row_count_for_pattern(output_path + "/*.csv");
-    EXPECT_EQ(total_row_count, 378);
+    EXPECT_EQ(total_row_count, 24); // 24 output rows for 2020 file. (387 across all years).
 }
 
 // Notes: https://guihao-liang.github.io/2020/04/12/aws-s3-retry

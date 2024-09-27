@@ -522,7 +522,7 @@ namespace tuplex {
             markTime("hyperspecialization_time", timer.time());
             if(tstage->fastPathCode().empty()) {
                 fill_response_with_state(_response);
-                logger().error("there is no fast-code path, need fast code path to parse properly. Erroring out.");
+                logger().error("there is no fast-code path (after hyper-specialization), need fast code path to parse properly. Erroring out.");
                 return WORKER_ERROR_COMPILATION_FAILED;
             }
         }
