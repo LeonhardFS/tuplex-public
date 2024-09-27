@@ -1227,6 +1227,7 @@ namespace tuplex {
             req.body.set_partnooffset(task_no);
             auto lambda_output_uri = generate_output_base_uri(tstage, task_no, n_digits, 0, 0);
             req.body.set_baseoutputuri(lambda_output_uri.toString());
+            req.body.set_baseisfinaloutput(false);
             task_no += 1 + recursive_invocation_count(req.body);
         }
 
@@ -1375,7 +1376,7 @@ namespace tuplex {
 
                 auto remote_output_uri = generate_output_base_uri(tstage, taskNo, num_digits, part_no, num_digits_part);
                 req.set_baseoutputuri(remote_output_uri.toString());
-
+                req.set_baseisfinaloutput(true); // Only single file.
                 AwsLambdaRequest aws_req;
                 aws_req.body = req;
                 aws_req.retriesLeft = 5;

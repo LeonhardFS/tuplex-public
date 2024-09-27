@@ -1367,7 +1367,7 @@ namespace tuplex {
 
             auto output_uri = create_output_uri_from_first_part_uri(req_template.baseoutputuri(), req_template.partnooffset(), i + 1);
             aws_req.body.set_baseoutputuri(output_uri.toString());
-
+            aws_req.body.set_baseisfinaloutput(true);
             {
                 std::stringstream ss;
                 ss<<"Created request "<<(i + 1)<<"/"<<parts.size()<<" with base output uri: "<<output_uri.toString();

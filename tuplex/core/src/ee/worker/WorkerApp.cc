@@ -656,6 +656,9 @@ namespace tuplex {
             return rc;
 
 
+        // Start processing Transform Stage.
+        URI outputURI = outputURIFromReq(req);
+
         // So far all of this has been setup.
         // Does request call for self-invocation?
         // If so, fire off self-requests (async) and wait for result.
@@ -678,6 +681,7 @@ namespace tuplex {
 
 
             // Check how many parts there are, distribute between this worker and the Lambdas to invoke.
+            // This lambda gets the first part.
             std::stringstream ss;
             ss<<"Found "<<pluralize(parts.size(), "part")<<" to split between "<<pluralize(1 + num_to_invoke, "worker")<<".";
             logger().info(ss.str());
@@ -685,10 +689,12 @@ namespace tuplex {
             if(parts.size() == 1 + num_to_invoke) {
 
                 for(unsigned i = 0; i < worker_parts.size(); ++i)
-                    worker_parts[i].push_back(parts[i]);
+                    worker_parts[i].push_back(parts[i + 1]);
 
                 // trivial assignment.
-                parts = {parts.back()};
+                parts = {parts.front()};
+                // update outputURI to be first part.
+                //outputURI = ge
             } else {
                 // split up.
                 throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Not yet implemented.");
@@ -713,8 +719,9 @@ namespace tuplex {
             }
         }
 
-        // Start processing Transform Stage.
-        URI outputURI = outputURIFromReq(req);
+        // The part number also works as Lambda ID.
+        if(req.has_partnooffset())
+            logger().info("Lambda " + std::to_string(req.partnooffset()) + " writing to " + outputURI.toString());
         rc = processTransformStage(tstage.get(), syms, parts, outputURI);
 
         // If using self-invocation, wait for requests to finish.
@@ -1360,7 +1367,7 @@ namespace tuplex {
         }
 
         file->close();
-        _output_uris.push_back(outputURI.toString());
+        _output_uris.emplace_back(outputURI.toString());
         logger().info("file output done.");
     }
 
@@ -3087,6 +3094,11 @@ namespace tuplex {
     URI WorkerApp::outputURIFromReq(const messages::InvocationRequest &request) {
 
         URI baseURI(request.baseoutputuri());
+
+        // Final? then no parts. The baseuri is the final destination output uri.
+        if(request.baseisfinaloutput())
+            return baseURI;
+
         auto output_fmt = proto_toFileFormat(request.stage().outputformat());
         auto ext = defaultFileExtension(output_fmt);
         if(request.has_partnooffset())

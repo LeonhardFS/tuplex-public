@@ -142,26 +142,35 @@ message Resource {
 }
 
 message InvocationRequest {
+    // INPUT:
+    // The individual input uris (may be range based)
     repeated string inputURIS = 1;
+    // The actual full input size of each uri (NOT the range size).
     repeated uint64 inputSizes = 2;
-    string baseOutputURI = 3; // final output uri or base URI to form parts
-    optional uint32 partNoOffset = 4; // this is where to start the parts. important when recursive invocations are used
 
-    MessageType type = 5;
-    WorkerSettings settings = 6;
+    // OUTPUT:
+    // Final output uri or base URI to form parts
+    string baseOutputURI = 3;
+    // If true, then write everything to baseoutputuri. Do not generate baseOutputURI/part1.csv, ...
+    bool baseIsFinalOutput = 4;
+    // This is where to start the parts. important when recursive invocations are used.
+    optional uint32 partNoOffset = 5;
+
+    MessageType type = 6;
+    WorkerSettings settings = 7;
 
     // Optional resources attached with this message.
-    repeated Resource resources = 7;
+    repeated Resource resources = 8;
 
-    optional TransformStage stage = 8;
-    optional WarmupMessage warmup = 9;
-    bool verboseLogging = 10;
+    optional TransformStage stage = 9;
+    optional WarmupMessage warmup = 10;
+    bool verboseLogging = 11;
 
     // How the request should be carried out (options etc.).
-    uint64 requestMode = 11;
+    uint64 requestMode = 12;
 
     // Environment overwrite.
-    map<string, string> env = 12;
+    map<string, string> env = 13;
 }
 
 

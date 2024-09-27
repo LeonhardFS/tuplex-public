@@ -310,16 +310,19 @@ namespace tuplex {
                     req.set_baseoutputuri(scratchDir(hintsFromTransformStage(tstage)).join_path(
                             "output.part" + fixedLength(part_no, num_digits) + "_" +
                             fixedLength(part_no, num_digits_part)).toString());
+                    req.set_baseisfinaloutput(true);
                 } else if (tstage->outputMode() == EndPointMode::FILE) {
                     // create output URI based on taskNo
                     auto uri = outputURI(tstage->outputPathUDF(), tstage->outputURI(), part_no, tstage->outputFormat());
                     req.set_baseoutputuri(uri.toPath());
+                    req.set_baseisfinaloutput(true);
                 } else if (tstage->outputMode() == EndPointMode::HASHTABLE) {
                     // there's two options now, either this is an end-stage (i.e., unique/aggregateByKey/...)
                     // or an intermediate stage where a temp hash-table is required.
                     // in any case, because compute is done on Lambda materialize hash-table as temp file.
                     auto temp_uri = tempStageURI(tstage->number());
                     req.set_baseoutputuri(temp_uri.toString());
+                    req.set_baseisfinaloutput(true);
                 } else throw std::runtime_error("unknown output endpoint in lambda backend");
                 requests.push_back(req);
                 part_no++;

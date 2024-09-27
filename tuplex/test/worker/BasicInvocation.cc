@@ -180,7 +180,7 @@ namespace tuplex {
 
         // output uri of job? => final one? parts?
         req.set_baseoutputuri(output_uri);
-
+        req.set_baseisfinaloutput(true);
         req.set_verboselogging(verboseLogging);
 
         auto ws = std::make_unique<messages::WorkerSettings>();
