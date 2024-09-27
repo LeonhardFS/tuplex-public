@@ -1227,7 +1227,7 @@ namespace tuplex {
             req.body.set_partnooffset(task_no);
             auto lambda_output_uri = generate_output_base_uri(tstage, task_no, n_digits, 0, 0);
             req.body.set_baseoutputuri(lambda_output_uri.toString());
-            req.body.set_baseisfinaloutput(false);
+            req.body.set_baseisfinaloutput(true); // <-- is final, the recursive will modify it.
             task_no += 1 + recursive_invocation_count(req.body);
         }
 

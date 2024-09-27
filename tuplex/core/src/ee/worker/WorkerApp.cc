@@ -403,7 +403,6 @@ namespace tuplex {
         tstage.reset();
         syms.reset();
 
-        URI outputURI = outputURIFromReq(req);
         auto parts = partsFromMessage(req);
 
         // only transform stage yet supported, in the future support other stages as well!
@@ -424,11 +423,8 @@ namespace tuplex {
 
         // check settings, pure python mode?
         if(req.settings().has_useinterpreteronly() && req.settings().useinterpreteronly()) {
-            logger().info("WorkerApp is processing everything in single-threaded python/fallback mode.");
-            auto rc = processTransformStageInPythonMode(tstage.get(), parts, outputURI);
-            fill_response_with_state(_response);
-            _lastStat = jsonStat(req, tstage.get()); // generate stats before returning.
-            return rc;
+            // following code is good for compile only, skip for now.
+            return WORKER_CONTINUE;
         }
 
         // print how code is received
@@ -722,7 +718,15 @@ namespace tuplex {
         // The part number also works as Lambda ID.
         if(req.has_partnooffset())
             logger().info("Lambda " + std::to_string(req.partnooffset()) + " writing to " + outputURI.toString());
-        rc = processTransformStage(tstage.get(), syms, parts, outputURI);
+
+        // Python mode or compiled mode?// check settings, pure python mode?
+        if(req.settings().has_useinterpreteronly() && req.settings().useinterpreteronly()) {
+            logger().info("WorkerApp is processing everything in single-threaded python/fallback mode.");
+            rc = processTransformStageInPythonMode(tstage.get(), parts, outputURI);
+        } else {
+            rc = processTransformStage(tstage.get(), syms, parts, outputURI);
+        }
+
 
         // If using self-invocation, wait for requests to finish.
         if(use_self_invocation(req)) {
