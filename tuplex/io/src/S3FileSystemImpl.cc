@@ -1120,6 +1120,46 @@ namespace tuplex {
         return content_length;
     }
 
+    bool check_s3_connection(const std::string& endpoint, const std::string& access_key, const std::string& secret_access_key, const std::string& session_token) {
+        using namespace Aws;
+
+        auto aws_credentials = Auth::AWSCredentials(access_key.c_str(),
+                                                    secret_access_key.c_str(),
+                                                    session_token.c_str());
+
+        auto use_virtual_addressing = endpoint.find(".amazonaws.com") == std::string::npos;
+        auto payload_signing_policy = Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Always;
+        if(strStartsWith(endpoint, "http://"))
+            payload_signing_policy = Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never;
+
+        auto config = Aws::Client::ClientConfiguration();
+        config.retryStrategy = std::make_shared<ModifiedRetryStrategy>();
+        NetworkSettings ns;
+        ns.endpointOverride = endpoint;
+        ns.useVirtualAddressing = use_virtual_addressing;
+        ns.verifySSL = payload_signing_policy == Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never;
+        applyNetworkSettings(ns, config);
+        auto client = std::make_shared<S3::S3Client>(aws_credentials, config, payload_signing_policy, use_virtual_addressing);
+        if(!client)
+            return false;
+
+        // Create quick check with list buckets
+        auto outcome = client->ListBuckets();
+
+        // Different errors possible, some errors may be access/role denied.
+        if(outcome.IsSuccess())
+            return true;
+
+        // Curl error -> not ok.
+        if(std::string(outcome.GetError().GetMessage().c_str()).find("curlCode: 6, Couldn't resolve host name") != std::string::npos)
+            return false;
+
+        if(outcome.GetError().ShouldRetry())
+            return true;
+
+        return false;
+    }
+
 }
 
 #endif

@@ -118,6 +118,16 @@ namespace tuplex {
 
 
     extern size_t s3GetContentLength(Aws::S3::S3Client const& client, const URI& uri, std::ostream *os_err=nullptr);
+
+    /*!
+     * Helper function to test an endpoint for being a valid S3 connection via a listbuckets request.
+     * @param endpoint
+     * @param access_key
+     * @param secret_access_key
+     * @param session_token
+     * @return true if endpoint is valid, false else.
+     */
+    extern bool check_s3_connection(const std::string& endpoint, const std::string& access_key, const std::string& secret_access_key, const std::string& session_token);
 }
 
 

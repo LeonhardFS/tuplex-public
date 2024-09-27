@@ -618,6 +618,18 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvoke) {
     github_pipeline(ctx, input_pattern, output_path);
 }
 
+TEST_F(LambdaLocalTest, S3Connectivity) {
+    using namespace tuplex;
+
+    auto credentials = std::get<0>(local_s3_credentials());
+    // valid s3 endpoint is "http://localhost:9000" but "http://minio:9000" fails.
+    EXPECT_TRUE(check_s3_connection("http://localhost:9000", credentials.GetAWSAccessKeyId().c_str(),
+                                    credentials.GetAWSSecretKey().c_str(), credentials.GetSessionToken().c_str()));
+
+    EXPECT_FALSE(check_s3_connection("http://minio:9000", credentials.GetAWSAccessKeyId().c_str(),
+                                    credentials.GetAWSSecretKey().c_str(), credentials.GetSessionToken().c_str()));
+}
+
 TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvokeWithAppDebug) {
     // This test allows to debug/step through a LambdaWorkerApp instance.
     // It is similar to the end-to-end test GithubSplitTestWithSelfInvoke.
@@ -673,7 +685,7 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvokeWithAppDebug) {
     // Overwrite lambda endpoint.
     // "AWS_ENDPOINT_URL_LAMBDA" -> "http://localhost:8090"
     request.mutable_env()->at("AWS_ENDPOINT_URL_LAMBDA") = "http://localhost:" + std::to_string(8090); // lambda/rest
-    request.mutable_env()->at("AWS_ENDPOINT_URL_S3") = "http://minio:9000"; //"http://localhost:9000"; // minio
+    request.mutable_env()->at("AWS_ENDPOINT_URL_S3") = "http://minio:9000;http://localhost:9000"; // minio/localhost. Need to use two here to make test work.
     string json_str;
     auto status = google::protobuf::util::MessageToJsonString(request, &json_str);
     EXPECT_TRUE(status.ok());
@@ -695,3 +707,5 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvokeWithAppDebug) {
     auto total_row_count = csv_row_count_for_pattern(output_path + "/*.csv");
     EXPECT_EQ(total_row_count, 378);
 }
+
+// Notes: https://guihao-liang.github.io/2020/04/12/aws-s3-retry

@@ -3782,6 +3782,29 @@ namespace tuplex {
             auto secret_key = env.at("AWS_SECRET_ACCESS_KEY");
             auto access_key = env.at("AWS_ACCESS_KEY_ID");
 
+            // There may be more than one endpoint supplied. Right now mostly for testing purposes.
+            // Find first valid endpoint.
+            if(endpoint.find(";") != std::string::npos) {
+                auto candidates = splitToArray(endpoint, ';');
+                std::stringstream ss;
+                ss<<"Found "<<pluralize(candidates.size(), "candidate endpoint")<<", checking for first valid connection.";
+                for(const auto& ep : candidates) {
+                    if(check_s3_connection(ep, access_key, secret_key, "")) {
+                        endpoint = ep;
+                        break;
+                    }
+                }
+                // failed? -> happens when endpoint wasn't updated.
+                if(endpoint.find(";") != std::string::npos) {
+                    ss<<"Failed to find valid S3 connection.";
+                    logger().error(ss.str());
+                    return false;
+                }
+
+                ss<<"Using endpoint: "<<endpoint;
+                logger().debug(ss.str());
+            }
+
             VirtualFileSystem::removeS3FileSystem();
             NetworkSettings ns;
             ns.endpointOverride = endpoint;
