@@ -522,15 +522,8 @@ namespace tuplex {
             markTime("hyperspecialization_time", timer.time());
             if(tstage->fastPathCode().empty()) {
                 fill_response_with_state(_response);
-#ifndef NDEBUG
                 logger().error("there is no fast-code path, need fast code path to parse properly. Erroring out.");
                 return WORKER_ERROR_COMPILATION_FAILED;
-#else
-                logger().error("Hyper-specialization could not produce a fast-path, using interpreter mode as fallback.");
-                auto rc = processTransformStageInPythonMode(tstage.get(), parts, outputURI);
-                _lastStat = jsonStat(req, tstage.get()); // generate stats before returning.
-                return rc;
-#endif
             }
         }
 
@@ -719,7 +712,7 @@ namespace tuplex {
         if(req.has_partnooffset())
             logger().info("Lambda " + std::to_string(req.partnooffset()) + " writing to " + outputURI.toString());
 
-        // Python mode or compiled mode?// check settings, pure python mode?
+        // Python mode or compiled mode?
         if(req.settings().has_useinterpreteronly() && req.settings().useinterpreteronly()) {
             logger().info("WorkerApp is processing everything in single-threaded python/fallback mode.");
             rc = processTransformStageInPythonMode(tstage.get(), parts, outputURI);
