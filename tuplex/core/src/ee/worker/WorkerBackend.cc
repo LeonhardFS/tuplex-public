@@ -13,7 +13,7 @@ namespace tuplex {
 
     std::string find_worker(const std::string& path_hint);
 
-    WorkerBackend::WorkerBackend(const tuplex::Context &context,
+    WorkerBackend::WorkerBackend(tuplex::Context &context,
                                  const std::string &exe_path) : IRequestBackend(context),
                                                                 _worker_exe_path(exe_path),
                                                                 _options(context.getOptions()),

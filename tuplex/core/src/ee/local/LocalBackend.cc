@@ -55,7 +55,7 @@ namespace tuplex {
         tasks.clear();
     }
 
-    LocalBackend::LocalBackend(const Context& context) : IBackend(context), _compiler(nullptr), _options(context.getOptions()) {
+    LocalBackend::LocalBackend(Context& context) : IBackend(context), _compiler(nullptr), _options(context.getOptions()) {
 
         // initialize driver
         auto& logger = this->logger();

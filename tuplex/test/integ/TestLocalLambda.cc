@@ -612,10 +612,18 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvoke) {
     conf["tuplex.aws.lambdaInvocationStrategy"] = "tree";
     conf["tuplex.aws.maxConcurrency"] = "10"; // use 10 as maximum parallelism.
     conf["tuplex.experimental.minimumSizeToSpecialize"] = "0"; // disable minimum size.
+
+    // use this (may file under macOS).
+    conf["tuplex.experimental.interchangeWithObjectFiles"] = "true";
+
     auto ctx = create_lambda_context(conf);
 
     cout<<"Starting Github (mini) pipeline."<<endl;
     github_pipeline(ctx, input_pattern, output_path);
+
+    cout<<"Checking whether result matches."<<endl;
+    auto total_row_count = csv_row_count_for_pattern(output_path + "/*.csv");
+    EXPECT_EQ(total_row_count, 378);
 }
 
 TEST_F(LambdaLocalTest, S3Connectivity) {
@@ -673,6 +681,7 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvokeWithAppDebug) {
     conf["tuplex.experimental.interchangeWithObjectFiles"] = "true";
 
     // Test option: hyper on/off.
+    conf["tuplex.experimental.hyperspecialization"] = "true";
 
 
     auto ctx = create_lambda_context(conf);

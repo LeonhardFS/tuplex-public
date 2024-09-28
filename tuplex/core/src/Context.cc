@@ -97,6 +97,17 @@ namespace tuplex {
         }
     }
 
+    Context::Context(tuplex::Context &&other) : _datasetIDGenerator(other._datasetIDGenerator), _uuid(other._uuid),
+                                                _datasets(other._datasets), _operators(other._operators), _options(other._options),
+                                                _ee(std::move(other._ee)), _name(other._name), _lastJobMetrics(other._lastJobMetrics),
+                                                _compilePolicy(other._compilePolicy) {
+        // move variables
+        // need to move backend reference as well.
+        if(backend()) {
+            backend()->setContext(*this);
+        }
+    }
+
     // destructor needs to free memory of datasets!
     Context::~Context() {
         using namespace std;

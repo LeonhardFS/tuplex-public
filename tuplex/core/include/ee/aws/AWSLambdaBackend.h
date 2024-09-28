@@ -78,7 +78,7 @@ namespace tuplex {
         AwsLambdaBackend() = delete;
         ~AwsLambdaBackend() override;
 
-        AwsLambdaBackend(const Context& context, const AWSCredentials& credentials, const std::string& functionName);
+        AwsLambdaBackend(Context& context, const AWSCredentials& credentials, const std::string& functionName);
 
         Executor* driver() override { return _driver.get(); }
         void execute(PhysicalStage* stage) override;

@@ -40,7 +40,7 @@ namespace tuplex {
          * constructor for convenience
          * @param context
          */
-        explicit LocalBackend(const Context& context);
+        explicit LocalBackend(Context& context);
 
         Executor* driver() override; // for local execution
 

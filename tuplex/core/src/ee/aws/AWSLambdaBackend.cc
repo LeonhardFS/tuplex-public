@@ -1437,7 +1437,7 @@ namespace tuplex {
         } else throw std::runtime_error("unknown output endpoint in lambda backend");
     }
 
-    AwsLambdaBackend::AwsLambdaBackend(const Context &context,
+    AwsLambdaBackend::AwsLambdaBackend(Context &context,
                                        const AWSCredentials &credentials,
                                        const std::string &functionName) : IRequestBackend(context),
                                                                           _credentials(credentials),

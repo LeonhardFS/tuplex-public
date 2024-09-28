@@ -112,7 +112,7 @@ namespace tuplex {
         // disable copying
         Context(const Context& other) = delete;
 
-        Context(Context&& other) = default;
+        Context(Context&& other);
 
         int id() const { return _id; }
 

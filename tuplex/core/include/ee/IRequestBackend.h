@@ -14,7 +14,7 @@ namespace tuplex {
     class IRequestBackend : public IBackend {
     public:
         IRequestBackend() = delete;
-        IRequestBackend(const Context& context) : IBackend(context), _emitRequestsOnly(false) {}
+        IRequestBackend(Context& context) : IBackend(context), _emitRequestsOnly(false) {}
 
         /*!
          * sets additional environment keys to be sent as part of request.

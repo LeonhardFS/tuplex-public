@@ -37,7 +37,7 @@ namespace tuplex {
         WorkerBackend() = delete;
         ~WorkerBackend() override;
 
-        WorkerBackend(const Context& context, const std::string& exe_path="");
+        WorkerBackend(Context& context, const std::string& exe_path="");
 
         Executor* driver() override { return _driver.get(); }
         void execute(PhysicalStage* stage) override;
