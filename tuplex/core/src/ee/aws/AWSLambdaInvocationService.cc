@@ -276,7 +276,6 @@ namespace tuplex {
                    << aws_outcome.GetError().GetExceptionName().c_str()
                    << aws_outcome.GetError().GetMessage().c_str();
                 lctx->fail(LambdaStatusCode::ERROR_UNKNOWN, ss.str());
-
                 service->_numPendingRequests.fetch_add(-1);
                 return;
             }

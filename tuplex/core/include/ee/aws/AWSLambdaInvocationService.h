@@ -76,6 +76,13 @@ namespace tuplex {
         RequestInfo info;
     };
 
+    struct RequestResponsePair {
+        AwsLambdaRequest request;
+        AwsLambdaResponse response;
+
+        bool is_pending();
+    };
+
     class AwsLambdaInvocationService {
     private:
         std::mutex _mutex;
@@ -95,6 +102,9 @@ namespace tuplex {
 
 
         static LambdaStatusCode specialEventHappened(const std::string& log, const messages::InvocationResponse& response, std::string* event_message=nullptr);
+
+        // if store=true, store for invocation the pair.
+        std::vector<RequestResponsePair> _data;
 
     public:
         AwsLambdaInvocationService() = delete;
@@ -133,7 +143,24 @@ namespace tuplex {
                          std::function<void(const AwsLambdaRequest&, LambdaStatusCode, const std::string&, bool)> onRetry=[](const AwsLambdaRequest& req,
                                                                                                                              LambdaStatusCode retry_code,
                                                                                                                              const std::string& retry_reason,
-                                                                                                                             bool willDecreaseRetryCount) {});
+                                                                                                                             bool willDecreaseRetryCount) {},
+                                                                                                                             bool store=false);
+
+        inline std::vector<RequestResponsePair> get_pairs(bool consume=true) {
+            std::lock_guard<std::mutex> lock(_mutex);
+
+            // Return full data (including pending).
+            auto v = _data;
+
+            if(consume) {
+                // Remove all non-pending requests.
+                std::remove_if(_data.begin(), _data.end(), [](const RequestResponsePair& p) {
+                    return !p.is_pending();
+                });
+            }
+            return v;
+        }
+
     };
 
     extern messages::InvocationResponse AwsParseRequestPayload(const Aws::Lambda::Model::InvokeResult &result);

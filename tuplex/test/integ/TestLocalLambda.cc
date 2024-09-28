@@ -706,6 +706,11 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvokeWithAppDebug) {
     // Check output row count in S3:
     auto total_row_count = csv_row_count_for_pattern(output_path + "/*.csv");
     EXPECT_EQ(total_row_count, 24); // 24 output rows for 2020 file. (387 across all years).
+
+    // @TODO: check that response ret has information about recursively invoked containers.
+    // -> compute stats from there.
+
+    // @TODO: pass compiled code to recursive lambdas.
 }
 
 // Notes: https://guihao-liang.github.io/2020/04/12/aws-s3-retry
