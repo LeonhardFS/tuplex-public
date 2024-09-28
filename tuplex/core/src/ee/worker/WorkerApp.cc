@@ -717,8 +717,19 @@ namespace tuplex {
                     messages::CodePath slow_path_message;
                     self_invoke_request.mutable_stage()->mutable_slowpath()->CopyFrom(slow_path_message);
                 }
+            } else {
+                // Take code-paths from stage directly (may be IR or bitcode).
+                if(!tstage->fastPathCode().empty()) {
+                    logger().info("Sending fast path code with format " + codegen::codeFormatToStr(tstage->fastPathCodeFormat()) + " to self-invoke requests.");
+                    auto code_mg = tstage->fast_path_to_protobuf();
+                    self_invoke_request.mutable_stage()->mutable_fastpath()->CopyFrom(code_mg);
+                }
+                if(!tstage->slowPathCode().empty()) {
+                    logger().info("Sending slow path code with format " + codegen::codeFormatToStr(tstage->fastPathCodeFormat()) + " to self-invoke requests.");
+                    auto code_mg = tstage->slow_path_to_protobuf();
+                    self_invoke_request.mutable_stage()->mutable_slowpath()->CopyFrom(code_mg);
+                }
             }
-
 
             // @TODO: pass data / process data and so on.
             rc = invokeRecursivelyAsync(num_to_invoke, lambda_endpoint, self_invoke_request, worker_parts);
