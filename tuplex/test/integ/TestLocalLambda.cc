@@ -665,6 +665,16 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvokeWithAppDebug) {
     conf["tuplex.aws.maxConcurrency"] = "10"; // use 10 as maximum parallelism.
     conf["tuplex.experimental.minimumSizeToSpecialize"] = "0"; // disable minimum size.
     conf["tuplex.experimental.opportuneCompilation"] = "false"; // disable, is buggy.
+
+    // Test option: check with python mode only.
+    //conf["tuplex.useInterpreterOnly"] = "true";
+
+    // Test option: enable shipping code (at least for self-invoked Lambdas).
+    conf["tuplex.experimental.interchangeWithObjectFiles"] = "true";
+
+    // Test option: hyper on/off.
+
+
     auto ctx = create_lambda_context(conf);
 
     cout<<"Changing backend to emit requests only."<<endl;

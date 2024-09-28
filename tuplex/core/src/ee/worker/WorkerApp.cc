@@ -538,7 +538,7 @@ namespace tuplex {
         // if not, compile given code & process using both compile code & fallback
         // optimize via LLVM when in hyper mode.
         Timer compileTimer;
-        if(req.requestmode() & REQUEST_MODE_COMPILE_AND_RETURN_OBJECT_CODE) {
+        if(req.requestmode() & REQUEST_MODE_COMPILE_AND_RETURN_OBJECT_CODE || _settings.useObjectFileAsInterchangeFormat) {
             std::string target_triple = llvm::sys::getDefaultTargetTriple();
             std::string cpu = "native"; // <-- native target cpu
 
@@ -694,6 +694,31 @@ namespace tuplex {
             self_invoke_request.clear_inputsizes();
             self_invoke_request.clear_inputuris();
             self_invoke_request.mutable_stage()->clear_invocationcount();
+
+            // Disable hyper as well (there's code, no need to respecialize).
+            if(useHyperSpecialization(self_invoke_request))
+                logger().info("Original requests uses hyper-specialization, disabling for recursive, self-invoke requests.");
+            self_invoke_request.mutable_stage()->clear_serializedstage();
+
+            // Check if using object files (instead of IR) are active. If so, modify message.
+            if(_settings.useObjectFileAsInterchangeFormat) {
+                logger().info("Using Object files (.o) to pass code to self-invoked Lambdas.");
+
+                // No need to recompile AGAIN.
+                self_invoke_request.set_requestmode(REQUEST_MODE_SKIP_COMPILE);
+
+                auto object_code_fast_path = find_resources_by_type(_response, ResourceType::OBJECT_CODE_NORMAL_CASE).front().payload();
+                messages::CodePath fast_path_message;
+                fast_path_message.ParseFromString(object_code_fast_path);
+                self_invoke_request.mutable_stage()->mutable_fastpath()->CopyFrom(fast_path_message);
+
+                if(!find_resources_by_type(_response, ResourceType::OBJECT_CODE_GENERAL_CASE).empty()) {
+                    auto object_code_slow_path = find_resources_by_type(_response, ResourceType::OBJECT_CODE_GENERAL_CASE).front().payload();
+                    messages::CodePath slow_path_message;
+                    self_invoke_request.mutable_stage()->mutable_slowpath()->CopyFrom(slow_path_message);
+                }
+            }
+
 
             // @TODO: pass data / process data and so on.
             rc = invokeRecursivelyAsync(num_to_invoke, lambda_endpoint, self_invoke_request, worker_parts);
