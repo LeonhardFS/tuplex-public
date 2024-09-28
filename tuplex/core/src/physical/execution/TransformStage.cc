@@ -1188,6 +1188,7 @@ namespace tuplex {
         // lazy compile
         if(!_syms)
             _syms = std::make_shared<JITSymbols>();
+        _syms.get()->reset();
 
         Timer timer;
         //JobMetrics& metrics = PhysicalStage::plan()->getContext().metrics();

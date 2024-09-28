@@ -427,6 +427,11 @@ namespace tuplex {
                 codegen::release_stage_f releaseStageFunctor;
 
                 CodePath() : initStageFunctor(nullptr), releaseStageFunctor(nullptr) {}
+
+                inline void reset() {
+                    initStageFunctor = nullptr;
+                    releaseStageFunctor = nullptr;
+                }
             };
 
             CodePath _fastCodePath;
@@ -448,7 +453,9 @@ namespace tuplex {
                            _slowCodePath(),
                            aggInitFunctor(nullptr),
                            aggCombineFunctor(nullptr),
-                           aggAggregateFunctor(nullptr) {}
+                           aggAggregateFunctor(nullptr) {
+                reset();
+            }
 
 
            inline void update(const std::shared_ptr<JITSymbols>& syms) {
@@ -478,6 +485,20 @@ namespace tuplex {
                    aggAggregateFunctor = syms->aggAggregateFunctor;
                if(syms->aggCombineFunctor)
                    aggCombineFunctor = syms->aggCombineFunctor;
+           }
+
+            /**
+             * sets alls symbols to nullptr */
+            inline void reset() {
+                // update if other is not null
+                _fastCodePath.reset();
+                _slowCodePath.reset();
+                functor = nullptr;
+                functorWithExp = nullptr;
+                resolveFunctor = nullptr;
+                aggInitFunctor = nullptr;
+                aggAggregateFunctor = nullptr;
+                aggCombineFunctor = nullptr;
             }
 
             inline bool valid() const { return functor || functorWithExp || resolveFunctor || (aggInitFunctor && aggAggregateFunctor && aggCombineFunctor); }

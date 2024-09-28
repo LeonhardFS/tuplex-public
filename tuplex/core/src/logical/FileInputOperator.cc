@@ -1565,6 +1565,15 @@ namespace tuplex {
                     fillRowCacheWithStratifiedSamples(sm, namePtr, sample_limit, strata_size, samples_per_strata, random_seed);
                 }
 
+
+                // Quick check: Empty sample? Then warn and return.
+                if(estimateSampleBasedRowCount() == 0) {
+                    std::stringstream ss;
+                    ss<<"Could not retrieve sample from "<<_fileURIs<<". Skipping resample/retype step for "<<name();
+                    logger.warn(ss.str());
+                    return;
+                }
+
                 // detect new type
                 auto t = detectJsonTypesAndColumns(co, namesCollection);
 
@@ -1598,6 +1607,13 @@ namespace tuplex {
             }
 
             _estimatedRowCount = estimateSampleBasedRowCount();
+            // Quick check: Empty sample? Then warn and return.
+            if(_estimatedRowCount == 0) {
+                std::stringstream ss;
+                ss<<"Could not retrieve sample from "<<_fileURIs<<". Skipping resample/retype step for "<<name();
+                logger.warn(ss.str());
+                return;
+            }
 
             // correct for if columns are different
             if(!vec_equal(inputColumns(), cols_before_resample)) {

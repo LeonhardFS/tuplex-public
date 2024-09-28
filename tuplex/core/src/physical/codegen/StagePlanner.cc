@@ -1988,14 +1988,17 @@ namespace tuplex {
             if(0 != conf.sampling_size)
                 fop->setSamplingSize(conf.sampling_size);
 
-#ifndef NDEBUG
-            // debug help
-            if(uri.toString().find("2018-10-15") != std::string::npos)
-                std::cout<<"found file!"<<std::endl;
-#endif
-
-            // resample
-            fop->setInputFiles({uri}, {file_size}, true, sample_limit, true, strata_size, samples_per_strata);
+            // Check if URI is encoded range uri. This is not yet supported, warn about it but continue with full uri.
+            auto uri_to_sample_on = uri;
+            URI decoded_uri;
+            size_t range_start = 0, range_end = 0;
+            decodeRangeURI(uri.toString(), decoded_uri, range_start, range_end);
+            if(range_start != 0 || range_end != 0) {
+                logger.warn("Found range-based uri " + uri.toString() + ", using for sampling original uri " + decoded_uri.toString() + ". Ranges not yet supported for hyperspecialziation.");
+                uri_to_sample_on = decoded_uri;
+            }
+            // resample.
+            fop->setInputFiles({uri_to_sample_on}, {file_size}, true, sample_limit, true, strata_size, samples_per_strata);
 
             if(fop->fileFormat() == FileFormat::OUTFMT_JSON) {
                 enable_cf = false;

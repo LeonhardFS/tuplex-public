@@ -153,27 +153,11 @@ namespace tuplex {
 
 
 
-class LambdaLocalTest : public ::testing::Test {
+class LocalStackFixture {
 public:
     static std::string yaml_path;
     static std::string lambda_endpoint;
 protected:
-    std::string testName;
-    std::string bucketName;
-
-    // Per Test setup
-    void SetUp() override {
-        // Check if docker is installed and S3 minio is up and running. If not, skip test.
-        if(!is_docker_installed())
-            GTEST_SKIP() << "Docker not found.";
-
-        testName = std::string(::testing::UnitTest::GetInstance()->current_test_info()->test_case_name()) + std::string(::testing::UnitTest::GetInstance()->current_test_info()->name());
-    }
-
-    void TearDown() override {
-
-    }
-
     inline Context create_lambda_context(const std::unordered_map<std::string, std::string>& conf_override={},
                                          const std::unordered_map<std::string, std::string>& env_override={}) {
 
@@ -322,8 +306,8 @@ protected:
     }
 };
 
-std::string LambdaLocalTest::yaml_path = "../resources/docker/docker-compose.yml";
-std::string LambdaLocalTest::lambda_endpoint = "http://localhost:" + std::to_string(8090);
+std::string LocalStackFixture::yaml_path = "../resources/docker/docker-compose.yml";
+std::string LocalStackFixture::lambda_endpoint = "http://localhost:" + std::to_string(8090);
 
 bool py3majmin_match(const std::string& v1, const std::string& v2) {
     auto p1 = splitToArray(v1, '.');
@@ -331,6 +315,35 @@ bool py3majmin_match(const std::string& v1, const std::string& v2) {
 
     return p1[0] == p2[0] && p1[1] == p2[1];
 }
+
+
+// Google test
+class LambdaLocalTest : public ::testing::Test, public LocalStackFixture {
+protected:
+    std::string testName;
+
+    // Per Test setup
+    void SetUp() override {
+        // Check if docker is installed and S3 minio is up and running. If not, skip test.
+        if (!is_docker_installed())
+            GTEST_SKIP() << "Docker not found.";
+
+        testName = std::string(::testing::UnitTest::GetInstance()->current_test_info()->test_case_name()) +
+                   std::string(::testing::UnitTest::GetInstance()->current_test_info()->name());
+    }
+
+    void TearDown() override {
+
+    }
+
+    static void SetUpTestSuite() {
+        LocalStackFixture::SetUpTestSuite();
+    }
+
+    static void TearDownTestSuite() {
+        LocalStackFixture::TearDownTestSuite();
+    }
+};
 
 TEST_F(LambdaLocalTest, ConnectionTestInvoke) {
     using namespace std;
@@ -638,11 +651,41 @@ TEST_F(LambdaLocalTest, S3Connectivity) {
                                     credentials.GetAWSSecretKey().c_str(), credentials.GetSessionToken().c_str()));
 }
 
-TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvokeWithAppDebug) {
+
+class ParametrizedLambdaLocalTest : public LocalStackFixture, public ::testing::TestWithParam<std::unordered_map<std::string,std::string>> {
+public:
+    std::string testName;
+
+    // Per Test setup
+    void SetUp() override {
+        // Check if docker is installed and S3 minio is up and running. If not, skip test.
+        if (!is_docker_installed())
+            GTEST_SKIP() << "Docker not found.";
+
+        testName = std::string(::testing::UnitTest::GetInstance()->current_test_info()->test_case_name()) +
+                   std::string(::testing::UnitTest::GetInstance()->current_test_info()->name());
+    }
+
+    void TearDown() override {
+
+    }
+protected:
+    static void SetUpTestSuite() {
+        LocalStackFixture::SetUpTestSuite();
+    }
+
+    static void TearDownTestSuite() {
+        LocalStackFixture::TearDownTestSuite();
+    }
+};
+
+TEST_P(ParametrizedLambdaLocalTest, GithubSplitTestWithSelfInvokeWithAppDebug) {
     // This test allows to debug/step through a LambdaWorkerApp instance.
     // It is similar to the end-to-end test GithubSplitTestWithSelfInvoke.
     using namespace std;
     using namespace tuplex;
+
+    auto conf_override = GetParam();
 
     string input_pattern = "../resources/hyperspecialization/github_daily/2020-10-15.json.sample";
     uint64_t input_file_size = 0;
@@ -674,14 +717,23 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvokeWithAppDebug) {
     conf["tuplex.experimental.minimumSizeToSpecialize"] = "0"; // disable minimum size.
     conf["tuplex.experimental.opportuneCompilation"] = "false"; // disable, is buggy.
 
+
+    // override conf with parameters.
+    conf["tuplex.useInterpreterOnly"] = "false";
+    conf["tuplex.experimental.interchangeWithObjectFiles"] = "false";
+    conf["tuplex.experimental.hyperspecialization"] = "false";
+
+    for(const auto& kv : conf_override)
+        conf[kv.first] = kv.second;
+
     // Test option: check with python mode only.
     //conf["tuplex.useInterpreterOnly"] = "true";
 
     // Test option: enable shipping code (at least for self-invoked Lambdas).
-    conf["tuplex.experimental.interchangeWithObjectFiles"] = "true";
+    //conf["tuplex.experimental.interchangeWithObjectFiles"] = "true";
 
     // Test option: hyper on/off.
-    conf["tuplex.experimental.hyperspecialization"] = "true";
+    //conf["tuplex.experimental.hyperspecialization"] = "true";
 
 
     auto ctx = create_lambda_context(conf);
@@ -761,5 +813,12 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvokeWithAppDebug) {
 
     // @TODO: pass compiled code to recursive lambdas.
 }
+
+INSTANTIATE_TEST_SUITE_P(Blub, ParametrizedLambdaLocalTest, ::testing::Values(std::unordered_map<std::string, std::string>{},
+                                                                              std::unordered_map<std::string, std::string>{std::make_pair("tuplex.experimental.interchangeWithObjectFiles", "true")},
+                                                                              std::unordered_map<std::string, std::string>{std::make_pair("tuplex.experimental.hyperspecialization", "true")},
+                                                                              std::unordered_map<std::string, std::string>{std::make_pair("tuplex.experimental.hyperspecialization", "true"),
+                                                                                                                           std::make_pair("tuplex.experimental.interchangeWithObjectFiles", "true")},
+                                                                              std::unordered_map<std::string, std::string>{std::make_pair("tuplex.useInterpreterOnly", "true")}));
 
 // Notes: https://guihao-liang.github.io/2020/04/12/aws-s3-retry
