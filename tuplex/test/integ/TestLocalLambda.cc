@@ -707,7 +707,37 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvokeWithAppDebug) {
     auto total_row_count = csv_row_count_for_pattern(output_path + "/*.csv");
     EXPECT_EQ(total_row_count, 24); // 24 output rows for 2020 file. (387 across all years).
 
-    // @TODO: check that response ret has information about recursively invoked containers.
+    // Check that response ret has information about recursively invoked containers.
+    EXPECT_EQ(ret.invokedresponses_size(), 3);
+    EXPECT_EQ(ret.invokedrequests_size(), 3);
+
+    // Print out invoked request info.
+    int request_no = 0;
+    for(auto info : ret.invokedrequests()) {
+        cout<<"Request "<<request_no++<<":\n";
+        std::string info_str;
+        google::protobuf::util::MessageToJsonString(info, &info_str);
+        // pretty print
+        auto j = nlohmann::json::parse(info_str);
+        cout<<j.dump(2)<<endl;
+    }
+
+    // Retrieve output uris and check their names.
+    std::vector<URI> output_uris;
+    std::copy(ret.outputuris().begin(), ret.outputuris().end(), std::back_inserter(output_uris));
+    EXPECT_EQ(output_uris.size(), 1);
+    for(auto sub_ret : ret.invokedresponses()) {
+        std::copy(sub_ret.outputuris().begin(), sub_ret.outputuris().end(), std::back_inserter(output_uris));
+    }
+    EXPECT_EQ(output_uris.size(), 4); // 4 requests invoked.
+    // check names:
+    std::sort(output_uris.begin(), output_uris.end(), [](const URI& a, const URI& b) {
+        return a.toString() < b.toString();
+    });
+    for(unsigned i = 0; i < output_uris.size(); ++i) {
+        EXPECT_EQ(output_uris[i].toString(), output_path +"/part" + std::to_string(i) + ".csv");
+    }
+
     // -> compute stats from there.
 
     // @TODO: pass compiled code to recursive lambdas.

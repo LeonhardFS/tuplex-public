@@ -106,6 +106,24 @@ namespace tuplex {
         // Self-invoking AWS Lambda Invocation service.
         std::unique_ptr<AwsLambdaInvocationService> _lambdaInvoker;
 
+        // thread-safe callback functions.
+
+        // Allow to freely manipulate _response, yet this is thread-safe version used only by the lambda handlers.
+        messages::InvocationResponse _thread_safe_response;
+        std::mutex _thread_safe_response_mutex;
+        void thread_safe_lambda_success_handler(const AwsLambdaRequest& request,
+                                                const AwsLambdaResponse& response);
+
+
+        inline void reset_lambda_invocation_service(const std::shared_ptr<Aws::Lambda::LambdaClient>& client) {
+            _lambdaInvoker.reset(new AwsLambdaInvocationService(client, _functionName));
+            {
+                // Clear thread_safe_response.
+                std::lock_guard<std::mutex> lock(_thread_safe_response_mutex);
+                _thread_safe_response.Clear();
+            }
+        }
+
 
         // update network settings from current environment, or restores it to default AWS Lambda settings.
         void update_network_settings(const std::unordered_map<std::string, std::string> &env={});

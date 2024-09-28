@@ -217,10 +217,10 @@ namespace tuplex {
                     std::unique_lock<std::mutex> lock(self_ctx->mutex);
                     // add the container info of the invoker itself!
                     const_cast<SelfInvocationContext*>(self_ctx)->containers.emplace_back(response.container());
-                    // and all IDs that that container invoked
-                    for(auto info : response.invokedcontainers()) {
-                        self_ctx->containers.emplace_back(info);
-                    }
+//                    // and all IDs that that container invoked
+//                    for(auto info : response.invokedcontainers()) {
+//                        self_ctx->containers.emplace_back(info);
+//                    }
                     self_ctx->numPendingRequests.fetch_add(-1, std::memory_order_release);
                 }
             } else {
@@ -832,11 +832,11 @@ namespace tuplex {
     }
 
     void LambdaWorkerApp::fill_with_result(messages::InvocationResponse& response) {
-        // message specific results
-        for(const auto& c_info : _invokedContainers) {
-            auto element = response.add_invokedcontainers();
-            c_info.fill(element);
-        }
+//        // message specific results
+//        for(const auto& c_info : _invokedContainers) {
+//            auto element = response.add_invokedcontainers();
+//            c_info.fill(element);
+//        }
 
         for(const auto& r_info : _requests) {
             auto element = response.add_invokedrequests();
@@ -986,8 +986,8 @@ namespace tuplex {
         request.response.returnCode = (int)response.status();
         request.response.container = response.container();
         request.response.invoke_desc = desc;
-        for(auto c : response.invokedcontainers())
-            request.response.invoked_containers.push_back(c);
+//        for(auto c : response.invokedcontainers())
+//            request.response.invoked_containers.push_back(c);
         for(auto r : response.invokedrequests())
             request.response.invoked_requests.push_back(r);
         for(auto out_uri : response.outputuris())
@@ -1072,11 +1072,11 @@ namespace tuplex {
         result.set_status(tuplex::messages::InvocationResponse_Status_SUCCESS);
         result.set_type(_messageType);
 
-        // message specific results
-        for(const auto& c_info : _invokedContainers) {
-            auto element = result.add_invokedcontainers();
-            c_info.fill(element);
-        }
+//        // message specific results
+//        for(const auto& c_info : _invokedContainers) {
+//            auto element = result.add_invokedcontainers();
+//            c_info.fill(element);
+//        }
 
         for(const auto& r_info : _requests) {
             auto element = result.add_invokedrequests();
@@ -1323,8 +1323,7 @@ namespace tuplex {
             return WORKER_ERROR_LAMBDA_CLIENT;
         }
 
-        _lambdaInvoker.reset(new AwsLambdaInvocationService(client, _functionName));
-
+        reset_lambda_invocation_service(client);
         logger().info("Lambda client created, listing functions:");
         {
             std::stringstream ss;
@@ -1375,69 +1374,34 @@ namespace tuplex {
             }
 
             // Add to invoker (this will immediately start the request).
-            _lambdaInvoker->invokeAsync(aws_req,[this](const AwsLambdaRequest &req, const AwsLambdaResponse &resp) {
-                                        {
-                                            std::stringstream ss;
-                                            ss << "LAMBDA request done (rc=" << resp.info.returnCode << ",duration=" << resp.info.durationInMs
-                                               << "ms" << ").";
-
-                                            logger().info(ss.str());
-                                        }} );
+            _lambdaInvoker->invokeAsync(aws_req, [this](const AwsLambdaRequest &req, const AwsLambdaResponse &resp) { thread_safe_lambda_success_handler(req, resp); } );
         }
-
-//        // Send basic Environment request message.
-//        messages::InvocationRequest req;
-//        req.set_type(messages::MessageType::MT_ENVIRONMENTINFO);
-//
-//        // Simplified.
-//        AwsLambdaRequest aws_req;
-//        aws_req.body = req;
-//        _lambdaInvoker->invokeAsync(aws_req, [this](const AwsLambdaRequest &req, const AwsLambdaResponse &resp) {
-//                                        {
-//                                            std::stringstream ss;
-//                                            ss << "LAMBDA request done (rc=" << resp.info.returnCode << ",duration=" << resp.info.durationInMs
-//                                               << "ms" << ").";
-//
-//                                            logger().info(ss.str());
-//                                        }
-//
-//                                        logger().info("Got " + pluralize(resp.response.resources_size(), "resource") + ".");
-//
-//                                        auto env_resource = resp.response.resources(0);
-//                                        auto log_resource = resp.response.resources(1);
-//
-//                                        assert(env_resource.type() == static_cast<uint32_t>(ResourceType::ENVIRONMENT_JSON));
-//                                        assert(log_resource.type() == static_cast<uint32_t>(ResourceType::LOG));
-//
-//                                        // Log:
-//                                        //cout<<"Log of Lambda invocation:\n"
-//                                        //    <<decompress_string(log_resource.payload());
-//
-//                                        std::stringstream ss;
-//                                        auto j = nlohmann::json::parse(env_resource.payload());
-//                                        ss << "Environment information message:\n" << j.dump(2) << std::endl;
-//                                        logger().info(ss.str());
-//                                    },
-//                                    [this](const AwsLambdaRequest &req,
-//                                           LambdaStatusCode err_code,
-//                                           const std::string &err_msg) {
-//                                        std::stringstream ss;
-//                                        ss << "LAMBDA request failed with code=" << static_cast<int>(err_code) << ": "
-//                                           << err_msg;
-//                                        logger().error(ss.str());
-//                                    }, [this](const AwsLambdaRequest &req,
-//                                              LambdaStatusCode retry_code,
-//                                              const std::string &retry_reason,
-//                                              bool willDecreaseRetryCount) {
-//                    std::stringstream ss;
-//                    ss << "Retry LAMBDA request with code=" << static_cast<int>(retry_code) << ": " << retry_reason;
-//                    logger().info(ss.str());
-//                }
-//        );
 
         // requests are now queued up. Now wait for them using waitForInvoker() function.
 
         return WORKER_OK;
+    }
+
+    void LambdaWorkerApp::thread_safe_lambda_success_handler(const tuplex::AwsLambdaRequest &request,
+                                                             const tuplex::AwsLambdaResponse &response) {
+        {
+            std::stringstream ss;
+            ss << "LAMBDA request done (rc=" << response.info.returnCode << ",duration=" << response.info.durationInMs
+               << "ms" << ").";
+
+            logger().info(ss.str());
+        }
+
+        // Extract RequestInfo and Container Info.
+        messages::RequestInfo request_info;
+        response.info.fill(&request_info);
+
+        // Add (mutex protected) to _response.
+        {
+            std::lock_guard<std::mutex> lock(_thread_safe_response_mutex);
+            _thread_safe_response.add_invokedrequests()->CopyFrom(request_info);
+            _thread_safe_response.add_invokedresponses()->CopyFrom(response.response);
+        }
     }
 
     int LambdaWorkerApp::waitForInvoker() const {
@@ -1456,7 +1420,12 @@ namespace tuplex {
     }
 
     void LambdaWorkerApp::fill_response_with_self_invocation_state(messages::InvocationResponse& response) const {
-
+        {
+            // Get from thread (bad hack with constness)
+            std::lock_guard<std::mutex> lock(const_cast<LambdaWorkerApp*>(this)->_thread_safe_response_mutex);
+            response.mutable_invokedrequests()->CopyFrom(_thread_safe_response.invokedrequests());
+            response.mutable_invokedresponses()->CopyFrom(_thread_safe_response.invokedresponses());
+        }
     }
 
     std::vector<ContainerInfo> normalizeInvokedContainers(const std::vector<ContainerInfo>& containers) {

@@ -234,8 +234,11 @@ message InvocationResponse {
     map<uint64, uint64> exceptionCounts = 9;
     CodePathStats rowStats = 10;
 
+    // Information about the container on which this response was generated on.
     ContainerInfo container = 11;
-    repeated ContainerInfo invokedContainers = 12;
+    // Responses from recursively invoked Lambdas (hold their container information)
+    repeated InvocationResponse invokedResponses = 12;
+    // Request information of recursively invoked Lambdas.
     repeated RequestInfo invokedRequests = 13;
 
     // Messages may contain already result data, given in form of a list of resources.

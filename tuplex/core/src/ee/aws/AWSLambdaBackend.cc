@@ -1728,10 +1728,11 @@ namespace tuplex {
             for (const auto &task: _tasks) {
                 ContainerInfo info = task.response.container();
                 ss << "{\"container\":" << info.asJSON() << ",\"invoked_containers\":[";
-                for (unsigned i = 0; i < task.response.invokedcontainers_size(); ++i) {
-                    info = task.response.invokedcontainers(i);
+                for (unsigned i = 0; i < task.response.invokedresponses_size(); ++i) {
+                    auto invoked_response = task.response.invokedresponses(i);
+                    ContainerInfo info = invoked_response.container();
                     ss << info.asJSON();
-                    if (i != task.response.invokedcontainers_size() - 1)
+                    if (i != task.response.invokedresponses_size() - 1)
                         ss << ",";
                 }
                 ss << "]";
@@ -1744,7 +1745,6 @@ namespace tuplex {
                         break;
                     }
                 }
-
 
                 ss << ",\"invoked_requests\":[";
                 RequestInfo r_info;
