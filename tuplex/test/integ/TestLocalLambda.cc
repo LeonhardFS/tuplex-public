@@ -623,7 +623,6 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvoke) {
 
     // use this (may file under macOS).
     conf["tuplex.experimental.interchangeWithObjectFiles"] = "true";
-    conf["tuplex.experimental.interchangeWithObjectFiles"] = "false";
 
     auto ctx = create_lambda_context(conf);
 
