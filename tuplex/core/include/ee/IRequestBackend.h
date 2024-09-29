@@ -14,7 +14,7 @@ namespace tuplex {
     class IRequestBackend : public IBackend {
     public:
         IRequestBackend() = delete;
-        IRequestBackend(Context& context) : IBackend(context), _emitRequestsOnly(false) {}
+        IRequestBackend(Context& context) : IBackend(context), _emitRequestsOnly(false), _blockRequests(false) {}
 
         /*!
          * sets additional environment keys to be sent as part of request.
@@ -34,6 +34,14 @@ namespace tuplex {
             _emitRequestsOnly = emitOnly;
         }
 
+        /*!
+         * if true, requests will be carried out synchronously. One by one.
+         * @param block
+         */
+        void setBlockingRequests(bool block) {
+            _blockRequests = block;
+        }
+
         inline std::vector<messages::InvocationRequest> pendingRequests(bool clear=true) {
             if(clear) {
                 auto v = _pendingRequests;
@@ -47,6 +55,7 @@ namespace tuplex {
     protected:
         std::vector<messages::InvocationRequest> _pendingRequests;
         bool _emitRequestsOnly;
+        bool _blockRequests;
         std::unordered_map<std::string, std::string> _environmentOverwrite;
 
         /*! add environment keys, global configs */

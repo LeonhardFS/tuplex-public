@@ -623,8 +623,12 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvoke) {
 
     // use this (may file under macOS).
     conf["tuplex.experimental.interchangeWithObjectFiles"] = "true";
+    conf["tuplex.experimental.interchangeWithObjectFiles"] = "false";
 
     auto ctx = create_lambda_context(conf);
+
+    // Need to modify for synchronous requests because there's only two lambda containers right now.
+    dynamic_cast<AwsLambdaBackend*>(ctx.backend())->setBlockingRequests(true);
 
     cout<<"Starting Github (mini) pipeline with self-invoke."<<endl;
     github_pipeline(ctx, input_pattern, output_path);

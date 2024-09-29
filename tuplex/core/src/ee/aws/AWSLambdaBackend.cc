@@ -758,8 +758,16 @@ namespace tuplex {
                     _pendingRequests.push_back(aws_req.body);
                 return; // <-- stop further processing, early abort.
             } else {
-                for (const auto &req: requests)
-                    invokeAsync(req);
+                if(!_blockRequests)
+                    for (const auto &req: requests)
+                        invokeAsync(req);
+                else {
+                    // invoke requests one by one.
+                    for(const auto& req : requests) {
+                        invokeAsync(req);
+                        _service->waitForRequests();
+                    }
+                }
             }
             logger().info("LAMBDA requesting took " + std::to_string(timer.time()) + "s");
         } else {
@@ -1233,60 +1241,7 @@ namespace tuplex {
             task_no += 1 + recursive_invocation_count(req.body);
         }
 
-//        // now generation is quite simple. Go over files, and then check wrt to specialization size if they're large enough to get specialized on. Then issue appropriate number of requests.
-//        for(auto uri_info : uri_infos) {
-//            auto input_uri = std::get<0>(uri_info);
-//            auto input_uri_size = std::get<1>(uri_info);
-//
-//            if(input_uri_size >= conf.minimum_size_to_specialize) {
-//                // issue specialization query!
-//
-//                // how many queries to issue? could be that input uri needs to be split up into multiple files...!
-//                // -> make sure each part is at least specialization unit size
-//                assert(conf.specialization_unit_size >= conf.minimum_size_to_specialize);
-//
-//                size_t bytes_so_far = 0;
-//                while(bytes_so_far < input_uri_size) {
-//                    // part from bytes_so_far, bytes_so_far + specialization_unit_size
-//
-//                    // is this is the last part?
-//                    if(bytes_so_far + 2 * conf.specialization_unit_size < input_uri_size) {
-//                        request_uris.push_back(encodeRangeURI(input_uri, bytes_so_far, bytes_so_far + conf.specialization_unit_size));
-//
-//                        auto uri = input_uri;
-//                        auto uri_size = input_uri_size;
-//                        auto range_start = bytes_so_far;
-//                        auto range_end = bytes_so_far + conf.specialization_unit_size;
-//
-//                        create_tree_based_hyperspecialization_request(tstage, bitCode, uri, uri_size,
-//                                                                      range_start, range_end,
-//                                                                      _options,
-//                                                                      _remoteToLocalURIMapping);
-//                        bytes_so_far += conf.specialization_unit_size;
-//                    } else {
-//                        // last part, issue and then that's it
-//                        request_uris.push_back(encodeRangeURI(input_uri, bytes_so_far, input_uri_size));
-//                        // create_tree_based_hyperspecialization_request(...)
-//#warning "need to implement stuff here..."
-//                        break;
-//                        bytes_so_far = input_uri_size;
-//                    }
-//
-//                    bytes_so_far += conf.specialization_unit_size;
-//                }
-//            } else {
-//                // not large enough to warrant specialization. process in parallel
-//                // i.e. just keep query as is, do not issue specialization request.
-//                // create_tree_based_regular_request(...)
-//#warning "need to implement stuff here..."
-//                throw std::runtime_error("not yet supported");
-//            }
-//        }
-//
-//        logger().info("Created " + std::to_string(requests.size()) + " LAMBDA requests.");
-//        // how many thereof are regular? how many hperspecialziing?
-//        // "thereof {} regular / {} specializing"
-
+        logger().info("Recursive Lambda invocation will produce " + pluralize(task_no, "output file") + ",");
         return requests;
     }
 
