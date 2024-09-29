@@ -597,27 +597,22 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvoke) {
     using namespace std;
     using namespace tuplex;
 
-    string input_pattern = "../resources/hyperspecialization/github_daily/2020-10-15.json.sample";
-    uint64_t input_file_size = 0;
-    VirtualFileSystem::fromURI(input_pattern).file_size(input_pattern, input_file_size);
+    string input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
+    string output_path = "./" + testName + "/output";
 
-    // upload to S3.
-    cout<<"Upload file to S3."<<endl;
-    auto target_uri = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + URI(input_pattern).base_name();
-    VirtualFileSystem::copy(input_pattern, target_uri);
-    input_pattern = target_uri;
-    auto output_path = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + "output";
-    cout<<"Stored file as: "<<input_pattern<<endl;
+    // Test github pipeline with small sample files.
+    // Step 1: Upload all files into bucket.
+    // test file, write some stuff to it.
 
-    // Get size and split into parts.
-    int n_parts = 5;
-
-    cout<<"Found file with size "<<input_file_size<<"B, splitting into "<<pluralize(n_parts, "part")<<endl;
-    auto parts = splitIntoEqualParts(n_parts, {URI(input_pattern)}, {input_file_size}, 1024);
-    for(const auto& thread_parts : parts) {
-        for(auto part : thread_parts)
-            cout<<"part "<<part.partNo<<": "<<part.uri<<":"<<part.rangeStart<<"-"<<part.rangeEnd<<endl;
+    auto files_to_upload = glob(input_pattern);
+    cout<<"Uploading "<<pluralize(files_to_upload.size(), "file")<<" to S3."<<endl;
+    for(const auto& path : files_to_upload) {
+        auto target_uri = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + URI(path).base_name();
+        VirtualFileSystem::copy(path, target_uri);
     }
+
+    input_pattern = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + "*.json.sample";
+    output_path = "s3://" + LOCAL_TEST_BUCKET_NAME + "/" + testName + "/" + "output";
 
     // Now perform github incl. specialization:
     cout<<"Creating Lambda context."<<endl;
@@ -631,7 +626,7 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvoke) {
 
     auto ctx = create_lambda_context(conf);
 
-    cout<<"Starting Github (mini) pipeline."<<endl;
+    cout<<"Starting Github (mini) pipeline with self-invoke."<<endl;
     github_pipeline(ctx, input_pattern, output_path);
 
     cout<<"Checking whether result matches."<<endl;
@@ -727,16 +722,6 @@ TEST_P(ParametrizedLambdaLocalTest, GithubSplitTestWithSelfInvokeWithAppDebug) {
 
     for(const auto& kv : conf_override)
         conf[kv.first] = kv.second;
-
-    // Test option: check with python mode only.
-    //conf["tuplex.useInterpreterOnly"] = "true";
-
-    // Test option: enable shipping code (at least for self-invoked Lambdas).
-    //conf["tuplex.experimental.interchangeWithObjectFiles"] = "true";
-
-    // Test option: hyper on/off.
-    //conf["tuplex.experimental.hyperspecialization"] = "true";
-
 
     auto ctx = create_lambda_context(conf);
 

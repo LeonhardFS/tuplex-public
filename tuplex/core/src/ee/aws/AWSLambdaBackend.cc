@@ -321,7 +321,6 @@ namespace tuplex {
     }
 
     void AwsLambdaBackend::invokeAsync(const AwsLambdaRequest &req) {
-
       assert(_service);
 
       // invoke using callbacks!
@@ -332,6 +331,9 @@ namespace tuplex {
 
     void AwsLambdaBackend::onLambdaFailure(const AwsLambdaRequest &req, LambdaStatusCode err_code,
                                            const std::string &err_msg) {
+        if(!_service)
+            return;
+
         // abort all requests
         _service->abortAllRequests(false);
 
