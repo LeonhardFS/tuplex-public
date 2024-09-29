@@ -718,10 +718,12 @@ TEST_P(ParametrizedLambdaLocalTest, GithubSplitTestWithSelfInvokeWithAppDebug) {
     conf["tuplex.experimental.opportuneCompilation"] = "false"; // disable, is buggy.
 
 
-    // override conf with parameters.
+    // override conf with parameters. The following are interesting to test on.
     conf["tuplex.useInterpreterOnly"] = "false";
     conf["tuplex.experimental.interchangeWithObjectFiles"] = "false";
     conf["tuplex.experimental.hyperspecialization"] = "false";
+    conf["tuplex.useLLVMOptimizer"] = "true";
+    conf["tuplex.resolveWithInterpreterOnly"] = "false";
 
     for(const auto& kv : conf_override)
         conf[kv.first] = kv.second;
@@ -819,6 +821,8 @@ INSTANTIATE_TEST_SUITE_P(Blub, ParametrizedLambdaLocalTest, ::testing::Values(st
                                                                               std::unordered_map<std::string, std::string>{std::make_pair("tuplex.experimental.hyperspecialization", "true")},
                                                                               std::unordered_map<std::string, std::string>{std::make_pair("tuplex.experimental.hyperspecialization", "true"),
                                                                                                                            std::make_pair("tuplex.experimental.interchangeWithObjectFiles", "true")},
-                                                                              std::unordered_map<std::string, std::string>{std::make_pair("tuplex.useInterpreterOnly", "true")}));
+                                                                              std::unordered_map<std::string, std::string>{std::make_pair("tuplex.useInterpreterOnly", "true")},
+                                                                              std::unordered_map<std::string, std::string>{std::make_pair("tuplex.resolveWithInterpreterOnly", "true"),
+                                                                                                                           std::make_pair("tuplex.experimental.interchangeWithObjectFiles", "true")}));
 
 // Notes: https://guihao-liang.github.io/2020/04/12/aws-s3-retry

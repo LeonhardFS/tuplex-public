@@ -51,6 +51,9 @@
 #include <llvm/Support/Host.h>
 #endif
 
+#include <llvm/CodeGen/MachineModuleInfo.h>
+#include <llvm/Target/TargetLoweringObjectFile.h>
+
 #include <llvm/Support/ManagedStatic.h>
 
 #ifdef USE_YYJSON_INSTEAD
@@ -991,6 +994,11 @@ namespace tuplex {
         std::vector<uint8_t> compileToObjectFile(llvm::Module& mod,
                                                  const std::string& target_triple,
                                                  const std::string& cpu) {
+
+            // -O2.
+            auto OLvl = llvm::CodeGenOpt::Default;
+            auto NoVerify = true;
+
             std::string error;
             auto target = llvm::TargetRegistry::lookupTarget(target_triple, error);
 
@@ -1019,11 +1027,16 @@ namespace tuplex {
             if(!TargetMachine)
                 throw std::runtime_error("failed to create target machine for CPU=" + CPU + ", features="=Features);
 
+            llvm::LLVMTargetMachine& LLVMTM = static_cast<llvm::LLVMTargetMachine&>(*TargetMachine);
+            llvm::MachineModuleInfoWrapperPass *MMIWP = new llvm::MachineModuleInfoWrapperPass(&LLVMTM);
+            const_cast<llvm::TargetLoweringObjectFile *>(LLVMTM.getObjFileLowering())->Initialize(MMIWP->getMMI().getContext(), *TargetMachine);
+
             // check: https://llvm.org/docs/tutorial/MyFirstLanguageFrontend/LangImpl08.html
             mod.setDataLayout(TargetMachine->createDataLayout());
             mod.setTargetTriple(target_triple);
 
-            llvm::legacy::PassManager pass;
+            llvm::legacy::PassManager pass_manager;
+
 #if LLVM_VERSION_MAJOR == 9
             auto FileType = llvm::LLVMTargetMachine::CGFT_ObjectFile;
 #else
@@ -1031,15 +1044,14 @@ namespace tuplex {
 #endif
             llvm::SmallVector<char, 0> buffer;
             llvm::raw_svector_ostream dest(buffer);
-            if (TargetMachine->addPassesToEmitFile(pass, dest, nullptr, FileType)) {
+
+
+
+            if (TargetMachine->addPassesToEmitFile(pass_manager, dest, nullptr, FileType, NoVerify, MMIWP)) {
                 throw std::runtime_error("TargetMachine can't emit a file of this type");
             }
 
-            pass.run(mod);
-
-//            auto mach_file = llvm::object::ObjectFile::createMachOObjectFile(llvm::SmallVectorMemoryBuffer(buffer));
-//            auto data = mach_file.getData().str();
-//            return std::vector<uint8_t>(data.begin(), data.end());
+            pass_manager.run(mod);
 
             // Works under linux, fails tests under mac OS.
             return std::vector<uint8_t>(buffer.begin(), buffer.end());

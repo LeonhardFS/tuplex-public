@@ -542,6 +542,12 @@ namespace tuplex {
             std::string target_triple = llvm::sys::getDefaultTargetTriple();
             std::string cpu = "native"; // <-- native target cpu
 
+            // Check if trace environment variable is active, if so annotate module.
+            if(!getEnv("LLVM_TRACE_IR").empty() && stringToBool(getEnv("LLVM_TRACE_IR"))) {
+                logger().info("Annotating LLVM IR modules with trace before emitting code.");
+                tstage->annotateModulesWithTraceInformation();
+            }
+
             // internally sets modules from IR/bitcode to object code.
             tstage->compileToObjectCode(target_triple, cpu);
 
@@ -922,7 +928,7 @@ namespace tuplex {
         Timer timer;
         size_t minimumPartSize = 1024 * 1024; // 1MB.
 
-        // init stage, abort on error
+        // init stage, abort on error (this is fast path only (?))
         auto rc = initTransformStage(tstage->initData(), syms);
         if(rc != WORKER_OK)
             return rc;
@@ -1089,6 +1095,12 @@ namespace tuplex {
             _response.set_errormessage(err_msg);
             return WORKER_ERROR_PIPELINE_FAILED;
         }
+
+        // release stage (this is fast path only (?))
+        rc = releaseTransformStage(syms);
+        if(rc != WORKER_OK)
+            return rc;
+
         logger().info("fast path took: " + std::to_string(fastPathTimer.time()) + "s");
         markTime("fast_path_execution_time", fastPathTimer.time());
 
@@ -1183,11 +1195,6 @@ namespace tuplex {
         ss.clear();
 
         rc = writeAllPartsToOutput(output_uri, tstage->outputFormat(), tstage->outputOptions());
-        if(rc != WORKER_OK)
-            return rc;
-
-        // release stage
-        rc = releaseTransformStage(syms);
         if(rc != WORKER_OK)
             return rc;
 
@@ -2359,7 +2366,9 @@ namespace tuplex {
             LLVMOptimizer opt;
 
             // for debugging, set this to true to enable tracing for the 2nd invocation!
-            bool traceExecution = false; //true; // false; // true;
+            bool traceExecution = false;
+            if(!getEnv("LLVM_TRACE_IR").empty() && stringToBool(getEnv("LLVM_TRACE_IR")))
+                traceExecution = true;
 
             // uncomment to trace errors on 2nd invocation
             // if(numProcessedMessages() > 1 && _statistics.size() >= 1)
@@ -2772,8 +2781,10 @@ namespace tuplex {
         // --> create a copy of the buffer & spill-files, then empty them!
         Buffer exceptionBuf(1024 * 4);
         if(env->exceptionBuf.size() > 0) {
-            exceptionBuf.provideSpace(env->exceptionBuf.size());
+            // Add padding because simdjson is used for decoding exceptions (64 bytes).
+            exceptionBuf.provideSpace(env->exceptionBuf.size() + simdjson::SIMDJSON_PADDING);
             memcpy(exceptionBuf.ptr(), env->exceptionBuf.buffer(), env->exceptionBuf.size());
+            memset(static_cast<uint8_t*>(exceptionBuf.ptr()) + env->exceptionBuf.size(), 0, simdjson::SIMDJSON_PADDING);
             exceptionBuf.movePtr(env->exceptionBuf.size());
         }
 
