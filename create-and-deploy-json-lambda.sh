@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
+# (c) 2017 - 2024
 
-echo "Creating (JSON serializastion) based Lambda"
-./scripts/create_lambda_zip.sh
+echo "Creating Lambda zip package (with upx compression)"
+ADD_ZIP_ARGS="--with-upx" ./scripts/create_lambda_zip.sh
 
 echo "running deploy script..."
 python3.10 deploy.py
