@@ -23,9 +23,8 @@ except:
     def tqdm(gen):
         return gen
 
-# 40MB threshold for UPX compression.
-# Effectively compresses only the tplxlam binary.
-UPX_THRESHOLD = 40 * 1000 * 1000
+# 5MB threshold for UPX compression.
+UPX_THRESHOLD = 5 * 1000 * 1000
 
 def cmd_exists(cmd):
     """
@@ -120,11 +119,15 @@ def check_or_download_upx():
         UPX_PATH = os.path.join(tmp_dir, "upx-4.2.4-amd64_linux", "upx")
         logging.info(f"UPX located in {UPX_PATH}")
 
-
-def zip_with_upx(zip, src, dest):
+# UPX uses by default 8 as compression level.
+# That's good, but slow to unpack.
+# cf. https://github.com/upx/upx/blob/devel/doc/upx-doc.txt
+def zip_with_upx(zip, src, dest, upx_compression_level=3):
     import mimetypes
 
     assert os.path.exists(src)
+
+    assert 'best' == upx_compression_level or (1 <= upx_compression_level <= 9 and isinstance(upx_compression_level, int))
 
     # Check if ELF file, else regularly encode.
     max_read_size = 16
@@ -138,7 +141,7 @@ def zip_with_upx(zip, src, dest):
 
         tmp_dir = tempfile.mkdtemp()
         tmp_name = os.path.join(tmp_dir, "compressed.bin")
-        out = subprocess.getoutput(f"{UPX_PATH} -o {tmp_name} {src}")
+        out = subprocess.getoutput(f"{UPX_PATH} -{upx_compression_level} -o {tmp_name} {src}")
         print(out)
 
         if os.path.getsize(tmp_name) == 0:
