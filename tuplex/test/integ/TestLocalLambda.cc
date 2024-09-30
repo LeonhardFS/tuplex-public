@@ -621,9 +621,9 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvoke) {
     conf["tuplex.aws.maxConcurrency"] = "10"; // use 10 as maximum parallelism.
     conf["tuplex.experimental.minimumSizeToSpecialize"] = "0"; // disable minimum size.
 
-    // the object code interchange fails with segfaults...
-    // conf["tuplex.experimental.interchangeWithObjectFiles"] = "true";
-    conf["tuplex.experimental.interchangeWithObjectFiles"] = "false";
+    // the object code interchange fails with segfaults when using the libc preloader...
+    conf["tuplex.experimental.interchangeWithObjectFiles"] = "true";
+    // conf["tuplex.experimental.interchangeWithObjectFiles"] = "false";
 
     auto ctx = create_lambda_context(conf);
 
