@@ -15,6 +15,7 @@ import glob
 import stat
 import argparse
 import time
+from sys import platform
 
 try:
     from tqdm import tqdm
@@ -22,6 +23,8 @@ except:
     def tqdm(gen):
         return gen
 
+# 5MB threshold for UPX compression.
+UPX_THRESHOLD = 5 * 1000 * 1000
 
 def cmd_exists(cmd):
     """
@@ -80,9 +83,76 @@ def get_uncompressed_size(zip_file_path):
     output = subprocess.getoutput(f"unzip -l {zip_file_path} | tail -1 | cut -d ' ' -f1")
     return int(output.strip())
 
+UPX_PATH="upx"
+
+def check_or_download_upx():
+    global UPX_PATH
+
+    UPX_DOWNLOAD_URL="https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-amd64_linux.tar.xz"
+
+    # Check whether upx is installed or not, if not download (small enough)
+    try:
+        subprocess.check_output(UPX_PATH)
+    except FileNotFoundError:
+        logging.info(f"UPX not found, downloading from {UPX_DOWNLOAD_URL}.")
+        if not sys.platform.startswith("linux"):
+            raise Exception(f"Can download UPX only for linux, platform is {sys.platform}")
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(delete=False)
+
+        import urllib.request
+        import os
+
+        # Adding user_agent information
+        opener=urllib.request.build_opener()
+        opener.addheaders=[('User-Agent','Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/36.0.1941.0 Safari/537.36')]
+        urllib.request.install_opener(opener)
+
+        # Get resource
+        urllib.request.urlretrieve(UPX_DOWNLOAD_URL, tmp.name)
+        logging.info(f"Got upx ({human_size(os.path.getsize(tmp.name))}) and stored to {tmp.name}.")
+
+        tmp_dir = tempfile.mkdtemp() # tempfile.TemporaryDirectory() # no cleanup
+
+        output = subprocess.getoutput(f"tar xf {tmp.name} -C {tmp_dir}")
+
+        UPX_PATH = os.path.join(tmp_dir, "upx-4.2.4-amd64_linux", "upx")
+        logging.info(f"UPX located in {UPX_PATH}")
+
+
+def zip_with_upx(zip, src, dest):
+    import mimetypes
+
+    assert os.path.exists(src)
+
+    # Check if ELF file, else regularly encode.
+    max_read_size = 16
+    with open(src, 'rb') as fd:
+        file_head = fd.read(max_read_size)
+
+    is_elf_file = file_head.startswith(bytes([0x7f, 0x45, 0x4c, 0x46]))
+
+    if os.path.getsize(src) >= UPX_THRESHOLD and is_elf_file:
+        logging.info(f"File {src} is ELF and larger than threshold, compressing with upx.")
+
+        tmp_dir = tempfile.mkdtemp()
+        tmp_name = os.path.join(tmp_dir, "compressed.bin")
+        out = subprocess.getoutput(f"{UPX_PATH} -9 -o {tmp_name} {src}")
+        print(out)
+
+        if os.path.getsize(tmp_name) == 0:
+            raise FileNotFoundError("compressed file not existing.")
+
+        logging.info(f"UPX compressed {os.path.basename(src)} from {human_size(os.path.getsize(src))} to {human_size(os.path.getsize(tmp_name))}, adding to ZIP.")
+        zip.write(tmp_name, dest)
+        shutil.rmtree(tmp_dir)
+    else:
+        # regularly compress.
+        zip.write(src, dest)
+
 def main():
     # set logging level here
-    logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
+    logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s', level=logging.INFO)
 
     parser = argparse.ArgumentParser(description='Lambda zip packager')
     parser.add_argument('-o', '--output', type=str, dest='OUTPUT_FILE_NAME', default='tplxlam.zip',
@@ -96,7 +166,11 @@ def main():
                         help='path to python executable from which to package stdlib.')
     parser.add_argument('--nolibc', dest='NO_LIBC', action="store_true",
                         help="whether to skip packaging libc files or not")
+    parser.add_argument('--with-upx', help="Enable compression of shared objects/binary files with upx.", dest="with_upx", action="store_true")
     args = parser.parse_args()
+
+    if args.with_upx:
+        check_or_download_upx()
 
 
     OUTPUT_FILE_NAME=args.OUTPUT_FILE_NAME
@@ -217,10 +291,18 @@ exec $LAMBDA_TASK_ROOT/bin/$PKG_BIN_FILENAME ${_HANDLER}
             zip.writestr(bootstrap_info, bootstrap_script_nolibc)
 
         # adding actual execution scripts
-        logging.info('Writing C++ binary')
-        zip.write(TPLXLAM_BINARY, 'bin/' + os.path.basename(TPLXLAM_BINARY))
-        logging.info('Writing Tuplex runtime')
-        zip.write(TPLX_RUNTIME_LIBRARY, 'lib/tuplex_runtime.so')
+        logging.info('Writing C++ binary...')
+
+        # Use UPX? If so, create temporary file to compress to
+        if args.with_upx:
+            zip_with_upx(zip, TPLXLAM_BINARY, 'bin/' + os.path.basename(TPLXLAM_BINARY))
+        else:
+            zip.write(TPLXLAM_BINARY, 'bin/' + os.path.basename(TPLXLAM_BINARY))
+        logging.info('Writing Tuplex runtime...')
+        if args.with_upx:
+            zip_with_upx(zip, TPLX_RUNTIME_LIBRARY, 'lib/tuplex_runtime.so')
+        else:
+            zip.write(TPLX_RUNTIME_LIBRARY, 'lib/tuplex_runtime.so')
 
         # copy libc
         if INCLUDE_LIBC:
@@ -237,8 +319,15 @@ exec $LAMBDA_TASK_ROOT/bin/$PKG_BIN_FILENAME ${_HANDLER}
                     #     create_zip_link(zip, link_source, link_target)
                     # else:
                     #     zip.write(path, os.path.join('lib/', os.path.basename(path)))
+                    if args.with_upx:
+                        if not os.path.exists(path):
+                            logging.error(f"Path {path} not found, invoking default zip command.")
+                            zip.write(path, os.path.join('lib/', os.path.basename(path)))
+                        else:
+                            zip_with_upx(zip, path, os.path.join('lib/', os.path.basename(path)))
+                    else:
+                        zip.write(path, os.path.join('lib/', os.path.basename(path)))
 
-                    zip.write(path, os.path.join('lib/', os.path.basename(path)))
                 except FileNotFoundError as e:
                     logging.warning('Could not find libc file {}, details: {}'.format(os.path.basename(path), e))
 
@@ -259,7 +348,11 @@ exec $LAMBDA_TASK_ROOT/bin/$PKG_BIN_FILENAME ${_HANDLER}
             #     create_zip_link(zip, link_source, link_target)
             # else:
             #     zip.write(path, os.path.join('lib', name))
-            zip.write(path, os.path.join('lib', name))
+
+            if args.with_upx:
+                zip_with_upx(zip, path, os.path.join('lib', name))
+            else:
+                zip.write(path, os.path.join('lib', name))
 
 
         # now copy in Python lib from specified python executable!
@@ -342,7 +435,12 @@ exec $LAMBDA_TASK_ROOT/bin/$PKG_BIN_FILENAME ${_HANDLER}
             # copy to lib/python<maj>.<min>
             target = os.path.join(py_arch_root, path.replace(root_dir, ''))
             logging.debug('{} -> {}'.format(path, target))
-            zip.write(path, target)
+
+            # Use upx mode, because files could be large.
+            if args.with_upx:
+                zip_with_upx(zip, path, target)
+            else:
+                zip.write(path, target)
 
     if not os.path.isfile(OUTPUT_FILE_NAME):
         logging.error('Something went wrong, could not find file under {} ({})'.format(OUTPUT_FILE_NAME, os.path.realpath(OUTPUT_FILE_NAME)))
