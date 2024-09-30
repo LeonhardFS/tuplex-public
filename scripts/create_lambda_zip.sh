@@ -70,6 +70,10 @@ echo "starting docker (this might take a while...)"
 # only release works, b.c. of size restriction
 BUILD_TYPE=Release
 
+# Lambda packages are too large, reduce size. UPX leads to segfault at the moment...
+# this makes a difference of a few megabytes only...
+#BUILD_TYPE=MinSizeRel
+
 # Add upx for example.
 ADD_ZIP_ARGS="${ADD_ZIP_ARGS:-}"
 echo ">>> Passing following additional args to zip_cc_runtime.py: ${ADD_ZIP_ARGS}"
