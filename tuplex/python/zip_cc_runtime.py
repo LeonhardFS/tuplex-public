@@ -23,8 +23,9 @@ except:
     def tqdm(gen):
         return gen
 
-# 5MB threshold for UPX compression.
-UPX_THRESHOLD = 5 * 1000 * 1000
+# 40MB threshold for UPX compression.
+# Effectively compresses only the tplxlam binary.
+UPX_THRESHOLD = 40 * 1000 * 1000
 
 def cmd_exists(cmd):
     """
@@ -137,7 +138,7 @@ def zip_with_upx(zip, src, dest):
 
         tmp_dir = tempfile.mkdtemp()
         tmp_name = os.path.join(tmp_dir, "compressed.bin")
-        out = subprocess.getoutput(f"{UPX_PATH} -9 -o {tmp_name} {src}")
+        out = subprocess.getoutput(f"{UPX_PATH} -o {tmp_name} {src}")
         print(out)
 
         if os.path.getsize(tmp_name) == 0:
@@ -165,7 +166,7 @@ def main():
                         default='/opt/lambda-python/bin/python3.8',
                         help='path to python executable from which to package stdlib.')
     parser.add_argument('--no-libc', dest='NO_LIBC', action="store_true",
-                        help="whether to skip packaging libc files or not")
+                        help="whether to skip packaging libc files or not.")
     parser.add_argument('--with-upx', help="Enable compression of shared objects/binary files with upx.", dest="with_upx", action="store_true")
     args = parser.parse_args()
 
@@ -182,26 +183,32 @@ def main():
     INCLUDE_LIBC=NO_LIBC is False
 
     if INCLUDE_LIBC:
-        logging.info('Including libc files in zip')
+        logging.info('Including libc files in zip.')
+
+
+
+    pkg_loader = 'ld-linux-x86-64.so.2' # change to whatever is in dependencies...
 
     # bootstrap scripts
 
+    binary_basename=os.path.basename(TPLXLAM_BINARY)
+
     # use this script here when libc is included => requires package loader
-    bootstrap_script="""#!/bin/bash
+    bootstrap_script=f"""#!/bin/bash
 set -euo pipefail
 export AWS_EXECUTION_ENV=lambda-cpp
-exec $LAMBDA_TASK_ROOT/lib/{} --library-path $LAMBDA_TASK_ROOT/lib $LAMBDA_TASK_ROOT/bin/tplxlam ${{_HANDLER}}
+PKG_BIN_FILENAME={binary_basename}
+exec $LAMBDA_TASK_ROOT/lib/{pkg_loader} --library-path $LAMBDA_TASK_ROOT/lib $LAMBDA_TASK_ROOT/bin/$PKG_BIN_FILENAME ${{_HANDLER}}
 """
 
     # use this script when libc is not included
-    bootstrap_script_nolibc="""#!/bin/bash
+    bootstrap_script_nolibc=f"""#!/bin/bash
 set -euo pipefail
+PKG_BIN_FILENAME={binary_basename}
 export AWS_EXECUTION_ENV=lambda-cpp
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$LAMBDA_TASK_ROOT/lib
-exec $LAMBDA_TASK_ROOT/bin/$PKG_BIN_FILENAME ${_HANDLER}
+exec $LAMBDA_TASK_ROOT/bin/$PKG_BIN_FILENAME ${{_HANDLER}}
 """
-
-    pkg_loader = 'ld-linux-x86-64.so.2' # change to whatever is in dependencies...
 
     # find python files
     logging.info('Python3 executable: {}'.format(PYTHON3_EXECUTABLE))
@@ -285,9 +292,11 @@ exec $LAMBDA_TASK_ROOT/bin/$PKG_BIN_FILENAME ${_HANDLER}
         # use 755 permissions and set for regular file
         bootstrap_info.external_attr = 0o100755 << 16
 
-        if INCLUDE_LIBC:
-            zip.writestr(bootstrap_info, bootstrap_script.format(pkg_loader))
+        if INCLUDE_LIBC and not args.with_upx:
+            logging.info("Using bootstrap script with shipped libc preloader.")
+            zip.writestr(bootstrap_info, bootstrap_script)
         else:
+            logging.info("Basic bootstrap script, using environment libc.")
             zip.writestr(bootstrap_info, bootstrap_script_nolibc)
 
         # adding actual execution scripts

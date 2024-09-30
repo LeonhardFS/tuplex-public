@@ -621,8 +621,9 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvoke) {
     conf["tuplex.aws.maxConcurrency"] = "10"; // use 10 as maximum parallelism.
     conf["tuplex.experimental.minimumSizeToSpecialize"] = "0"; // disable minimum size.
 
-    // use this (may file under macOS).
-    conf["tuplex.experimental.interchangeWithObjectFiles"] = "true";
+    // the object code interchange fails with segfaults...
+    // conf["tuplex.experimental.interchangeWithObjectFiles"] = "true";
+    conf["tuplex.experimental.interchangeWithObjectFiles"] = "false";
 
     auto ctx = create_lambda_context(conf);
 
@@ -814,3 +815,11 @@ INSTANTIATE_TEST_SUITE_P(Blub, ParametrizedLambdaLocalTest, ::testing::Values(st
                                                                                                                            std::make_pair("tuplex.experimental.interchangeWithObjectFiles", "true")}));
 
 // Notes: https://guihao-liang.github.io/2020/04/12/aws-s3-retry
+
+
+// Notes: could also write direc object code loader (assuming LLVM is buggy):
+// https://blog.cloudflare.com/how-to-execute-an-object-file-part-1/
+// https://blog.cloudflare.com/how-to-execute-an-object-file-part-2/
+// https://blog.cloudflare.com/how-to-execute-an-object-file-part-3/
+// https://blog.cloudflare.com/how-to-execute-an-object-file-part-4/
+// likely the issue is correct symbol lookup...

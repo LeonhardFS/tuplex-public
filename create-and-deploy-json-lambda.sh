@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # (c) 2017 - 2024
 
-#echo "Creating Lambda zip package (with upx compression)"
-#ADD_ZIP_ARGS="--with-upx" ./scripts/create_lambda_zip.sh
+# Note: Could also use `strip` to remove symbols
+
+
+echo "Creating Lambda zip package (with upx compression)"
+ADD_ZIP_ARGS="--no-libc --with-upx" ./scripts/create_lambda_zip.sh
 
 # Creating Lambda
-ADD_ZIP_ARGS="--no-libc" ./scripts/create_lambda_zip.sh
+#ADD_ZIP_ARGS="--no-libc" ./scripts/create_lambda_zip.sh
 
 echo "running deploy script..."
 python3.10 deploy.py
