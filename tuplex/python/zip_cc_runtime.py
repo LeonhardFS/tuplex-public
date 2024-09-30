@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# (c) 2017 - 2024
 # creates the zip file to deploy to Lambda, adapted from https://github.com/awslabs/aws-lambda-cpp/blob/9df704157539388b091ff0936f79c34d4ca6993d/packaging/packager
 # python script is easier to read though/adapt
 
@@ -69,6 +70,15 @@ def query_libc_shared_objects(NO_LIBC):
 
     return libc_files
 
+# from https://stackoverflow.com/questions/1094841/get-a-human-readable-version-of-a-file-size
+def human_size(bytes, units=[' bytes','KB','MB','GB','TB', 'PB', 'EB']):
+    """ Returns a human readable string representation of bytes """
+    return str(bytes) + units[0] if bytes < 1024 else human_size(bytes>>10, units[1:])
+
+def get_uncompressed_size(zip_file_path):
+    # unzip -l /build/tplxlam.zip | tail -1 | cut -d ' ' -f1
+    output = subprocess.getoutput(f"unzip -l {zip_file_path} | tail -1 | cut -d ' ' -f1")
+    return int(output.strip())
 
 def main():
     # set logging level here
@@ -286,8 +296,25 @@ exec $LAMBDA_TASK_ROOT/bin/$PKG_BIN_FILENAME ${_HANDLER}
         # print(file_infos[:5])
 
         def exclude_from_packaging(path):
-            if path.endswith('libpython3.8.a'):
-                logging.info('Excluding libpython3.8a from runtime')
+
+            # There's a folder config-3.11-x86_64-linux-gnu, which holds a lot of large/unnecessary files.
+            # Exclude them from zipping to reduce file size.
+            #      2052  10-12-2023 06:24   lib/python3.11/config-3.11-x86_64-linux-gnu/python-config.py
+            #     11182  10-12-2023 06:24   lib/python3.11/config-3.11-x86_64-linux-gnu/Setup
+            #      3418  10-12-2023 06:24   lib/python3.11/config-3.11-x86_64-linux-gnu/config.c
+            #      1752  10-12-2023 06:24   lib/python3.11/config-3.11-x86_64-linux-gnu/config.c.in
+            #      9262  10-12-2023 06:24   lib/python3.11/config-3.11-x86_64-linux-gnu/makesetup
+            #    116448  10-12-2023 06:24   lib/python3.11/config-3.11-x86_64-linux-gnu/Makefile
+            #       878  10-12-2023 06:24   lib/python3.11/config-3.11-x86_64-linux-gnu/Setup.bootstrap
+            #     15358  10-12-2023 06:24   lib/python3.11/config-3.11-x86_64-linux-gnu/install-sh
+            #      5377  10-12-2023 06:24   lib/python3.11/config-3.11-x86_64-linux-gnu/Setup.stdlib
+            #     10736  10-12-2023 06:24   lib/python3.11/config-3.11-x86_64-linux-gnu/python.o
+            #        41  10-12-2023 06:24   lib/python3.11/config-3.11-x86_64-linux-gnu/Setup.local
+            # 111390872  10-12-2023 06:24   lib/python3.11/config-3.11-x86_64-linux-gnu/libpython3.11.a
+            config_folder_regex = r".*\/config-\d+\.\d+-.*\/?"
+            if re.match(config_folder_regex, path):
+                path_size = os.stat(path).st_size
+                logging.info(f"Excluding {path} ({human_size(path_size)}) from LAMBDA zip.")
                 return False
 
             # exclude pyc cached files
@@ -321,6 +348,12 @@ exec $LAMBDA_TASK_ROOT/bin/$PKG_BIN_FILENAME ${_HANDLER}
         logging.error('Something went wrong, could not find file under {} ({})'.format(OUTPUT_FILE_NAME, os.path.realpath(OUTPUT_FILE_NAME)))
     else:
         logging.info('Done! Zipped Lambda stored in {}'.format(os.path.realpath(OUTPUT_FILE_NAME)))
+        out_zip_path = os.path.realpath(OUTPUT_FILE_NAME)
+        file_size = os.stat(out_zip_path).st_size
+        file_size_mb = file_size / (1000.0 * 1000.0)
+        uncompressed_file_size_mb = get_uncompressed_size(out_zip_path) / (1000.0 * 1000.0)
+        logging.info(f"Zipped file size: {file_size_mb:.1f} MB")
+        logging.info(f"Uncompressed file size (should be < 250 MB): {uncompressed_file_size_mb:.1f} MB")
 
 if __name__ == '__main__':
     main()
