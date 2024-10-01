@@ -25,7 +25,7 @@ CURL_VERSION=8.10.1
 NUM_PROCS=$(( 1 * $( egrep '^processor[[:space:]]+:' /proc/cpuinfo | wc -l ) ))
 
 # Need to run this before??
-yum update -y && yum install wget gcc -y
+yum update -y && yum install wget gcc vim -y
 
 # openssl will be installed to /usr/local/lib64
 

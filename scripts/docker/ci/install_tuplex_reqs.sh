@@ -59,20 +59,6 @@ git clone https://github.com/google/googletest.git -b v1.14.0 && cd googletest &
 # build snappy as static lib
 git clone https://github.com/google/snappy.git -b 1.1.10 && cd snappy && git submodule update --init && mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_FLAGS="-fPIC" .. && make -j ${CPU_COUNT} && make install
 
-# custom OpenSSL, use a recent OpenSSL and uninstall current one
-if which yum; then
-	yum erase -y openssl-devel openssl
-else
-	apk del openssl-dev openssl
-fi
-cd $WORKDIR && \
-  wget https://ftp.openssl.org/source/openssl-1.1.1w.tar.gz && \
-  tar -xzvf openssl-1.1.1w.tar.gz && \
-  cd openssl-1.1.1w && \
-  ./config no-shared zlib-dynamic CFLAGS="-fPIC" CXXFLAGS="-fPIC" LDFLAGS="-fPIC" && \
-  make -j ${CPU_COUNT} && make install_sw && echo "OpenSSL ok"
-# this will install openssl into /usr/local
-
 # add github to known hosts
 mkdir -p /root/.ssh/ &&
   touch /root/.ssh/known_hosts &&
