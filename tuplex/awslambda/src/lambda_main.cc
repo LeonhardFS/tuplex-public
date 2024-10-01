@@ -340,16 +340,25 @@ tuplex::messages::InvocationResponse lambda_main(aws::lambda_runtime::invocation
         return make_exception("failed processing with code " + std::to_string(rc));
 
     // Process message.
-    rc = app->processJSONMessage(lambda_req.payload.c_str());
-    if(rc != WORKER_OK)
-        return make_exception("failed processing with code " + std::to_string(rc));
+    // Surround with try/catch to avoid crashes.
+    try {
+        rc = app->processJSONMessage(lambda_req.payload.c_str());
+        if(rc != WORKER_OK)
+            return make_exception("failed processing with code " + std::to_string(rc));
 
-    // get last response/message?
-    // --> what about global stats? @TODO
-    auto ret = app->response();
+        // get last response/message?
+        // --> what about global stats? @TODO
+        auto ret = app->response();
 
-    // fill in global stats (Lambda specific)
-    fillInGlobals(&ret);
+        // fill in global stats (Lambda specific)
+        fillInGlobals(&ret);
 
-    return ret;
+        return ret;
+    } catch(const std::exception& e) {
+        return make_exception("Failed processing with top-level exception: " + std::string(e.what()));
+    } catch(...) {
+        return make_exception("Failed processing with unknown top-level exception.");
+    }
+
+    return make_exception("This code should never execute.");
 }

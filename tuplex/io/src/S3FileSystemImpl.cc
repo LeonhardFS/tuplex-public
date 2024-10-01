@@ -557,31 +557,24 @@ namespace tuplex {
                                                     credentials.secret_key.c_str(),
                                                     credentials.session_token.c_str());
 
+        // Lambda mode, shortcut. Use default values.
+        if(lambdaMode) {
+            config.caFile = "/etc/pki/tls/certs/ca-bundle.crt";
+            this->_config = config;
+            _client = std::make_shared<S3::S3Client>(config);
+            _requestPayer = Aws::S3::Model::RequestPayer::requester;
+
+            std::stringstream ss;
+            ss<<"Initialized S3 client (on LAMBDA).";
+            Logger::instance().defaultLogger().info(ss.str());
+            return;
+        }
 
         auto payload_signing_policy = Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Always;
         if(!ns.signPayloads)
             payload_signing_policy = Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never;
 
-        // lambda Mode? just use default settings.
-        if(lambdaMode) {
-            // AWS SDK 1.10 introduces endpoint config
-//#if (1 == AWS_SDK_VERSION_MAJOR && 10 > AWS_SDK_VERSION_MINOR)
-//
-//            _client = std::make_shared<S3::S3Client>(aws_credentials, Aws::Client::ClientConfiguration(), payload_signing_policy,  ns.useVirtualAddressing);
-//#else
-//            auto s3_endpoint_provider = Aws::MakeShared<Aws::S3::S3EndpointProvider>("TUPLEX");
-//            _client = std::make_shared<S3::S3Client>(aws_credentials,
-//                                                    s3_endpoint_provider);
-//#endif
-
-            _client = std::make_shared<S3::S3Client>(aws_credentials, Aws::Client::ClientConfiguration(), payload_signing_policy, ns.useVirtualAddressing);
-            _requestPayer = Aws::S3::Model::RequestPayer::requester;
-
-            std::stringstream ss;
-            ss<<"S3 Client initialized using defaults";
-            Logger::instance().defaultLogger().info(ss.str());
-        } else {
-            // AWS SDK 1.10 introduces endpoint config
+        // AWS SDK 1.10 introduces endpoint config
 //#if (1 == AWS_SDK_VERSION_MAJOR && 10 > AWS_SDK_VERSION_MINOR)
 //
 //            _client = std::make_shared<S3::S3Client>(aws_credentials, config, payload_signing_policy, ns.useVirtualAddressing);
@@ -590,8 +583,7 @@ namespace tuplex {
 //            _client = std::make_shared<S3::S3Client>(aws_credentials, s3_endpoint_provider, config, payload_signing_policy, ns.useVirtualAddressing);
 //#endif
 
-            _client = std::make_shared<S3::S3Client>(aws_credentials, config, payload_signing_policy, ns.useVirtualAddressing);
-        }
+        _client = std::make_shared<S3::S3Client>(aws_credentials, config, payload_signing_policy, ns.useVirtualAddressing);
 
         // save config, so parameters are easily accessible.
         _config = config;
