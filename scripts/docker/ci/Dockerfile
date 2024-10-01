@@ -37,9 +37,15 @@ ADD install_boost.sh /opt/sbin/install_boost.sh
 
 ADD install_llvm.sh /opt/sbin/install_llvm.sh
 
+# Install newer openssl
+ADD remove-and-install-openssl.sh /opt/sbin/remove-and-install-openssl.sh
+
 # CentOS/RHEL does not use OpenSSL for the system curl, however AWSSDK must use OpenSSL backed curl.
 ADD install_curl.sh /opt/sbin/install_curl.sh
 
+RUN bash /opt/sbin/remove-and-install-openssl.sh
+
+RUN openssl --version
 
 # install curl now
 RUN bash /opt/sbin/install_curl.sh
@@ -56,23 +62,23 @@ RUN bash /opt/sbin/install_tuplex_reqs.sh
 
 # add lambda-specific Python (full python install), for correct shipping Python must be built with correct flags
 ADD install_lambda_python.sh /opt/sbin/install_lambda_python.sh
-RUN bash /opt/sbin/install_lambda_python.sh ${PYTHON_VERSION}
-
-# install llvm, use here script which uses 16.0.6 to enable recent CPU architectures
-RUN bash /opt/sbin/install_llvm.sh
-
-## MongoDB community edition for WebUI testing
-ADD mongodb-org-5.0.repo /etc/yum.repos.d/mongodb-org-5.0.repo
-RUN yum update -y && yum install -y mongodb-org
-
-# replace curl again with recent version to be 100% everything worked properly.
-RUN bash /opt/sbin/install_curl.sh
-
-# remove all the tmp stuff
-# remove temp stuff based on https://www.getpagespeed.com/server-setup/clear-disk-space-centos
-RUN rm -rf /tmp/* && curl -Ls http://bit.ly/clean-centos-disk-space | bash && dnf clean all && rm -rf /var/cache/yum
-
-# uncomment following to install optional packages for debugging
-# RUN yum install -y devtoolset-10-gdb
-# RUN yum install -y centos-release-scl-rh devtoolset-11-libtsan-devel devtoolset-10-libtsan-devel
-# RUN yum install -y devtoolset-11-libasan-devel devtoolset-10-libasan-devel
+#RUN bash /opt/sbin/install_lambda_python.sh ${PYTHON_VERSION}
+#
+## install llvm, use here script which uses 16.0.6 to enable recent CPU architectures
+#RUN bash /opt/sbin/install_llvm.sh
+#
+### MongoDB community edition for WebUI testing
+#ADD mongodb-org-5.0.repo /etc/yum.repos.d/mongodb-org-5.0.repo
+#RUN yum update -y && yum install -y mongodb-org
+#
+## replace curl again with recent version to be 100% everything worked properly.
+#RUN bash /opt/sbin/install_curl.sh
+#
+## remove all the tmp stuff
+## remove temp stuff based on https://www.getpagespeed.com/server-setup/clear-disk-space-centos
+#RUN rm -rf /tmp/* && curl -Ls http://bit.ly/clean-centos-disk-space | bash && dnf clean all && rm -rf /var/cache/yum
+#
+## uncomment following to install optional packages for debugging
+## RUN yum install -y devtoolset-10-gdb
+## RUN yum install -y centos-release-scl-rh devtoolset-11-libtsan-devel devtoolset-10-libtsan-devel
+## RUN yum install -y devtoolset-11-libasan-devel devtoolset-10-libasan-devel
