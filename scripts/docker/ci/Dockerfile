@@ -58,15 +58,15 @@ RUN /usr/local/bin/python3 -m pip install --upgrade pip setuptools wheel
 
 # Tuplex requirements, installs python version specific requirements as well
 ADD install_tuplex_reqs.sh /opt/sbin/install_tuplex_reqs.sh
-RUN bash /opt/sbin/install_tuplex_reqs.sh
+#RUN bash /opt/sbin/install_tuplex_reqs.sh
 
 # add lambda-specific Python (full python install), for correct shipping Python must be built with correct flags
 ADD install_lambda_python.sh /opt/sbin/install_lambda_python.sh
-#RUN bash /opt/sbin/install_lambda_python.sh ${PYTHON_VERSION}
-#
-## install llvm, use here script which uses 16.0.6 to enable recent CPU architectures
-#RUN bash /opt/sbin/install_llvm.sh
-#
+RUN bash /opt/sbin/install_lambda_python.sh ${PYTHON_VERSION}
+
+# install llvm, use here script which uses 16.0.6 to enable recent CPU architectures
+RUN bash /opt/sbin/install_llvm.sh
+
 ### MongoDB community edition for WebUI testing
 #ADD mongodb-org-5.0.repo /etc/yum.repos.d/mongodb-org-5.0.repo
 #RUN yum update -y && yum install -y mongodb-org

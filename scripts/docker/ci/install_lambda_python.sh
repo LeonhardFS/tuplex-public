@@ -18,7 +18,7 @@ echo ">>> Building Python for AWS Lambda runner with version ${PYTHON3_VERSION}"
 # update yum and add Python specific dependencies/dev packages bzip2-devel, readline-devel and gbdm-devel
 # do not use tkinter here, because Lambdas do not require GUI libs.
 YUM_PACKAGES="bzip2-devel readline-devel gdbm-devel"
-yum update -y && yum install -y ${YUM_PACKAGES}
+dnf update -y && dnf install -y ${YUM_PACKAGES}
 
 # from https://bugs.python.org/issue36044
 # change tasks, because hangs at test_faulthandler...
@@ -47,4 +47,4 @@ ln -s /opt/lambda-python/bin/python${PYTHON3_MAJMIN} /opt/lambda-python/bin/pyth
 rm -rf /tmp/Python*
 
 # remove yum packages
-yum remove -y ${YUM_PACKAGES}
+dnf remove -y ${YUM_PACKAGES}

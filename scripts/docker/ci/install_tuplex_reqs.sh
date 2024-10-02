@@ -39,10 +39,10 @@ mkdir -p $PREFIX/lib
 echo ">> Files will be downloaded to ${WORKDIR}/tuplex-downloads"
 WORKDIR=$WORKDIR/tuplex-downloads
 mkdir -p $WORKDIR
-yum install -y libedit-devel libzip-devel pkgconfig libxml2-devel uuid libuuid-devel libffi-devel graphviz-devel gflags-devel ncurses-devel awscli elfutils-devel java-11-openjdk libyaml-devel file-devel ninja-build zip unzip ninja-build openssh-clients --skip-broken
+dnf install -y libedit-devel libzip-devel pkgconfig libxml2-devel uuid libuuid-devel libffi-devel graphviz-devel gflags-devel ncurses-devel awscli elfutils-devel java-11-openjdk libyaml-devel file-devel ninja-build zip unzip ninja-build openssh-clients --skip-broken
 
 # if java exists, remove via
-yum remove -y java-1.8.0-openjdk-headless
+dnf remove -y java-1.8.0-openjdk-headless
 
 # install recent zlib version (1.2.11) fork from cloudflare
 # https://github.com/aws/aws-graviton-getting-started#zlib-on-linux
@@ -129,4 +129,4 @@ mkdir -p ${WORKDIR}/protobuf && cd ${WORKDIR}/protobuf \
 
 # delete workdir (downloads dir) to clean up space
 rm -rf ${WORKDIR}
-yum clean all
+dnf clean all
