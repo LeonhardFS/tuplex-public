@@ -3,6 +3,8 @@
 
 set -euxo pipefail
 
+dnf install -y ninja-build
+
 # install LLVM 16.0.6 to use for building wheels
 # github actions runs into space issues when using both 9.0.1 and 16.0.6
 # LLVM_VERSIONS_TO_INSTALL=(9.0.1 16.0.6)
