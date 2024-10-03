@@ -58,7 +58,7 @@ RUN /usr/local/bin/python3 -m pip install --upgrade pip setuptools wheel
 
 # Tuplex requirements, installs python version specific requirements as well
 ADD install_tuplex_reqs.sh /opt/sbin/install_tuplex_reqs.sh
-#RUN bash /opt/sbin/install_tuplex_reqs.sh
+RUN bash /opt/sbin/install_tuplex_reqs.sh
 
 # add lambda-specific Python (full python install), for correct shipping Python must be built with correct flags
 ADD install_lambda_python.sh /opt/sbin/install_lambda_python.sh
