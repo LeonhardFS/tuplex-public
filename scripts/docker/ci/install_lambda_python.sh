@@ -35,7 +35,7 @@ cd /tmp && wget https://www.python.org/ftp/python/${PYTHON3_VERSION}/Python-${PY
 export LD_LIBRARY_PATH=/opt/lambda-python/lib:$LD_LIBRARY_PATH
 
 # install cloudpickle numpy pandas for Lambda python
-declare -A PYTHON_DEPENDENCIES=(["3.8"]="cloudpickle<2.0 cython numpy pandas" ["3.9"]="cloudpickle<2.0 numpy pandas" ["3.10"]="cloudpickle>2.0 numpy pandas" ["3.11"]="cloudpickle>2.0 numpy pandas")
+declare -A PYTHON_DEPENDENCIES=(["3.8"]="cloudpickle<2.0 cython numpy pandas" ["3.9"]="cloudpickle<2.0 numpy pandas" ["3.10"]="cloudpickle>=3.0 numpy pandas" ["3.11"]="cloudpickle>=3.0 numpy pandas" ["3.12"]="cloudpickle>=3.0 numpy pandas")
 PYTHON_REQUIREMENTS=$(echo "${PYTHON_DEPENDENCIES[$PYTHON3_MAJMIN]}")
 /opt/lambda-python/bin/python${PYTHON3_MAJMIN} -m pip install ${PYTHON_REQUIREMENTS} tqdm
 
