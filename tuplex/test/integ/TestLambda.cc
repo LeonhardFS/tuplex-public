@@ -81,7 +81,8 @@ protected:
         shutdownAWS();
     }
 
-    Context create_lambda_context() {
+    Context create_lambda_context(const std::unordered_map<std::string, std::string>& conf_override={},
+                                  const std::unordered_map<std::string, std::string>& env_override={}) {
         ContextOptions co = ContextOptions::defaults();
         co.set("tuplex.backend", "lambda");
 
@@ -93,7 +94,16 @@ protected:
         co.set("tuplex.aws.scratchDir", "s3://tuplex-test/.tuplex-cache");
         co.set("tuplex.aws.httpThreadCount", "4");
 
-        return std::move(Context(co));
+        // Overwrite settings with conf_override.
+        for(const auto& kv : conf_override) {
+            co.set(kv.first, kv.second);
+        }
+
+        auto ctx = Context(co);
+        auto wb = dynamic_cast<AwsLambdaBackend*>(ctx.backend());
+        assert(wb);
+        wb->setEnvironment(env_override);
+        return std::move(ctx);
     }
 
 };
@@ -153,6 +163,71 @@ TEST_F(LambdaTest, GithubPipeline) {
 
     // there must be one file now (because of the request).
     EXPECT_EQ(output_uris.size(), files_to_upload.size());
+
+    // Step 5: Check csv counts to make sure these are correct.
+    auto total_row_count = csv_row_count_for_pattern(output_path + "/*.csv");
+    EXPECT_EQ(total_row_count, 378);
+}
+
+TEST_F(LambdaTest, GithubPipelineSelfInvoke) {
+    using namespace std;
+    using namespace tuplex;
+
+    string input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
+    string output_path = "./" + testName + "/output";
+
+    auto s3_root = s3PathForTest();
+    cout<<"Storing test data in "<<s3_root<<"."<<endl;
+
+    // Test github pipeline with small sample files.
+    // Step 1: Upload all files into bucket.
+    // test file, write some stuff to it.
+
+    auto files_to_upload = glob(input_pattern);
+    cout<<"Uploading "<<pluralize(files_to_upload.size(), "file")<<" to S3."<<endl;
+    for(const auto& path : files_to_upload) {
+        auto target_uri = s3_root + "/data/" + URI(path).base_name();
+        VirtualFileSystem::copy(path, target_uri);
+    }
+
+    input_pattern = s3_root + "/data/" + "*.json.sample";
+    output_path = s3_root + "/output";
+
+    cout<<"-- Input pattern: "<<input_pattern<<endl;
+    cout<<"-- Output dest: "<<output_path<<endl;
+
+    auto output_pattern = output_path + "/*.csv";
+    auto output_uris = VirtualFileSystem::fromURI(output_pattern).glob(output_pattern);
+    if(!output_uris.empty()) {
+        cout<<"Removing existing files from S3:"<<endl;
+        cout<<"Found "<<pluralize(output_uris.size(), "old output uri")<<" to be removed to run test."<<endl;
+        for(const auto& uri : output_uris) {
+            cout<<"Removing "<<uri.toString()<<"..."<<endl;
+            VirtualFileSystem::remove(uri);
+        }
+    }
+
+    cout<<"Creating Lambda context."<<endl;
+    std::unordered_map<std::string, std::string> conf;
+    conf["tuplex.aws.lambdaInvocationStrategy"] = "tree";
+    conf["tuplex.aws.maxConcurrency"] = "10"; // use 10 as maximum parallelism.
+    conf["tuplex.experimental.minimumSizeToSpecialize"] = "0"; // disable minimum size.
+
+    // the object code interchange fails with segfaults when using the libc preloader...
+    conf["tuplex.experimental.interchangeWithObjectFiles"] = "true";
+
+    conf["tuplex.experimental.interchangeWithObjectFiles"] = "false";
+
+    auto ctx = create_lambda_context(conf);
+
+    cout<<"Starting Github (mini) pipeline."<<endl;
+    github_pipeline(ctx, input_pattern, output_path);
+
+    cout<<"Checking result."<<endl;
+    // glob output files (should be equal amount, as 1 request per file)
+    output_uris = VirtualFileSystem::fromURI(input_pattern).glob(output_path + "/*.csv");
+
+    cout<<"Found "<<pluralize(output_uris.size(), "output file")<<" in local S3 file system."<<endl;
 
     // Step 5: Check csv counts to make sure these are correct.
     auto total_row_count = csv_row_count_for_pattern(output_path + "/*.csv");

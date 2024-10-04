@@ -623,7 +623,6 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvoke) {
 
     // the object code interchange fails with segfaults when using the libc preloader...
     conf["tuplex.experimental.interchangeWithObjectFiles"] = "true";
-    // conf["tuplex.experimental.interchangeWithObjectFiles"] = "false";
 
     auto ctx = create_lambda_context(conf);
 
