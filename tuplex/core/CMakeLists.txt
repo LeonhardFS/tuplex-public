@@ -84,7 +84,6 @@ message(STATUS "protobuf sources (v${Protobuf_VERSION}): ${PROTO_SRCS}")
 message(STATUS "protobuf headers (v${Protobuf_VERSION}): ${PROTO_HDRS}")
 
 
-
 # CURL:
 # Note: AWS SDK is only compatible with curl build against OpenSSL. Check this here!
 # on linux, use ldd -v $(which curl) | grep OPENSSL which should yield a result.

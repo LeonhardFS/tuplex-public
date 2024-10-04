@@ -67,6 +67,13 @@ RUN bash /opt/sbin/install_lambda_python.sh ${PYTHON_VERSION}
 # install llvm, use here script which uses 16.0.6 to enable recent CPU architectures
 RUN bash /opt/sbin/install_llvm.sh
 
+RUN dnf update && dnf install -y perl-IPC-Cmd
+
+RUN bash /opt/sbin/remove-and-install-openssl.sh
+RUN openssl --version
+# install curl now
+RUN bash /opt/sbin/install_curl.sh
+
 ### MongoDB community edition for WebUI testing
 #ADD mongodb-org-5.0.repo /etc/yum.repos.d/mongodb-org-5.0.repo
 #RUN yum update -y && yum install -y mongodb-org
