@@ -114,7 +114,7 @@ namespace tuplex {
                 _s3fs._putRequests++;
                 if(!outcome.IsSuccess()) {
                     MessageHandler& logger = Logger::instance().logger("s3fs");
-                    auto err_msg = outcome_error_message(outcome, _uri.toString());
+                    auto err_msg = outcome_error_message(outcome, _s3fs._config, _uri.toString());
                     logger.error(err_msg);
                     throw std::runtime_error(err_msg);
                 }
@@ -158,7 +158,7 @@ namespace tuplex {
         // count as put request
 
         if(!outcome.IsSuccess()) {
-            auto err_msg = outcome_error_message(outcome, _uri.toString());
+            auto err_msg = outcome_error_message(outcome, _s3fs._config, _uri.toString());
             logger.error(err_msg);
             throw std::runtime_error(err_msg);
         }
@@ -212,7 +212,7 @@ namespace tuplex {
         _s3fs._multiPartPutRequests++;
         _s3fs._bytesTransferred += _bufferLength;
         if(!outcome.IsSuccess()) {
-            auto err_msg = outcome_error_message(outcome, _uri.toString());
+            auto err_msg = outcome_error_message(outcome, _s3fs._config, _uri.toString());
             logger.error(err_msg);
             throw std::runtime_error(err_msg);
             return false;
@@ -260,7 +260,7 @@ namespace tuplex {
         _requestTime += timer.time();
         _s3fs._closeMultiPartUploadRequests++;
         if(!outcome.IsSuccess()) {
-            auto err_msg = outcome_error_message(outcome, _uri.toString());
+            auto err_msg = outcome_error_message(outcome, _s3fs._config, _uri.toString());
             logger.error(err_msg);
             throw std::runtime_error(err_msg);
         }
@@ -498,7 +498,7 @@ namespace tuplex {
             _s3fs._bytesReceived += retrievedBytes;
         } else {
             MessageHandler& logger = Logger::instance().logger("s3fs");
-            auto err_msg = outcome_error_message(get_object_outcome, _uri.toString());
+            auto err_msg = outcome_error_message(get_object_outcome, _s3fs._config, _uri.toString());
             logger.error(err_msg);
             throw std::runtime_error(err_msg);
         }
@@ -691,7 +691,7 @@ namespace tuplex {
             _s3fs._bytesReceived += retrievedBytes;
         } else {
             MessageHandler& logger = Logger::instance().logger("s3fs");
-            auto err_msg = outcome_error_message(get_object_outcome, _uri.toString());
+            auto err_msg = outcome_error_message(get_object_outcome, _s3fs._config, _uri.toString());
             logger.error(err_msg);
             throw std::runtime_error(err_msg);
         }

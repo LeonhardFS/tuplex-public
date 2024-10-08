@@ -1160,7 +1160,7 @@ namespace tuplex {
         auto sampling_mode = tstage->samplingMode();
 
         // TODO: figure this here out.
-        int num_self_invoke = 3; // 3 parts.
+        int num_self_invoke = 20; // 3 parts.
 
         // @TODO: improve this.
         auto base_output_uri = tstage->outputURI();

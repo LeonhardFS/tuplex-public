@@ -234,3 +234,60 @@ TEST_F(LambdaTest, GithubPipelineSelfInvoke) {
     auto total_row_count = csv_row_count_for_pattern(output_path + "/*.csv");
     EXPECT_EQ(total_row_count, 378);
 }
+
+TEST_F(LambdaTest, GithubPipelineSelfInvokeDaily) {
+    using namespace std;
+    using namespace tuplex;
+
+    string input_pattern = "s3://tuplex-public/data/github_daily/*.json";
+    string output_path = "./" + testName + "/output";
+
+    auto s3_root = s3PathForTest();
+    cout<<"Storing output test data in "<<s3_root<<"."<<endl;
+    output_path = s3_root + "/output";
+
+    cout<<"-- Input pattern: "<<input_pattern<<endl;
+    cout<<"-- Output dest: "<<output_path<<endl;
+
+    // Step 1: Check that files exist (input pattern), and remove output files.
+    auto input_uris = VirtualFileSystem::fromURI(input_pattern).glob(input_pattern);
+    ASSERT_EQ(input_uris.size(), 11);
+
+    auto output_pattern = output_path + "/*.csv";
+    auto output_uris = VirtualFileSystem::fromURI(output_pattern).glob(output_pattern);
+    if(!output_uris.empty()) {
+        cout<<"Removing existing files from S3:"<<endl;
+        cout<<"Found "<<pluralize(output_uris.size(), "old output uri")<<" to be removed to run test."<<endl;
+        auto ret = s3RemoveObjects(VirtualFileSystem::getS3FileSystemImpl()->client(), output_uris, &cerr);
+        ASSERT_TRUE(ret);
+    }
+
+    cout<<"Creating Lambda context."<<endl;
+    std::unordered_map<std::string, std::string> conf;
+    conf["tuplex.aws.lambdaInvocationStrategy"] = "tree";
+    conf["tuplex.aws.maxConcurrency"] = "20"; // use 20 as maximum parallelism.
+    conf["tuplex.experimental.minimumSizeToSpecialize"] = "0"; // disable minimum size.
+
+    // the object code interchange fails with segfaults when using the libc preloader...
+    conf["tuplex.experimental.interchangeWithObjectFiles"] = "true";
+
+    conf["tuplex.experimental.interchangeWithObjectFiles"] = "false";
+
+    // enable hyper specialization
+    conf["tuplex.experimental.hyperspecialization"] = "true";
+
+    auto ctx = create_lambda_context(conf);
+
+    cout<<"Starting Github (daily) pipeline."<<endl;
+    github_pipeline(ctx, input_pattern, output_path);
+
+    cout<<"Checking result."<<endl;
+    // glob output files (should be equal amount, as 1 request per file)
+    output_uris = VirtualFileSystem::fromURI(input_pattern).glob(output_path + "/*.csv");
+
+    cout<<"Found "<<pluralize(output_uris.size(), "output file")<<" in local S3 file system."<<endl;
+
+    // Step 5: Check csv counts to make sure these are correct.
+    auto total_row_count = csv_row_count_for_pattern(output_path + "/*.csv");
+    EXPECT_EQ(total_row_count, 294195);
+}

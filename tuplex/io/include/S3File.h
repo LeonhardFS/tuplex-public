@@ -62,7 +62,6 @@ namespace tuplex {
             ss<<aws_message;
         else
             ss<<"Unknown AWS error code";
-
         return ss.str();
     }
 
@@ -175,19 +174,22 @@ namespace tuplex {
 //#endif
 
         template <typename R, typename E>
-        std::string outcome_error_message(const Aws::Utils::Outcome<R, E>& outcome, const std::string& uri="") const {
+        std::string outcome_error_message(const Aws::Utils::Outcome<R, E>& outcome,
+                                          const Aws::Client::ClientConfiguration& config,
+                                          const std::string& uri="") const {
             auto s3_details = format_s3_outcome_error_message(outcome, uri);
 
             std::stringstream ss;
             ss<<"S3 Filesystem error for uri='"<<uri<<"':\n"
                <<"\tbuf pos: "<<_bufferPosition
-               <<"\n\tbuf size: "<<_bufferSize
-               <<"\n\tbuf length: "<<_bufferLength
-               <<"\n\tfile pos: "<<_filePosition
-               <<"\n\tpart no: "<<_partNumber;
+               <<"\tbuf size: "<<_bufferSize
+               <<"\tbuf length: "<<_bufferLength
+               <<"\tfile pos: "<<_filePosition
+               <<"\tpart no: "<<_partNumber;
             if(_partNumber > 0)
-                ss<<"\n\tmultipart id: "<<_uploadID;
-            ss<<"\ndetails:\n"<<s3_details;
+                ss<<"\tmultipart id: "<<_uploadID;
+            ss<<"\ndetails: "<<s3_details;
+            ss<<config;
             return ss.str();
         }
     };

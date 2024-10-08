@@ -543,6 +543,11 @@ namespace tuplex {
         // Use modified strategy.
         config.retryStrategy.reset(new ModifiedRetryStrategy());
 
+        // Use larger timeout values.
+        config.requestTimeoutMs = 60000; // 60s.
+        config.connectTimeoutMs = 10000; // 10s
+        config.httpRequestTimeoutMs = 0;
+
         if(lambdaMode) {
             if(config.region.empty())
                 config.region = Aws::Environment::GetEnv("AWS_REGION");
