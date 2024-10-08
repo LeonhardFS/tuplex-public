@@ -201,10 +201,8 @@ TEST_F(LambdaTest, GithubPipelineSelfInvoke) {
     if(!output_uris.empty()) {
         cout<<"Removing existing files from S3:"<<endl;
         cout<<"Found "<<pluralize(output_uris.size(), "old output uri")<<" to be removed to run test."<<endl;
-        for(const auto& uri : output_uris) {
-            cout<<"Removing "<<uri.toString()<<"..."<<endl;
-            VirtualFileSystem::remove(uri);
-        }
+        auto ret = s3RemoveObjects(VirtualFileSystem::getS3FileSystemImpl()->client(), output_uris, &cerr);
+        ASSERT_TRUE(ret);
     }
 
     cout<<"Creating Lambda context."<<endl;
@@ -217,6 +215,9 @@ TEST_F(LambdaTest, GithubPipelineSelfInvoke) {
     conf["tuplex.experimental.interchangeWithObjectFiles"] = "true";
 
     conf["tuplex.experimental.interchangeWithObjectFiles"] = "false";
+
+    // enable hyper specialization
+    conf["tuplex.experimental.hyperspecialization"] = "true";
 
     auto ctx = create_lambda_context(conf);
 

@@ -116,8 +116,16 @@ namespace tuplex {
      */
     extern std::string s3GetHeadObject(Aws::S3::S3Client const& client, const URI& uri, std::ostream *os_err=nullptr);
 
-
     extern size_t s3GetContentLength(Aws::S3::S3Client const& client, const URI& uri, std::ostream *os_err=nullptr);
+
+    /*!
+     * Removes multiple objects with single request.
+     * @param client
+     * @param uris
+     * @param os_err
+     * @return true if ok, false if wrong.
+     */
+    extern bool s3RemoveObjects(Aws::S3::S3Client const& client, const std::vector<URI>& uris, std::ostream *os_err=nullptr);
 
     /*!
      * Helper function to test an endpoint for being a valid S3 connection via a listbuckets request.

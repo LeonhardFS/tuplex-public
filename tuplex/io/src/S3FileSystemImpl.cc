@@ -1152,6 +1152,73 @@ namespace tuplex {
         return false;
     }
 
+    bool s3RemoveObjects(Aws::S3::S3Client const& client, const std::vector<URI>& uris, std::ostream *os_err) {
+        if(uris.empty())
+            return true;
+
+        // Must be the same bucket.
+        std::unordered_set<std::string> unique_buckets;
+        for(const auto& uri : uris) {
+            unique_buckets.insert(uri.s3Bucket());
+        }
+
+        if(unique_buckets.size() != 1) {
+            if(os_err)
+                *os_err<<"S3 uris given do not belong to the same bucket, found buckets: "<<std::vector<std::string>{unique_buckets.begin(), unique_buckets.end()};
+            return false;
+        }
+
+        auto bucket = *unique_buckets.begin();
+
+        // now issue for each of the files an async delete request
+        // use https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
+        Aws::S3::Model::DeleteObjectsRequest del_request;
+        Aws::S3::Model::Delete del_keys;
+        Aws::Vector<Aws::S3::Model::ObjectIdentifier> objects_to_delete;
+        for(const auto& p: uris) {
+            Aws::S3::Model::ObjectIdentifier id;
+            assert(p.s3Bucket() == bucket);
+            id.WithKey(p.s3Key());
+            objects_to_delete.emplace_back(id);
+        }
+        del_keys.WithObjects(objects_to_delete);
+        del_request.WithBucket(bucket);
+        del_request.WithDelete(del_keys);
+
+        // perform request
+        auto outcome = client.DeleteObjects(del_request);
+        if(outcome.IsSuccess()) {
+            auto res = outcome.GetResult();
+            auto deleted_paths = res.GetDeleted();
+            // for(auto p : deleted_paths) {
+            //    logger.debug("removed s3://" + bucket + "/" + p.GetKey() + " from S3");
+            //}
+
+            // errors? print!
+            auto errs = res.GetErrors();
+            if(errs.empty())
+                return true;
+
+            for(auto err : errs) {
+                std::stringstream ss;
+                ss<<"Could not remove s3://"<<bucket<<"/"<<err.GetKey()<<" ("<<err.GetCode()<<"), "<<err.GetMessage();
+                if(os_err)
+                    *os_err<<ss.str();
+            }
+            return false;
+        } else {
+            std::stringstream ss;
+            auto err = outcome.GetError();
+            auto err_message = err.GetMessage();
+            auto err_name = err.GetExceptionName();
+            ss<<"failed to delete "<<pluralize(uris.size(), "uri")<<". Details: "
+              <<err_name<<", "<<err_message;
+            if(os_err)
+                *os_err<<ss.str();
+            return false;
+        }
+    }
+
 }
 
 #endif
