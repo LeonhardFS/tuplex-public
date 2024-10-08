@@ -210,6 +210,10 @@ namespace tuplex {
          */
         void gatherStatistics();
 
+
+        std::vector<URI> thread_safe_get_input_uris();
+        std::vector<URI> thread_safe_get_output_uris();
+
         /*!
          * outputs all the stats etc. as json file for analysis
          * @param json_path

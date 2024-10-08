@@ -779,6 +779,15 @@ namespace tuplex {
         // wait till everything finished computing
         assert(_service);
         _service->waitForRequests();
+
+        // Now check whether processing succeeded or not.
+
+        auto processed_input_uris = thread_safe_get_input_uris();
+        auto processed_output_uris = thread_safe_get_output_uris();
+
+        logger().info("LAMBDA backend transformed " + pluralize(processed_input_uris.size(), "input path") + " -> " + pluralize(processed_output_uris.size(), "output path"));
+        // logger().info("Expected input paths: " + std::to_string());
+
         gatherStatistics();
 
         std::unordered_map<std::tuple<int64_t, ExceptionCode>, size_t> ecounts;
@@ -948,6 +957,41 @@ namespace tuplex {
             _historyServer->sendStatus(JobStatus::FINISHED);
     }
 
+    std::vector<URI> AwsLambdaBackend::thread_safe_get_input_uris() {
+        std::lock_guard<std::mutex> lock(_mutex);
+        std::vector<URI> uris;
+        for (const auto &task: _tasks) {
+            for(const auto& uri : task.response.inputuris())
+                uris.push_back(uri);
+        }
+
+        std::sort(uris.begin(), uris.end(),[](const URI& a, const URI& b) {
+            return a.toString() < b.toString();
+        });
+        return uris;
+    }
+
+    std::vector<URI> AwsLambdaBackend::thread_safe_get_output_uris() {
+        std::lock_guard<std::mutex> lock(_mutex);
+        std::vector<URI> uris;
+        for (const auto &task: _tasks) {
+            for(const auto& uri : task.response.outputuris())
+                uris.push_back(uri);
+            // self-invoke?
+            if(task.response.invokedrequests_size() > 0) {
+                for(const auto& self_invoke_response : task.response.invokedresponses()) {
+                    for(const auto& uri : self_invoke_response.outputuris())
+                        uris.push_back(uri);
+                }
+            }
+        }
+
+        std::sort(uris.begin(), uris.end(),[](const URI& a, const URI& b) {
+            return a.toString() < b.toString();
+        });
+
+        return uris;
+    }
 
     // recurse depth:
     // 2^n?
@@ -1158,6 +1202,22 @@ namespace tuplex {
 
         assert(tstage);
         auto sampling_mode = tstage->samplingMode();
+
+
+        // Step 1: Figure out how much data needs to get processed.
+        // -> From this, infer part size for max-parallelism.
+        size_t total_size_in_bytes = 0;
+        for(auto uri_info : uri_infos) {
+            total_size_in_bytes += std::get<1>(uri_info);
+        }
+        size_t per_lambda_total_size = total_size_in_bytes / _options.AWS_MAX_CONCURRENCY();
+        {
+            std::stringstream ss;
+            ss<<"Found "<<sizeToMemString(total_size_in_bytes)
+            <<" to process, with maximum parallelism of "<<_options.AWS_MAX_CONCURRENCY()
+            <<" each LAMBDA will receive ~"<<sizeToMemString(per_lambda_total_size);
+            logger().info(ss.str());
+        }
 
         // TODO: figure this here out.
         int num_self_invoke = 20; // 3 parts.
@@ -1813,6 +1873,15 @@ namespace tuplex {
                 containerIDs.insert(task.response.container().uuid());
                 numReused += task.response.container().reused();
                 numNew += !task.response.container().reused();
+
+                // Add recursive invocation statistics:
+                if(task.response.invokedresponses_size() > 0) {
+                    for(const auto& self_invoke_response: task.response.invokedresponses()) {
+                        containerIDs.insert(self_invoke_response.container().uuid());
+                        numReused += self_invoke_response.container().reused();
+                        numNew += !task.response.container().reused();
+                    }
+                }
             }
 
             // print stage stats

@@ -92,7 +92,10 @@ protected:
         // co.set("tuplex.aws.scratchDir", std::string("s3://") + S3_TEST_BUCKET + "/.tuplex-cache");
         // co.set("tuplex.aws.scratchDir", std::string("s3://tuplex-test-") + tuplex::getUserName() + "/.tuplex-cache");
         co.set("tuplex.aws.scratchDir", "s3://tuplex-test/.tuplex-cache");
-        co.set("tuplex.aws.httpThreadCount", "4");
+        co.set("tuplex.aws.httpThreadCount", std::to_string(410));
+        co.set("tuplex.aws.maxConcurrency", std::to_string(410));
+        // co.set("tuplex.aws.lambdaMemory", "10000");
+        // co.set("tuplex.aws.lambdaThreads", "3");
 
         // Overwrite settings with conf_override.
         for(const auto& kv : conf_override) {
@@ -275,6 +278,9 @@ TEST_F(LambdaTest, GithubPipelineSelfInvokeDaily) {
 
     // enable hyper specialization
     conf["tuplex.experimental.hyperspecialization"] = "true";
+
+    // deactivate compiled resolver for now.
+    conf["tuplex.resolveWithInterpreterOnly"] = "True";
 
     auto ctx = create_lambda_context(conf);
 
