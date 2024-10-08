@@ -1501,7 +1501,15 @@ namespace tuplex {
                 if(index < 0 || index >= type.get_column_count()) {
                     auto ec_code = rc_integer ? ExceptionCode::INDEXERROR : ExceptionCode::KEYERROR;
                     sub->setInferredType(get_exception_type(ec_code)); // should be
-                    error("Index error: tried to access row element at position " + std::to_string(index));
+
+                    // get more context:
+                    std::stringstream ss;
+                    ss<<"Index error: tried to access row element at position " + std::to_string(index);
+                    ss<<"\nrc_integer: "<<std::boolalpha<<rc_integer<<" rc_string: "<<std::boolalpha<<rc_string;
+                    ss<<"\nnum columns: "<<type.get_column_count();
+                    ss<<"\nexpression: "<<astToString(sub->_expression.get());
+                    ss<<"\ncolumn names: "<<type.get_column_names();
+                    error(ss.str());
                 } else {
                     sub->setInferredType(type.get_column_type(index));
                 }
