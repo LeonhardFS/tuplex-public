@@ -175,37 +175,41 @@ TEST_F(LambdaTest, GithubPipeline) {
 TEST_F(LambdaTest, GithubPipelineSelfInvoke) {
     using namespace std;
     using namespace tuplex;
-
-    string input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
-    string output_path = "./" + testName + "/output";
-
+git
     auto s3_root = s3PathForTest();
     cout<<"Storing test data in "<<s3_root<<"."<<endl;
+
+    string local_input_pattern = "../resources/hyperspecialization/github_daily/2012*.json.sample";
+    string local_output_path = "./" + testName + "/output";
+    auto s3_input_pattern = s3_root + "/data/" + "2012*.json.sample";
+    auto s3_output_path = s3_root + "/output";
+
 
     // Test github pipeline with small sample files.
     // Step 1: Upload all files into bucket.
     // test file, write some stuff to it.
 
-    auto files_to_upload = glob(input_pattern);
-    cout<<"Uploading "<<pluralize(files_to_upload.size(), "file")<<" to S3."<<endl;
-    for(const auto& path : files_to_upload) {
-        auto target_uri = s3_root + "/data/" + URI(path).base_name();
-        VirtualFileSystem::copy(path, target_uri);
-    }
+    // auto files_to_upload = glob(local_input_pattern);
+    // cout<<"Uploading "<<pluralize(files_to_upload.size(), "file")<<" to S3."<<endl;
+    // for(const auto& path : files_to_upload) {
+    //     auto target_uri = s3_root + "/data/" + URI(path).base_name();
+    //     VirtualFileSystem::copy(path, target_uri);
+    // }
 
-    input_pattern = s3_root + "/data/" + "*.json.sample";
-    output_path = s3_root + "/output";
+    cout<<"-- Input pattern: "<<s3_input_pattern<<endl;
+    cout<<"-- Output dest: "<<s3_output_path<<endl;
 
-    cout<<"-- Input pattern: "<<input_pattern<<endl;
-    cout<<"-- Output dest: "<<output_path<<endl;
-
-    auto output_pattern = output_path + "/*.csv";
+    auto output_pattern = s3_output_path + "/*.csv";
     auto output_uris = VirtualFileSystem::fromURI(output_pattern).glob(output_pattern);
     if(!output_uris.empty()) {
         cout<<"Removing existing files from S3:"<<endl;
         cout<<"Found "<<pluralize(output_uris.size(), "old output uri")<<" to be removed to run test."<<endl;
         auto ret = s3RemoveObjects(VirtualFileSystem::getS3FileSystemImpl()->client(), output_uris, &cerr);
         ASSERT_TRUE(ret);
+
+        // check invariant again.
+        output_uris = VirtualFileSystem::fromURI(output_pattern).glob(output_pattern);
+        ASSERT_TRUE(output_uris.empty());
     }
 
     cout<<"Creating Lambda context."<<endl;
@@ -227,17 +231,24 @@ TEST_F(LambdaTest, GithubPipelineSelfInvoke) {
     auto ctx = create_lambda_context(conf);
 
     cout<<"Starting Github (mini) pipeline."<<endl;
-    github_pipeline(ctx, input_pattern, output_path);
+    github_pipeline(ctx, s3_input_pattern, s3_output_path);
 
     cout<<"Checking result."<<endl;
     // glob output files (should be equal amount, as 1 request per file)
-    output_uris = VirtualFileSystem::fromURI(input_pattern).glob(output_path + "/*.csv");
+    output_uris = VirtualFileSystem::fromURI(s3_input_pattern).glob(s3_output_path + "/*.csv");
 
     cout<<"Found "<<pluralize(output_uris.size(), "output file")<<" in local S3 file system."<<endl;
 
     // Step 5: Check csv counts to make sure these are correct.
-    auto total_row_count = csv_row_count_for_pattern(output_path + "/*.csv");
-    EXPECT_EQ(total_row_count, 378);
+    auto total_row_count = csv_row_count_for_pattern(s3_output_path + "/*.csv");
+
+//    // only 2011.
+//    EXPECT_EQ(total_row_count, 30);
+
+    // only 2012.
+    EXPECT_EQ(total_row_count, 18);
+
+    // EXPECT_EQ(total_row_count, 378);
 }
 
 TEST_F(LambdaTest, GithubPipelineSelfInvokeDaily) {

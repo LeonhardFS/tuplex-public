@@ -365,6 +365,40 @@ namespace tuplex {
         }
     }
 
+
+    struct ResponseInfo {
+        int statusCode;
+        bool reused;
+        std::string id;
+        double taskExecutionTime;
+        size_t outputRowCount;
+        size_t exceptionRowCount;
+        size_t selfActualInvokedCount;
+        size_t selfActualFailureCount;
+        size_t selfInvokeCount;
+
+        ResponseInfo() : statusCode(200), reused(false), taskExecutionTime(0), outputRowCount(0), exceptionRowCount(0), selfInvokeCount(0), selfActualFailureCount(0), selfActualInvokedCount(0) {}
+
+        static ResponseInfo from_protobuf(const messages::InvocationResponse& response) {
+            ResponseInfo r;
+            r.taskExecutionTime = response.taskexecutiontime();
+            r.reused = response.container().reused();
+            r.outputRowCount = response.numrowswritten();
+            r.exceptionRowCount = response.numexceptions();
+            r.id = response.container().uuid();
+
+            // If self-invoke, add up self-invoked container responses.
+            for(const auto& self_response : response.invokedresponses()) {
+                r.outputRowCount += self_response.numrowswritten();
+                r.exceptionRowCount += self_response.numexceptions();
+                r.selfActualFailureCount += self_response.status() != messages::InvocationResponse_Status::InvocationResponse_Status_SUCCESS;
+            }
+            r.selfActualInvokedCount = response.invokedresponses_size();
+            r.selfInvokeCount = response.invokedrequests_size();
+            return r;
+        }
+    };
+
     void AwsLambdaBackend::onLambdaSuccess(const AwsLambdaRequest &req, const AwsLambdaResponse &resp) {
 
         // message
@@ -372,13 +406,15 @@ namespace tuplex {
 
         auto statusCode = 200; // should be that?
 
-         // this here should go into the success callback!
-         ss << "LAMBDA task done in " << resp.response.taskexecutiontime() << "s ";
-         std::string container_status = resp.response.container().reused() ? "reused" : "new";
-         ss << "[" << statusCode << ", " << pluralize(resp.response.numrowswritten(), "row")
-            << ", " << pluralize(resp.response.numexceptions(), "exception") << ", "
-            << container_status << ", id: " << resp.response.container().uuid() << "] ";
+        // parse:
+         auto r = ResponseInfo::from_protobuf(resp.response);
 
+        // this here should go into the success callback!
+        ss << "LAMBDA task done in " << r.taskExecutionTime << "s ";
+        std::string container_status = r.reused ? "reused" : "new";
+        ss << "[" << statusCode << ", " << pluralize(r.outputRowCount, "row")
+           << ", " << pluralize(r.exceptionRowCount, "exception") << ", "
+           << container_status << ", id: " << r.id << "] ";
         // compute cost and print out
         ss << "Cost so far: $";
         double price = lambdaCost();
@@ -387,6 +423,11 @@ namespace tuplex {
         if (price < 0.0001)
             ss.precision(6);
         ss << std::fixed << price;
+
+        // Check if self-invoke, then print out stats from there:
+        if(r.selfInvokeCount > 0) {
+            ss<<" -- "<<r.selfInvokeCount<<" to recursively invoke, "<<r.selfActualInvokedCount<<" actually invoked, "<<r.selfActualFailureCount<<" thereof failed.";
+        }
 
         logger().info(ss.str());
 
@@ -1859,6 +1900,9 @@ namespace tuplex {
             size_t total_interpreter_path = 0;
             size_t total_unresolved = 0;
 
+            // sanity checks, output paths -> these should be unique.
+            std::vector<std::string> written_output_paths;
+
             // aggregate stats over responses
             for (const auto &task: _tasks) {
                 total_num_output_rows += task.response.numrowswritten();
@@ -1869,6 +1913,9 @@ namespace tuplex {
                 total_general_path += task.response.rowstats().general();
                 total_interpreter_path += task.response.rowstats().interpreter();
                 total_unresolved += task.response.rowstats().unresolved();
+
+
+                std::copy(task.response.outputuris().begin(), task.response.outputuris().end(), std::back_inserter(written_output_paths));
 
                 awsInitTime.update(task.response.awsinittime());
                 taskExecutionTime.update(task.response.taskexecutiontime());
@@ -1901,6 +1948,11 @@ namespace tuplex {
                         containerIDs.insert(self_invoke_response.container().uuid());
                         numReused += self_invoke_response.container().reused();
                         numNew += !task.response.container().reused();
+
+                        total_num_output_rows += self_invoke_response.numrowswritten();
+                        total_num_exceptions += self_invoke_response.numexceptions();
+
+                        std::copy(self_invoke_response.outputuris().begin(), self_invoke_response.outputuris().end(), std::back_inserter(written_output_paths));
                     }
                 }
             }
@@ -1913,6 +1965,9 @@ namespace tuplex {
             logger().info("LAMBDA paths input rows took: normal: " + std::to_string(total_normal_path)
                           + " general: " + general_info + " interpreter: "
                           + std::to_string(total_interpreter_path));
+
+            std::unordered_set<URI> unique_written_output_paths(written_output_paths.begin(), written_output_paths.end());
+            logger().info("LAMBDA wrote " + pluralize(written_output_paths.size(), "output uri") + " (" + pluralize(unique_written_output_paths.size(), "unique uri") + ")");
 
             // save to internal
             _info.total_input_normal_path = total_normal_path;
