@@ -114,6 +114,7 @@ namespace tuplex {
         void thread_safe_lambda_success_handler(const AwsLambdaRequest& request,
                                                 const AwsLambdaResponse& response);
 
+        void thread_safe_lambda_failure_handler(const AwsLambdaRequest& request, LambdaStatusCode error_code, const std::string& error_message);
 
         inline void reset_lambda_invocation_service(const std::shared_ptr<Aws::Lambda::LambdaClient>& client) {
             _lambdaInvoker.reset(new AwsLambdaInvocationService(client, _functionName));

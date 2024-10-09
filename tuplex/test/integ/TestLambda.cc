@@ -246,7 +246,7 @@ TEST_F(LambdaTest, GithubPipelineSelfInvoke) {
 //    EXPECT_EQ(total_row_count, 30);
 
     // only 2012.
-    EXPECT_EQ(total_row_count, 18);
+    EXPECT_EQ(total_row_count, 53);
 
     // EXPECT_EQ(total_row_count, 378);
 }

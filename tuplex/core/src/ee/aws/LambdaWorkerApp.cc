@@ -1381,9 +1381,7 @@ namespace tuplex {
             // Add to invoker (this will immediately start the request).
             _lambdaInvoker->invokeAsync(aws_req, [this](const AwsLambdaRequest &req, const AwsLambdaResponse &resp) { thread_safe_lambda_success_handler(req, resp); },
                                         [this](const AwsLambdaRequest& request, LambdaStatusCode error_code, const std::string& error_message) {
-                std::stringstream ss;
-                ss << "LAMBDA request failed [" << (int)error_code << "]: " << error_message;
-                logger().info(ss.str());
+                                            thread_safe_lambda_failure_handler(request, error_code, error_message);
             },
             [this](const AwsLambdaRequest& request, LambdaStatusCode retry_code, const std::string& retry_reason, bool will_decrease_retry_count) {
                 std::stringstream ss;
@@ -1398,12 +1396,43 @@ namespace tuplex {
         return WORKER_OK;
     }
 
+    void LambdaWorkerApp::thread_safe_lambda_failure_handler(const tuplex::AwsLambdaRequest &request,
+                                                             tuplex::LambdaStatusCode error_code,
+                                                             const std::string &error_message) {
+        std::stringstream ss;
+        ss << "LAMBDA request failed [" << (int)error_code << "]: " << error_message;
+        logger().info(ss.str());
+
+        // add as failure to response (so client can decide what to do, i.e. debug or reissue).
+        // Extract RequestInfo and Container Info.
+        messages::RequestInfo request_info; // dummy.
+
+        // fill response as error message.
+        messages::InvocationResponse response;
+        response.set_status(messages::InvocationResponse_Status::InvocationResponse_Status_ERROR);
+        response.set_errormessage(ss.str());
+
+        // Add (mutex protected) to _response.
+        {
+            std::lock_guard<std::mutex> lock(_thread_safe_response_mutex);
+            _thread_safe_response.add_invokedrequests()->CopyFrom(request_info);
+            _thread_safe_response.add_invokedresponses()->CopyFrom(response);
+        }
+    }
+
     void LambdaWorkerApp::thread_safe_lambda_success_handler(const tuplex::AwsLambdaRequest &request,
                                                              const tuplex::AwsLambdaResponse &response) {
         {
             std::stringstream ss;
-            ss << "LAMBDA request done (rc=" << response.info.returnCode << ",duration=" << response.info.durationInMs
+            ss << "LAMBDA request done (rc=" << response.info.returnCode << ", duration=" << response.info.durationInMs
                << "ms" << ").";
+
+            // Additional debug info.
+            std::vector<std::string> output_uris;
+            std::copy(response.response.outputuris().begin(), response.response.outputuris().end(), std::back_inserter(output_uris));
+            if(request.body.inputsizes_size() > 0)
+                ss<<"\n=- input uri: "<<request.body.inputuris(0);
+            ss<<"\n-- output uris: "<<output_uris;
 
             logger().info(ss.str());
         }
@@ -1427,7 +1456,8 @@ namespace tuplex {
 
         logger().info("Waiting for requests to finish...");
         _lambdaInvoker->waitForRequests();
-        logger().info("Recursive invoke done, GBs: " + std::to_string(_lambdaInvoker->usedGBSeconds())
+        logger().info(""
+                      "Recursive invoke done, GBs: " + std::to_string(_lambdaInvoker->usedGBSeconds())
         + " n_requests: " + std::to_string(_lambdaInvoker->numRequests()));
 
         // check results now.
