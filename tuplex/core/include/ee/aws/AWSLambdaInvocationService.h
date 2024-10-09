@@ -35,8 +35,8 @@
 #include <regex>
 
 namespace tuplex {
-     enum class LambdaStatusCode {
-         OK,
+    enum class LambdaStatusCode {
+        OK = 0,
         ERROR_UNKNOWN,
         ERROR_TIMEOUT,
         ERROR_RATE_LIMIT,
@@ -45,6 +45,28 @@ namespace tuplex {
         ERROR_WORKER_DOWN_WITH_UNRECOVERABLE_SIGNAL,
         ERROR_WORKER_DOWN_WITH_EXIT_CODE
     };
+
+    inline std::string lambda_status_to_string(LambdaStatusCode code) {
+        switch(code) {
+            case LambdaStatusCode::OK:
+                return "ok";
+            case LambdaStatusCode::ERROR_UNKNOWN:
+                return "error unknown";
+            case LambdaStatusCode::ERROR_TIMEOUT:
+                return "error timeout";
+            case LambdaStatusCode::ERROR_RATE_LIMIT:
+                return "error rate limit";
+            case LambdaStatusCode::ERROR_RETRIES_EXHAUSTED:
+                return "error retries exhausted";
+            case LambdaStatusCode::ERROR_TASK:
+                return "error task";
+            case LambdaStatusCode::ERROR_WORKER_DOWN_WITH_UNRECOVERABLE_SIGNAL:
+                return "error worker down with unrecoverable signal";
+            case LambdaStatusCode::ERROR_WORKER_DOWN_WITH_EXIT_CODE:
+                return "error worker down with exit code";
+        }
+        return "missing entry to decode LambdaStatusCode (value=" + std::to_string((int)code) + ")";
+    }
 
     struct AwsLambdaRequest {
         uniqueid_t id;

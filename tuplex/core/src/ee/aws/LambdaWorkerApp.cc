@@ -1097,6 +1097,11 @@ namespace tuplex {
 
         static const std::string tag = "TUPLEX_LAMBDA";
 
+        // Log failure:
+        std::stringstream ss;
+        ss<<"LAMBDA request failed with code ["<<statusCode<<"]: "<<errorName<<": "<<errorMessage;
+        logger().info(ss.str());
+
         // rate limit? => reissue request
         if(statusCode == static_cast<int>(Aws::Http::HttpResponseCode::TOO_MANY_REQUESTS) || // i.e. 429
            statusCode == static_cast<int>(Aws::Http::HttpResponseCode::INTERNAL_SERVER_ERROR) ||
@@ -1374,7 +1379,18 @@ namespace tuplex {
             }
 
             // Add to invoker (this will immediately start the request).
-            _lambdaInvoker->invokeAsync(aws_req, [this](const AwsLambdaRequest &req, const AwsLambdaResponse &resp) { thread_safe_lambda_success_handler(req, resp); } );
+            _lambdaInvoker->invokeAsync(aws_req, [this](const AwsLambdaRequest &req, const AwsLambdaResponse &resp) { thread_safe_lambda_success_handler(req, resp); },
+                                        [this](const AwsLambdaRequest& request, LambdaStatusCode error_code, const std::string& error_message) {
+                std::stringstream ss;
+                ss << "LAMBDA request failed [" << (int)error_code << "]: " << error_message;
+                logger().info(ss.str());
+            },
+            [this](const AwsLambdaRequest& request, LambdaStatusCode retry_code, const std::string& retry_reason, bool will_decrease_retry_count) {
+                std::stringstream ss;
+                ss << "LAMBDA request failed, retrying with [" << (int)retry_code << "]: " << retry_reason<<" will decrease count: "<<will_decrease_retry_count;
+                logger().info(ss.str());
+            }
+            );
         }
 
         // requests are now queued up. Now wait for them using waitForInvoker() function.

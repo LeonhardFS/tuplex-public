@@ -47,6 +47,15 @@
 
 namespace tuplex {
 
+    static int recursive_invocation_count(const messages::InvocationRequest& req) {
+        if(req.stage().invocationcount_size() != 0) {
+            assert(req.stage().invocationcount_size() == 1);
+            auto n_recursive = req.stage().invocationcount(0);
+            return n_recursive;
+        }
+        return 0;
+    }
+
     AwsLambdaBackend::~AwsLambdaBackend() {
         // stop http requests
         if (_client)
@@ -729,6 +738,10 @@ namespace tuplex {
                 conf.minimum_size_to_specialize = _options.EXPERIMENTAL_MINIMUM_SIZE_TO_SPECIALIZE();
                 conf.buf_spill_size = buf_spill_size;
                 requests = createSpecializingSelfInvokeRequests(tstage, optimizedBitcode, numThreads, uri_infos, conf);
+
+                // Check that max concurrency works with requests being processed. I.e., each request incl. all recursive invocations must be <= MAX_CONCURRENCY.
+                validate_requests_can_be_served_with_concurrency_limit(requests, _options.AWS_MAX_CONCURRENCY());
+
                 break;
             }
             default:
@@ -758,16 +771,7 @@ namespace tuplex {
                     _pendingRequests.push_back(aws_req.body);
                 return; // <-- stop further processing, early abort.
             } else {
-                if(!_blockRequests)
-                    for (const auto &req: requests)
-                        invokeAsync(req);
-                else {
-                    // invoke requests one by one.
-                    for(const auto& req : requests) {
-                        invokeAsync(req);
-                        _service->waitForRequests();
-                    }
-                }
+                perform_requests(requests, _options.AWS_MAX_CONCURRENCY());
             }
             logger().info("LAMBDA requesting took " + std::to_string(timer.time()) + "s");
         } else {
@@ -955,6 +959,32 @@ namespace tuplex {
         // if webui, send job end (single stage right now only supported)
         if (_historyServer)
             _historyServer->sendStatus(JobStatus::FINISHED);
+    }
+
+    void AwsLambdaBackend::perform_requests(const std::vector<AwsLambdaRequest> &requests, size_t concurrency_limit) {
+        validate_requests_can_be_served_with_concurrency_limit(requests, concurrency_limit);
+
+        if(!_blockRequests) {
+            // Check that total request count can be served with limit, else need to perform throttled invocation (not yet implemented).
+            size_t total_request_count = 0;
+            for(const auto& req : requests) {
+                total_request_count += 1 + recursive_invocation_count(req.body);
+            }
+
+            if(total_request_count > concurrency_limit) {
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Got in total " + pluralize(total_request_count, "request") + ", but Lambda is configured with " + std::to_string(concurrency_limit) + " concurrency limit. Need to implement throttled invocation.");
+            }
+
+            for (const auto &req: requests)
+                invokeAsync(req);
+        } else {
+            // invoke requests one by one.
+            // the validation check ensures this works with the concurrency limit.
+            for(const auto& req : requests) {
+                invokeAsync(req);
+                _service->waitForRequests();
+            }
+        }
     }
 
     std::vector<URI> AwsLambdaBackend::thread_safe_get_input_uris() {
@@ -1168,15 +1198,6 @@ namespace tuplex {
         aws_req.retriesLeft = 5;
 
         return aws_req;
-    }
-
-    int recursive_invocation_count(const messages::InvocationRequest& req) {
-        if(req.stage().invocationcount_size() != 0) {
-            assert(req.stage().invocationcount_size() == 1);
-            auto n_recursive = req.stage().invocationcount(0);
-            return n_recursive;
-        }
-        return 0;
     }
 
     std::vector<AwsLambdaRequest>
@@ -2026,6 +2047,19 @@ namespace tuplex {
             _service->reset();
 
         // other reset? @TODO.
+    }
+
+
+    void AwsLambdaBackend::validate_requests_can_be_served_with_concurrency_limit(const std::vector<AwsLambdaRequest>& requests,
+                                                                                  size_t concurrency_limit) {
+        size_t min_concurrency_needed = 1;
+        for(const auto& req : requests) {
+            size_t invocations = 1 + recursive_invocation_count(req.body);
+            min_concurrency_needed = std::max(invocations, min_concurrency_needed);
+        }
+
+        if(min_concurrency_needed > concurrency_limit)
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Recursive requests need at least " + std::to_string(min_concurrency_needed) + " concurrency, but Lambda is configured with " + std::to_string(concurrency_limit) + " concurrency limit.");
     }
 
 //    void AwsLambdaBackend::abortRequestsAndFailWith(int returnCode, const std::string &errorMessage) {

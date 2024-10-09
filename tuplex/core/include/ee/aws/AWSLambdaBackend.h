@@ -296,6 +296,12 @@ namespace tuplex {
 
         // this may internally modify the remote mapping.
         URI generate_output_base_uri(const TransformStage* tstage, int taskNo, int num_digits=-1, int part_no=-1, int num_digits_part=-1);
+
+        void validate_requests_can_be_served_with_concurrency_limit(const std::vector<AwsLambdaRequest>& requests,
+                                                               size_t concurrency_limit);
+
+
+        void perform_requests(const std::vector<AwsLambdaRequest>& requests, size_t concurrency_limit);
     };
 }
 
