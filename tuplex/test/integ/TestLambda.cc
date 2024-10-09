@@ -175,7 +175,7 @@ TEST_F(LambdaTest, GithubPipeline) {
 TEST_F(LambdaTest, GithubPipelineSelfInvoke) {
     using namespace std;
     using namespace tuplex;
-git
+
     auto s3_root = s3PathForTest();
     cout<<"Storing test data in "<<s3_root<<"."<<endl;
 
