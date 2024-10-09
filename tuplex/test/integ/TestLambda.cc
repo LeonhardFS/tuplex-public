@@ -211,7 +211,6 @@ TEST_F(LambdaTest, GithubPipelineSelfInvoke) {
     cout<<"Creating Lambda context."<<endl;
     std::unordered_map<std::string, std::string> conf;
     conf["tuplex.aws.lambdaInvocationStrategy"] = "tree";
-    conf["tuplex.aws.maxConcurrency"] = "10"; // use 10 as maximum parallelism.
     conf["tuplex.experimental.minimumSizeToSpecialize"] = "0"; // disable minimum size.
 
     // the object code interchange fails with segfaults when using the libc preloader...
@@ -221,6 +220,9 @@ TEST_F(LambdaTest, GithubPipelineSelfInvoke) {
 
     // enable hyper specialization
     conf["tuplex.experimental.hyperspecialization"] = "true";
+
+    // concurrency limit:
+    conf["tuplex.aws.maxConcurrency"] = "400"; // use 10 as maximum parallelism.
 
     auto ctx = create_lambda_context(conf);
 
@@ -268,7 +270,7 @@ TEST_F(LambdaTest, GithubPipelineSelfInvokeDaily) {
     cout<<"Creating Lambda context."<<endl;
     std::unordered_map<std::string, std::string> conf;
     conf["tuplex.aws.lambdaInvocationStrategy"] = "tree";
-    conf["tuplex.aws.maxConcurrency"] = "20"; // use 20 as maximum parallelism.
+    conf["tuplex.aws.maxConcurrency"] = "600"; // use 600 as maximum parallelism.
     conf["tuplex.experimental.minimumSizeToSpecialize"] = "0"; // disable minimum size.
 
     // the object code interchange fails with segfaults when using the libc preloader...
