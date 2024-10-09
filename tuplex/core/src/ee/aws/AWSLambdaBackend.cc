@@ -427,6 +427,17 @@ namespace tuplex {
         // Check if self-invoke, then print out stats from there:
         if(r.selfInvokeCount > 0) {
             ss<<" -- "<<r.selfInvokeCount<<" to recursively invoke, "<<r.selfActualInvokedCount<<" actually invoked, "<<r.selfActualFailureCount<<" thereof failed.";
+
+
+            // additional debug output for failures:
+            if(r.selfActualFailureCount > 0) {
+                // Get error messages of failed Lambdas.
+                for(const auto& self_response : resp.response.invokedresponses()) {
+                    if(self_response.status() != messages::InvocationResponse_Status::InvocationResponse_Status_SUCCESS) {
+                        ss<<"\n -- Self-invoked LAMBDA failed with: "<<self_response.errormessage();
+                    }
+                }
+            }
         }
 
         logger().info(ss.str());
