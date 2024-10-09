@@ -187,9 +187,9 @@ namespace tuplex {
         JsonSourceTaskBuilder::generateChecks(const IRBuilder &builder,
                                               llvm::Value *userData,
                                               llvm::Value *rowNumber,
-                                              llvm::Value* parser,
-                                              llvm::BasicBlock* bbSkipRow,
-                                              llvm::BasicBlock* bbBadRow) {
+                                              llvm::Value *parser,
+                                              llvm::BasicBlock *bbSkipRow,
+                                              llvm::BasicBlock *bbBadRow) {
             using namespace llvm;
 
             assert(rowNumber && rowNumber->getType() == _env->i64Type());
@@ -207,18 +207,20 @@ namespace tuplex {
             {
                 std::stringstream ss;
                 std::vector<std::string> required_column_names;
-                for(auto i : required_cols_for_check)
-                    if(_normal_case_columns.empty())
+                for (auto i: required_cols_for_check)
+                    if (_normal_case_columns.empty())
                         required_column_names.push_back("<no name>");
                     else {
-                        if(i >= _normal_case_columns.size()) {
-                            throw std::runtime_error("Invalid check column index " + std::to_string(i) + ", there are only " +
-                                                             pluralize(_normal_case_columns.size(), "normal case column"));
+                        if (i >= _normal_case_columns.size()) {
+                            throw std::runtime_error(
+                                    "Invalid check column index " + std::to_string(i) + ", there are only " +
+                                    pluralize(_normal_case_columns.size(), "normal case column"));
                         }
                         required_column_names.push_back(_normal_case_columns[i]);
                     }
-                ss<<"Following columns are to be parsed for checks: "<<required_cols_for_check<<" ("<<required_column_names<<")";
-                logger().debug(ss.str());
+                ss << "Following columns are to be parsed for checks: " << required_cols_for_check << " ("
+                   << required_column_names << ")";
+                logger().info(ss.str());
             }
 
             // parse here into single flattened tuple & map
@@ -228,10 +230,10 @@ namespace tuplex {
                                                                                               required_cols_for_check,
                                                                                               parser, bbBadRow);
 
-            for(const auto& check : checks) {
-                if(check.type == CheckType::CHECK_FILTER) {
+            for (const auto &check: checks) {
+                if (check.type == CheckType::CHECK_FILTER) {
                     // ok, this is supported
-                    logger().debug("found filter check, emitting code");
+                    logger().info("Found filter check, emitting code.");
 
                     // deserialize filter operator in order to generate check properly
                     std::shared_ptr<FilterOperator> fop = nullptr;
@@ -246,42 +248,48 @@ namespace tuplex {
                     auto j = nlohmann::json::parse(check.data());
                     fop = FilterOperator::from_json(nullptr, j);
 #endif
-                    logger().debug("deserialized operator " + fop->name());
-
-                    // which columns does filter operator require?
-                    // -> perform struct type rewrite specific for THIS filter
-#warning "shortcut here for JSON mode. Other mode should use correct getUDF->getAccessedColumns, tbd."
-                    auto acc_cols = check.colNos; // fop->getUDF().getAccessedColumns(false);
-                    std::stringstream ss;
-                    ss<<"filter accesses following columns: "<<acc_cols<<"\n";
-                    ss<<"input row type: "<<_inputRowType.desc()<<"\n";
-                    ss<<"input columns: "<<_normal_case_columns<<"\n";
-                    // // these are empty b.c. no parent operator for check
-                    // ss<<"filter input columns: "<<fop->inputColumns()<<"\n";
-                    // ss<<"filter input schema: "<<fop->getInputSchema().getRowType().desc()<<"\n";
-
-                    // retype filter operator
+                    logger().info("Deserialized operator " + fop->name() + " for check.");
 
                     std::vector<std::string> acc_column_names;
                     std::vector<python::Type> acc_col_types;
-                    std::tie(acc_col_types, acc_column_names) = get_column_types_and_names(acc_cols);
+
+                    // which columns does filter operator require?
+                    // -> perform struct type rewrite specific for THIS filter
+                    if(!check.colNames.empty()) {
+                        //#warning "shortcut here for JSON mode. Other mode should use correct getUDF->getAccessedColumns, tbd."
+                        auto acc_cols = check.colNames;
+                        std::stringstream ss;
+                        ss << "filter accesses following columns: " << acc_cols << "\n";
+                        ss << "input row type: " << _inputRowType.desc() << "\n";
+                        ss << "input columns: " << _normal_case_columns << "\n";
+                        // // these are empty b.c. no parent operator for check
+                        // ss << "filter input columns: " << fop->inputColumns() << "\n";
+                        // ss << "filter input schema: " << fop->getInputSchema().getRowType().desc() << "\n";
+                        logger().info(ss.str());
+
+                        // retype filter operator
+                        std::tie(acc_col_types, acc_column_names) = get_column_types_and_names(acc_cols);
+                    } else {
+                        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Not yet implemented.");
+                    }
 
                     // This is a check, there should be NO optimized types.
                     // Optimized types are the result of passing checks of (unoptimized) types.
-                    for(const auto& col_type : acc_col_types) {
+                    for (const auto &col_type: acc_col_types) {
                         assert(!col_type.isOptimizedType());
                     }
 
                     // however, these here should show correct columns/types.
-                    ss<<"filter input columns: "<<acc_column_names<<"\n";
-                    ss<<"filter input schema: "<<python::Type::makeTupleType(acc_col_types).desc()<<"\n";
+                    std::stringstream ss;
+                    ss << "filter input columns: " << acc_column_names << "\n";
+                    ss << "filter input schema: " << python::Type::makeTupleType(acc_col_types).desc() << "\n";
 
                     RetypeConfiguration conf;
                     // @TODO: when always switching over to row type, can remove the column names here.
                     conf.columns = acc_column_names;
                     conf.row_type = python::Type::makeTupleType(acc_col_types);
 
-                    if(PARAM_USE_ROW_TYPE)
+                    if (PARAM_USE_ROW_TYPE)
                         conf.row_type = python::Type::makeRowType(acc_col_types, acc_column_names);
 
                     conf.is_projected = true;
@@ -292,8 +300,9 @@ namespace tuplex {
                                   fop->getUDF().getAnnotatedAST().globals(),
                                   fop->getUDF().compilePolicy());
                     fop = FilterOperator::from_udf(plain_udf, conf.row_type, conf.columns);
-                    if(!fop)
-                        throw std::runtime_error("failed to create filter operator properly!");
+                    if (!fop)
+                        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) +
+                                                 " failed to create filter operator properly when generating checks for JSON source.");
 
                     // auto ret = fop->retype(conf);
                     // if(!ret) {
@@ -306,21 +315,30 @@ namespace tuplex {
 
 
                     // create two basic blocks: -> check passed, check failed
-                    auto& ctx = builder.getContext();
-                    BasicBlock* bbCheckPassed = BasicBlock::Create(ctx, "filter_check_" + std::to_string(fop->getID()) + "_passed", builder.GetInsertBlock()->getParent());
-                    BasicBlock* bbCheckFailed = BasicBlock::Create(ctx, "filter_check_" + std::to_string(fop->getID()) + "_failed", builder.GetInsertBlock()->getParent());
+                    auto &ctx = builder.getContext();
+                    BasicBlock *bbCheckPassed = BasicBlock::Create(ctx, "filter_check_" + std::to_string(fop->getID()) +
+                                                                        "_passed",
+                                                                   builder.GetInsertBlock()->getParent());
+                    BasicBlock *bbCheckFailed = BasicBlock::Create(ctx, "filter_check_" + std::to_string(fop->getID()) +
+                                                                        "_failed",
+                                                                   builder.GetInsertBlock()->getParent());
 
-                    if(_unwrap_first_level) {
+                    if (_unwrap_first_level) {
                         // first level are columns:
                         // i.e., detect which columns are necessary and prune accordingly!
                         // => only filter specific paths should be parsed!
                         ss.str("");
-                        ss<<"filter requires "<<pluralize(conf.columns.size(), "column")<<": "<<conf.columns;
+                        ss << "filter requires " << pluralize(conf.columns.size(), "column") << ": " << conf.columns;
                         logger().debug(ss.str());
-                        BasicBlock* bbFilterBadParse = BasicBlock::Create(ctx, "filter_" + std::to_string(fop->getID()) + "_bad_parse", builder.GetInsertBlock()->getParent());
-                        auto tuple_row_type = conf.row_type.isRowType() ? conf.row_type.get_columns_as_tuple_type() : conf.row_type;
+                        BasicBlock *bbFilterBadParse = BasicBlock::Create(ctx,
+                                                                          "filter_" + std::to_string(fop->getID()) +
+                                                                          "_bad_parse",
+                                                                          builder.GetInsertBlock()->getParent());
+                        auto tuple_row_type = conf.row_type.isRowType() ? conf.row_type.get_columns_as_tuple_type()
+                                                                        : conf.row_type;
                         assert(row_type_compatible_with_columns(tuple_row_type, conf.columns));
-                        auto ft_filter = json_parseRow(env(), builder, tuple_row_type, conf.columns, true, false, parser, bbFilterBadParse);
+                        auto ft_filter = json_parseRow(env(), builder, tuple_row_type, conf.columns, true, false,
+                                                       parser, bbFilterBadParse);
 
                         // debug print:
 #ifndef NDEBUG
@@ -336,35 +354,39 @@ namespace tuplex {
                         }
 #endif
                         // now call filter & determine whether good or bad
-                        if(!fop->getUDF().isCompiled())
+                        if (!fop->getUDF().isCompiled())
                             throw std::runtime_error("only compilable UDFs here supported!");
-                        auto cf = const_cast<UDF&>(fop->getUDF()).compile(env());
-                        if(!cf.good())
+                        auto cf = const_cast<UDF &>(fop->getUDF()).compile(env());
+                        if (!cf.good())
                             throw std::runtime_error("failed compiling UDF for filter check");
 
-                        if(python::Type::BOOLEAN != cf.output_python_type)
-                            throw std::runtime_error("only filter with boolean output type yet supported in filter check");
+                        if (python::Type::BOOLEAN != cf.output_python_type)
+                            throw std::runtime_error(
+                                    "only filter with boolean output type yet supported in filter check");
 
                         auto resVal = env().CreateFirstBlockAlloca(builder, cf.getLLVMResultType(env()));
 
-                        auto exceptionBlock = BasicBlock::Create(ctx, "filter_" + std::to_string(fop->getID()) + "_except", builder.GetInsertBlock()->getParent());
+                        auto exceptionBlock = BasicBlock::Create(ctx,
+                                                                 "filter_" + std::to_string(fop->getID()) + "_except",
+                                                                 builder.GetInsertBlock()->getParent());
                         auto ecVar = env().CreateFirstBlockAlloca(builder, env().i64Type(), "ecVar_filter");
                         auto ft = cf.callWithExceptionHandler(builder, ft_filter, resVal, exceptionBlock, ecVar);
                         // check type is correct
                         auto expectedType = python::Type::BOOLEAN;
-                        llvm::Value* filterCond = nullptr; // i1 filter condition
-                        if(ft.getTupleType() != expectedType) {
+                        llvm::Value *filterCond = nullptr; // i1 filter condition
+                        if (ft.getTupleType() != expectedType) {
                             // perform truthValueTest on result
                             // is it a tuple type?
                             // keep everything!
-                            if(ft.numElements() > 1)
+                            if (ft.numElements() > 1)
                                 filterCond = env().i1Const(true);
-                            else{
-                                auto ret_val = SerializableValue(ft.get(0), ft.getSize(0), ft.getIsNull(0)); // single value?
+                            else {
+                                auto ret_val = SerializableValue(ft.get(0), ft.getSize(0),
+                                                                 ft.getIsNull(0)); // single value?
                                 filterCond = env().truthValueTest(builder, ret_val, cf.output_python_type);
                             }
                         } else {
-                            assert(ft.numElements() ==  1);
+                            assert(ft.numElements() == 1);
                             auto compareVal = ft.get(0);
                             assert(compareVal->getType() == env().getBooleanType());
                             filterCond = builder.CreateICmpEQ(compareVal, env().boolConst(true));
@@ -412,14 +434,14 @@ namespace tuplex {
 
                     // create reduced input type for quick parsing
                     assert(_inputRowType.isTupleType() || _inputRowType.isRowType());
-                } else if(check.type == CheckType::CHECK_CONSTANT && check.isSingleColCheck()) {
+                } else if (check.type == CheckType::CHECK_CONSTANT && check.isSingleColCheck()) {
                     // is column being serialized? If so - emit check.
 
                     {
                         std::stringstream ss;
-                        ss<<"general-case requires column, emit code for constant check == "
-                          <<check.constant_type().constant()
-                          <<" for column "<<check.colNo();
+                        ss << "general-case requires column, emit code for constant check == "
+                           << check.constant_type().constant()
+                           << " for column " << check.colNo();
                         logger().info(ss.str());
                     }
 
@@ -427,30 +449,35 @@ namespace tuplex {
                     auto val = ft_for_checks.getLoad(builder, {col_to_check_col_map[check.colNo()]});
 
                     python::Type elementType;
-                    std::string  constant_value;
+                    std::string constant_value;
                     std::tie(elementType, constant_value) = extract_type_and_value_from_constant_check(check);
-                    llvm::Value* check_cond = nullptr;
-                    if(python::Type::BOOLEAN == elementType) {
+                    llvm::Value *check_cond = nullptr;
+                    if (python::Type::BOOLEAN == elementType) {
                         // compare value
                         auto c_val = parseBoolString(constant_value);
                         check_cond = builder.CreateICmpEQ(_env->boolConst(c_val), val.val);
-                    } else if(python::Type::STRING == elementType) {
+                    } else if (python::Type::STRING == elementType) {
                         assert(val.size);
                         auto str_value_to_compare_against = str_value_from_python_raw_value(constant_value);
 
                         // direct compare (size + content)
-                        check_cond = builder.CreateICmpEQ(val.size, _env->i64Const(str_value_to_compare_against.size() + 1));
-                        check_cond = builder.CreateAnd(check_cond, _env->fixedSizeStringCompare(builder, val.val, str_value_to_compare_against));
+                        check_cond = builder.CreateICmpEQ(val.size,
+                                                          _env->i64Const(str_value_to_compare_against.size() + 1));
+                        check_cond = builder.CreateAnd(check_cond, _env->fixedSizeStringCompare(builder, val.val,
+                                                                                                str_value_to_compare_against));
 
                         // std::stringstream ss;
                         // ss<<"Check "<<check.to_string()<<" colunms: "<<check.colNames<<" passed: ";
                         // _env->printValue(builder, check_cond, ss.str());
                     } else {
-                        throw std::runtime_error("Check with type " + check.constant_type().desc() + " not yet supported");
+                        throw std::runtime_error(
+                                "Check with type " + check.constant_type().desc() + " not yet supported");
                     }
 
-                    auto& ctx = builder.getContext();
-                    BasicBlock* bbCheckPassed = BasicBlock::Create(ctx, "constant_check_" + std::to_string(check.colNo()) + "_passed", builder.GetInsertBlock()->getParent());
+                    auto &ctx = builder.getContext();
+                    BasicBlock *bbCheckPassed = BasicBlock::Create(ctx,
+                                                                   "constant_check_" + std::to_string(check.colNo()) +
+                                                                   "_passed", builder.GetInsertBlock()->getParent());
 
                     // if cond is met, proceed - else go to bad parse
                     builder.CreateCondBr(check_cond, bbCheckPassed, bbBadRow);
@@ -467,10 +494,59 @@ namespace tuplex {
         }
 
         std::tuple<std::vector<python::Type>, std::vector<std::string>>
+        JsonSourceTaskBuilder::get_column_types_and_names(const std::vector<std::string> &acc_names,
+                                                          bool return_with_optimized_types) const {
+            std::vector<std::string> acc_column_names;
+            std::vector<python::Type> acc_col_types;
+            for(auto name : acc_names) {
+
+                // find in names
+                if(_inputRowType.isRowType()) {
+                    auto t = _inputRowType.get_column_type(name);
+                    if(t.isExceptionType())
+                        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " can not extract type from " + _inputRowType.desc() + " with name: " +
+                                                         escape_to_python_str(name));
+                    acc_column_names.push_back(name);
+                    acc_col_types.push_back(t);
+                } else {
+                    assert(_normal_case_columns.size() == _inputRowType.parameters().size());
+                    auto idx = indexInVector(name, _normal_case_columns);
+                    // check if valid, if not error out.
+                    if(idx < 0) {
+                        std::stringstream ss;
+                        ss<<std::string(__FILE__) + ":" + std::to_string(__LINE__) + " can not extract type from " + _inputRowType.desc() + " with name: " +
+                            escape_to_python_str(name);
+                        ss<<" from columns: "<<_normal_case_columns;
+                        throw std::runtime_error(ss.str());
+                    }
+
+                    auto t = _inputRowType.parameters()[idx];
+                    acc_column_names.push_back(name);
+                    acc_col_types.push_back(t);
+                }
+            }
+
+            // deoptimize
+            if(!return_with_optimized_types) {
+                for(auto& type : acc_col_types) {
+                    type = deoptimizedType(type);
+                }
+            }
+
+            return std::make_tuple(acc_col_types, acc_column_names);
+        }
+
+        std::tuple<std::vector<python::Type>, std::vector<std::string>>
         JsonSourceTaskBuilder::get_column_types_and_names(const std::vector<size_t> &acc_cols, bool return_with_optimized_types) const {
             std::vector<std::string> acc_column_names;
             std::vector<python::Type> acc_col_types;
             for(auto idx : acc_cols) {
+
+                // check if valid, if not error out.
+                if(idx >= extract_columns_from_type(_inputRowType)) {
+                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " can not extract type from " + _inputRowType.desc() +" with column index " + std::to_string(idx));
+                }
+
                 if(_inputRowType.isRowType()) {
                     assert(vec_equal(_normal_case_columns, _inputRowType.get_column_names()));
                     acc_column_names.push_back(_inputRowType.get_column_name(idx));

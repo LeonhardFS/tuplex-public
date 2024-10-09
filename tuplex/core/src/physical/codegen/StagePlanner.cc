@@ -1967,9 +1967,24 @@ namespace tuplex {
         auto inputNode = path_ctx.inputNode;
         auto operators = path_ctx.operators;
 
-        auto input_row_type = inputNode->getOutputSchema().getRowType(); if(input_row_type.isRowType())input_row_type = input_row_type.get_columns_as_tuple_type();
+        auto input_row_type = inputNode->getOutputSchema().getRowType();
+        auto input_column_names = inputNode->columns();
+        if(input_column_names.empty() && input_row_type.isRowType())
+            input_column_names = input_row_type.get_column_names();
+        // transform to tuple type.
+        if(input_row_type.isRowType())
+            input_row_type = input_row_type.get_columns_as_tuple_type();
+
+        assert(input_row_type.isTupleType());
+        assert(input_row_type.parameters().size() == input_column_names.size());
+
         size_t num_input_before_hyper = input_row_type.parameters().size();
-        logger.info("number of input columns before hyperspecialization: " + std::to_string(num_input_before_hyper));
+        {
+            std::stringstream ss;
+            ss<<"number of input columns before hyperspecialization: " + std::to_string(num_input_before_hyper);
+            ss<<"\ninput columns: "<<input_column_names;
+           logger.info(ss.str());
+        }
 
         // force resampling b.c. of thin layer
         Timer samplingTimer;

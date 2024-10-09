@@ -1133,7 +1133,7 @@ namespace tuplex {
             tb->setIgnoreCodes(ignoreCodes);
 
             // #error "need to add here the optional checking for the input! --> i.e. smaller pipeline etc."
-            logger.warn("hack, need to fix stuff here...");
+            // logger.warn("hack, need to fix stuff here...");
             tb->setPipeline(pip);
 
             // special case: intermediate

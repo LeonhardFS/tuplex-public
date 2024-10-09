@@ -801,8 +801,11 @@ namespace python {
             index += kv_pairs.size();
 
         // invalid index?
-        if(index < 0 || index >= kv_pairs.size())
-            throw std::runtime_error("invalid index " + std::to_string(index) + " to access row type column names");
+        if(index < 0 || index >= kv_pairs.size()) {
+            // do not use desc() because this needs the lock, leading to recursive dead-lock.
+            auto desc = factory._typeVec[factory._typeMap.at(_hash)]._desc;
+            throw std::runtime_error("invalid index " + std::to_string(index) + " to access row type column names of type " + desc);
+        }
 
         return kv_pairs[index].key;
     }

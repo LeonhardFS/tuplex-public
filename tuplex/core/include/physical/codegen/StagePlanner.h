@@ -129,9 +129,9 @@ namespace tuplex {
             StagePlanner(const std::shared_ptr<LogicalOperator>& inputNode,
                          const std::vector<std::shared_ptr<LogicalOperator>>& operators,
                          double nc_threshold) : _inputNode(inputNode),
-                         _operators(operators), _nc_threshold(nc_threshold),
-                         _useNVO(false), _useConstantFolding(false), _useDelayedParsing(false),
-                         _useSparsifyStructs(false), _simplifyLargeStructs(false), _largeStructTreshold(0) {
+                                                _operators(operators), _nc_threshold(nc_threshold),
+                                                _useNVO(false), _useConstantFolding(false), _useDelayedParsing(false),
+                                                _useSparsifyStructs(false), _simplifyLargeStructs(false), _largeStructThreshold(0) {
                 assert(inputNode);
                 for(auto op : operators)
                     assert(op);
@@ -186,7 +186,7 @@ namespace tuplex {
                 _useFilterPromo = false;
                 _useSparsifyStructs = false;
                 _simplifyLargeStructs = true;
-                _largeStructTreshold = 0;
+                _largeStructThreshold = 0;
             }
 
             void enableNullValueOptimization() { _useNVO = true; }
@@ -195,8 +195,11 @@ namespace tuplex {
             void enableFilterPromoOptimization() { _useFilterPromo = true; }
             void enableSparsifyStructsOptimization() { _useSparsifyStructs = true; }
             void enableSimplifyLargeStructs(size_t threshold) {
+                if(threshold == 0) {
+                    throw std::runtime_error("Invalid threshold of 0 submitted, set at least to 1.");
+                }
                 _simplifyLargeStructs = true;
-                _largeStructTreshold = threshold;
+                _largeStructThreshold = threshold;
             }
 
             std::map<int, int> normalToGeneralMapping() const { return _normalToGeneralMapping; }
@@ -216,7 +219,7 @@ namespace tuplex {
                 if(_useSparsifyStructs)
                     opt_names.push_back("struct-sparsification");
                 if(_simplifyLargeStructs)
-                    opt_names.push_back("simplify-large-structs[th="+std::to_string(_largeStructTreshold)+"]");
+                    opt_names.push_back("simplify-large-structs[th=" + std::to_string(_largeStructThreshold) + "]");
                 ss<<opt_names;
                 return ss.str();
             }
@@ -288,7 +291,7 @@ namespace tuplex {
             bool _useFilterPromo;
             bool _useSparsifyStructs;
             bool _simplifyLargeStructs;
-            size_t _largeStructTreshold;
+            size_t _largeStructThreshold;
 
             // helper when normal-case is specialized to yield less rows than general case
             std::map<int, int> _normalToGeneralMapping;

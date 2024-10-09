@@ -151,6 +151,9 @@ namespace tuplex {
 
             std::tuple<std::vector<python::Type>, std::vector<std::string>>
             get_column_types_and_names(const std::vector<size_t> &acc_cols, bool return_with_optimized_types=false) const;
+
+            std::tuple<std::vector<python::Type>, std::vector<std::string>>
+            get_column_types_and_names(const std::vector<std::string> &acc_names, bool return_with_optimized_types=false) const;
         };
 
 
