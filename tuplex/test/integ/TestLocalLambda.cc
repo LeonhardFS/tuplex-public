@@ -618,7 +618,7 @@ TEST_F(LambdaLocalTest, GithubSplitTestWithSelfInvoke) {
     cout<<"Creating Lambda context."<<endl;
     std::unordered_map<std::string, std::string> conf;
     conf["tuplex.aws.lambdaInvocationStrategy"] = "tree";
-    conf["tuplex.aws.maxConcurrency"] = "10"; // use 10 as maximum parallelism.
+    conf["tuplex.aws.maxConcurrency"] = "40"; // use 10 as maximum parallelism.
     conf["tuplex.experimental.minimumSizeToSpecialize"] = "0"; // disable minimum size.
 
     // the object code interchange fails with segfaults when using the libc preloader...
@@ -711,7 +711,7 @@ TEST_P(ParametrizedLambdaLocalTest, GithubSplitTestWithSelfInvokeWithAppDebug) {
     cout<<"Creating Lambda context."<<endl;
     std::unordered_map<std::string, std::string> conf;
     conf["tuplex.aws.lambdaInvocationStrategy"] = "tree";
-    conf["tuplex.aws.maxConcurrency"] = "10"; // use 10 as maximum parallelism.
+    conf["tuplex.aws.maxConcurrency"] = "40"; // use 10 as maximum parallelism.
     conf["tuplex.experimental.minimumSizeToSpecialize"] = "0"; // disable minimum size.
     conf["tuplex.experimental.opportuneCompilation"] = "false"; // disable, is buggy.
 

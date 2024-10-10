@@ -664,7 +664,11 @@ namespace tuplex {
          * thread-safe logger function
          * @return message handler
          */
-        virtual MessageHandler& logger() const { return _logger; }
+        MessageHandler& logger() const { return _logger; }
+
+        void setLoggerName(const std::string& name) {
+            _logger = Logger::instance().logger(name);
+        }
 
         /*!
          * spill buffer out to somewhere & reset counter

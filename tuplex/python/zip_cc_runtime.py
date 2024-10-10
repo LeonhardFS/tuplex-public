@@ -138,7 +138,7 @@ def zip_with_upx(zip, src, dest, upx_compression_level=3):
 
     if os.path.getsize(src) >= UPX_THRESHOLD and is_elf_file:
         logging.info(f"File {src} is ELF and larger than threshold, compressing with upx.")
-
+        logging.info(f"Size of file {src}: {os.path.getsize(src)}")
         tmp_dir = tempfile.mkdtemp()
         tmp_name = os.path.join(tmp_dir, "compressed.bin")
         out = subprocess.getoutput(f"{UPX_PATH} -{upx_compression_level} -o {tmp_name} {src}")

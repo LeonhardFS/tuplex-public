@@ -74,7 +74,11 @@ BUILD_TYPE=Release
 
 # Lambda packages are too large, reduce size. UPX leads to segfault at the moment...
 # this makes a difference of a few megabytes only...
-#BUILD_TYPE=MinSizeRel
+# BUILD_TYPE=RelWithDebInfo
+
+# Too large for upx (limit: 768M)
+# Use debug to understand failures
+#BUILD_TYPE=Debug
 
 # Add upx for example.
 ADD_ZIP_ARGS="${ADD_ZIP_ARGS:-}"

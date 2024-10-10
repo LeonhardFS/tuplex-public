@@ -397,6 +397,8 @@ namespace tuplex {
     int WorkerApp::setup_transform_stage(const tuplex::messages::InvocationRequest& req,
                                          std::shared_ptr<TransformStage>& tstage,
                                          std::shared_ptr<TransformStage::JITSymbols>& syms) {
+        logger().debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " start setup_transform_stage");
+
         // reset buffers
         resetThreadEnvironments();
 
@@ -404,6 +406,8 @@ namespace tuplex {
         syms.reset();
 
         auto parts = partsFromMessage(req);
+
+        logger().debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Decoding transform stage from prootbuf.");
 
         // only transform stage yet supported, in the future support other stages as well!
         tstage = std::move(TransformStage::from_protobuf(req.stage()));
@@ -423,6 +427,9 @@ namespace tuplex {
 
         // check settings, pure python mode?
         if(req.settings().has_useinterpreteronly() && req.settings().useinterpreteronly()) {
+
+            logger().debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " interpreter only mode, skip rest of setup.");
+
             // following code is good for compile only, skip for now.
             return WORKER_CONTINUE;
         }
@@ -441,6 +448,8 @@ namespace tuplex {
 
         // using hyper-specialization?
         if(useHyperSpecialization(req)  && !(req.requestmode() & REQUEST_MODE_SKIP_COMPILE)) {
+
+            logger().debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " start hyperspecialization.");
 
             // check if encoded AST is compatible...
             if(!astFormatCompatible(req))
@@ -588,6 +597,11 @@ namespace tuplex {
         // opportune compilation? --> do this here b.c. lljit is not thread-safe yet?
         // kick off general case compile then
 
+        if(_settings.opportuneGeneralPathCompilation) {
+            logger().info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Found opportune compilation enabled, but should be disabled. Too buggy.");
+            return WORKER_ERROR_ENVIRONMENT;
+        }
+
         // opportune general path compilation is broken, turn off for now.
         assert(!_settings.opportuneGeneralPathCompilation);
 
@@ -613,6 +627,8 @@ namespace tuplex {
             fill_response_with_state(_response);
             return WORKER_OK;
         }
+
+        logger().debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Finished setup_transform_stage");
 
         return WORKER_CONTINUE;
     }

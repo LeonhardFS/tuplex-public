@@ -225,6 +225,9 @@ TEST_F(LambdaTest, GithubPipelineSelfInvoke) {
     // enable hyper specialization
     conf["tuplex.experimental.hyperspecialization"] = "true";
 
+    // disable opportune compilation
+    conf["tuplex.experimental.opportuneCompilation"] = "false";
+
     // concurrency limit:
     conf["tuplex.aws.maxConcurrency"] = "400"; // use 10 as maximum parallelism.
 

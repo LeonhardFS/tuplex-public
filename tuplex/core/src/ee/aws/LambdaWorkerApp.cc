@@ -1417,6 +1417,19 @@ namespace tuplex {
             std::lock_guard<std::mutex> lock(_thread_safe_response_mutex);
             _thread_safe_response.add_invokedrequests()->CopyFrom(request_info);
             _thread_safe_response.add_invokedresponses()->CopyFrom(response);
+
+            // Add request as resource for better debugging.
+            // Could remove this code in the future.
+            auto resource_msg = _thread_safe_response.add_resources();
+            assert(resource_msg);
+            resource_msg->set_type((uint32_t)ResourceType::BAD_REQUEST);
+            nlohmann::json j;
+            j["id"] = request.id;
+            j["retriesLeft"] = request.retriesLeft;
+            j["base64Request"] = encodeAWSBase64(request.body.SerializeAsString());
+            j["errorCode"] = error_code;
+            j["errorMessage"] = error_message;
+            resource_msg->set_payload(j.dump());
         }
     }
 

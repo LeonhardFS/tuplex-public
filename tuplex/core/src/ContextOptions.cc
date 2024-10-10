@@ -269,7 +269,7 @@ namespace tuplex {
                      {"tuplex.experimental.interchangeWithObjectFiles", "false"},
                      {"tuplex.experimental.specializationUnitSize", "0"},
                      {"tuplex.experimental.minimumSizeToSpecialize", "128MB"},
-                     {"tuplex.experimental.opportuneCompilation", "true"},
+                     {"tuplex.experimental.opportuneCompilation", "false"}, // buggy, set to false for now.
                      {"tuplex.experimental.forceBadParseExceptFormat", "false"},
                      {"tuplex.experimental.s3PreCacheSize", "0"},
                      {"tuplex.experimental.worker.numWorkers", "0"},
@@ -353,7 +353,7 @@ namespace tuplex {
                      {"tuplex.experimental.interchangeWithObjectFiles", "false"},
                      {"tuplex.experimental.specializationUnitSize", "0"},
                      {"tuplex.experimental.minimumSizeToSpecialize", "128MB"},
-                     {"tuplex.experimental.opportuneCompilation", "true"},
+                     {"tuplex.experimental.opportuneCompilation", "false"}, // buggy, set to false for now.
                      {"tuplex.experimental.forceBadParseExceptFormat", "false"},
                      {"tuplex.experimental.s3PreCacheSize", "0"},
                      {"tuplex.experimental.worker.numWorkers", "0"},

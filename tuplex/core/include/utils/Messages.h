@@ -15,6 +15,8 @@ namespace tuplex {
         OBJECT_CODE_NORMAL_CASE=2,
         OBJECT_CODE_GENERAL_CASE=3,
         ENVIRONMENT_JSON=4,
+        // A failed request that is returned as resource for offline debugging.
+        BAD_REQUEST=5
     };
 
     // request modes:

@@ -49,11 +49,9 @@ namespace tuplex {
         LambdaWorkerApp() = default;
 
         LambdaWorkerApp(const LambdaWorkerSettings& ws) : WorkerApp(ws), _outstandingRequests(0) {
-
             // for Lambda install sighandler for curl
             _aws_options.httpOptions.installSigPipeHandler = true;
-
-            _logger = &Logger::instance().logger("Lambda worker");
+            setLoggerName("Lambda worker");
         }
 
         tuplex::messages::InvocationResponse generateResponse();
@@ -88,10 +86,6 @@ namespace tuplex {
 
         int processMessage(const tuplex::messages::InvocationRequest& req) override;
 
-        MessageHandler& logger() const override {
-            return *_logger;
-        }
-
         std::string _functionName;
         NetworkSettings _networkSettings;
         tuplex::AWSCredentials _credentials;
@@ -104,8 +98,6 @@ namespace tuplex {
         int waitForInvoker() const override;
         void fill_response_with_self_invocation_state(messages::InvocationResponse& response) const override;
     private:
-
-        MessageHandler* _logger;
 
         // Self-invoking AWS Lambda Invocation service.
         std::unique_ptr<AwsLambdaInvocationService> _lambdaInvoker;
