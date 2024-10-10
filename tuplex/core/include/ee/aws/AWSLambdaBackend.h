@@ -303,6 +303,17 @@ namespace tuplex {
 
         void perform_requests(const std::vector<AwsLambdaRequest>& requests, size_t concurrency_limit);
     };
+
+
+    // Helper functions (helpful when splitting up requests into recursive ones)
+    // this here splits by size.
+    extern std::vector<AwsLambdaRequest> create_specializing_recursive_requests(const std::vector<std::tuple<URI, std::size_t>> &uri_infos,
+                                                                         size_t minimum_chunk_size,
+                                                                         size_t maximum_chunk_size,
+                                                                         MessageHandler& logger,
+                                                                         std::function<std::string(int n, int n_digits)> generate_output_base_uri=[](int n, int n_digits) {
+                                                                             return "part" + fixedLength(n, n_digits); });
+
 }
 
 #endif //TUPLEX_AWSLAMBDABACKEND_H

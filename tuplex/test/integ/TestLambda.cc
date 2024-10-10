@@ -313,3 +313,24 @@ TEST_F(LambdaTest, GithubPipelineSelfInvokeDaily) {
     auto total_row_count = csv_row_count_for_pattern(output_path + "/*.csv");
     EXPECT_EQ(total_row_count, 294195);
 }
+
+TEST_F(LambdaTest, RecursiveLambdaRequestBySize) {
+    using namespace std;
+    using namespace tuplex;
+
+    string input_pattern = "s3://tuplex-public/data/github_daily/*.json";
+    vector<tuple<URI,size_t>> uri_infos;
+    VirtualFileSystem::walkPattern(URI(input_pattern), [&](void *userData, const tuplex::URI &uri, size_t size) {
+        uri_infos.push_back(make_tuple(uri, size));
+        return true;
+    });
+
+    cout<<"Found "<<pluralize(uri_infos.size(), "uri")<<" to split up into requests."<<endl;
+
+    auto minimum_chunk_size = memStringToSize("16MB");
+    auto maximum_chunk_size = memStringToSize("512MB");
+    auto& handler = Logger::instance().defaultLogger();
+    auto requests = create_specializing_recursive_requests(uri_infos, minimum_chunk_size, maximum_chunk_size, handler);
+
+    cout<<"Got "<<pluralize(requests.size(), "request")<<endl;
+}

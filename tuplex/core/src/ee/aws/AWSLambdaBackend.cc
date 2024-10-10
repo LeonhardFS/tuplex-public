@@ -1252,12 +1252,156 @@ namespace tuplex {
         return aws_req;
     }
 
+
+    std::vector<AwsLambdaRequest> create_specializing_recursive_requests(const std::vector<std::tuple<URI, std::size_t>> &uri_infos,
+                                                                         size_t minimum_chunk_size,
+                                                                         size_t maximum_chunk_size,
+                                                                         MessageHandler& logger,
+                                                                         std::function<std::string(int n, int n_digits)> generate_output_base_uri) {
+
+        assert(minimum_chunk_size < maximum_chunk_size);
+        // at least 1KB.
+        assert(minimum_chunk_size > 1024);
+        assert(maximum_chunk_size > 1024);
+        std::vector<AwsLambdaRequest> requests;
+
+        // How many URIs are there?
+        {
+            std::stringstream ss;
+            ss<<"Found "<<pluralize(uri_infos.size(), "specialization unit")<<" to use.";
+            logger.info(ss.str());
+        }
+
+        // Step 1: Figure out how much data needs to get processed.
+        // -> From this, infer part size for max-parallelism.
+        size_t total_size_in_bytes = 0;
+        for(auto uri_info : uri_infos) {
+            total_size_in_bytes += std::get<1>(uri_info);
+        }
+        {
+            std::stringstream ss;
+            ss<<"Found "<<sizeToMemString(total_size_in_bytes)
+            <<" to process,  each LAMBDA will receive at most ~"<<sizeToMemString(maximum_chunk_size);
+            logger.info(ss.str());
+        }
+
+        // Go through uris and create initial requests (no TrafoStage fill in yet).
+        for(auto uri_info : uri_infos) {
+            AwsLambdaRequest req;
+
+            // Split URI into equal chunks to parallelize them.
+            // A chunk must be at least minimum chunk size.
+            auto uri = std::get<0>(uri_info);
+            auto uri_size = std::get<1>(uri_info);
+
+            // single part?
+            if(uri_size <= maximum_chunk_size + minimum_chunk_size) { // Note the add here.
+                req.body.add_inputuris(uri.toString());
+                req.body.add_inputsizes(uri_size);
+
+                // no split up necessary, simply process full data.
+                req.body.mutable_stage()->add_invocationcount(0);
+
+                {
+                    std::stringstream ss;
+                    ss<<uri<<" ("<<sizeToMemString(uri_size)<<") not split";
+                    logger.info(ss.str());
+                }
+
+            } else {
+                // split up. There will be at least two parts. One maximum chunk size, the other at least minimum chunk size.
+                // First chunk part will be executed by the worker itself, the others will be self-invoke.
+                std::vector<FilePart> parts;
+                int64_t remaining_bytes = uri_size;
+                size_t current_offset = 0;
+                while(remaining_bytes > maximum_chunk_size + minimum_chunk_size) {
+                    FilePart part;
+                    part.size = uri_size;
+                    part.rangeStart = current_offset;
+                    part.rangeEnd = current_offset + maximum_chunk_size;
+                    part.uri = uri;
+                    parts.push_back(part);
+
+                    current_offset += maximum_chunk_size;
+                    remaining_bytes -= maximum_chunk_size;
+                }
+                // add last part, whatever is remaining.
+                FilePart last_part;
+                last_part.size = uri_size;
+                last_part.rangeStart = current_offset;
+                last_part.rangeEnd = uri_size;
+                last_part.uri = uri;
+                parts.push_back(last_part);
+
+                // go over parts and add them individually.
+                for(const auto& part: parts) {
+                    auto inputURI = encodeRangeURI(part.uri, part.rangeStart, part.rangeEnd);
+                    auto inputSize = part.size;
+                    req.body.add_inputuris(inputURI);
+                    req.body.add_inputsizes(inputSize);
+                }
+
+                {
+                    std::stringstream ss;
+                    ss<<uri<<" ("<<sizeToMemString(uri_size)<<") split into "<<pluralize(parts.size(), "part")<<" (smallest: "<<sizeToMemString(maximum_chunk_size)<<", largest: "<<sizeToMemString(last_part.part_size())<<")";
+                    logger.info(ss.str());
+                }
+
+                assert(parts.size() > 2);
+                req.body.mutable_stage()->add_invocationcount(parts.size() - 1);
+            }
+
+            requests.push_back(req);
+        }
+
+        // Step 2: generate output uris (consecutive)
+        int n_output_parts = 0;
+        // Count how many output parts there will be.
+        for(const auto& req : requests) {
+            n_output_parts++; // +1 for the request itself.
+            // Are there self-invocations? For each invocation count +1.
+            // Only 1 level supported yet.
+            n_output_parts += recursive_invocation_count(req.body);
+        }
+        int n_digits = ilog10c(n_output_parts);
+        logger.info("Recursive tree invocation will invoke in total " + pluralize(n_output_parts, "lambda") + " producing " + pluralize(n_output_parts, "part") + ".");
+
+        // Go over requests again & set part offsets.
+        int task_no = 0;
+        for(auto& req : requests) {
+            req.body.set_partnooffset(task_no);
+            auto lambda_output_uri = generate_output_base_uri(task_no, n_digits);
+            req.body.set_baseoutputuri(lambda_output_uri);
+            req.body.set_baseisfinaloutput(true); // <-- is final, the recursive will modify it.
+            task_no += 1 + recursive_invocation_count(req.body);
+        }
+
+        logger.info("Recursive Lambda invocation will produce " + pluralize(task_no, "output file") + ",");
+
+
+
+
+        // TODO:
+        //             // for different parts need different spill folders.
+        //            auto worker_spill_uri = spillURI() + "/lam" + fixedPoint(partno, num_digits);
+        //            fill_with_worker_config(req.body, worker_spill_uri, numThreads);
+
+        // TODO:
+        //             // @TODO: specialization unit.
+        //            fill_specialization_unit(*req.body.mutable_stage()->mutable_specializationunit(),
+        //                                     {uri_info}, sampling_mode);
+
+
+        return requests;
+    }
+
     std::vector<AwsLambdaRequest>
     AwsLambdaBackend::createSpecializingSelfInvokeRequests(const TransformStage *tstage,
                                                            const std::string &bitCode,
                                                            const size_t numThreads,
                                                            const std::vector<std::tuple<std::string, std::size_t>> &uri_infos,
                                                            const RequestConfig &conf) {
+
         std::vector<AwsLambdaRequest> requests;
         std::vector<URI> request_uris;
 
