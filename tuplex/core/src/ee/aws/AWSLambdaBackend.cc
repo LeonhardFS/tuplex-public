@@ -1347,7 +1347,7 @@ namespace tuplex {
                     logger.info(ss.str());
                 }
 
-                assert(parts.size() > 2);
+                assert(parts.size() >= 2);
                 req.body.mutable_stage()->add_invocationcount(parts.size() - 1);
             }
 
