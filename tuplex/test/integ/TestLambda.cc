@@ -463,7 +463,18 @@ TEST_F(LambdaTest, FindSuitableMaxChunkSize) {
     using namespace std;
     using namespace tuplex;
 
-    string input_pattern = "s3://tuplex-public/data/github_daily/*.json";
+    // daily.
+    // string input_pattern = "s3://tuplex-public/data/github_daily/*.json";
+    // test quantity (parametrize test over this)
+    // auto desired_parallelism = 400; // --> ~97MB.
+
+
+    // monthly
+    string input_pattern = "s3://tuplex-public/data/github_monthly/*.json";
+
+    // test quantity (parametrize test over this)
+    auto desired_parallelism = 5000; // --> ~5.24GB.
+
     vector<tuple<URI,size_t>> uri_infos;
     VirtualFileSystem::walkPattern(URI(input_pattern), [&](void *userData, const tuplex::URI &uri, size_t size) {
         uri_infos.push_back(make_tuple(uri, size));
@@ -477,8 +488,6 @@ TEST_F(LambdaTest, FindSuitableMaxChunkSize) {
     for(auto uri_info : uri_infos)
         sizes.emplace_back(std::get<1>(uri_info));
 
-    // test quantity (parametrize test over this)
-    auto desired_parallelism = 400;
     auto c_max = find_max_chunk_size(sizes, minimum_chunk_size, desired_parallelism);
 
     // check:

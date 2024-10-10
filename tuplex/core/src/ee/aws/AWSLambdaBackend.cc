@@ -1343,7 +1343,7 @@ namespace tuplex {
 
                 {
                     std::stringstream ss;
-                    ss<<uri<<" ("<<sizeToMemString(uri_size)<<") split into "<<pluralize(parts.size(), "part")<<" (smallest: "<<sizeToMemString(maximum_chunk_size)<<", largest: "<<sizeToMemString(last_part.part_size())<<")";
+                    ss<<uri<<" ("<<sizeToMemString(uri_size)<<") split into "<<pluralize(parts.size(), "part")<<" (smallest: "<<sizeToMemString(last_part.part_size())<<", largest: "<<sizeToMemString(maximum_chunk_size)<<")";
                     logger.info(ss.str());
                 }
 
