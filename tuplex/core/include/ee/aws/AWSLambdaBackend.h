@@ -314,6 +314,18 @@ namespace tuplex {
                                                                          std::function<std::string(int n, int n_digits)> generate_output_base_uri=[](int n, int n_digits) {
                                                                              return "part" + fixedLength(n, n_digits); });
 
+
+    // Helper functions to distribute workload between lambdas.
+
+    /*!
+     * binary search based solver to find suitable maximum chunk size given input parameters.
+     * @param sizes vector of file sizes
+     * @param c_min minimum chunk size.
+     * @param parallelism desired parallelism. Ideally, maximum chunk size c_max will be calculated that per-file specialization will result in parallelism requests.
+     * @return c_max, maximum chunk size.
+     */
+    extern size_t find_max_chunk_size(std::vector<size_t> sizes, size_t c_min, size_t parallelism);
+
 }
 
 #endif //TUPLEX_AWSLAMBDABACKEND_H

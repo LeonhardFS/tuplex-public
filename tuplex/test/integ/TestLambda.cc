@@ -337,117 +337,6 @@ TEST_F(LambdaTest, RecursiveLambdaRequestBySize) {
 
 
 namespace tuplex {
-
-    size_t compute_total_requests(const std::vector<size_t>& sizes,
-                                  size_t minimum_chunk_size,
-                                  size_t maximum_chunk_size) {
-
-        // this code here is adapted from AWSLambdaBackend.cc
-        // to condense it more, maybe this formulat works. Yet it is somehow off.
-        //            size_t p = 0;
-        //            for(auto s : sizes) {
-        //                // smaller equal then c_min + c_max: 1 request.
-        //                if(s <= c_min + c_max)
-        //                    p++;
-        //                else {
-        //                    // integer rounded down
-        //                    p += s / c_max;
-        //                }
-        //            }
-
-
-        auto n_requests = 0;
-
-        // Go through uris and create initial requests (no TrafoStage fill in yet).
-        for(auto uri_size : sizes) {
-            // single part?
-            if(uri_size <= maximum_chunk_size + minimum_chunk_size) { // Note the add here.
-                n_requests++;
-            } else {
-                // split up. There will be at least two parts. One maximum chunk size, the other at least minimum chunk size.
-                // First chunk part will be executed by the worker itself, the others will be self-invoke.
-                std::vector<FilePart> parts;
-                int64_t remaining_bytes = uri_size;
-                size_t current_offset = 0;
-                while(remaining_bytes > maximum_chunk_size + minimum_chunk_size) {
-                    n_requests++;
-                    current_offset += maximum_chunk_size;
-                    remaining_bytes -= maximum_chunk_size;
-                }
-                // add last part, whatever is remaining.
-                n_requests++;
-            }
-        }
-
-        return n_requests;
-    }
-
-
-    size_t find_max_chunk_size(std::vector<size_t> sizes, size_t c_min, size_t parallelism) {
-        using namespace std;
-
-        // c_min -> minimum chunk size
-        // c_max -> maximum chunk size
-        // this is a basic heuristic approach (there's probably an optimization problem/formula for this)
-
-        // check invariant
-        for(auto s : sizes)
-            assert(s >= c_min);
-
-        // minimum parallelism needed. Else, no solution.
-        assert(parallelism >= sizes.size());
-
-        size_t max_size = 0;
-        for(auto s: sizes)
-            max_size = std::max(s, max_size);
-
-        // Trivial solution: If sizes.size() == parallelism, it is max file size.
-        if(sizes.size() == parallelism)
-            return max_size;
-
-        // upper/lower bounds for c_max.
-        // lower bound is c_min.
-        // upper bound can be calculated by max_size.
-        size_t c_max_lower = c_min;
-        size_t c_max_upper = max_size;
-
-        // check:
-        if(c_max_lower >= c_max_upper) {
-            cout<<"ill-defined bounds, no solution. Returning c_min."<<endl;
-            return c_min;
-        }
-
-        size_t c_max = c_min; // start value.
-
-        // iterations (basically binary search here)
-        size_t max_iterations = 40; // 40 steps should be sufficient to solve most scenarios. Could also set time limit.
-        for(int i = 0; i < max_iterations; ++i) {
-            // Calculate current parallelism p (direct, no request creation yet).
-            auto p = compute_total_requests(sizes, c_min, c_max);
-
-            // Current iteration:
-            cout<<"i="<<i<<"\tp_target: "<<parallelism<<" p: "<<p<<" c_max: "<<c_max<<" ("<<sizeToMemString(c_max)<<")"<<endl;
-
-            // adjust variables for finding.
-            // smaller c_max -> higher p
-            // larger c_max -> lower p
-            if(p == parallelism)
-                return c_max; // solution found
-
-            if(p > parallelism) {
-                c_max_lower = c_max;
-                // need larger c_max, less parallelism.
-                c_max = (c_max_lower + c_max_upper) / 2;
-            } else {
-                c_max_upper = c_max;
-                // need smaller c_max, more parallelism.
-                c_max = (c_max_lower + c_max_upper + 1) / 2; // bias towards max.
-            }
-        }
-
-        return c_max;
-    }
-
     size_t total_request_count(const std::vector<AwsLambdaRequest>& requests) {
         size_t count = requests.size();
 
@@ -467,7 +356,6 @@ TEST_F(LambdaTest, FindSuitableMaxChunkSize) {
     // string input_pattern = "s3://tuplex-public/data/github_daily/*.json";
     // test quantity (parametrize test over this)
     // auto desired_parallelism = 400; // --> ~97MB.
-
 
     // monthly
     string input_pattern = "s3://tuplex-public/data/github_monthly/*.json";
