@@ -284,7 +284,7 @@ TEST_F(LambdaTest, GithubPipelineSelfInvokeDaily) {
     cout<<"Creating Lambda context."<<endl;
     std::unordered_map<std::string, std::string> conf;
     conf["tuplex.aws.lambdaInvocationStrategy"] = "tree";
-    conf["tuplex.aws.maxConcurrency"] = "600"; // use 600 as maximum parallelism.
+    conf["tuplex.aws.maxConcurrency"] = "100"; // use 100 as maximum parallelism.
     conf["tuplex.experimental.minimumSizeToSpecialize"] = "0"; // disable minimum size.
 
     // the object code interchange fails with segfaults when using the libc preloader...

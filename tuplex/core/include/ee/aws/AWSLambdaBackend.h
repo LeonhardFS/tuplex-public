@@ -314,6 +314,20 @@ namespace tuplex {
                                                                          std::function<std::string(int n, int n_digits)> generate_output_base_uri=[](int n, int n_digits) {
                                                                              return "part" + fixedLength(n, n_digits); });
 
+    // Helper when not URIs but strings.
+    inline std::vector<AwsLambdaRequest> create_specializing_recursive_requests(const std::vector<std::tuple<std::string, std::size_t>> &uri_infos,
+                                                                                size_t minimum_chunk_size,
+                                                                                size_t maximum_chunk_size,
+                                                                                MessageHandler& logger,
+                                                                                std::function<std::string(int n, int n_digits)> generate_output_base_uri=[](int n, int n_digits) {
+                                                                                    return "part" + fixedLength(n, n_digits); }) {
+        using namespace std;
+        vector<tuple<URI, size_t>> v;
+        for(const auto& t : uri_infos)
+            v.emplace_back(make_tuple(URI(get<0>(t)), get<1>(t)));
+        return create_specializing_recursive_requests(v, minimum_chunk_size, maximum_chunk_size, logger, generate_output_base_uri);
+    }
+
 
     // Helper functions to distribute workload between lambdas.
 

@@ -276,7 +276,8 @@ namespace tuplex {
                      {"tuplex.experimental.worker.workerPath", ""},
                      {"tuplex.experimental.worker.workerBufferSize", "256MB"},
                      {"tuplex.experimental.traceExecution", "false"},
-                     {"tuplex.experimental.useGenericDicts", "false"}};
+                     {"tuplex.experimental.useGenericDicts", "false"},
+                     {"tuplex.experimental.aws.minimumInputSizePerLambda", "128MB"}};
 #else
         // DEBUG options
         co._store = {{"tuplex.useLLVMOptimizer", "false"},
@@ -360,7 +361,8 @@ namespace tuplex {
                      {"tuplex.experimental.worker.workerPath", ""},
                      {"tuplex.experimental.worker.workerBufferSize", "256MB"},
                      {"tuplex.experimental.traceExecution", "false"},
-                     {"tuplex.experimental.useGenericDicts", "false"}}; // experimental feature, deactivate for now.
+                     {"tuplex.experimental.useGenericDicts", "false"},
+                     {"tuplex.experimental.aws.minimumInputSizePerLambda", "128MB"}}; // experimental feature, deactivate for now.
 #endif
 
         // update with tuplex env

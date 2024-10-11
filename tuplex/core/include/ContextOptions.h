@@ -122,6 +122,10 @@ namespace tuplex {
 
         size_t EXPERIMENTAL_WORKER_BACKEND_NUM_WORKERS() const {return std::stoi(_store.at("tuplex.experimental.worker.numWorkers")); }
         std::string EXPERIMENTAL_WORKER_PATH() const {return _store.at("tuplex.experimental.worker.workerPath"); }
+
+        // When splitting input data, controls how much data each Lambda should receive (single-files won't meet this, i.e. there is no multiple file clamping to a LAMBDA yet).
+        size_t EXPERIMENTAL_AWS_MINIMUM_INPUT_SIZE_PER_LAMBDA() const { return memStringToSize(_store.at("tuplex.experimental.aws.minimumInputSizePerLambda")); }
+
         std::string AWS_LAMBDA_INVOCATION_STRATEGY() const { return _store.at("tuplex.aws.lambdaInvocationStrategy"); }
 
         // access parameters via their getter functions
