@@ -373,7 +373,13 @@ namespace tuplex {
         }
 
         inline bool use_self_invocation(const tuplex::messages::InvocationRequest & req) const {
-            return req.has_stage() && req.stage().invocationcount_size() > 0;
+            if(req.has_stage() && req.stage().invocationcount_size() > 0) {
+                // If one non-zero, there's self invocation.
+                for(const auto& count: req.stage().invocationcount())
+                    if(count != 0)
+                        return true;
+            }
+            return false;
         }
 
         inline int64_t inputOperatorID() const { return _inputOperatorID; }

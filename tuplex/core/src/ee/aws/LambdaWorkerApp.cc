@@ -1324,7 +1324,9 @@ namespace tuplex {
 
         // Make sure functionName is not empty.
         if(_functionName.empty()) {
-            logger().error("FunctionName not set for Lambda worker, can't start invocation service.");
+            std::string err_msg = "FunctionName not set for Lambda worker, can't start invocation service.";
+            _response.set_errormessage(err_msg);
+            logger().error(err_msg);
             return WORKER_ERROR_LAMBDA_CLIENT;
         }
 
@@ -1464,6 +1466,9 @@ namespace tuplex {
 
     int LambdaWorkerApp::waitForInvoker() const {
         if(!_lambdaInvoker) {
+            std::string err_msg = "No valid lambda invoker, can not wait for <nullptr>.";
+            const_cast<LambdaWorkerApp*>(this)->_response.set_errormessage(err_msg);
+            logger().error(err_msg);
             return WORKER_ERROR_LAMBDA_CLIENT;
         }
 

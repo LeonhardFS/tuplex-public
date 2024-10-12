@@ -697,6 +697,38 @@ namespace tuplex {
         return URI(root_path).join_path("job_" + fixedLength(max_job_no + 1, 4) + ".json").toString();
     }
 
+
+    void AwsLambdaBackend::fill_tree_requests(std::vector<AwsLambdaRequest> &requests, TransformStage *tstage, size_t numThreads,
+                                              size_t max_retries) {
+        // compute total requests.
+        size_t n_requests;
+        for (const auto &req: requests)
+            n_requests += 1 + recursive_invocation_count(req.body);
+        auto num_digits = ilog10c(n_requests);
+
+        size_t part_offset = 0;
+        for (unsigned i = 0; i < requests.size(); ++i) {
+            auto &req = requests[i];
+
+            req.retriesLeft = max_retries;
+            req.body.set_partnooffset(part_offset);
+            fill_with_transform_stage(req.body, tstage);
+            fill_env(req.body);
+
+            // for different parts need different spill folders.
+            auto worker_spill_uri = this->spillURI() + "/lam" + fixedPoint(part_offset, num_digits);
+            fill_with_worker_config(req.body, worker_spill_uri, numThreads);
+
+            // Output URI.
+            auto lambda_output_uri = generate_output_base_uri(tstage, part_offset, num_digits, 0, 0);
+            req.body.set_baseoutputuri(lambda_output_uri.toString());
+            req.body.set_baseisfinaloutput(true); // <-- is final, the recursive will modify it.
+
+            part_offset += 1 + recursive_invocation_count(req.body);
+
+        }
+    }
+
     void AwsLambdaBackend::execute(PhysicalStage *stage) {
         using namespace std;
 
@@ -913,27 +945,33 @@ namespace tuplex {
                 auto L = logger();
                 requests = create_specializing_recursive_requests(uri_infos, minimum_chunk_size, chunk_size, L);
 
-
                 // Fill in invocation details (code path etc.)
                 // This should also generate proper output/offset output uris.
-                // Same true for specializastion unit (should be each file).
+                size_t max_retries = 5;
+                logger().info("Generating requests with num threads=" + std::to_string(numThreads) + ", max retries=" + std::to_string(max_retries) + ".");
+                fill_tree_requests(requests, tstage, numThreads, max_retries);
+
+                // Same true for specialization unit (should be each file).
+                // Because this here is tree invocation, fill in specialization unit as full files.
+                logger().info("Specializing on each file (" + pluralize(requests.size(), "request") + ").");
+                assert(requests.size() == uri_infos.size());
+                for(unsigned i = 0; i < requests.size(); ++i) {
+                    auto sampling_mode = tstage->samplingMode();
+                    fill_specialization_unit(*requests[i].body.mutable_stage()->mutable_specializationunit(),
+                                             {uri_infos[i]}, sampling_mode);
+
+                    // add (self) invocation count.
+                    int num_self_invocations = (int)requests[i].body.inputuris_size() - 1;
+                    assert(num_self_invocations >= 0);
+                    requests[i].body.mutable_stage()->add_invocationcount(num_self_invocations);
+
+                    logger().info("Specializing " + std::get<0>(uri_infos[i]) + " and performing " + pluralize(num_self_invocations, "self invocation") + " then.");
+                }
 
                 // @TODO: if file too small, no need to hyperspecialize. If even smaller, no need to compile -> simply use python interpreter.
 
-
-//                conf.maximum_lambda_process_size = chunk_lambda_size;
-//                conf.spillURI = spillURI;
-//                conf.specialization_unit_size = _options.EXPERIMENTAL_SPECIALIZATION_UNIT_SIZE();
-//                conf.minimum_size_to_specialize = _options.EXPERIMENTAL_MINIMUM_SIZE_TO_SPECIALIZE();
-//                conf.buf_spill_size = buf_spill_size;
-//                requests = createSpecializingSelfInvokeRequests(tstage, optimizedBitcode, numThreads, uri_infos, conf);
-
                 // Check that max concurrency works with requests being processed. I.e., each request incl. all recursive invocations must be <= MAX_CONCURRENCY.
                 validate_requests_can_be_served_with_concurrency_limit(requests, _options.AWS_MAX_CONCURRENCY());
-
-#warning "remove this"
-                std::cerr<<"remove this."<<std::endl;
-                exit(1);
 
                 break;
             }
@@ -1421,7 +1459,7 @@ namespace tuplex {
         {
             std::stringstream ss;
             ss<<"Found "<<sizeToMemString(total_size_in_bytes)
-            <<" to process,  each LAMBDA will receive at most ~"<<sizeToMemString(maximum_chunk_size);
+            <<" to process, each LAMBDA will receive at most ~"<<sizeToMemString(maximum_chunk_size);
             logger.info(ss.str());
         }
 

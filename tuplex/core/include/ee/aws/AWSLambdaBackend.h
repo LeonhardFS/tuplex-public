@@ -302,6 +302,9 @@ namespace tuplex {
 
 
         void perform_requests(const std::vector<AwsLambdaRequest>& requests, size_t concurrency_limit);
+
+        void fill_tree_requests(std::vector<AwsLambdaRequest> &requests, TransformStage *tstage, size_t numThreads,
+                                                  size_t max_retries);
     };
 
 
