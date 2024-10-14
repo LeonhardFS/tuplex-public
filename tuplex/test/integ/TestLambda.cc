@@ -341,6 +341,12 @@ TEST_F(LambdaTest, CheckSpillURIHelper) {
     EXPECT_EQ(ans.toString(), "s3://tuplex-test/.tuplex-cache/spill_folder/lam02");
 }
 
+TEST_F(LambdaTest, CheckOutputURIHelper) {
+    auto output_uri = "s3://tuplex-test/tests/integration/LambdaTestGithubPipelineSelfInvokeDaily/output/part00.csv";
+    auto ans = create_output_uri_from_first_part_uri(URI(output_uri), 0, 10);
+    EXPECT_EQ(ans.toString(), "s3://tuplex-test/tests/integration/LambdaTestGithubPipelineSelfInvokeDaily/output/part10.csv");
+}
+
 TEST_F(LambdaTest, RecursiveLambdaRequestBySize) {
     using namespace std;
     using namespace tuplex;

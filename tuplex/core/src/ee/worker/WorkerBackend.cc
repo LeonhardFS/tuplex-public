@@ -266,7 +266,7 @@ namespace tuplex {
         // Note: for now, super simple: 1 request per file (this is inefficient, but whatever)
         // @TODO: more sophisticated splitting of workload!
         Timer timer;
-        int num_digits = ilog10c(uri_infos.size());
+        int num_digits = ilog10c(uri_infos.size()) + 1;
         int part_no = 0; // counter for part numbers, always to be increased when a new part is needed.
         for (int i = 0; i < uri_infos.size(); ++i) {
             auto info = uri_infos[i];
@@ -275,7 +275,7 @@ namespace tuplex {
             auto uri_size = std::get<1>(info);
             auto num_parts_per_file = uri_size / splitSize;
 
-            auto num_digits_part = ilog10c(num_parts_per_file + 1);
+            auto num_digits_part = ilog10c(num_parts_per_file + 1) + 1;
 
             size_t cur_size = 0;
             while (cur_size < uri_size) {

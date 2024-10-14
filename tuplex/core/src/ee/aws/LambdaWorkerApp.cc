@@ -1477,7 +1477,7 @@ namespace tuplex {
             std::vector<std::string> output_uris;
             std::copy(response.response.outputuris().begin(), response.response.outputuris().end(), std::back_inserter(output_uris));
             if(request.body.inputsizes_size() > 0)
-                ss<<"\n=- input uri: "<<request.body.inputuris(0);
+                ss<<"\n-- input uri: "<<request.body.inputuris(0);
             ss<<"\n-- output uris: "<<output_uris;
 
             logger().info(ss.str());

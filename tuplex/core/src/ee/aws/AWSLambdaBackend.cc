@@ -704,34 +704,13 @@ namespace tuplex {
     }
 
 
-    void AwsLambdaBackend::fill_tree_requests(std::vector<AwsLambdaRequest> &requests, TransformStage *tstage, size_t numThreads,
-                                              size_t max_retries) {
-        // compute total requests.
-        size_t n_requests = 0;
-        for (const auto &req: requests)
-            n_requests += 1 + recursive_invocation_count(req.body);
-        auto num_digits = ilog10c(n_requests);
-
-        size_t part_offset = 0;
+    void AwsLambdaBackend::fill_with_stage(std::vector<AwsLambdaRequest> &requests, TransformStage *tstage, size_t numThreads,
+                                           size_t max_retries) {
         for (unsigned i = 0; i < requests.size(); ++i) {
             auto &req = requests[i];
-
             req.retriesLeft = max_retries;
-            req.body.set_partnooffset(part_offset);
             fill_with_transform_stage(req.body, tstage);
             fill_env(req.body);
-
-            // for different parts need different spill folders.
-            auto worker_spill_uri = this->spillURI() + "/lam" + fixedLength(part_offset, num_digits);
-            fill_with_worker_config(req.body, worker_spill_uri, numThreads);
-
-            // Output URI.
-            auto lambda_output_uri = generate_output_base_uri(tstage, part_offset, num_digits, 0, 0);
-            req.body.set_baseoutputuri(lambda_output_uri.toString());
-            req.body.set_baseisfinaloutput(true); // <-- is final, the recursive will modify it.
-
-            part_offset += 1 + recursive_invocation_count(req.body);
-
         }
     }
 
@@ -808,7 +787,7 @@ namespace tuplex {
                     Timer timer;
                     int partNo = 0;
                     auto num_partitions = tstage->inputPartitions().size();
-                    auto num_digits = ilog10c(num_partitions);
+                    auto num_digits = ilog10c(num_partitions) + 1;
                     size_t total_uploaded = 0;
                     for (auto p: tstage->inputPartitions()) {
                         // lock each and write to S3!
@@ -955,13 +934,22 @@ namespace tuplex {
                 // This should also generate proper output/offset output uris.
                 size_t max_retries = 5;
                 logger().info("Generating requests with num threads=" + std::to_string(numThreads) + ", max retries=" + std::to_string(max_retries) + ".");
-                fill_tree_requests(requests, tstage, numThreads, max_retries);
+                fill_with_stage(requests, tstage, numThreads, max_retries);
 
                 // Same true for specialization unit (should be each file).
                 // Because this here is tree invocation, fill in specialization unit as full files.
                 logger().info("Specializing on each file (" + pluralize(requests.size(), "request") + ").");
                 assert(requests.size() == uri_infos.size());
+
+                // compute total requests.
+                size_t n_requests = 0;
+                for (const auto &req: requests)
+                    n_requests += req.body.inputuris_size();
+                auto num_digits = ilog10c(n_requests) + 1;
+
+                uint32_t part_offset = 0;
                 for(unsigned i = 0; i < requests.size(); ++i) {
+                    auto& req = requests[i];
                     auto sampling_mode = tstage->samplingMode();
                     fill_specialization_unit(*requests[i].body.mutable_stage()->mutable_specializationunit(),
                                              {uri_infos[i]}, sampling_mode);
@@ -969,8 +957,27 @@ namespace tuplex {
                     // add (self) invocation count.
                     int num_self_invocations = (int)requests[i].body.inputuris_size() - 1;
                     assert(num_self_invocations >= 0);
-                    requests[i].body.mutable_stage()->add_invocationcount(num_self_invocations);
+                    req.body.mutable_stage()->add_invocationcount(num_self_invocations);
 
+
+                    req.body.set_partnooffset(part_offset);
+                    // for different parts need different spill folders.
+                    auto worker_spill_uri = this->spillURI() + "/lam" + fixedLength(part_offset, num_digits);
+                    fill_with_worker_config(req.body, worker_spill_uri, numThreads);
+
+                    // Output URI.
+                    auto lambda_output_uri = generate_output_base_uri(tstage, part_offset, num_digits, 0, 0);
+                    req.body.set_baseoutputuri(lambda_output_uri.toString());
+                    req.body.set_baseisfinaloutput(true); // <-- is final, the recursive will modify it.
+
+                    // print out info
+                    {
+                        std::stringstream ss;
+                        ss<<"Request "<<i<<": part_offset="<<part_offset<<" self-invoke count: "<<recursive_invocation_count(req.body)<<" , producing parts from "<<lambda_output_uri;
+                        logger().debug(ss.str());
+                    }
+
+                    part_offset += 1 + recursive_invocation_count(req.body);
                     logger().info("Specializing " + std::get<0>(uri_infos[i]) + " and performing " + pluralize(num_self_invocations, "self invocation") + " then.");
                 }
 
@@ -1162,7 +1169,7 @@ namespace tuplex {
                 // download and store each part in one partition (TODO: resize etc.)
                 vector<Partition *> output_partitions;
                 int partNo = 0;
-                int num_digits = ilog10c(output_uris.size());
+                int num_digits = ilog10c(output_uris.size()) + 1;
                 vector<URI> local_paths;
                 for (const auto &uri: output_uris) {
                     // download to local scratch dir
@@ -1573,7 +1580,7 @@ namespace tuplex {
             // Only 1 level supported yet.
             n_output_parts += recursive_invocation_count(req.body);
         }
-        int n_digits = ilog10c(n_output_parts);
+        int n_digits = ilog10c(n_output_parts) + 1;
         logger.info("Recursive tree invocation will invoke in total " + pluralize(n_output_parts, "lambda") + " producing " + pluralize(n_output_parts, "part") + ".");
 
         // Go over requests again & set part offsets.
@@ -1625,7 +1632,7 @@ namespace tuplex {
         // Generate for each URI a specialization unit (and request).
         int partno = 0;
         int max_retries = 5; // @TODO: should be option.
-        auto num_digits = ilog10c(uri_infos.size());
+        auto num_digits = ilog10c(uri_infos.size()) + 1;
 
         assert(tstage);
         auto sampling_mode = tstage->samplingMode();
@@ -1715,7 +1722,7 @@ namespace tuplex {
             // Only 1 level supported yet.
             n_output_parts += recursive_invocation_count(req.body);
         }
-        int n_digits = ilog10c(n_output_parts);
+        int n_digits = ilog10c(n_output_parts) + 1;
         logger().info("Recursive tree invocation will invoke in total " + pluralize(n_output_parts, "lambda") + " producing " + pluralize(n_output_parts, "part") + ".");
 
         // Go over requests again & set part offsets.
@@ -1782,7 +1789,7 @@ namespace tuplex {
         // Note: for now, super simple: 1 request per file (this is inefficient, but whatever)
         // @TODO: more sophisticated splitting of workload!
         Timer timer;
-        int num_digits = ilog10c(uri_infos.size());
+        int num_digits = ilog10c(uri_infos.size()) + 1;
         for (int i = 0; i < uri_infos.size(); ++i) {
             auto info = uri_infos[i];
 
@@ -1839,10 +1846,10 @@ namespace tuplex {
     URI AwsLambdaBackend::generate_output_base_uri(const TransformStage* tstage, int taskNo, int num_digits, int part_no, int num_digits_part) {
 
         // Adjust amount of digits to print, default to regular printing if not set.
-        if(num_digits <= 0 || ilog10c(taskNo) > num_digits)
-            num_digits = ilog10c(taskNo);
-        if(part_no >= 0 && (num_digits_part <= 0 || ilog10c(part_no) > num_digits_part))
-            num_digits_part = ilog10c(part_no);
+        if(num_digits <= 0 || ilog10c(taskNo) + 1 > num_digits)
+            num_digits = ilog10c(taskNo) + 1;
+        if(part_no >= 0 && (num_digits_part <= 0 || ilog10c(part_no) + 1 > num_digits_part))
+            num_digits_part = ilog10c(part_no) + 1;
 
         if (tstage->outputMode() == EndPointMode::MEMORY) {
             // create temp file in scratch dir!
@@ -2333,6 +2340,33 @@ namespace tuplex {
 
             std::unordered_set<URI> unique_written_output_paths(written_output_paths.begin(), written_output_paths.end());
             logger().info("LAMBDA wrote " + pluralize(written_output_paths.size(), "output uri") + " (" + pluralize(unique_written_output_paths.size(), "unique uri") + ")");
+
+            // If non unique URIs, check what went wrong by explicitly listing debug information
+            if(written_output_paths.size() != unique_written_output_paths.size()) {
+                // go over request and print out for each specializaition unit which output uris were created.
+                std::stringstream ss;
+                ss<<"Output uris do not seem unique:\n"<<std::endl;
+
+                for (const auto &task: _tasks) {
+                    std::vector<std::string> output_paths;
+                    for(auto uri : task.response.outputuris())
+                        output_paths.push_back(uri);
+                    if(task.response.invokedresponses_size() > 0) {
+                        for(const auto& self_invoke_response: task.response.invokedresponses()) {
+                            for(auto uri : self_invoke_response.outputuris())
+                                output_paths.push_back(uri);
+                        }
+                    }
+
+                    ss<<"Task "<<task.info.requestId<<":\n";
+                    for(auto path : output_paths) {
+                        ss<<"  -- "<<path<<std::endl;
+                    }
+                }
+
+                logger().error(ss.str());
+            }
+
 
             // save to internal
             _info.total_input_normal_path = total_normal_path;
