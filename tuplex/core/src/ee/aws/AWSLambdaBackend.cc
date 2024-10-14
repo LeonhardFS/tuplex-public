@@ -707,7 +707,7 @@ namespace tuplex {
     void AwsLambdaBackend::fill_tree_requests(std::vector<AwsLambdaRequest> &requests, TransformStage *tstage, size_t numThreads,
                                               size_t max_retries) {
         // compute total requests.
-        size_t n_requests;
+        size_t n_requests = 0;
         for (const auto &req: requests)
             n_requests += 1 + recursive_invocation_count(req.body);
         auto num_digits = ilog10c(n_requests);
@@ -722,7 +722,7 @@ namespace tuplex {
             fill_env(req.body);
 
             // for different parts need different spill folders.
-            auto worker_spill_uri = this->spillURI() + "/lam" + fixedPoint(part_offset, num_digits);
+            auto worker_spill_uri = this->spillURI() + "/lam" + fixedLength(part_offset, num_digits);
             fill_with_worker_config(req.body, worker_spill_uri, numThreads);
 
             // Output URI.
@@ -1414,7 +1414,7 @@ namespace tuplex {
 //
 //        // worker config
 //        auto ws = std::make_unique<messages::WorkerSettings>();
-//        auto worker_spill_uri = spillURI + "/lam" + fixedPoint(i, num_digits) + "/" + fixedPoint(part_no, num_digits_part);
+//        auto worker_spill_uri = spillURI + "/lam" + fixedLength(i, num_digits) + "/" + fixedLength(part_no, num_digits_part);
 //        config_worker(ws.get(), options, numThreads, worker_spill_uri, buf_spill_size);
 //        req.set_allocated_settings(ws.release());
 //        req.set_verboselogging(options.AWS_VERBOSE_LOGGING());
@@ -1593,7 +1593,7 @@ namespace tuplex {
 
         // TODO:
         //             // for different parts need different spill folders.
-        //            auto worker_spill_uri = spillURI() + "/lam" + fixedPoint(partno, num_digits);
+        //            auto worker_spill_uri = spillURI() + "/lam" + fixedLength(partno, num_digits);
         //            fill_with_worker_config(req.body, worker_spill_uri, numThreads);
 
         // TODO:
@@ -1669,7 +1669,7 @@ namespace tuplex {
             fill_env(req.body);
 
             // for different parts need different spill folders.
-            auto worker_spill_uri = spillURI() + "/lam" + fixedPoint(partno, num_digits); //+ fixedPoint(i, num_digits) + "/" + fixedPoint(part_no, num_digits_part);
+            auto worker_spill_uri = spillURI() + "/lam" + fixedLength(partno, num_digits); //+ fixedLength(i, num_digits) + "/" + fixedLength(part_no, num_digits_part);
             fill_with_worker_config(req.body, worker_spill_uri, numThreads);
 
             // @TODO: specialization unit.
@@ -1800,7 +1800,7 @@ namespace tuplex {
 
                 messages::InvocationRequest req;
 
-                auto worker_spill_uri = spillURI + "/lam" + fixedPoint(i, num_digits) + "/" + fixedPoint(part_no, num_digits_part);
+                auto worker_spill_uri = spillURI + "/lam" + fixedLength(i, num_digits) + "/" + fixedLength(part_no, num_digits_part);
                 fill_with_transform_stage(req, tstage);
 
                 // add other core data to the request.

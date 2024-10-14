@@ -2509,7 +2509,7 @@ namespace tuplex {
         auto rootURI = _settings.spillRootURI.toString().empty() ? "" : _settings.spillRootURI.toString() + "/";
         auto path = URI(rootURI + name + ext);
 
-        logger().info("Spilling " + std::to_string(env->exceptionBuf.size()) + "/" + std::to_string(env->exceptionBuf.capacity()) + " to " + path.toString());
+        logger().info("Spilling " + sizeToMemString(env->exceptionBuf.size()) + "/" + sizeToMemString(env->exceptionBuf.capacity()) +  " (" + std::to_string(env->exceptionBuf.size()) + "/" + std::to_string(env->exceptionBuf.capacity()) + ", size/capacity) to " + path.toString());
 
         // open & write
         auto vfs = VirtualFileSystem::fromURI(path);
@@ -2530,7 +2530,7 @@ namespace tuplex {
             info.isExceptionBuf = true;
             info.num_rows = env->numExceptionRows;
             info.originalPartNo = env->exceptionOriginalPartNo;
-            info.file_size =  env->exceptionBuf.size() + 2 * sizeof(int64_t);
+            info.file_size =  env->exceptionBuf.size() + 2 * sizeof(int64_t); // first two int64_t are n_rows and size.
             env->spillFiles.push_back(info);
             vf->close();
             logger().info("Spilled " + sizeToMemString(info.file_size) + " to " + path.toString());
@@ -2704,8 +2704,7 @@ namespace tuplex {
     }
 
     codegen::resolve_f WorkerApp::getCompiledResolver(const TransformStage* stage) {
-        logger().info("compiling slow code path.");
-
+        // Quick escape hatches depending on settings.
         if(_settings.useInterpreterOnly || stage->slowPathCode().empty())
             return nullptr;
 
@@ -2725,25 +2724,39 @@ namespace tuplex {
         }
 #endif
 
+        // Check whether available or not.
+        {
+            std::lock_guard<std::mutex> lock(_symsMutex);
+            if(_syms->resolveFunctor) {
+                logger().info("Slow-path already compiled, returning functor.");
+                return _syms->resolveFunctor;
+            }
+        }
+
+        logger().info("Slow-path not compiled yet, compiling slow code path to native code.");
+
         // determine which compiler to use based on store instruction threshold ( or general bitcode size?)
         JITCompiler *compiler_to_use = nullptr;
 
         compiler_to_use = _compiler.get();
 
         // this is a hack/magic constant
-        logger().debug("slow path bitcode size: " + sizeToMemString(stage->slowPathCode().size()));
+        logger().info("Slow path size: " + sizeToMemString(stage->slowPathCode().size()) + " (" + codegen::codeFormatToStr(stage->slowPathCodeFormat()) + ")");
 
         // more than 512KB? -> select fast (non-optimizing) compiler
         auto bitcode_threshold_size = 512 * 1024; // 512KB
         if(stage->slowPathCode().size() > bitcode_threshold_size) {
             auto bitcode_size = stage->slowPathCode().size();
-            logger().info("large code " + sizeToMemString(bitcode_size) + " encountered larger than threshold of "
+            logger().info("Large code " + sizeToMemString(bitcode_size) + " encountered larger than threshold of "
             + sizeToMemString(bitcode_threshold_size) + " for slow path, using fast compiler instead of optimizing-one.");
             compiler_to_use = _fastCompiler.get();
         }
 
-        if(!compiler_to_use)
-            throw std::runtime_error("invalid compiler pointer in getCompiledResolver");
+        if(!compiler_to_use) {
+            auto err_msg = "Invalid compiler pointer in getCompiledResolver.";
+            logger().error(err_msg);
+            throw std::runtime_error(err_msg);
+        }
 
         // perform actual compilation.
         Timer timer;
@@ -2830,22 +2843,24 @@ namespace tuplex {
 
         // same story with exception spill files. Load them first to the temp buffer, and then resolve...
         if(!exceptFiles.empty()) {
-            logger().info("Processing " + pluralize(exceptFiles.size(), "spilled except file"));
+            logger().info("Processing " + pluralize(exceptFiles.size(), "spilled except file") + ".");
             for(const auto& part_info : exceptFiles) {
 
                 // loading into buffer & resolving it.
-                logger().debug("opening except part file");
+                logger().info("Opening except part file from " + part_info.path + ".");
                 auto part_file = VirtualFileSystem::open_file(part_info.path, VirtualFileMode::VFS_READ);
 
                 if(!part_file) {
-                    auto err_msg = "part file could not be found under " + part_info.path + ", output corrupted.";
+                    auto err_msg = "Part file could not be found under " + part_info.path + ", output corrupted.";
                     logger().error(err_msg);
                     throw std::runtime_error(err_msg);
                 }
 
-                // read contents in from spill file...
+                // Read contents in from spill file...
                 if(part_file->size() != part_info.file_size) {
-                    logger().warn("part_file: " + std::to_string(part_file->size()) + " part_info: " + std::to_string(part_info.file_size));
+                    auto err_message = "Expected size does not match written size, actual size: " + std::to_string(part_file->size()) + " expected size: " + std::to_string(part_info.file_size) + ".";
+                    logger().error(err_message);
+                    return WORKER_ERROR_SPILL_FILE_SIZE_MISMATCH;
                 }
                 // assert(part_file->size() == part_info.spill_info.file_size);
                 assert(part_file->size() >= 2 * sizeof(int64_t));
@@ -2856,14 +2871,13 @@ namespace tuplex {
                 part_buffer.provideSpace(part_buffer_size);
                 size_t bytes_read = 0;
                 part_file->readOnly(part_buffer.ptr(), part_buffer_size, &bytes_read);
-                logger().debug("read from parts file " + sizeToMemString(bytes_read));
+                logger().info("Read from parts file " + sizeToMemString(bytes_read) + ", calling slow path now.");
                 part_file->close();
 
                 // process now...
                 auto rc = resolveBuffer(threadNo, part_buffer, part_info.num_rows, stage, syms);
                 if(rc != WORKER_OK)
                     return rc;
-
             }
             logger().info("except spill files done.");
         }

@@ -287,6 +287,10 @@ namespace tuplex {
     // check whether AWS env is set
     extern bool checkIfOptionIsSetInEnv(const std::string& option_name);
 
+    // expose helpers to test them.
+    extern URI create_spill_uri_from_first_part_uri(const URI& first_part_uri, int first_part_offset, int offset);
+    extern URI create_output_uri_from_first_part_uri(const URI& first_part_uri, int first_part_offset, int offset);
+
 }
 
 #endif

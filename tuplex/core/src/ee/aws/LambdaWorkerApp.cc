@@ -1290,7 +1290,33 @@ namespace tuplex {
         auto n_digits = str_part_no.size();
 
         // Replace now part with new part
-        return strReplaceAll(first_part_uri.toString(), str_part, "part" + fixedPoint(first_part_offset + offset, n_digits));
+        return strReplaceAll(first_part_uri.toString(), str_part, "part" + fixedLength(first_part_offset + offset, n_digits));
+    }
+
+    URI create_spill_uri_from_first_part_uri(const URI& first_part_uri, int first_part_offset, int offset) {
+        // first_part_uri is an uri expected to have been created through generate_output_base_uri in AWSLambdaBackend.
+        // this means URIs will have the form s3://.../lam{number}
+        // Extract via regex the stored part number, if this fails -> create manually!
+
+        std::regex r_exp("s3:\\/\\/.*\\/lam(\\d+)");
+        std::smatch matches;
+        std::string str = first_part_uri.toString();
+        std::string str_part_no;
+        if(std::regex_search(str, matches, r_exp) && matches.size() == 2) {
+            std::ssub_match sub_match = matches[1];
+            str_part_no = sub_match.str();
+        } else
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " could not extract spill number from " + first_part_uri.toString());
+
+        auto extracted_part_no = std::stoi(str_part_no);
+        if(extracted_part_no != first_part_offset)
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " extracted part no does not match expected part no");
+        auto n_digits = str_part_no.size();
+
+        // find from right last one
+        auto s = first_part_uri.toString();
+        s = s.substr(0, s.rfind(str_part_no));
+        return s + fixedLength(first_part_offset + offset, n_digits);
     }
 
     int LambdaWorkerApp::invokeRecursivelyAsync(int num_to_invoke,
@@ -1379,6 +1405,11 @@ namespace tuplex {
                 ss<<"Created request "<<(i + 1)<<"/"<<parts.size()<<" with base output uri: "<<output_uri.toString();
                 logger().info(ss.str());
             }
+
+            // Reset also spill uri (no conflicts allowed there as well).
+            auto spill_root_uri = create_spill_uri_from_first_part_uri(req_template.settings().spillrooturi(), req_template.partnooffset(), i + 1);
+            logger().info("Request using in case spill uri: " + spill_root_uri.toString());
+            aws_req.body.mutable_settings()->set_spillrooturi(spill_root_uri.toString());
 
             // Add to invoker (this will immediately start the request).
             _lambdaInvoker->invokeAsync(aws_req, [this](const AwsLambdaRequest &req, const AwsLambdaResponse &resp) { thread_safe_lambda_success_handler(req, resp); },

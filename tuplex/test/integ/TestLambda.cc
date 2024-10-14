@@ -314,6 +314,33 @@ TEST_F(LambdaTest, GithubPipelineSelfInvokeDaily) {
     EXPECT_EQ(total_row_count, 294195);
 }
 
+TEST_F(LambdaTest, DebugSingleRequest) {
+//    // helper test to debug a single request.
+//    URI request_path("/home/leonhards/projects/2nd-copy/tuplex/cmake-build-debug-llvm-16/dist/bin/failed_requests/request0.json");
+//
+//    auto json_str = fileToString(request_path);
+//
+//    // Create LambdaWorkerApp and invoke (locally) to Lambda backend - this allows to easily debug.
+//    auto app = std::make_shared<LambdaWorkerApp>();
+//    app->WorkerApp::globalInit(false);
+//    app->setFunctionName("tplxplam");
+//
+//    auto rc = app->processJSONMessage(json_str);
+//    EXPECT_EQ(rc, WORKER_OK);
+//
+//    auto ret = app->response();
+//
+//    app->WorkerApp::shutdown();
+}
+
+TEST_F(LambdaTest, CheckSpillURIHelper) {
+    using namespace tuplex;
+
+    auto worker_spill_uri = "s3://tuplex-test/.tuplex-cache/spill_folder/lam00";
+    auto ans = create_spill_uri_from_first_part_uri(URI(worker_spill_uri), 0, 2);
+    EXPECT_EQ(ans.toString(), "s3://tuplex-test/.tuplex-cache/spill_folder/lam02");
+}
+
 TEST_F(LambdaTest, RecursiveLambdaRequestBySize) {
     using namespace std;
     using namespace tuplex;

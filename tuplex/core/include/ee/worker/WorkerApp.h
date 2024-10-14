@@ -33,6 +33,7 @@
 #define WORKER_ERROR_INCOMPATIBLE_AST_FORMAT 114
 #define WORKER_ERROR_ENVIRONMENT 115
 #define WORKER_ERROR_LAMBDA_CLIENT 116
+#define WORKER_ERROR_SPILL_FILE_SIZE_MISMATCH 117
 
 // give 32MB standard buf size, 8MB for exceptions and hash
 #define WORKER_DEFAULT_BUFFER_SIZE 33554432
@@ -489,6 +490,10 @@ namespace tuplex {
             bool isExceptionBuf;
 
             SpillInfo() : path(""), num_rows(0), file_size(0), originalPartNo(0), isExceptionBuf(false) {}
+
+            SpillInfo(const SpillInfo& other) : path(other.path), num_rows(other.num_rows),
+            file_size(other.file_size), originalPartNo(other.originalPartNo), isExceptionBuf(other.isExceptionBuf) {}
+
         };
 
         // 1MB growth constant (avoid to frequent reallocs)
