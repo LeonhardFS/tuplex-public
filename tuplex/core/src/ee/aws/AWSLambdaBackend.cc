@@ -456,6 +456,12 @@ namespace tuplex {
         if(!_service)
             return;
 
+        // Save request for easier debugging/re-execution.
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+            _failedRequests.push_back(std::make_tuple(err_code, err_msg, req));
+        }
+
         // abort all requests
         _service->abortAllRequests(false);
 
@@ -1088,6 +1094,32 @@ namespace tuplex {
         auto path = nextJobDumpPath("job");
         dumpAsJSON(path);
         logger().info("dumped job info as JSON to " + path);
+
+
+        // failed requests? If so dump them to file under failed_requests.
+        if(!_failedRequests.empty()) {
+            std::string failed_request_path = "failed_requests";
+            logger().error("Found " + pluralize(_failedRequests.size(), "failed requests") + ", saving to disk to " + failed_request_path + ".");
+            if(!dirExists(failed_request_path.c_str())) {
+                std::filesystem::create_directories(failed_request_path);
+            }
+            int pos = 0;
+            for(auto t : _failedRequests) {
+                stringToFile(URI(failed_request_path).join("log" + std::to_string(pos) + ".txt"), "Lambda request failed with code " +
+                        lambda_status_to_string(std::get<0>(t)) + "\n\n" + std::get<1>(t));
+                // save request (as raw protobuf)
+                auto failed_req = std::get<2>(t);
+                auto bin_proto = failed_req.body.SerializeAsString();
+                std::string json_proto;
+                google::protobuf::util::MessageToJsonString(failed_req.body, &json_proto);
+                // Save as json and proto.
+                stringToFile(URI(failed_request_path).join("request" + std::to_string(pos) + ".bin"), bin_proto);
+                stringToFile(URI(failed_request_path).join("request" + std::to_string(pos) + ".json"), json_proto);
+
+                pos++;
+            }
+            logger().info("Saved failed requests to disk.");
+        }
 
         {
             std::stringstream ss;
@@ -2426,6 +2458,7 @@ namespace tuplex {
 
     void AwsLambdaBackend::reset() {
         _tasks.clear();
+        _failedRequests.clear();
 
         // reset path mapping
         _remoteToLocalURIMapping.clear();
