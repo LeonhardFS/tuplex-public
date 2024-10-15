@@ -463,6 +463,9 @@ namespace tuplex {
 
     void AwsLambdaBackend::onLambdaFailure(const AwsLambdaRequest &req, LambdaStatusCode err_code,
                                            const std::string &err_msg) {
+
+        // TODO: what about cost?
+
         if(!_service)
             return;
 
@@ -536,7 +539,20 @@ namespace tuplex {
         auto statusCode = 200; // should be that?
 
         // parse:
-         auto r = ResponseInfo::from_protobuf(resp.response);
+        auto r = ResponseInfo::from_protobuf(resp.response);
+
+        // Get cost before to print out delta.
+        auto cost_before = lambdaCost();
+
+        // Add this request to cost.
+        addBilling(resp.info.billedDurationInMs * resp.info.memorySizeInMb, 1);
+
+        // Recursive invocations? Add them too.
+        if(resp.response.invokedrequests_size() > 0) {
+            for(auto info : resp.response.invokedrequests()) {
+                addBilling(info.billeddurationinms() * info.memorysizeinmb(), 1);
+            }
+        }
 
         // this here should go into the success callback!
         ss << "LAMBDA task done in " << r.taskExecutionTime << "s ";
@@ -552,6 +568,9 @@ namespace tuplex {
         if (price < 0.0001)
             ss.precision(6);
         ss << std::fixed << price;
+
+        // print delta.
+        ss<<" (+ $"<<(price - cost_before)<<")";
 
         // Check if self-invoke, then print out stats from there:
         if(r.selfInvokeCount > 0) {
@@ -1195,7 +1214,7 @@ namespace tuplex {
             if (cost < 0.01)
                 ss << ", cost < $0.01";
             else
-                ss << std::fixed << std::setprecision(2) << ", cost $" << cost;
+                ss << std::fixed << std::setprecision(2) << ", cost: $" << cost <<"";
             logger().info(ss.str());
         }
 
@@ -2464,32 +2483,6 @@ namespace tuplex {
         logger().info("LAMBDA statistics: \n" + ss.str());
     }
 
-    size_t AwsLambdaBackend::getMB100Ms() {
-        std::lock_guard<std::mutex> lock(_mutex);
-
-        // sum up billed mb ms
-        size_t billed = 0;
-        for (const auto task: _tasks) {
-            size_t billedDurationInMs = task.info.billedDurationInMs;
-            size_t memorySizeInMb = task.info.memorySizeInMb;
-            billed += billedDurationInMs / 100 * memorySizeInMb;
-        }
-        return billed;
-    }
-
-    size_t AwsLambdaBackend::getMBMs() {
-        std::lock_guard<std::mutex> lock(_mutex);
-
-        // sum up billed mb ms
-        size_t billed = 0;
-        for (const auto& task: _tasks) {
-            size_t billedDurationInMs = task.info.billedDurationInMs;
-            size_t memorySizeInMb = task.info.memorySizeInMb;
-            billed += billedDurationInMs * memorySizeInMb;
-        }
-        return billed;
-    }
-
     URI AwsLambdaBackend::scratchDir(const std::vector<URI> &hints) {
         // is URI valid? return
         if (_scratchDir != URI::INVALID)
@@ -2561,6 +2554,9 @@ namespace tuplex {
         // make sure to reset service and cost calculations there!
         if(_service)
             _service->reset();
+
+        // reset billing
+        resetBilling();
 
         // other reset? @TODO.
     }

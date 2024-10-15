@@ -541,13 +541,19 @@ if __name__ == '__main__':
     parser.add_argument('--scratch-dir', default=None, dest='scratch_dir', help='where to store intermediate results')
     parser.add_argument('--log-path', default=None, dest='log_path', help='specify optional path where to store experiment log results.')
     parser.add_argument('--result-path', dest='result_path', default='results.ndjson', help='new-line delimited JSON formatted result file')
+    # AWS Lambda specific experiment settings.
+    parser.add_argument('--lambda', dest="with_lambda", action="store_true")
     args = parser.parse_args()
 
     # set up logging, by default always render to console. If log path is present, store file as well
     setup_logging(args.log_path)
-    logging.info("Running Github query benchmark for Tuplex/Viton")
+    logging.info("Running Github query benchmark for Tuplex/Viton.")
     if args.log_path is not None:
-        logging.info("Saving logs to {}".format(args.log_path))
+        logging.info("Saving logs to {}.".format(args.log_path))
+
+
+    if args.with_lambda:
+        raise NotImplementedError("Lambda execution not yet implemented.")
 
     if args.mode == 'tuplex':
         ans = run_with_tuplex(args)

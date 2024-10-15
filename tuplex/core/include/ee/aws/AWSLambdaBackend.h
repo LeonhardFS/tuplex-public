@@ -132,7 +132,6 @@ namespace tuplex {
         std::shared_ptr<HistoryServerConnector> _historyServer;
 
         void reset();
-
         void checkAndUpdateFunctionConcurrency(const std::shared_ptr<Aws::Lambda::LambdaClient>& client,
                                                size_t concurrency,
                                                const std::string& functionName,
@@ -225,10 +224,28 @@ namespace tuplex {
 
         std::string csvPerFileInfo();
 
-        size_t getMB100Ms();
-        size_t getMBMs();
 
-        double usedGBSeconds() {
+        std::atomic<size_t> _total_mbms;
+        std::atomic<size_t> _total_requests;
+
+        inline size_t getMBMs() const { return _total_mbms; }
+
+        inline void resetBilling() {
+            _total_mbms = 0;
+            _total_requests = 0;
+        }
+
+        /*!
+         * add incurred costs to calculations.
+         * @param mbms
+         * @param n_requests
+         */
+        inline void addBilling(size_t mbms, size_t n_requests=1) {
+            _total_mbms += mbms;
+            _total_requests += n_requests;
+        }
+
+        inline double usedGBSeconds() const {
             // 1ms = 0.001s
             // 1mb = 0.001Gb
             return (double)getMBMs() / 1000000.0;
@@ -236,7 +253,7 @@ namespace tuplex {
             // old: Before Dec 2020, now costs changed.
             // return (double)getMB100Ms() / 10000.0;
         }
-        size_t numRequests() { assert(_service); return _service->numRequests(); }
+        inline size_t numRequests() const { return _total_requests; }
 
         inline double lambdaCost() const {
             double cost_per_request = 0.0000002;
@@ -252,8 +269,8 @@ namespace tuplex {
             if(_functionArchitecture == "arm64")
                 cost_per_gb_second = cost_per_gb_second_arm;
 
-            auto usedGBSeconds = _service->usedGBSeconds();
-            auto numRequests = _service->numRequests();
+            auto usedGBSeconds = this->usedGBSeconds();
+            auto numRequests = this->numRequests();
 
             return usedGBSeconds * cost_per_gb_second + (double)numRequests * cost_per_request;
         }
