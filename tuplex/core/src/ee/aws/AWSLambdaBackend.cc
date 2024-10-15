@@ -443,12 +443,22 @@ namespace tuplex {
     }
 
     void AwsLambdaBackend::invokeAsync(const AwsLambdaRequest &req) {
-      assert(_service);
+        assert(_service);
 
-      // invoke using callbacks!
-      _service->invokeAsync(req, [this](const AwsLambdaRequest& req, const AwsLambdaResponse& resp) { onLambdaSuccess(req, resp); },
-                            [this](const AwsLambdaRequest& req, LambdaStatusCode code, const std::string& msg) { onLambdaFailure(req, code, msg); },
-                            [this](const AwsLambdaRequest& req, LambdaStatusCode code, const std::string& msg, bool b) { onLambdaRetry(req, code, msg, b); });
+        // invoke using callbacks!
+        _service->invokeAsync(req, [this](const AwsLambdaRequest &req, const AwsLambdaResponse &resp) {
+                                  onLambdaSuccess(req, resp);
+                              },
+                              [this](const AwsLambdaRequest &req, LambdaStatusCode code,
+                                     const std::string &msg) { onLambdaFailure(req, code, msg); },
+                              [this](const AwsLambdaRequest &req, LambdaStatusCode code, const std::string &msg,
+                                     bool b) { onLambdaRetry(req, code, msg, b); });
+
+        // add to local tracking (thread-safe)
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+            _invokedRequests[uuidToString(req.id)] = req;
+        }
     }
 
     void AwsLambdaBackend::onLambdaFailure(const AwsLambdaRequest &req, LambdaStatusCode err_code,
@@ -1101,6 +1111,56 @@ namespace tuplex {
         auto path = nextJobDumpPath("job");
         dumpAsJSON(path);
         logger().info("dumped job info as JSON to " + path);
+
+        // For easier debugging purposes, dump logs of Lambdas to folder.
+        // They're also contained in json, but this here may be easier.
+        auto log_path = strReplaceAll(path, ".json", "") + "/logs";
+        if(!dirExists(log_path)) {
+            std::filesystem::create_directories(log_path);
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+
+            int lam_no = 0;
+            for (const auto &task: _tasks) {
+                if(task.response.type() == messages::MessageType::MT_TRANSFORM) {
+//                    // Get lambda name from spill uri.
+//                    auto key = task.response.container().uuid();
+//
+//                    // Check if key was found
+//                    auto req = _invokedRequests.at(key);
+//                    auto spill_uri = req.body.settings().spillrooturi();
+//                    auto lam_no_str = spill_uri.substr(spill_uri.rfind("/lam") + 4);
+//                    auto lam_no = std::stoi(lam_no_str);
+
+                    // log of this container.
+                    for (const auto &r: task.response.resources()) {
+                        if (r.type() == static_cast<uint32_t>(ResourceType::LOG)) {
+                            auto log = decompress_string(r.payload());
+                            stringToFile(URI(log_path).join_path("lam" + std::to_string(lam_no) + ".txt"), log);
+                            lam_no++;
+                            break;
+                        }
+                    }
+
+                    for (unsigned i = 0; i < task.response.invokedresponses_size(); ++i) {
+                        // the lam no here won't match. This is not perfect.
+                        // TODO: return lam no/identifier in map?
+                        auto self_invoke_response = task.response.invokedresponses(i);
+                        for (const auto &r: self_invoke_response.resources()) {
+                            if (r.type() == static_cast<uint32_t>(ResourceType::LOG)) {
+                                auto log = decompress_string(r.payload());
+                                stringToFile(URI(log_path).join_path("lam" + std::to_string(lam_no) + ".txt"), log);
+                                lam_no++;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        logger().info("Saved " + pluralize(glob(log_path + "/*.txt").size(), "log") + " to " + log_path);
 
 
         // failed requests? If so dump them to file under failed_requests.
@@ -2493,6 +2553,7 @@ namespace tuplex {
     void AwsLambdaBackend::reset() {
         _tasks.clear();
         _failedRequests.clear();
+        _invokedRequests.clear();
 
         // reset path mapping
         _remoteToLocalURIMapping.clear();

@@ -427,7 +427,6 @@ namespace tuplex {
 
         // check settings, pure python mode?
         if(req.settings().has_useinterpreteronly() && req.settings().useinterpreteronly()) {
-
             logger().debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " interpreter only mode, skip rest of setup.");
 
             // following code is good for compile only, skip for now.
@@ -475,6 +474,7 @@ namespace tuplex {
             conf.exceptionSerializationMode = _settings.exceptionSerializationMode;
             conf.filterPromotion = _settings.useFilterPromotion;
             conf.sparsifyStructs = _settings.sparsifyStructs;
+            conf.simplifyLargeStructs = _settings.simplifyLargeStructs ? _settings.simplifyLargeStructsThreshold : option<size_t>::none;
 
             // overwrite sampling size using settings
             conf.sampling_size = _settings.samplingSize;
@@ -772,7 +772,6 @@ namespace tuplex {
 
         // Python mode or compiled mode?
         if(req.settings().has_useinterpreteronly() && req.settings().useinterpreteronly()) {
-            logger().info("WorkerApp is processing everything in single-threaded python/fallback mode.");
             rc = processTransformStageInPythonMode(tstage.get(), parts, outputURI);
         } else {
             rc = processTransformStage(tstage.get(), syms, parts, outputURI);
@@ -844,6 +843,8 @@ namespace tuplex {
     int
     WorkerApp::processTransformStageInPythonMode(const TransformStage *tstage, const std::vector<FilePart> &input_parts,
                                                  const URI &output_uri) {
+        logger().info("WorkerApp is processing everything in single-threaded python/fallback mode.");
+
         Timer timer;
         // make sure python code exists
         assert(tstage);
@@ -852,7 +853,7 @@ namespace tuplex {
         if(pythonCode.empty() || pythonPipelineName.empty())
             return WORKER_ERROR_MISSING_PYTHON_CODE;
 
-        logger().info("Invoking processTransformStage in Python mode");
+        logger().info("Invoking processTransformStage in Python mode.");
 
         // compile func
         auto pipelineFunctionObj = preparePythonPipeline(pythonCode, pythonPipelineName);
@@ -2216,6 +2217,19 @@ namespace tuplex {
             ws.sparsifyStructs = stringToBool(it->second);
         } else {
             ws.sparsifyStructs = false;
+        }
+
+        it = req.settings().other().find("tuplex.optimizer.simplifyLargeStructs");
+        if(it != req.settings().other().end()) {
+            ws.simplifyLargeStructs = stringToBool(it->second);
+        } else {
+            ws.simplifyLargeStructs = false;
+        }
+        it = req.settings().other().find("tuplex.optimizer.simplifyLargeStructs.threshold");
+        if(it != req.settings().other().end()) {
+            ws.simplifyLargeStructsThreshold = std::stoull(it->second);
+        } else {
+            ws.simplifyLargeStructsThreshold = ContextOptions::defaults().OPT_SIMPLIFY_LARGE_STRUCTS_THRESHOLD(); // use default parameter.
         }
 
         it = req.settings().other().find("tuplex.sample.maxDetectionMemory");

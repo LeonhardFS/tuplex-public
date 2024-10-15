@@ -122,6 +122,7 @@ namespace tuplex {
         JobInfo _info;
 
         std::vector<std::tuple<LambdaStatusCode, std::string, AwsLambdaRequest>> _failedRequests;
+        std::unordered_map<std::string, AwsLambdaRequest> _invokedRequests; // for easier lookup.
 
         // mapping of remote to local paths for result collection.
         std::unordered_map<URI, URI> _remoteToLocalURIMapping;

@@ -295,6 +295,11 @@ TEST_F(LambdaTest, GithubPipelineSelfInvokeDaily) {
     // enable hyper specialization
     conf["tuplex.experimental.hyperspecialization"] = "true";
 
+    // enable struct optimizations
+    conf["tuplex.optimizer.sparsifyStructs"] = "true";
+    conf["tuplex.optimizer.simplifyLargeStructs"] = "true";
+    conf["tuplex.optimizer.simplifyLargeStructs.threshold"] = "20";
+
     // deactivate compiled resolver for now.
     conf["tuplex.resolveWithInterpreterOnly"] = "True";
 
@@ -313,6 +318,106 @@ TEST_F(LambdaTest, GithubPipelineSelfInvokeDaily) {
     auto total_row_count = csv_row_count_for_pattern(output_path + "/*.csv");
     EXPECT_EQ(total_row_count, 294195);
 }
+
+class ParametrizedLambdaTest : public LambdaTest, public ::testing::WithParamInterface<std::unordered_map<std::string,std::string>> {
+public:
+    std::string testName;
+
+    std::string inputPattern;
+    std::string outputPath;
+
+    void SetUp() override {
+        using namespace std;
+
+        testName = std::string(::testing::UnitTest::GetInstance()->current_test_info()->test_case_name()) +
+                   std::string(::testing::UnitTest::GetInstance()->current_test_info()->name());
+
+        inputPattern = "s3://tuplex-public/data/github_daily/*.json";
+        cout<<"Using input pattern: "<<inputPattern<<endl;
+        auto s3_root = s3PathForTest();
+        outputPath = s3_root + "/output";
+        cout<<"Storing output test data in "<<outputPath<<"."<<endl;
+
+        // Step 1: Check that files exist (input pattern), and remove output files.
+        auto input_uris = VirtualFileSystem::fromURI(inputPattern).glob(inputPattern);
+        ASSERT_EQ(input_uris.size(), 11);
+
+        auto output_pattern = outputPath + "/*.csv";
+        auto output_uris = VirtualFileSystem::fromURI(output_pattern).glob(output_pattern);
+        if(!output_uris.empty()) {
+            cout<<"Removing existing files from S3:"<<endl;
+            cout<<"Found "<<pluralize(output_uris.size(), "old output uri")<<" to be removed to run test."<<endl;
+            auto ret = s3RemoveObjects(VirtualFileSystem::getS3FileSystemImpl()->client(), output_uris, &cerr);
+            ASSERT_TRUE(ret);
+        }
+
+        cout<<"Test setup done."<<endl;
+    }
+protected:
+    static void SetUpTestSuite() {
+       LambdaTest::SetUpTestSuite();
+    }
+
+    static void TearDownTestSuite() {
+        LambdaTest::TearDownTestSuite();
+    }
+};
+
+TEST_P(ParametrizedLambdaTest, GithubDaily) {
+    using namespace std;
+    using namespace tuplex;
+
+    auto conf_override = GetParam();
+
+
+
+    cout<<"Creating Lambda context."<<endl;
+    std::unordered_map<std::string, std::string> conf;
+    conf["tuplex.aws.lambdaInvocationStrategy"] = "tree";
+    conf["tuplex.aws.maxConcurrency"] = "100"; // use 100 as maximum parallelism.
+    conf["tuplex.experimental.minimumSizeToSpecialize"] = "0"; // disable minimum size.
+
+    // the object code interchange fails with segfaults when using the libc preloader...
+    conf["tuplex.experimental.interchangeWithObjectFiles"] = "false";
+
+    // enable hyper specialization
+    conf["tuplex.experimental.hyperspecialization"] = "true";
+
+    // enable struct optimizations
+    conf["tuplex.optimizer.sparsifyStructs"] = "true";
+    conf["tuplex.optimizer.simplifyLargeStructs"] = "true";
+    conf["tuplex.optimizer.simplifyLargeStructs.threshold"] = "20";
+
+    // apply conf overrides.
+    for(auto& kv : conf_override) {
+        conf[kv.first] = kv.second;
+    }
+
+    auto ctx = create_lambda_context(conf);
+
+    cout<<"Starting Github (daily) pipeline."<<endl;
+    github_pipeline(ctx, inputPattern, outputPath);
+
+    cout<<"Checking result."<<endl;
+    // glob output files (should be equal amount, as 1 request per file)
+    auto output_uris = VirtualFileSystem::fromURI(inputPattern).glob(outputPath + "/*.csv");
+
+    cout<<"Found "<<pluralize(output_uris.size(), "output file")<<" in local S3 file system."<<endl;
+
+    // Step 5: Check csv counts to make sure these are correct.
+    auto total_row_count = csv_row_count_for_pattern(outputPath + "/*.csv");
+    EXPECT_EQ(total_row_count, 294195);
+}
+
+// Settings to check:
+// 1.) hyper off
+// 2.) hyper on (with all optimizations)
+// 3.) interpreter only mode.
+// maybe with different parallelism.
+INSTANTIATE_TEST_SUITE_P(GithubEndToEndSuite, ParametrizedLambdaTest, ::testing::Values(std::unordered_map<std::string, std::string>{std::make_pair("tuplex.experimental.hyperspecialization", "false"), std::make_pair("tuplex.useInterpreterOnly", "true")}//,
+                                                                         //std::unordered_map<std::string, std::string>{std::make_pair("tuplex.experimental.hyperspecialization", "false")},
+                                                                         //std::unordered_map<std::string, std::string>{std::make_pair("tuplex.experimental.hyperspecialization", "true")}
+                                                                              ));
 
 TEST_F(LambdaTest, DebugSingleRequest) {
 //    // helper test to debug a single request.

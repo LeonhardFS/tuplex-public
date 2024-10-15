@@ -143,6 +143,8 @@ namespace tuplex {
         bool useFilterPromotion;
         bool useConstantFolding;
         bool sparsifyStructs;
+        bool simplifyLargeStructs;
+        size_t simplifyLargeStructsThreshold;
 
         bool opportuneGeneralPathCompilation; // <-- whether to kick off query optimization as early on as possible
         size_t s3PreCacheSize; // <-- whether to load S3 first and activate cache
@@ -169,7 +171,7 @@ namespace tuplex {
         s3PreCacheSize(0),
         exceptionSerializationMode(codegen::ExceptionSerializationMode::SERIALIZE_AS_GENERAL_CASE),
         specializationUnitSize(0),
-        samplingSize(0), useObjectFileAsInterchangeFormat(false) {
+        samplingSize(0), useObjectFileAsInterchangeFormat(false), simplifyLargeStructs(false), simplifyLargeStructsThreshold(0) {
 
             // set some options from defaults...
             auto opt = ContextOptions::defaults();
@@ -207,7 +209,9 @@ namespace tuplex {
         samplesPerStrata(other.samplesPerStrata),
         specializationUnitSize(other.specializationUnitSize),
         samplingSize(other.samplingSize),
-        useObjectFileAsInterchangeFormat(other.useObjectFileAsInterchangeFormat) {}
+        useObjectFileAsInterchangeFormat(other.useObjectFileAsInterchangeFormat),
+        simplifyLargeStructs(other.simplifyLargeStructs),
+        simplifyLargeStructsThreshold(other.simplifyLargeStructsThreshold) {}
 
         inline bool operator == (const WorkerSettings& other) const {
 
@@ -264,6 +268,12 @@ namespace tuplex {
             if(useObjectFileAsInterchangeFormat != other.useObjectFileAsInterchangeFormat)
                 return false;
 
+            if(simplifyLargeStructs != other.simplifyLargeStructs)
+                return false;
+
+            if(simplifyLargeStructsThreshold != other.simplifyLargeStructsThreshold)
+                return false;
+
             return true;
         }
 
@@ -293,6 +303,8 @@ namespace tuplex {
         os << "\"useFilterPromotion\":"<<boolToString(ws.useFilterPromotion)<<", ";
         os << "\"useConstantFolding\":"<<boolToString(ws.useConstantFolding)<<", ";
         os << "\"sparsifyStructs\":"<<boolToString(ws.sparsifyStructs)<<", ";
+        os << "\"simplifyLargeStructs\":"<<boolToString(ws.simplifyLargeStructs)<<", ";
+        os << "\"simplifyLargeStructsThreshold\":"<<ws.simplifyLargeStructsThreshold<<", ";
         os << "\"normalCaseThreshold\":"<<ws.normalCaseThreshold<<", ";
         os << "\"exceptionSerializationMode\":"<<(int)ws.exceptionSerializationMode<<", ";
         os << "\"s3PreCacheSize\":"<<ws.s3PreCacheSize<<",";
