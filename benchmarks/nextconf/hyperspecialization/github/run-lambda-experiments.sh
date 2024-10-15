@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 # (c) 2024 L.Spiegelberg
-# collects script invocations required to produce graphs for flight experiments
-
-# Contains a pure C++ version with a perfect sparse struct type to check how fast it is compared to python baseline.
-
-set -e pipefail
+# Script to run lambda experiments, requires working awscli and AWS keys.
 
 # more detailed debugging
 set -euxo pipefail
@@ -21,7 +17,7 @@ PYTHON=python3
 DESIRED_PYTHON_VERSION=3.11
 
 
-echo "-- Tuplex benchmarking -- "
+echo "-- Tuplex on Lambda benchmarking -- "
 
 # Check python3 version
 PYTHON3_VERSION=$($PYTHON --version | cut -f2 -d ' ')
@@ -43,8 +39,6 @@ echo "-- Using python3 executable ${PYTHON3_EXECUTABLE}"
 
 echo "-> Compiling Tuplex (w. yyjson) to $BUILD_DIR"
 mkdir -p $BUILD_DIR
-echo "-> Compiling Tuplex (w. cjson) to $ALT_BUILD_DIR"
-mkdir -p $ALT_BUILD_DIR
 TUPLEX_DIR=$BUILD_DIR/../../../../../tuplex
 
 # How many cores? Use all for build.
@@ -61,9 +55,6 @@ if [[ "$OSTYPE" =~ ^linux ]]; then
     LLVM_DIR=/opt/llvm-16.0.6
     echo ">>> Building w. yyjson"
     cd $BUILD_DIR && cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_CEREAL=ON -DPython3_EXECUTABLE=$PYTHON3_EXECUTABLE -DUSE_YYJSON_INSTEAD=ON -DSKIP_AWS_TESTS=ON -DBUILD_WITH_ORC=ON -DAWS_S3_TEST_BUCKET='tuplex-test' -DLLVM_ROOT_DIR=$LLVM_DIR $TUPLEX_DIR && make -j${N_PROCESSORS} tuplex && make -j${N_PROCESSORS} tuplex-worker && cd ..
-
-    #echo ">>> Building w. cjson"
-    #cd $ALT_BUILD_DIR && cmake -DCMAKE_BUILD_TYPE=Release -DUSE_YYJSON_INSTEAD=OFF -DSKIP_AWS_TESTS=ON -DBUILD_WITH_ORC=ON -DAWS_S3_TEST_BUCKET='tuplex-test' -DLLVM_ROOT_DIR=$LLVM_DIR $TUPLEX_DIR && make -j${N_PROCESSORS} tuplex_github && cd ..
 fi
 
 # mac os
@@ -84,8 +75,17 @@ WHL_FILE=$(ls ${BUILD_DIR}/dist/python/dist/*.whl)
 echo ">>> Installing tuplex (force) from wheel ${WHL_FILE}"
 ${PYTHON} -m pip install --upgrade --force-reinstall ${WHL_FILE}
 
-# There's an issue with an old cloudpickle version, remove and intall newer one
+# There's an issue with an old cloudpickle version, remove and install newer one
 ${PYTHON} -m pip uninstall -y cloudpickle && ${PYTHON} -m pip install "cloudpickle>=3.0"
+
+# Before running benchmarks, update Lambda. This will also kill existing containers.
+echo ">>> Building Tuplex Lambda and deploying it."
+ADD_ZIP_ARGS="--no-libc --with-upx" $TUPLEX_DIR/../scripts/create_lambda_zip.sh
+${PYTHON} $TUPLEX_DIR/../deploy.py
+echo "-- Tuplex deployed to AWS account."
+
+exit 0
+
 
 # start benchmarking, first single run + validate results.
 ${PYTHON} runtuplex-new.py --help
