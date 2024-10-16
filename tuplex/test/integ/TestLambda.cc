@@ -536,7 +536,7 @@ namespace tuplex {
     bool s3crt_get_request(const URI& uri, uint8_t* buffer, size_t nbytes, size_t offset) {
 
         Aws::String region = Aws::Region::US_EAST_1;
-        const double throughput_target_gbps = 5;
+        const double throughput_target_gbps = 20;
         const uint64_t part_size = 8 * 1024 * 1024; // 8 MB.
         Aws::S3Crt::ClientConfiguration config;
         config.region = region;
