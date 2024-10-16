@@ -21,3 +21,6 @@ tar -xzvf openssl-3.3.1.tar.gz && \
 cd openssl-3.3.1 && \
 ./config -Wl,-rpath=/usr/local/ssl/lib -Wl,--enable-new-dtags shared zlib-dynamic && \
 make -j ${CPU_COUNT:-8} && make install_sw && echo "OpenSSL ok"
+
+# ldconfig and update
+ldconfig /usr/local/lib64
