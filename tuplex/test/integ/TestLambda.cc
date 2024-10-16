@@ -26,6 +26,11 @@
 #include <aws/lambda/model/ListFunctionsRequest.h>
 #include <aws/lambda/LambdaClient.h>
 
+
+// AWS S3 CRT SDK
+#include <aws/s3-crt/S3CrtClient.h>
+#include <aws/s3-crt/model/GetObjectRequest.h>
+
 using namespace tuplex;
 
 // change these keys here to carry out actual remote testing.
@@ -524,4 +529,95 @@ TEST_F(LambdaTest, FindSuitableMaxChunkSize) {
         <<"Splitting into tree will yield "<<requests.size()<<" direct requests.\n"
         <<"Desired: "<<desired_parallelism<<" Actual max parallel requests: "<< total_request_count(requests)<<endl;
 
+}
+
+
+namespace tuplex {
+    bool s3crt_get_request(const URI& uri, uint8_t* buffer, size_t nbytes, size_t offset) {
+
+        Aws::String region = Aws::Region::US_EAST_1;
+        const double throughput_target_gbps = 5;
+        const uint64_t part_size = 8 * 1024 * 1024; // 8 MB.
+        Aws::S3Crt::ClientConfiguration config;
+        config.region = region;
+        config.throughputTargetGbps = throughput_target_gbps;
+        config.partSize = part_size;
+
+        auto objectKey = uri.s3Key();
+        auto bucketName = uri.s3Bucket();
+
+        Aws::S3Crt::S3CrtClient s3_crt_client(config);
+
+        std::cout << "Getting object: \"" << objectKey << "\" from bucket: \"" << bucketName << "\" ..." << std::endl;
+        std::string range = "bytes=" + std::to_string(offset) + "-" + std::to_string(offset + nbytes - 1);
+
+        Aws::S3Crt::Model::GetObjectRequest request;
+        request.SetBucket(bucketName.c_str());
+        request.SetKey(objectKey.c_str());
+        request.SetRange(range.c_str());
+
+        Aws::S3Crt::Model::GetObjectOutcome outcome = s3_crt_client.GetObject(request);
+
+        if (outcome.IsSuccess()) {
+
+            auto result = outcome.GetResultWithOwnership();
+
+            // extract extracted byte range + size
+            // syntax is: start-inclend/fsize
+            auto cr = result.GetContentRange();
+            auto idxSlash = cr.find_first_of('/');
+            auto idxMinus = cr.find_first_of('-');
+            // these are kind of weird, they are already requested range I presume
+            size_t fileSize = std::strtoull(cr.substr(idxSlash + 1).c_str(), nullptr, 10);
+            auto retrievedBytes = result.GetContentLength();
+
+            // Get an Aws::IOStream reference to the retrieved file
+            auto &retrieved_file = result.GetBody();
+            // copy contents
+            retrieved_file.read((char*)buffer, retrievedBytes);
+
+            return true;
+        }
+        else {
+            std::cout << "GetObject error:\n" << outcome.GetError() << std::endl << std::endl;
+
+            return false;
+        }
+    }
+}
+
+TEST_F(LambdaTest, S3Sampling) {
+    // TODO: Move this to a separate test suite. Done to get something fast.
+    using namespace std;
+    using namespace tuplex;
+
+    // dummy context to init aws sdk and s3
+    auto ctx = create_lambda_context();
+
+    // Check why S3 sampling is so slow.
+    cout<<"S3 test:"<<endl;
+    auto s3_test_path = "s3://tuplex-public/data/github_daily/2011-10-15.json";
+
+    Timer timer;
+    size_t size_to_request = memStringToSize("32MB");
+    URI uri(s3_test_path);
+    auto vfs = VirtualFileSystem::fromURI(uri);
+    auto vf = vfs.open_file(uri, VirtualFileMode::VFS_READ);
+    ASSERT_TRUE(vf);
+    vf->seek(0);
+    uint8_t* buffer = new uint8_t[size_to_request];
+    size_t bytes_read = 0;
+    auto status = vf->readOnly(buffer, size_to_request, &bytes_read);
+    EXPECT_EQ(bytes_read, size_to_request);
+    vf->close();
+
+    cout<<"S3 request of "<<sizeToMemString(size_to_request)<<" took "<<timer.time()<<"s."<<endl;
+
+    // Compare now to fast s3crt request.
+    cout<<"Now same with s3CrtClient: "<<endl;
+    timer.reset();
+    s3crt_get_request(uri, buffer, size_to_request, 0);
+    cout<<"S3 (CRT) request of "<<sizeToMemString(size_to_request)<<" took "<<timer.time()<<"s."<<endl;
+
+    delete [] buffer;
 }

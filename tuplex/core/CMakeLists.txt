@@ -11,7 +11,7 @@ find_package(YAMLCPP REQUIRED)
 # building with AWS backend support?
 if(BUILD_WITH_AWS)
     # locate aws sdk & include lambda component
-    find_package(AWSSDK REQUIRED COMPONENTS core s3 lambda)
+    find_package(AWSSDK REQUIRED COMPONENTS core s3 s3-crt lambda)
     MESSAGE(STATUS "Building with AWS Lambda backend")
 
     # make sure protobuf was discovered in parent dir

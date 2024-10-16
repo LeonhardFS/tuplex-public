@@ -94,24 +94,15 @@ mkdir -p ${WORKDIR}/antlr && cd ${WORKDIR}/antlr \
 && make -j ${CPU_COUNT}&& make install
 
 echo ">> Installing AWS SDK"
-## Note the z-lib patch here.
-#mkdir -p ${WORKDIR}/aws && cd ${WORKDIR}/aws \
-#&& git clone --recurse-submodules https://github.com/aws/aws-sdk-cpp.git \
-#&& cd aws-sdk-cpp && git checkout tags/${AWSSDK_CPP_VERSION} && sed -i 's/int ret = Z_NULL;/int ret = static_cast<int>(Z_NULL);/g' src/aws-cpp-sdk-core/source/client/RequestCompression.cpp && mkdir build && cd build \
-#&& cmake -DCMAKE_BUILD_TYPE=Release -DUSE_OPENSSL=ON -DENABLE_TESTING=OFF -DENABLE_CURL_LOGGING=ON -DENABLE_UNITY_BUILD=ON -DCPP_STANDARD=17 -DBUILD_SHARED_LIBS=OFF -DBUILD_ONLY="s3;core;lambda;transfer" -DCMAKE_INSTALL_PREFIX=${PREFIX} .. \
-#&& make -j ${CPU_COUNT} \
-#&& make install
-
 # Note the z-lib patch here.
 mkdir -p ${WORKDIR}/aws && cd ${WORKDIR}/aws \
 && git clone --recurse-submodules https://github.com/aws/aws-sdk-cpp.git \
 && cd aws-sdk-cpp && git checkout tags/${AWSSDK_CPP_VERSION} && sed -i 's/int ret = Z_NULL;/int ret = static_cast<int>(Z_NULL);/g' src/aws-cpp-sdk-core/source/client/RequestCompression.cpp && mkdir build && cd build \
-&& cmake -DCMAKE_BUILD_TYPE=Release -DUSE_OPENSSL=ON -DENABLE_TESTING=OFF -DUSE_CRT_HTTP_CLIENT=ON -DENABLE_UNITY_BUILD=ON -DCPP_STANDARD=17 -DBUILD_SHARED_LIBS=OFF -DBUILD_ONLY="s3;core;lambda;transfer" -DCMAKE_INSTALL_PREFIX=${PREFIX} .. \
+&& cmake -DCMAKE_BUILD_TYPE=Release -DUSE_OPENSSL=ON -DENABLE_TESTING=OFF -DUSE_CRT_HTTP_CLIENT=ON -DENABLE_UNITY_BUILD=ON -DCPP_STANDARD=17 -DBUILD_SHARED_LIBS=OFF -DBUILD_ONLY="s3;s3-crt;core;lambda;transfer" -DCMAKE_INSTALL_PREFIX=${PREFIX} .. \
 && make -j ${CPU_COUNT} \
 && make install
 
-
-#installing AWS Lambda C++ runtime
+# Installing AWS Lambda C++ runtime.
 cd ${WORKDIR}/aws \
 && git clone https://github.com/awslabs/aws-lambda-cpp.git \
 && cd aws-lambda-cpp \
