@@ -433,6 +433,17 @@ def run_with_tuplex_on_lambda(args):
             "useInterpreterOnly": args.python_mode,
             "experimental.forceBadParseExceptFormat": not args.use_internal_fmt}
 
+
+    # Special case: mode == python:
+    if args.mode == "python":
+        logging.info(f"LAMBDAs using Python interpreter only (mode={args.mode}).")
+        conf["resolveWithInterpreterOnly"] = True
+        conf["useInterpreterOnly"] = True
+    else:
+        logging.info(f"LAMBDAs using compiled paths and interpreter (mode={args.mode}).")
+        conf["resolveWithInterpreterOnly"] = False
+        conf["useInterpreterOnly"] = False
+
     # In hyper mode to avoid long LLVM IR optimization times, enable simplifyLargeStructs optimization. Deactivate it for global sparse structs,
     # as this mode specifically needs to measure how badly global structs affect everything.
     if use_hyper_specialization:
