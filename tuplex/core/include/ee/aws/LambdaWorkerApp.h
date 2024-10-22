@@ -54,8 +54,6 @@ namespace tuplex {
             setLoggerName("Lambda worker");
         }
 
-        tuplex::messages::InvocationResponse generateResponse();
-
         int globalInit(bool skip) override;
 
         ~LambdaWorkerApp() {}
@@ -258,7 +256,7 @@ namespace tuplex {
                              const std::string& errorName,
                              const std::string& errorMessage);
 
-        void prepareResponseFromSelfInvocations();
+        //void prepareResponseFromSelfInvocations();
     };
 
     extern std::vector<ContainerInfo> selfInvoke(const std::string& functionName,

@@ -1134,6 +1134,7 @@ namespace tuplex {
         // For easier debugging purposes, dump logs of Lambdas to folder.
         // They're also contained in json, but this here may be easier.
         auto log_path = strReplaceAll(path, ".json", "") + "/logs";
+        log_path = strReplaceAll(log_path, "file://", "");
         if(!dirExists(log_path)) {
             std::filesystem::create_directories(log_path);
         }
@@ -2282,6 +2283,7 @@ namespace tuplex {
                 RequestInfo r_info;
                 for (unsigned i = 0; i < task.response.invokedrequests_size(); ++i) {
                     r_info = task.response.invokedrequests(i);
+                    r_info.fillInFromResponse(task.response.invokedresponses(i));
                     ss << r_info.asJSON();
                     if (i != task.response.invokedrequests_size() - 1)
                         ss << ",";

@@ -812,8 +812,11 @@ namespace tuplex {
                 for(const auto& uri : output_uris())
                     _output_uris.push_back(uri.toString());
 
-                // add output uris.
                 // @TODO: return small results as part of the request.
+
+                // _response should already hold information about counts etc.
+                // --> i.e. fill_response_with_state fills response with data about this invocation.
+                // --> fill_response_with_self_invocation_state with data about self-invocation state.
                 fill_with_result(_response);
             }
 
@@ -832,11 +835,6 @@ namespace tuplex {
     }
 
     void LambdaWorkerApp::fill_with_result(messages::InvocationResponse& response) {
-//        // message specific results
-//        for(const auto& c_info : _invokedContainers) {
-//            auto element = response.add_invokedcontainers();
-//            c_info.fill(element);
-//        }
 
         for(const auto& r_info : _requests) {
             auto element = response.add_invokedrequests();
@@ -850,50 +848,50 @@ namespace tuplex {
             response.add_outputuris(uri);
     }
 
-    void LambdaWorkerApp::prepareResponseFromSelfInvocations() {
-
-        std::vector<ContainerInfo> successful_containers;
-        std::vector<RequestInfo> requests; // which requests to send along message
-        std::vector<std::string> output_uris;
-        std::vector<std::string> input_uris;
-
-        // go over all invocations
-        {
-            std::unique_lock<std::mutex> lock(_invokeRequestMutex);
-            unsigned n = _invokeRequests.size();
-
-            for(unsigned i = 0; i < n; ++i) {
-                auto& req = _invokeRequests[i];
-                if(req.response.success()) {
-                    successful_containers.push_back(req.response.container);
-
-                    // all other invoked containers
-                    std::copy(req.response.invoked_containers.begin(), req.response.invoked_containers.end(), std::back_inserter(successful_containers));
-
-                    std::copy(req.response.output_uris.begin(), req.response.output_uris.end(), std::back_inserter(output_uris));
-                    std::copy(req.response.input_uris.begin(), req.response.input_uris.end(), std::back_inserter(input_uris));
-                }
-            }
-
-            // copy ALL requests to output message for proper debugging/cost metrics.
-            for(unsigned i = 0; i < n; ++i) {
-                auto& req = _invokeRequests[i];
-                requests.push_back(req.response.invoke_desc);
-                std::copy(req.response.invoked_requests.begin(), req.response.invoked_requests.end(), std::back_inserter(requests));
-            }
-        }
-
-        std::sort(output_uris.begin(), output_uris.end());
-        std::sort(input_uris.begin(), input_uris.end());
-
-        // TODO: merge input uris?
-
-        // fetch invoked containers etc.
-        _invokedContainers = normalizeInvokedContainers(successful_containers);
-        _requests = requests;
-        _output_uris = output_uris;
-        _input_uris = input_uris;
-    }
+//    void LambdaWorkerApp::prepareResponseFromSelfInvocations() {
+//
+//        std::vector<ContainerInfo> successful_containers;
+//        std::vector<RequestInfo> requests; // which requests to send along message
+//        std::vector<std::string> output_uris;
+//        std::vector<std::string> input_uris;
+//
+//        // go over all invocations
+//        {
+//            std::unique_lock<std::mutex> lock(_invokeRequestMutex);
+//            unsigned n = _invokeRequests.size();
+//
+//            for(unsigned i = 0; i < n; ++i) {
+//                auto& req = _invokeRequests[i];
+//                if(req.response.success()) {
+//                    successful_containers.push_back(req.response.container);
+//
+//                    // all other invoked containers
+//                    std::copy(req.response.invoked_containers.begin(), req.response.invoked_containers.end(), std::back_inserter(successful_containers));
+//
+//                    std::copy(req.response.output_uris.begin(), req.response.output_uris.end(), std::back_inserter(output_uris));
+//                    std::copy(req.response.input_uris.begin(), req.response.input_uris.end(), std::back_inserter(input_uris));
+//                }
+//            }
+//
+//            // copy ALL requests to output message for proper debugging/cost metrics.
+//            for(unsigned i = 0; i < n; ++i) {
+//                auto& req = _invokeRequests[i];
+//                requests.push_back(req.response.invoke_desc);
+//                std::copy(req.response.invoked_requests.begin(), req.response.invoked_requests.end(), std::back_inserter(requests));
+//            }
+//        }
+//
+//        std::sort(output_uris.begin(), output_uris.end());
+//        std::sort(input_uris.begin(), input_uris.end());
+//
+//        // TODO: merge input uris?
+//
+//        // fetch invoked containers etc.
+//        _invokedContainers = normalizeInvokedContainers(successful_containers);
+//        _requests = requests;
+//        _output_uris = output_uris;
+//        _input_uris = input_uris;
+//    }
 
 //    void LambdaWorkerApp::invokeLambda(double timeout, const std::vector<FilePart>& parts,
 //                                  const URI& base_output_uri,
@@ -1056,40 +1054,6 @@ namespace tuplex {
 
         // dec counter
         callback_ctx->app->decRequests();
-    }
-
-    // this function is deprecated.
-    tuplex::messages::InvocationResponse LambdaWorkerApp::generateResponse() {
-
-        // TODO: save this type of information at the END to _response.
-
-        tuplex::messages::InvocationResponse result;
-
-        // WorkerApp base class fill.
-        fill_response_with_state(result);
-
-        // Lambda specific added messages.
-        result.set_status(tuplex::messages::InvocationResponse_Status_SUCCESS);
-        result.set_type(_messageType);
-
-//        // message specific results
-//        for(const auto& c_info : _invokedContainers) {
-//            auto element = result.add_invokedcontainers();
-//            c_info.fill(element);
-//        }
-
-        for(const auto& r_info : _requests) {
-            auto element = result.add_invokedrequests();
-            r_info.fill(element);
-        }
-
-       // add which outputs from which inputs this query produced
-        for(const auto& uri : _input_uris)
-            result.add_inputuris(uri);
-        for(const auto& uri : _output_uris)
-            result.add_outputuris(uri);
-
-        return result;
     }
 
     void LambdaWorkerApp::lambdaOnFailure(SelfInvokeRequest &request, int statusCode, const std::string &errorName,

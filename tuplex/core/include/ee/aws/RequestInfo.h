@@ -72,7 +72,8 @@ namespace tuplex {
         fast_path_time(0), general_and_interpreter_time(0), compile_time(0), hyper_time(0) {}
 
 #ifdef BUILD_WITH_AWS
-        RequestInfo(const messages::RequestInfo& info) : requestId(info.requestid().c_str()),
+        RequestInfo(const messages::RequestInfo& info) : in_normal(0), in_general(0), in_fallback(0), in_unresolved(0), out_normal(0), out_unresolved(0),
+                                                         fast_path_time(0), general_and_interpreter_time(0), compile_time(0), hyper_time(0), requestId(info.requestid().c_str()),
         containerId(info.containerid()),
         durationInMs(info.durationinms()), billedDurationInMs(info.billeddurationinms()), memorySizeInMb(info.memorysizeinmb()),
         maxMemoryUsedInMb(info.maxmemoryusedinmb()), returnCode(info.returncode()), errorMessage(info.errormessage().c_str()),

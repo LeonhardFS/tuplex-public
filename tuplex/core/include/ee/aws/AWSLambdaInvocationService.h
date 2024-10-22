@@ -98,11 +98,6 @@ namespace tuplex {
         RequestInfo info;
     };
 
-    struct RequestResponsePair {
-        AwsLambdaRequest request;
-        AwsLambdaResponse response;
-    };
-
     class AwsLambdaInvocationService {
     private:
         std::mutex _mutex;
