@@ -3467,6 +3467,8 @@ namespace tuplex {
                         _env.debugPrint(builder, "Details for item found which is not None, but expected None::");
                         _env.printValue(builder, str_val.val, "cJSON object: ");
                         _env.printValue(builder, args.front().val, "key: ");
+                        auto str_item = call_cjson_to_string(builder, item);
+                        _env.printValue(builder, str_item.val, "cJSON item indexed by key: ");
                         // print end.
                         builder.CreateBr(bbDone);
                         builder.SetInsertPoint(bbDone);

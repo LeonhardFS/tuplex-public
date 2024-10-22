@@ -1208,7 +1208,7 @@ namespace tuplex {
             // output whether item is found.
             auto null_i8ptr = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(i8ptrType(ctx)));
             if(out_item_found) {
-                *out_item_found = builder.CreateICmpNE(yyjson_obj, null_i8ptr);
+                *out_item_found = builder.CreateICmpNE(yy_ret_item, null_i8ptr);
             }
 
             set_yyjson_mut_doc(builder, yy_ret_val, yy_doc);
@@ -1712,11 +1712,12 @@ namespace tuplex {
             auto func_parse = getOrInsertFunction(mod, "yyjson_mut_parse", i8ptrType(ctx), i8ptrType(ctx), llvm::Type::getInt64Ty(ctx));
 
             auto func_strlen = strlen_prototype(ctx, mod);
-            auto str_size = builder.CreateAdd(builder.CreateCall(func_strlen, {str_ptr}), llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, 1)));
-
+            // auto str_size = builder.CreateAdd(builder.CreateCall(func_strlen, {str_ptr}), llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, 1)));
+            auto str_len = builder.CreateCall(func_strlen, {str_ptr});
             codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_yyjson_parse");
 
-            auto yy_doc = builder.CreateCall(func_parse, {str_ptr, str_size});
+            // yy wants str len, not str size.
+            auto yy_doc = builder.CreateCall(func_parse, {str_ptr, str_len});
             auto yy_root_object = builder.CreateCall(func_doc_get_root, {yy_doc});
 
             set_yyjson_mut_doc(builder, yy_ret_val, yy_doc); // <-- this may lead to modificaitons if subdict is returned, this should be correct. dict.copy() creates deep copy of elements.
