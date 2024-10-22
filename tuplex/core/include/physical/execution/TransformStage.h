@@ -102,6 +102,8 @@ namespace tuplex {
 
 #ifdef BUILD_WITH_AWS
         std::unique_ptr<messages::TransformStage> to_protobuf() const;
+        // helper to be called after hyperspecialization as well.
+        void fill_schemas_into_protobuf(messages::TransformStage* msg) const;
         static std::unique_ptr<TransformStage> from_protobuf(const messages::TransformStage& msg);
 #endif
 

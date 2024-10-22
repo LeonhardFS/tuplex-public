@@ -1323,6 +1323,32 @@ namespace tuplex {
         return stage;
     }
 
+    void TransformStage::fill_schemas_into_protobuf(messages::TransformStage *msg) const {
+        msg->clear_inputcolumns();
+        for(const auto& col : _inputColumns)
+            msg->add_inputcolumns(col);
+
+        msg->clear_outputcolumns();
+        for(const auto& col : _outputColumns)
+            msg->add_outputcolumns(col);
+
+        msg->set_readschema(_generalCaseReadSchema.getRowType().desc());
+        msg->set_inputschema(_generalCaseInputSchema.getRowType().desc());
+        msg->set_outputschema(_generalCaseOutputSchema.getRowType().desc());
+        msg->set_normalcaseinputschema(_normalCaseInputSchema.getRowType().desc());
+        msg->set_normalcaseoutputschema(_normalCaseOutputSchema.getRowType().desc());
+
+        msg->set_numcolumns(inputColumnCount());
+
+        msg->clear_normalcaseinputcolumnstokeep();
+        for(auto idx : _normalCaseColumnsToKeep)
+            msg->add_normalcaseinputcolumnstokeep(idx);
+
+        msg->clear_generalcaseinputcolumnstokeep();
+        for(auto idx : _generalCaseColumnsToKeep)
+            msg->add_generalcaseinputcolumnstokeep(idx);
+    }
+
     std::unique_ptr<messages::TransformStage> TransformStage::to_protobuf() const {
         auto msg = std::make_unique<messages::TransformStage>();
 
@@ -1339,26 +1365,13 @@ namespace tuplex {
         msg->set_stageserializationmode(messages::SF_JSON);
 #endif
 
-        for(const auto& col : _inputColumns)
-            msg->add_inputcolumns(col);
-        for(const auto& col : _outputColumns)
-            msg->add_outputcolumns(col);
-        msg->set_readschema(_generalCaseReadSchema.getRowType().desc());
-        msg->set_inputschema(_generalCaseInputSchema.getRowType().desc());
-        msg->set_outputschema(_generalCaseOutputSchema.getRowType().desc());
-        msg->set_normalcaseinputschema(_normalCaseInputSchema.getRowType().desc());
-        msg->set_normalcaseoutputschema(_normalCaseOutputSchema.getRowType().desc());
+        fill_schemas_into_protobuf(msg.get());
+
         msg->set_outputdatasetid(_outputDataSetID);
         msg->set_inputnodeid(_inputNodeID);
         msg->set_inputmode(static_cast<messages::EndPointMode>(_inputMode));
         msg->set_outputmode(static_cast<messages::EndPointMode>(_outputMode));
 
-        msg->set_numcolumns(inputColumnCount());
-
-        for(auto idx : _normalCaseColumnsToKeep)
-            msg->add_normalcaseinputcolumnstokeep(idx);
-        for(auto idx : _generalCaseColumnsToKeep)
-            msg->add_generalcaseinputcolumnstokeep(idx);
 //        for(int i = 0; i < _inputColumnsToKeep.size(); ++i) {
 //            if(_inputColumnsToKeep[i])
 //                msg->add_inputcolumnstokeep(i);
@@ -1377,19 +1390,6 @@ namespace tuplex {
             msg->set_allocated_fastpath(_fastCodePath.to_protobuf());
         if(!_slowCodePath.empty())
             msg->set_allocated_slowpath(_slowCodePath.to_protobuf());
-//        if(_encodedData.size() > 0)
-//            msg->set_serialized_stage()
-//        msg->set_funcstagename(_funcStageName);
-//        msg->set_funcmemorywritecallbackname(_funcMemoryWriteCallbackName);
-//        msg->set_funcfilewritecallbackname(_funcFileWriteCallbackName);
-//        msg->set_funchashwritecallbackname(_funcHashWriteCallbackName);
-//        msg->set_funcexceptioncallback(_funcExceptionCallback);
-//        msg->set_funcinitstagename(_initStageFuncName);
-//        msg->set_funcreleasestagename(_releaseStageFuncName);
-//        msg->set_resolverowfunctionname(_resolveRowFunctionName);
-//        msg->set_resolverowwritecallbackname(_resolveRowWriteCallbackName);
-//        msg->set_resolverowexceptioncallbackname(_resolveRowExceptionCallbackName);
-//        msg->set_resolvehashcallbackname(_resolveHashCallbackName);
 
         msg->set_stagenumber(number());
 

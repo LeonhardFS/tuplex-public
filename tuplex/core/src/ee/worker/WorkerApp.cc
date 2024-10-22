@@ -717,6 +717,9 @@ namespace tuplex {
             self_invoke_request.clear_inputuris();
             self_invoke_request.mutable_stage()->clear_invocationcount();
 
+            // Need to update stage parameters from potentially changed tstage.
+            tstage->fill_schemas_into_protobuf(self_invoke_request.mutable_stage());
+
             // Disable hyper as well (there's code, no need to respecialize).
             if(useHyperSpecialization(self_invoke_request))
                 logger().info("Original requests uses hyper-specialization, disabling for recursive, self-invoke requests.");
