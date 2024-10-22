@@ -349,6 +349,12 @@ def run_with_tuplex_on_lambda(args):
     input_pattern = S3_DEFAULT_INPUT_PATTERN
     aws_scratch_dir = S3_DEFAULT_SCRATCH_DIR
 
+
+    # Check if s3 output path is given, if so use that one.
+    if args.output_path.startswith('s3://'):
+        output_path = args.output_path
+    logging.info(f"Storing results in S3 output path: {output_path}")
+
     if not scratch_dir:
         raise ValueError('No scratch directory specified')
 

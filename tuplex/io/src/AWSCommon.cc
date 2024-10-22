@@ -196,8 +196,7 @@ namespace tuplex {
     }
 
     void shutdownAWS() {
-
-        // remove S3 File System
+        // Removes S3 File System.
         VirtualFileSystem::removeS3FileSystem();
         if(isAWSInitialized)
             Aws::ShutdownAPI(aws_options);
