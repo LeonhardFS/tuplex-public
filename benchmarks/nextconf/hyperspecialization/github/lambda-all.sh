@@ -94,7 +94,7 @@ run_benchmarks() {
 
 # Run all benchmarks once (run 0 is validation run)
 # run_benchmarks 0
-
+#
 # validate_benchmarks
 
 ## Run a few benchmarks.
@@ -108,8 +108,8 @@ run_benchmarks() {
 
 # Create plots necessary.
 
-# First, combine results into single ndjson file
-#./combine-results.py ${RESULT_DIR}/results/ ${RESULT_DIR}/combined.ndjson
+# First, combine results into single csv file
+./lambda-combine-results.py ${RESULT_DIR}/results/ ${RESULT_DIR}/combined.csv
 
 ## Second, run plots
 #./make-plots.py ${RESULT_DIR}/combined.ndjson ${RESULT_DIR}/plots/
