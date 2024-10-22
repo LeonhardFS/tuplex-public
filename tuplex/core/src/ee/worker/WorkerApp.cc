@@ -407,7 +407,7 @@ namespace tuplex {
 
         auto parts = partsFromMessage(req);
 
-        logger().debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Decoding transform stage from prootbuf.");
+        logger().debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Decoding transform stage from protobuf.");
 
         // only transform stage yet supported, in the future support other stages as well!
         tstage = std::move(TransformStage::from_protobuf(req.stage()));

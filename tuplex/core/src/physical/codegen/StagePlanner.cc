@@ -2212,7 +2212,6 @@ namespace tuplex {
         }
 
 
-
         ctx.fastPathContext = path_ctx;
 
         auto generalCaseInputRowType = ctx.slowPathContext.inputSchema.getRowType();
@@ -2267,15 +2266,20 @@ namespace tuplex {
 
         // update schemas!
         stage->_fastCodePath = fast_code_path;
-        stage->_normalCaseInputSchema = Schema(stage->_normalCaseInputSchema.getMemoryLayout(), path_ctx.inputSchema.getRowType());
+
+        auto stage_normal_case_before = stage->_normalCaseInputSchema.getRowType();
+        stage->_normalCaseInputSchema = Schema(stage->_normalCaseInputSchema.getMemoryLayout(), ctx.fastPathContext.inputSchema.getRowType());
+        logger.info("Transform stage row types with hyperspecialization:\n-- before: " + stage_normal_case_before.desc() + "\n-- after: " + stage->normalCaseInputSchema().getRowType().desc());
 
         // the output schema (str in tocsv) case is not finalized yet...
         // stage->_normalCaseOutputSchema = Schema(stage->_normalCaseOutputSchema.getMemoryLayout(), path_ctx.outputSchema.getRowType());
         auto after_hyper_output_row_type = ctx.fastPathContext.inputNode->getOutputSchema().getRowType();
+        logger.info("Input node output type after hyperspecialization: " + after_hyper_output_row_type.desc());
         size_t num_input_after_hyper = after_hyper_output_row_type.isRowType() ? after_hyper_output_row_type.get_column_count() : after_hyper_output_row_type.parameters().size();
-        logger.info("number of input columns after hyperspecialization: " + std::to_string(num_input_after_hyper));
+        logger.info("Number of input columns after hyperspecialization: " + std::to_string(num_input_after_hyper));
 
-        logger.info("generated code in " + std::to_string(timer.time()) + "s");
+        logger.info("Generated code in " + std::to_string(timer.time()) + "s");
+
         // can then compile everything, hooray!
         return true;
     }
