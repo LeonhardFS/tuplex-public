@@ -93,9 +93,9 @@ run_benchmarks() {
 }
 
 # Run all benchmarks once (run 0 is validation run)
-# run_benchmarks 0
-#
-# validate_benchmarks
+run_benchmarks 0
+
+validate_benchmarks
 
 ## Run a few benchmarks.
 #NUM_RUNS=${NUM_RUNS:-5}

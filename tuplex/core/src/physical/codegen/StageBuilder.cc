@@ -1236,7 +1236,6 @@ namespace tuplex {
 
             auto readSchema = pathContext.readSchema.getRowType(); // what to read from files (before projection pushdown)
             auto inSchema = pathContext.inputSchema.getRowType(); // with what to start the pipeline (after projection pushdown)
-            auto resolveInSchema = inSchema;
             auto outSchema = pathContext.outputSchema.getRowType(); // what to output from pipeline
 
             auto env = make_shared<codegen::LLVMEnvironment>(env_name);
@@ -1261,21 +1260,12 @@ namespace tuplex {
             auto isArgs = codegen::mapLLVMFunctionArgs(slowPathInitStageFunc,
                                                                  {"num_args", "hashmaps", "null_buckets"});
 
-            // Note: this here is quite confusing, because for map operator when tuples are needed, this will return not the row schema but the UDF input schema =? fix that
-            // @TODO: fix getInputSchema for MapOperator!!!
-            inSchema = _inputSchema.getRowType(); // old: _operators.front()->getInputSchema().getRowType();
-//            string funcSlowPathName = "processViaSlowPath_Stage_" + to_string(number());
-//            string funcResolveRowName = "resolveSingleRow_Stage_" + to_string(number());
-//            string slowPathMemoryWriteCallback = "memOutViaSlowPath_Stage_" + to_string(number());
-//            string slowPathHashWriteCallback = "hashOutViaSlowPath_Stage_" + to_string(number());
-//            string slowPathExceptionCallback = "exceptionOutViaSlowPath_Stage_" + to_string(number());
-
-            logger.debug("input schema for general case is: " + resolveInSchema.desc());
+            logger.debug("input schema for general case is: " + inSchema.desc());
             logger.debug("intermediate type for general case is: " + intermediateType(pathContext.operators).desc());
 
             std::cout.flush();
 
-            auto slowPip = std::make_shared<codegen::PipelineBuilder>(env, resolveInSchema, intermediateType(pathContext.operators), ret.funcStageName/*funcSlowPathName*/);
+            auto slowPip = std::make_shared<codegen::PipelineBuilder>(env, inSchema, intermediateType(pathContext.operators), ret.funcStageName/*funcSlowPathName*/);
             int global_var_cnt = 0;
             auto num_operators = pathContext.operators.size();
             bool resolvers_found = false;
@@ -1872,6 +1862,10 @@ namespace tuplex {
                 // actual code generation happens below in separate threads.
                 stage->_generalCaseColumnsToKeep = boolArrayToIndices<unsigned>(codeGenerationContext.slowPathContext.columnsToRead);
 
+
+                // Before generating slow path, store correct input schema.
+                _inputSchema = codeGenerationContext.slowPathContext.inputSchema;
+
                 // kick off slow path generation
                 std::shared_future<TransformStage::StageCodePath> slowCodePath_f = std::async(std::launch::async, [this,
                                                                                                                    &codeGenerationContext,
@@ -2124,12 +2118,12 @@ namespace tuplex {
                         path_ctx.checks = planner.checks();
 
                         // output schema: the schema this stage yields ultimately after processing
-                        // input schema: the (optimized/projected, normal case) input schema this stage reads from (CSV, Tuplex, ...)
+                        // input schema: the general case input schema this stage reads from (CSV, Tuplex, ...)
                         // read schema: the schema to read from (specialized) but unprojected.
                         if(path_ctx.inputNode->type() == LogicalOperatorType::FILEINPUT) {
                             auto fop = std::dynamic_pointer_cast<FileInputOperator>(path_ctx.inputNode);
-                            path_ctx.inputSchema = fop->getOptimizedOutputSchema();
-                            path_ctx.readSchema = fop->getOptimizedInputSchema(); // when null-value opt is used, then this is different! hence apply!
+                            path_ctx.inputSchema = fop->getOutputSchema();
+                            path_ctx.readSchema = fop->getInputSchema(); // when null-value opt is used, then this is different! hence apply!
                             path_ctx.columnsToRead = fop->columnsToSerialize();
                             // print out columns & types!
                             auto col_types = path_ctx.inputSchema.getRowType().isRowType() ? path_ctx.inputSchema.getRowType().get_column_types() : path_ctx.inputSchema.getRowType().parameters();
@@ -2150,6 +2144,9 @@ namespace tuplex {
                     // if no separate fast path is generated, use as normal-case the current path.
                     if(!gen_fast_code)
                         normalCaseInputRowType = path_ctx.inputSchema.getRowType();
+
+                    // Before generating slow path, store correct input schema.
+                    _inputSchema = path_ctx.inputSchema;
 
                     // mapping will be intact, because slow path won't be affected.
                     stage->_slowCodePath = generateResolveCodePath(ctx, path_ctx, normalCaseInputRowType, ctx.normalToGeneralMapping);

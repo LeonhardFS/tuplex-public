@@ -3876,7 +3876,7 @@ namespace tuplex {
     bool WorkerApp::adjust_environment(const std::unordered_map<std::string, std::string> &env) {
 
         // check if AWS keys are present, then re-register S3 filesystem using new keys.
-        if(env.find("AWS_ENDPOINT_URL_S3") != env.end()) {
+        if(env.find("AWS_ENDPOINT_URL_S3") != env.end() && !env.at("AWS_ENDPOINT_URL_S3").empty()) {
             // Update registered S3 file system.
             auto endpoint = env.at("AWS_ENDPOINT_URL_S3");
             auto secret_key = env.at("AWS_SECRET_ACCESS_KEY");

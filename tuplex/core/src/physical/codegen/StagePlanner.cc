@@ -779,6 +779,116 @@ namespace tuplex {
             return vec_prepend(_inputNode, _operators);
         }
 
+        std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::applyLogicalOptimizer() {
+            using namespace std;
+
+            auto& logger = Logger::instance().logger("specializing stage optimizer");
+
+            if(!_inputNode || !_inputNode->isDataSource()) {
+                logger.info("Skipping apply-logical-optimizer optimization because no data source found.");
+                // no change.
+                return vec_prepend(_inputNode, _operators);
+            }
+
+            auto opt_ops = vec_prepend(_inputNode, _operators);
+
+            // Init logical optimizer.
+            // Data source may require fewer columns to get accessed.
+            //    --> perform projection pushdown and then eliminate as many checks as possible.
+            auto accessed_columns_before_opt = get_accessed_columns(opt_ops);
+
+            // basically use just on this stage the logical optimization pipeline
+            auto logical_opt = std::make_unique<LogicalOptimizer>(options());
+
+            // logically optimize pipeline, this performs reordering/projection pushdown etc.
+            opt_ops = logical_opt->optimize(opt_ops, true); // inplace optimization
+
+            std::vector<size_t> accessed_columns = get_accessed_columns(opt_ops);
+
+            // so accCols should be sorted, now map to columns. Then check the position in accColsBefore
+            // => look up what the original cols were!
+            // => then push that down to reader/input node!
+            std::vector<size_t> out_accessed_columns;
+            std::vector<size_t> out_accessed_columns_before_opt;
+            // project each when input op present
+            if(_inputNode && _inputNode->type() == LogicalOperatorType::FILEINPUT) {
+                auto fop = std::dynamic_pointer_cast<FileInputOperator>(_inputNode);
+                for(const auto& idx : accessed_columns)
+                    out_accessed_columns.emplace_back(fop->projectReadIndex(idx));
+                for(const auto& idx : accessed_columns_before_opt)
+                    out_accessed_columns_before_opt.emplace_back(fop->projectReadIndex(idx));
+            } else {
+                out_accessed_columns = accessed_columns;
+                out_accessed_columns_before_opt = accessed_columns_before_opt;
+            }
+            _normalToGeneralMapping = createNormalToGeneralMapping(out_accessed_columns, out_accessed_columns_before_opt);
+
+            {
+                // print out new chain of types
+                std::stringstream ss;
+                ss<<"Pipeline (types):\n";
+
+                for(const auto& op : opt_ops) {
+                    ss<<op->name()<<":\n";
+                    ss<<"  in: "<<op->getInputSchema().getRowType().desc()<<"\n";
+                    ss<<" out: "<<op->getOutputSchema().getRowType().desc()<<"\n";
+                    ss<<"  in columns: "<<op->inputColumns()<<"\n";
+                    ss<<" out columns: "<<op->columns()<<"\n";
+                    ss<<"----\n";
+                }
+
+                logger.debug(ss.str());
+            }
+
+            // Project checks (because columns may have been removed)
+            // check which input columns are required and remove checks. --> this requires to use ORIGINAL indices.
+            // --> this requires pushdown to work before!
+            auto acc_cols = accessed_columns_before_opt;
+            std::vector<NormalCaseCheck> projected_checks;
+
+            // reproject checks, get for this actual input columns of operator.
+            auto current_input_columns = opt_ops.front()->inputColumns();
+            auto checks = _checks;
+            for(auto check : checks) {
+                if(!check.colNames.empty()) {
+                    check.colNos.clear();
+                    for(auto name : check.colNames) {
+                        check.colNos.push_back(indexInVector(name, current_input_columns));
+                    }
+                }
+                projected_checks.push_back(check);
+            }
+
+            logger.debug("normal case detection requires "
+                         + pluralize(checks.size(), "check")
+                         + ", given current logical optimizations "
+                         + pluralize(projected_checks.size(), "check")
+                         + " are required to detect normal case.");
+
+
+            {
+                std::stringstream ss;
+                ss<<"pipeline post-logical optimization requires now only "<<pluralize(accessed_columns.size(), "column");
+                ss<<" (general: "<<pluralize(accessed_columns_before_opt.size(), "column")<<")";
+                ss<<", reduced checks from "<<checks.size()<<" to "<<projected_checks.size();
+                logger.debug(ss.str());
+
+                ss.str("normal col to general col mapping:\n");
+                for(auto kv : _normalToGeneralMapping) {
+                    ss<<kv.first<<" -> "<<kv.second<<"\n";
+                }
+                logger.debug(ss.str());
+            }
+
+            // Add all projected checks.
+            _checks.clear();
+            for(const auto& check : projected_checks)
+                _checks.push_back(check);
+
+            // no change.
+            return vec_prepend(_inputNode, _operators);
+        }
+
         python::Type simplify_constant_single_types(const python::Type& tuple_type) {
             assert(tuple_type.isTupleType());
 
@@ -1479,6 +1589,15 @@ namespace tuplex {
                                         : optimized_operators;
             }
 
+
+            // All optimizations were carried out, if this stage has as input operator a source, perform logical optimization step as last one.
+            if(_inputNode->isDataSource()) {
+                optimized_operators = applyLogicalOptimizer();
+                _inputNode = _inputNode ? optimized_operators.front() : nullptr;
+                _operators = _inputNode ? vector<shared_ptr<LogicalOperator>>{optimized_operators.begin() + 1,
+                                                                              optimized_operators.end()}
+                                        : optimized_operators;
+            }
 
             // can filters get pushed down even further? => check! constant folding may remove code!
         }

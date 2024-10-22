@@ -3455,6 +3455,24 @@ namespace tuplex {
                         auto item_isnull = call_cjson_isnull(builder, item);
                         auto item_not_null = _env.i1neg(builder, item_isnull);
                         auto item_found_but_not_null = builder.CreateAnd(item_found, item_not_null);
+
+                        // Debug: add if branch to display item.
+#ifndef NDEBUG
+                        auto bbPrint = llvm::BasicBlock::Create(_env.getContext(), "print_generic_dict_get", builder.GetInsertBlock()->getParent());
+                        auto bbDone = llvm::BasicBlock::Create(_env.getContext(), "print_done", builder.GetInsertBlock()->getParent());
+                        builder.CreateCondBr(item_found_but_not_null, bbPrint, bbDone);
+                        builder.SetInsertPoint(bbPrint);
+                        // print start.
+                        auto str_val = call_cjson_to_string(builder, caller.val);
+                        _env.debugPrint(builder, "Details for item found which is not None, but expected None::");
+                        _env.printValue(builder, str_val.val, "cJSON object: ");
+                        _env.printValue(builder, args.front().val, "key: ");
+                        // print end.
+                        builder.CreateBr(bbDone);
+                        builder.SetInsertPoint(bbDone);
+                        lfb.setLastBlock(bbDone);
+#endif
+
                         lfb.addException(builder, ExceptionCode::NORMALCASEVIOLATION, item_found_but_not_null, "item found which is not None, but expected None.");
                         return SerializableValue(nullptr, nullptr, _env.i1Const(true)); // <-- return None.
                     }

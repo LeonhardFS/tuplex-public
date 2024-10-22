@@ -333,6 +333,12 @@ namespace tuplex {
              */
             std::vector<std::shared_ptr<LogicalOperator>> simplifyLargeStructs(size_t max_field_count);
 
+            /*!
+             * optimization pass to apply the Tuplex logical optimizer to the current state. Only applicable if inputNode is data source.
+             * @return optimized operators.
+             */
+            std::vector<std::shared_ptr<LogicalOperator>> applyLogicalOptimizer();
+
             bool retypeOperators(const std::vector<Row>& sample,
                                  const std::vector<std::string>& sample_columns,
                                  bool use_sample);

@@ -958,6 +958,10 @@ namespace tuplex {
 
         co.set("tuplex.resolveWithInterpreterOnly", "true");
 
+        // use hyper specialization here.
+        co.set("tuplex.experimental.hyperspecialization", "true");
+        cout<<"Using hyperspecialization: "<<std::boolalpha<<co.USE_EXPERIMENTAL_HYPERSPECIALIZATION()<<endl;
+
         // create context according to settings
         Context ctx(co);
         runtime::init(co.RUNTIME_LIBRARY().toPath());
