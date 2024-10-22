@@ -621,3 +621,38 @@ TEST_F(LambdaTest, S3Sampling) {
 
     delete [] buffer;
 }
+
+TEST_F(LambdaTest, GlobalSparseStructs) {
+    // Check why global sparse structs does not sparsify.
+
+    using namespace std;
+    using namespace tuplex;
+
+    auto inputPattern = "s3://tuplex-public/data/github_daily/*.json";
+    cout<<"Using input pattern: "<<inputPattern<<endl;
+    auto s3_root = s3PathForTest();
+    auto outputPath = s3_root + "/output";
+
+    cout<<"Creating Lambda context."<<endl;
+    std::unordered_map<std::string, std::string> conf;
+    conf["tuplex.aws.lambdaInvocationStrategy"] = "tree";
+    conf["tuplex.aws.maxConcurrency"] = "100"; // use 100 as maximum parallelism.
+    conf["tuplex.experimental.minimumSizeToSpecialize"] = "0"; // disable minimum size.
+
+    // the object code interchange fails with segfaults when using the libc preloader...
+    conf["tuplex.experimental.interchangeWithObjectFiles"] = "false";
+
+    // disable hyper specialization
+    conf["tuplex.experimental.hyperspecialization"] = "false";
+
+    // enable struct optimizations
+    conf["tuplex.optimizer.sparsifyStructs"] = "true";
+    conf["tuplex.optimizer.simplifyLargeStructs"] = "true";
+    conf["tuplex.optimizer.simplifyLargeStructs.threshold"] = "20";
+
+
+    auto ctx = create_lambda_context(conf);
+
+    cout<<"Starting Github (daily) pipeline."<<endl;
+    github_pipeline(ctx, inputPattern, outputPath);
+}

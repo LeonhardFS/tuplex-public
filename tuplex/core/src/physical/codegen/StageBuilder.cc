@@ -1838,6 +1838,10 @@ namespace tuplex {
                     codeGenerationContext.fastPathContext = specializePipeline(codeGenerationContext.slowPathContext,
                                                                                codeGenerationContext.normalToGeneralMapping,
                                                                                conf);
+
+                    // Update internals (to fill stage correctly).
+                    _normalCaseInputSchema = Schema(_normalCaseInputSchema.getMemoryLayout(), codeGenerationContext.fastPathContext.inputSchema.getRowType());
+                    _normalCaseOutputSchema = Schema(_normalCaseOutputSchema.getMemoryLayout(), codeGenerationContext.fastPathContext.outputSchema.getRowType());
                 } else
                     codeGenerationContext.fastPathContext = getGeneralPathContext();
 
@@ -1926,7 +1930,8 @@ namespace tuplex {
                 stage->_generalHashOutputBucketType = codeGenerationContext.slowPathContext.hashBucketType(hash_key_cols);
             }
 
-            // fill parameters from builder
+            // Fill parameters from builder.
+            // !!! Make sure to update members of Stagebuilder/this before calling this function. !!!
             fillStageParameters(stage);
 
             // DEBUG, write out generated trafo code...
