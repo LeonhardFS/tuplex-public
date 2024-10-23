@@ -61,6 +61,8 @@ mkdir -p $LOCAL_BUILD_FOLDER
 
 echo "starting docker (this might take a while...)"
 
+# Use -DLOG_VERBOSITY=3 according to https://github.com/awslabs/aws-lambda-cpp/blob/master/README.md to enable detailed logs in Release build.
+
 # start docker & volume & create awslambda target with correct settings
 # the python version to use for lambda is in /opt/lambda-python/bin/python3.8
 # In order to kick-off the build within the docker, use the following two commands:

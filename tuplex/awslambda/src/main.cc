@@ -108,7 +108,7 @@ int main() {
     Logger::init({std::make_shared<spdlog::sinks::ansicolor_stdout_sink_mt>(), log_sink});
 
     // Install SIGSEV handler to throw C++ exception which is caught in handler.
-    // tuplex::SignalHandling sh; // <-- tuplex modified version of original backward signalhandling.
+    tuplex::SignalHandling sh; // <-- tuplex modified version of original backward signalhandling.
 
     // initialize LambdaWorkerApp
     init_app();

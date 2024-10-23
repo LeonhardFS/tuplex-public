@@ -865,9 +865,6 @@ TEST(LambdaAppLocalTest, InvalidS3Access) {
     auto status = google::protobuf::util::MessageToJsonString(request, &json_str);
     EXPECT_TRUE(status.ok());
 
-    python::lockGIL();
-    python::closeInterpreter();
-
     // Create LambdaWorkerApp and invoke (locally) to Lambda backend - this allows to easily debug.
     auto app = std::make_shared<LambdaWorkerApp>();
     app->WorkerApp::globalInit(false);
@@ -885,8 +882,8 @@ TEST(LambdaAppLocalTest, InvalidS3Access) {
 
     app->WorkerApp::shutdown();
 
-    python::lockGIL();
-    python::closeInterpreter();
+    // else, endless loop.
+    shutdownAWS();
 }
 
 // Notes: https://guihao-liang.github.io/2020/04/12/aws-s3-retry
