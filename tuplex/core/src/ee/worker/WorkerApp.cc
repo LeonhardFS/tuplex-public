@@ -1124,7 +1124,9 @@ namespace tuplex {
         delete [] processErrorMessages;
         if(failed) {
             // save invoke message to scratch
-            storeInvokeRequest();
+#ifndef NDEBUG
+             storeInvokeRequest();
+#endif
             _response.set_status(messages::InvocationResponse_Status::InvocationResponse_Status_ERROR);
             _response.set_errormessage(err_msg);
             return WORKER_ERROR_PIPELINE_FAILED;
