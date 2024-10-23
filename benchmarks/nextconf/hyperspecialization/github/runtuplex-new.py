@@ -249,7 +249,7 @@ def run_with_tuplex(args):
             "backend": "worker",
             "experimental.worker.numWorkers": num_processes,
             "experimental.worker.workerPath": args.tuplex_worker_path,
-            "aws.lambdaTimeout": 900,  # maximum allowed is 900s!
+            "aws.lambdaTimeout": 120,  # maximum allowed is 900s!
             "aws.httpThreadCount": 410,
             "aws.maxConcurrency": 410,
             'sample.maxDetectionMemory': '32MB',

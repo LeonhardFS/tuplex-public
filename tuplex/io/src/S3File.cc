@@ -114,6 +114,7 @@ namespace tuplex {
                 if(!outcome.IsSuccess()) {
                     MessageHandler& logger = Logger::instance().logger("s3fs");
                     auto err_msg = outcome_error_message(outcome, _s3fs._config, _uri.toString());
+                    err_msg += "\nrequestPayer: " + boolToString(_requestPayer == Aws::S3::Model::RequestPayer::requester) + " isAmazon: " + boolToString(_s3fs.isAmazon()) + "\n";
                     logger.error(err_msg);
                     throw s3exception(err_msg, __LINE__, __FILE__);
                 }

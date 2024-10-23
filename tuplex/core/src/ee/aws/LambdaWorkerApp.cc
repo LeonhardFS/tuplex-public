@@ -371,6 +371,17 @@ namespace tuplex {
         auto region = Aws::Environment::GetEnv("AWS_REGION");
         auto functionName = Aws::Environment::GetEnv("AWS_LAMBDA_FUNCTION_NAME");
 
+        // Print AWS variables cf. https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
+        {
+
+            auto size_in_mb = Aws::Environment::GetEnv("AWS_LAMBDA_FUNCTION_MEMORY_SIZE");
+            auto version = Aws::Environment::GetEnv("AWS_LAMBDA_FUNCTION_VERSION");
+            auto init_type = Aws::Environment::GetEnv("AWS_LAMBDA_INITIALIZATION_TYPE");
+            std::stringstream ss;
+            ss<<"START Lambda (name: "<<functionName<<", region: "<<region<<", version: "<<version<<", "<<size_in_mb<<"MB, type: "<<init_type<<")";
+            logger().info(ss.str());
+        }
+
         _functionName = functionName.c_str();
 
         _credentials.access_key = access_key;

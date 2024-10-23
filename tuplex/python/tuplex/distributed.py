@@ -327,10 +327,12 @@ def upload_lambda(iam_client, lambda_client, lambda_function_name, lambda_role,
                 retries_left = 0
                 break
             except Exception as exc:
-                if 'The role defined for the function cannot be assumed by Lambda.' in exc:
+                if isinstance(exc, lambda_client.exceptions.InvalidParameterValueException):
                     current_delay = 2 ** (max_retries - retries_left) * base_delay
                     logging.info(f"Role defined could not yet be assumed by Lambda, retrying upload to/from S3 after delay of {current_delay}ms.")
                     time.sleep(current_delay / 1000.0)
+                    retries_left -= 1
+                    continue
                 else:
                     logging.error('Failed with: {}'.format(type(e)))
                     logging.error('Details: {}'.format(str(e)[:2048]))
@@ -339,10 +341,10 @@ def upload_lambda(iam_client, lambda_client, lambda_function_name, lambda_role,
                     s3_client.delete_object(Bucket=s3_bucket, Key=s3_key_obj)
                     logging.info('Removed {} from S3'.format(s3_target_uri))
                     raise exc
-
-            # delete S3 file from scratch
-            s3_client.delete_object(Bucket=s3_bucket, Key=s3_key_obj)
-            logging.info('Removed {} from S3'.format(s3_target_uri))
+            finally:
+                # delete S3 file from scratch
+                s3_client.delete_object(Bucket=s3_bucket, Key=s3_key_obj)
+                logging.info('Removed {} from S3'.format(s3_target_uri))
 
     # print out deployment details
     logging.info('Lambda function {} deployed (MemorySize={}MB, Timeout={}).'.format(response['FunctionName'],
