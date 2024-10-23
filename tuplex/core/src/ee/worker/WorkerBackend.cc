@@ -131,7 +131,7 @@ namespace tuplex {
             }
             logger().info("Debug files written (" + pluralize(requests.size(), "file") + ").");
 #endif
-            nlohmann::json stats_array;
+            nlohmann::json responses_array;
             nlohmann::json req_array;
             size_t total_input_rows = 0;
             size_t total_num_output_rows = 0;
@@ -147,17 +147,17 @@ namespace tuplex {
             } else {
                 // actually process requests.
                 logger().info("Start processing " + pluralize(requests.size(), "request") + ".");
-                processRequestsWithProcessPool(requests, &stats_array, &req_array, &total_input_rows, &total_num_output_rows, num_processes);
+                processRequestsWithProcessPool(requests, &responses_array, &req_array, &total_input_rows, &total_num_output_rows, num_processes);
 
                 logger().info("Total input row count: " + std::to_string(total_input_rows));
                 logger().info("Total output row count: " + std::to_string(total_num_output_rows));
 
                 // dump
-                logger().info("JSON:\n" + stats_array.dump(2));
+                logger().info("JSON:\n" + responses_array.dump(2));
 
                 // write output to file
                 nlohmann::json j_all;
-                j_all["responses"] = stats_array;
+                j_all["responses"] = responses_array;
                 j_all["requests"] = req_array;
                 j_all["total_input_row_count"] = total_input_rows;
                 auto job_uri = URI("worker_app_job.json");
@@ -171,9 +171,9 @@ namespace tuplex {
     }
 
     void WorkerBackend::processRequestsInline(const std::vector<messages::InvocationRequest> &requests,
-                                              nlohmann::json *out_stats_array, nlohmann::json *out_req_array,
+                                              nlohmann::json *out_resp_array, nlohmann::json *out_req_array,
                                               size_t *out_total_input_rows, size_t *out_total_num_output_rows) const {
-        auto stats_array = nlohmann::json::array();
+        auto resp_array = nlohmann::json::array();
         auto req_array= nlohmann::json::array();
         auto total_input_rows= 0;
         auto total_num_output_rows= 0;// process using local app
@@ -218,7 +218,15 @@ namespace tuplex {
             auto j_req = nlohmann::json::parse(json_buf);
             j["request"] = req.inputuris();
             j["stats"] = j_stats;
-            stats_array.push_back(j);
+            //stats_array.push_back(j);
+
+            // save response instead.
+            auto resp = app->response();
+            std::string str_response;
+            google::protobuf::util::MessageToJsonString(resp, &str_response);
+            auto j_resp = nlohmann::json::parse(str_response);
+            resp_array.push_back(j_resp);
+
             total_num_output_rows += j_stats["output"]["normal"].get<std::size_t>() + j_stats["output"]["except"].get<std::size_t>();
             total_input_rows += j_stats["input"]["total_input_row_count"].get<std::size_t>();
             req_array.push_back(j_req);
@@ -236,8 +244,8 @@ namespace tuplex {
         // output
         if(out_req_array)
             *out_req_array = req_array;
-        if(out_stats_array)
-            *out_stats_array = stats_array;
+        if(out_resp_array)
+            *out_resp_array = resp_array;
         if(out_total_input_rows)
             *out_total_input_rows = total_input_rows;
         if(out_total_num_output_rows)
@@ -428,6 +436,9 @@ namespace tuplex {
            processRequestsInline(requests, out_stats_array, out_req_array, out_total_input_rows, out_total_output_rows);
            return;
         }
+
+
+        throw std::runtime_error("TODO: need to update stats array to response array here.");
 
         {
             std::stringstream ss;

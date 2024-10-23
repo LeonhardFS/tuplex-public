@@ -116,7 +116,17 @@ namespace tuplex {
 
             double cost;
 
-            JobInfo() {}
+            JobInfo() { reset(); }
+
+            inline void reset() {
+                total_input_normal_path = 0;
+                total_input_general_path= 0;
+                total_input_fallback_path = 0;
+                total_input_unresolved = 0;
+                total_output_rows = 0;
+                total_output_exceptions = 0;
+                cost =0.0;
+            }
         };
 
         JobInfo _info;

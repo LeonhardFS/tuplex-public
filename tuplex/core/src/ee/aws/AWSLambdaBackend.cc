@@ -550,7 +550,7 @@ namespace tuplex {
         // Recursive invocations? Add them too.
         if(resp.response.invokedrequests_size() > 0) {
             for(auto info : resp.response.invokedrequests()) {
-                addBilling(info.billeddurationinms() * info.memorysizeinmb(), 1);
+                addBilling(static_cast<size_t>(info.billeddurationinms()) * static_cast<size_t>(info.memorysizeinmb()), 1);
             }
         }
 
@@ -2281,7 +2281,7 @@ namespace tuplex {
 
                 ss << ",\"invoked_requests\":[";
                 RequestInfo r_info;
-                for (unsigned i = 0; i < task.response.invokedrequests_size(); ++i) {
+                for (int i = 0; i < task.response.invokedrequests_size(); ++i) {
                     r_info = task.response.invokedrequests(i);
                     r_info.fillInFromResponse(task.response.invokedresponses(i));
                     ss << r_info.asJSON();
@@ -2318,6 +2318,20 @@ namespace tuplex {
             for (unsigned i = 0; i < _tasks.size(); ++i) {
                 auto &info = _tasks[i].info;
                 ss << info.asJSON();
+                if (i != _tasks.size() - 1)
+                    ss << ",";
+            }
+        }
+        ss << "]";
+
+        // Dump all responses (full data for analysis).
+        ss << ",\"responses\":[";
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+            for (unsigned i = 0; i < _tasks.size(); ++i) {
+                std::string response_as_str;
+                google::protobuf::util::MessageToJsonString(_tasks[i].response, &response_as_str);
+                ss << response_as_str;
                 if (i != _tasks.size() - 1)
                     ss << ",";
             }
@@ -2561,6 +2575,8 @@ namespace tuplex {
 
         // reset billing
         resetBilling();
+
+        _info.reset();
 
         // other reset? @TODO.
     }

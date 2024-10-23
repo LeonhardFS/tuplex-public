@@ -119,7 +119,7 @@ run_benchmarks() {
 
   echo ">>> Running tuplex on LAMBDA with hyper, generic dicts"
   mode=tuplex-hyper-generic-dicts
-  ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode tuplex --no-hyper --generic-dicts --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
+  ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode tuplex --generic-dicts --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
                             --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
 

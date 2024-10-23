@@ -84,7 +84,7 @@ namespace tuplex {
         URI scratchDir(const std::vector<URI>& hints=std::vector<URI>{});
 
         void
-        processRequestsInline(const std::vector<messages::InvocationRequest> &requests, nlohmann::json *out_stats_array,
+        processRequestsInline(const std::vector<messages::InvocationRequest> &requests, nlohmann::json *out_resp_array,
                               nlohmann::json *out_req_array, size_t *out_total_input_rows, size_t *out_total_num_output_rows) const;
 
         void processRequestsWithProcessPool(std::vector<messages::InvocationRequest> requests,

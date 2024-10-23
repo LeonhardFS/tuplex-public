@@ -320,6 +320,7 @@ namespace tuplex {
 
                             service->invokeAsync(req);
                             service->_numPendingRequests.fetch_add(-1, std::memory_order_release);
+                            return;
                         } else {
                             // no retry left? -> done.
                             lctx->fail(LambdaStatusCode::ERROR_RETRIES_EXHAUSTED, "Lambda timed out after " + msg + " s, no more retries left.");
@@ -331,6 +332,7 @@ namespace tuplex {
 
                         service->invokeAsync(req);
                         service->_numPendingRequests.fetch_add(-1, std::memory_order_release);
+                        return;
                     }
                 } else {
 

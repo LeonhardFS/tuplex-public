@@ -125,7 +125,7 @@ run_benchmarks() {
 
   echo ">>> Running tuplex with hyper, generic dicts"
   mode=tuplex-hyper-generic-dicts
-  ${PYTHON} runtuplex-new.py --mode tuplex --no-hyper --generic-dicts --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
+  ${PYTHON} runtuplex-new.py --mode tuplex --generic-dicts --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
                             --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
                             --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
