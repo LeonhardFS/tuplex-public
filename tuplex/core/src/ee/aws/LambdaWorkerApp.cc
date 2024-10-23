@@ -1315,19 +1315,24 @@ namespace tuplex {
         // Make sure functionName is not empty.
         if(_functionName.empty()) {
             std::string err_msg = "FunctionName not set for Lambda worker, can't start invocation service.";
+            _response.set_status(messages::InvocationResponse_Status::InvocationResponse_Status_ERROR);
             _response.set_errormessage(err_msg);
             logger().error(err_msg);
             return WORKER_ERROR_LAMBDA_CLIENT;
         }
 
         reset_lambda_invocation_service(client);
-        logger().info("Lambda client created, listing functions:");
-        {
-            std::stringstream ss;
-            auto v = list_functions(client, &ss);
-            ss<<"\nFound functions: "<<v<<std::endl;
-            logger().info(ss.str());
-        }
+        logger().info("Lambda client created.");
+        // Default Lambda role created by deploy script does not have lambda:ListFunctions policy enabled.
+        // Therefore, this code will result in an AccessDeniedException. Commented out for now, not really
+        // a purpose to list functions again here.
+        // logger().info("Lambda client created, listing functions:");
+        // {
+        //     std::stringstream ss;
+        //     auto v = list_functions(client, &ss);
+        //     ss<<"\nFound functions: "<<v<<std::endl;
+        //     logger().info(ss.str());
+        // }
 
         // For each part, invoke new message.
         if(req_template.type() != messages::MessageType::MT_TRANSFORM) {

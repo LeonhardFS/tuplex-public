@@ -285,11 +285,12 @@ def upload_lambda(iam_client, lambda_client, lambda_function_name, lambda_role,
                 retries_left = 0
                 break
             except Exception as exc:
-                logging.info(f"Got exception {exc}.")
-                if 'The role defined for the function cannot be assumed by Lambda.' in str(exc):
+                logging.info(f"Got exception: {exc}.")
+                if isinstance(exc, lambda_client.exceptions.InvalidParameterValueException):
                     current_delay = 2 ** (max_retries - retries_left) * base_delay
                     logging.info(f"Role defined could not yet be assumed by Lambda, retrying upload after delay of {current_delay}ms.")
                     time.sleep(current_delay / 1000.0)
+                    retries_left -= 1
                 else:
                     logging.error('Failed with: {}'.format(type(e)))
                     logging.error('Details: {}'.format(str(e)[:2048]))

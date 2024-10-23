@@ -39,10 +39,9 @@ namespace tuplex {
 
         // S3 files can only operate on read xor write mode
         if(_mode & VirtualFileMode::VFS_WRITE && _mode & VirtualFileMode::VFS_READ)
-            throw std::runtime_error("S3 files can't be read/write at the same time");
+            throw s3exception("S3 files can't be read/write at the same time", __LINE__, __FILE__);
 
         _fileUploaded = false;
-
 
 //#ifndef NDEBUG
         //debug:
@@ -116,7 +115,7 @@ namespace tuplex {
                     MessageHandler& logger = Logger::instance().logger("s3fs");
                     auto err_msg = outcome_error_message(outcome, _s3fs._config, _uri.toString());
                     logger.error(err_msg);
-                    throw std::runtime_error(err_msg);
+                    throw s3exception(err_msg, __LINE__, __FILE__);
                 }
                 _s3fs._bytesTransferred += _bufferLength;
             }
@@ -160,7 +159,7 @@ namespace tuplex {
         if(!outcome.IsSuccess()) {
             auto err_msg = outcome_error_message(outcome, _s3fs._config, _uri.toString());
             logger.error(err_msg);
-            throw std::runtime_error(err_msg);
+            throw s3exception(err_msg, __LINE__, __FILE__);
         }
 
         _uploadID = outcome.GetResult().GetUploadId();
@@ -214,7 +213,7 @@ namespace tuplex {
         if(!outcome.IsSuccess()) {
             auto err_msg = outcome_error_message(outcome, _s3fs._config, _uri.toString());
             logger.error(err_msg);
-            throw std::runtime_error(err_msg);
+            throw s3exception(err_msg, __LINE__, __FILE__);
             return false;
         }
 
@@ -262,7 +261,7 @@ namespace tuplex {
         if(!outcome.IsSuccess()) {
             auto err_msg = outcome_error_message(outcome, _s3fs._config, _uri.toString());
             logger.error(err_msg);
-            throw std::runtime_error(err_msg);
+            throw s3exception(err_msg, __LINE__, __FILE__);
         }
     }
 
@@ -321,7 +320,7 @@ namespace tuplex {
 
         // make sure file is not yet uploaded
         if(_fileUploaded) {
-            throw std::runtime_error("file has been already uploaded. Did you call write after close?");
+            throw s3exception("file has been already uploaded. Did you call write after close?", __LINE__, __FILE__);
         }
 
         // skip write
@@ -500,7 +499,7 @@ namespace tuplex {
             MessageHandler& logger = Logger::instance().logger("s3fs");
             auto err_msg = outcome_error_message(get_object_outcome, _s3fs._config, _uri.toString());
             logger.error(err_msg);
-            throw std::runtime_error(err_msg);
+            throw s3exception(err_msg, __LINE__, __FILE__);
         }
 
         if(bytesRead)
@@ -693,7 +692,7 @@ namespace tuplex {
             MessageHandler& logger = Logger::instance().logger("s3fs");
             auto err_msg = outcome_error_message(get_object_outcome, _s3fs._config, _uri.toString());
             logger.error(err_msg);
-            throw std::runtime_error(err_msg);
+            throw s3exception(err_msg, __LINE__, __FILE__);
         }
         return retrievedBytes;
     }

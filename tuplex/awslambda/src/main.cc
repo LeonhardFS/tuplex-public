@@ -41,7 +41,7 @@ static tuplex::messages::InvocationResponse lambda_handler(invocation_request co
 
     // unrecoverable signal?
     if(g_received_unrecoverable_signal) {
-        std::cerr<<"Previous invocation received unrecoverable signal, shutting down this Lambda container via exit(0)."<<std::endl;
+        std::cerr<<"Previous invocation received unrecoverable signal, shutting down this Lambda container via exit(1)."<<std::endl;
         exit(1); // <- shutdown process with code 1
     }
 
@@ -108,7 +108,7 @@ int main() {
     Logger::init({std::make_shared<spdlog::sinks::ansicolor_stdout_sink_mt>(), log_sink});
 
     // Install SIGSEV handler to throw C++ exception which is caught in handler.
-    tuplex::SignalHandling sh; // <-- tuplex modified version of original backward signalhandling.
+    // tuplex::SignalHandling sh; // <-- tuplex modified version of original backward signalhandling.
 
     // initialize LambdaWorkerApp
     init_app();

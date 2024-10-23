@@ -111,7 +111,7 @@ void global_init() {
     std::string secret_key = Aws::Environment::GetEnv("AWS_SECRET_ACCESS_KEY").c_str();
     std::string session_token = Aws::Environment::GetEnv("AWS_SESSION_TOKEN").c_str();
 
-    Logger::instance().defaultLogger().info("AWS credentials: access key: " + access_key + " secret key: " + secret_key + " session token: " + session_token);
+    // Logger::instance().defaultLogger().info("AWS credentials: access key: " + access_key + " secret key: " + secret_key + " session token: " + session_token);
 
     // get region from AWS_REGION env
     auto region = Aws::Environment::GetEnv("AWS_REGION");

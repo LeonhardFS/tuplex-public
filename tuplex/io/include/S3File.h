@@ -21,6 +21,25 @@
 
 namespace tuplex {
 
+    class s3exception : public std::runtime_error {
+    public:
+        s3exception(const std::string& msg, int line_no=-1, const std::string file="") : std::runtime_error(msg) {
+            if(line_no < 0)
+               _message = std::runtime_error::what();
+            else {
+                std::stringstream ss;
+                ss<<file<<":"<<line_no<<" "<<std::runtime_error::what();
+                _message = ss.str();
+            }
+        }
+
+        const char * what() const noexcept override {
+            return _message.c_str();
+        }
+    private:
+        std::string _message;
+    };
+
     // from https://github.com/TileDB-Inc/TileDB/blob/dev/tiledb/sm/filesystem/s3.cc
     /**
      * Return the exception name and error message from the given outcome object.

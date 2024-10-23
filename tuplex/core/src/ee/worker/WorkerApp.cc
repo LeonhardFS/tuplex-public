@@ -18,6 +18,7 @@
 #include <JsonStatistic.h>
 #include <S3FileSystemImpl.h>
 #include <S3Cache.h>
+#include <S3File.h>
 
 namespace tuplex {
 
@@ -763,6 +764,7 @@ namespace tuplex {
                 err<<"Recursive async lambda invocation failed with code "
                    <<rc<<". Aborting request.";
                 auto err_msg = err.str();
+                _response.set_status(messages::InvocationResponse_Status::InvocationResponse_Status_ERROR);
                 _response.set_errormessage(err_msg);
                 logger().error(err_msg);
                 return rc;
@@ -789,6 +791,7 @@ namespace tuplex {
                 err<<"Recursive async lambda invocation failed with code "
                    <<rc<<" while waiting for requests to finish. Aborting request.";
                 auto err_msg = err.str();
+                _response.set_status(messages::InvocationResponse_Status::InvocationResponse_Status_ERROR);
                 _response.set_errormessage(err_msg);
                 logger().error(err_msg);
                 return rc;
@@ -978,6 +981,11 @@ namespace tuplex {
                         break;
                     numInputRowsProcessed += inputRowCount;
                 }
+            } catch(const s3exception& e) {
+                auto err_msg = "S3 exception occurred in single-threaded mode: " + std::string(e.what());
+                logger().error(err_msg);
+                processCodes[0] = WORKER_ERROR_S3;
+                processErrorMessages[0] = err_msg;
             } catch(const std::exception& e) {
                 auto err_msg = "exception occurred in single-threaded mode: " + std::string(e.what());
                 logger().error(err_msg);
@@ -1034,6 +1042,11 @@ namespace tuplex {
                                 break;
                             v_inputRowCount[threadNo] += inputRowCount;
                         }
+                    } catch(const s3exception& e) {
+                        auto err_msg = std::string("exception recorded: ") + e.what();
+                        logger().error(err_msg);
+                        processCodes[threadNo] = WORKER_ERROR_S3;
+                        processErrorMessages[threadNo] = err_msg;
                     } catch(const std::exception& e) {
                         auto err_msg = std::string("exception recorded: ") + e.what();
                         logger().error(err_msg);
@@ -1112,6 +1125,7 @@ namespace tuplex {
         if(failed) {
             // save invoke message to scratch
             storeInvokeRequest();
+            _response.set_status(messages::InvocationResponse_Status::InvocationResponse_Status_ERROR);
             _response.set_errormessage(err_msg);
             return WORKER_ERROR_PIPELINE_FAILED;
         }
@@ -3882,10 +3896,19 @@ namespace tuplex {
 
         // check if AWS keys are present, then re-register S3 filesystem using new keys.
         if(env.find("AWS_ENDPOINT_URL_S3") != env.end() && !env.at("AWS_ENDPOINT_URL_S3").empty()) {
-            // Update registered S3 file system.
-            auto endpoint = env.at("AWS_ENDPOINT_URL_S3");
-            auto secret_key = env.at("AWS_SECRET_ACCESS_KEY");
-            auto access_key = env.at("AWS_ACCESS_KEY_ID");
+            std::string endpoint, secret_key, access_key;
+            try {
+                // Update registered S3 file system.
+                endpoint = env.at("AWS_ENDPOINT_URL_S3");
+                secret_key = env.at("AWS_SECRET_ACCESS_KEY");
+                access_key = env.at("AWS_ACCESS_KEY_ID");
+            } catch (const std::out_of_range& e) {
+                std::vector<std::string> required_keys{"AWS_ENDPOINT_URL_S3", "AWS_SECRET_ACCESS_KEY", "AWS_ACCESS_KEY_ID"};
+                std::stringstream ss;
+                ss<<"To adjust S3 endpoint, must have following keys present: "<<required_keys<<", got exception: "<<e.what();
+                logger().error(ss.str());
+                return false;
+            }
 
             // There may be more than one endpoint supplied. Right now mostly for testing purposes.
             // Find first valid endpoint.

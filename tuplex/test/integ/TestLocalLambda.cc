@@ -813,10 +813,86 @@ INSTANTIATE_TEST_SUITE_P(Blub, ParametrizedLambdaLocalTest, ::testing::Values(st
                                                                               std::unordered_map<std::string, std::string>{std::make_pair("tuplex.resolveWithInterpreterOnly", "true"),
                                                                                                                            std::make_pair("tuplex.experimental.interchangeWithObjectFiles", "true")}));
 
+
+namespace tuplex {
+    inline Context create_mini_worker_context() {
+        auto co = ContextOptions::defaults();
+        co.set("tuplex.backend", "worker");
+        Context ctx(co);
+        runtime::init(co.RUNTIME_LIBRARY().toPath());
+        return ctx;
+    }
+}
+
+TEST(LambdaAppLocalTest, InvalidS3Access) {
+    using namespace std;
+    using namespace tuplex;
+
+    python::initInterpreter();
+    python::unlockGIL();
+
+    // Checks that an invalid S3 access doesn't crash the worker.
+    auto ctx = create_mini_worker_context();
+
+    cout<<"Changing backend to emit requests only."<<endl;
+    ASSERT_TRUE(ctx.backend());
+    auto wb = static_cast<WorkerBackend*>(ctx.backend());
+    wb->setRequestMode(true);
+
+    string input_pattern = "../resources/hyperspecialization/github_daily/2020-10-15.json.sample";
+    string output_path = "./local-dummy";
+
+    cout<<"Starting Github (mini) pipeline."<<endl;
+    github_pipeline(ctx, input_pattern, output_path);
+
+    auto requests = wb->pendingRequests(true);
+
+    EXPECT_EQ(requests.size(), 1);
+    ASSERT_FALSE(requests.empty());
+
+    auto request = requests.front();
+
+    // Overwrite lambda endpoint.
+    // "AWS_ENDPOINT_URL_LAMBDA" -> "http://localhost:8090"
+    request.mutable_env()->insert(make_pair("AWS_ENDPOINT_URL_S3", ""));
+    request.mutable_env()->insert(make_pair("AWS_SECRET_ACCESS_KEY", "abc"));
+    request.mutable_env()->insert(make_pair("AWS_ACCESS_KEY_ID", "123"));
+    request.mutable_env()->at("AWS_ENDPOINT_URL_S3") = "INVALIDURI.xyz"; // invalid S3 endpoint, should result in crash.
+
+    // change input to s3 uri
+    *request.mutable_inputuris(0) = "s3://some-bucket/test.json";
+    string json_str;
+    auto status = google::protobuf::util::MessageToJsonString(request, &json_str);
+    EXPECT_TRUE(status.ok());
+
+    python::lockGIL();
+    python::closeInterpreter();
+
+    // Create LambdaWorkerApp and invoke (locally) to Lambda backend - this allows to easily debug.
+    auto app = std::make_shared<LambdaWorkerApp>();
+    app->WorkerApp::globalInit(false);
+
+    app->setFunctionName("tplxplam");
+
+    auto rc = app->processJSONMessage(json_str);
+    EXPECT_NE(rc, WORKER_OK);
+    auto response = app->response();
+    EXPECT_EQ(response.status(), ::messages::InvocationResponse_Status::InvocationResponse_Status_ERROR);
+    EXPECT_FALSE(response.errormessage().empty());
+    cout<<"Got error message:\n"<<response.errormessage()<<endl;
+
+    auto ret = app->response();
+
+    app->WorkerApp::shutdown();
+
+    python::lockGIL();
+    python::closeInterpreter();
+}
+
 // Notes: https://guihao-liang.github.io/2020/04/12/aws-s3-retry
 
 
-// Notes: could also write direc object code loader (assuming LLVM is buggy):
+// Notes: could also write direct object code loader (assuming LLVM is buggy):
 // https://blog.cloudflare.com/how-to-execute-an-object-file-part-1/
 // https://blog.cloudflare.com/how-to-execute-an-object-file-part-2/
 // https://blog.cloudflare.com/how-to-execute-an-object-file-part-3/

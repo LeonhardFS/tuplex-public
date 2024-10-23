@@ -11,5 +11,5 @@ ADD_ZIP_ARGS="--no-libc --with-upx" ./scripts/create_lambda_zip.sh
 #ADD_ZIP_ARGS="--no-libc" ./scripts/create_lambda_zip.sh
 
 echo "running deploy script..."
-python3.10 deploy.py
+python3.11 deploy.py
 echo "done!"
