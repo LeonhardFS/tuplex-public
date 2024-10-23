@@ -214,8 +214,8 @@ namespace tuplex {
 
         // lambda may be shutdown b.c. of previous bad signal, check for string here.
         // in this case, simply ignore - and reissue query.
-        auto needleI = "Previous invocation recevied unrecoverable signal, shutting down this Lambda container via exit(0)."; // <-- do not correct typo here, this here is correct
-        auto needleII = "Previous invocation received unrecoverable signal, shutting down this Lambda container via exit(0)."; // <-- corrected typo for updated LAMBDA
+        auto needleI = "Previous invocation recevied unrecoverable signal, shutting down this Lambda container via exit(1)."; // <-- do not correct typo here, this here is correct
+        auto needleII = "Previous invocation received unrecoverable signal, shutting down this Lambda container via exit(1)."; // <-- corrected typo for updated LAMBDA
         bool previous_failure_and_worker_shutdown = log.find(needleI) != std::string::npos || log.find(needleII) != std::string::npos;
 
         if(previous_failure_and_worker_shutdown)

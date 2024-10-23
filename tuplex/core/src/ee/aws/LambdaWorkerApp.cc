@@ -1067,20 +1067,175 @@ namespace tuplex {
         callback_ctx->app->decRequests();
     }
 
+    bool is_failed_s3_access_request(int status_code, const std::string& error_message) {
+        // find two needles, if both are contained in the message it's an s3 failure.
+
+        // status code should be 1 (or error_unknown)
+        if(status_code != static_cast<int>(LambdaStatusCode::ERROR_UNKNOWN))
+            return false;
+
+        auto needleI = "The AWS Access Key Id you provided does not exist in our records.";
+        auto needleI_found = error_message.find(needleI) != std::string::npos;
+        auto needleII = "S3 Filesystem error";
+        auto needleII_found = error_message.find(needleII) != std::string::npos;
+
+        return needleI_found & needleII_found;
+
+
+        // a failure message looks like this:
+        // ------------------------------------
+        // [1]: Lambda task failed (s3://tuplex-public/data/github_daily/2020-10-15.json:12354199453-12445448390) [200], details: Got signal 6, traceback:
+        //Stack trace (most recent call last):
+        //#24   Object "", at 0xffffffffffffffff, in
+        //#23   Object "", at 0xe92006, in
+        //#22   Object "/usr/lib64/libc-2.26.so", at 0x7fbfcc60d139, in __libc_start_main
+        //#21   Object "", at 0xcf7586, in
+        //#20   Object "", at 0xfda47d, in
+        //#19   Object "", at 0xe9b9d0, in
+        //#18   Object "", at 0xe9b6ee, in
+        //#17   Object "", at 0xe9b238, in
+        //#16   Object "", at 0xf8ba9f, in
+        //#15   Object "", at 0x141e95c, in
+        //#14   Object "", at 0xfa1913, in
+        //#13   Object "", at 0x14216dd, in
+        //#12   Object "", at 0x141aa36, in
+        //#11   Object "", at 0xfaa107, in
+        //#10   Object "", at 0x1227cf8, in
+        //#9    Object "", at 0x1227537, in
+        //#8    Object "", at 0xa28606, in
+        //#7    Object "/usr/lib64/libgcc_s-7-20180712.so.1", at 0x7fbfcc9a8bbd, in _Unwind_Resume
+        //#6    Object "/usr/lib64/libgcc_s-7-20180712.so.1", at 0x7fbfcc9a839c, in
+        //#5    Object "/usr/lib64/libstdc++.so.6.0.24", at 0x7fbfccf7e7a3, in __gxx_personality_v0
+        //#4    Object "/usr/lib64/libstdc++.so.6.0.24", at 0x7fbfccf7de7e, in
+        //#3    Object "/usr/lib64/libstdc++.so.6.0.24", at 0x7fbfccf7ee85, in
+        //#2    Object "/usr/lib64/libstdc++.so.6.0.24", at 0x7fbfccf810ee, in __gnu_cxx::__verbose_terminate_handler()
+        //#1    Object "/usr/lib64/libc-2.26.so", at 0x7fbfcc621147, in abort
+        //#0    Object "/usr/lib64/libc-2.26.so", at 0x7fbfcc61fca0, in raise
+        // RequestId: 22ae7c3d-d2ef-43d4-9535-3507088b912e
+        //Log:
+        //_folder/lam090/original_request.json':
+        //buf pos: 1495937	buf size: 5242980	buf length: 1495937	file pos: 0	part no: 0
+        //details: The AWS Access Key Id you provided does not exist in our records. - this may be the result of accessing a public bucket with requester pay mode. Set tuplex.aws.requesterPay to true when initializing the context. Also make sure the object in the public repo has a proper ACL set. I.e., to make it publicly available use `aws s3api put-object-acl --bucket <bucket> --key <path> --acl public-read --request-payer requester`{
+        //"caFile": "/etc/pki/tls/certs/ca-bundle.crt",
+        //"caPath": "",
+        //"connectTimeoutMs": 10000,
+        //"enableTcpKeepAlive": true,
+        //"endpointOverride": "",
+        //"httpRequestTimeoutMs": 0,
+        //"lowSpeedLimit": 1,
+        //"maxConnections": 25,
+        //"proxyHost": "",
+        //"proxyPassword": "",
+        //"proxyPort": 0,
+        //"proxySSLCertPath": "",
+        //"proxySSLCertType": "",
+        //"proxySSLKeyPassword": "",
+        //"proxySSLKeyPath": "",
+        //"proxySSLKeyType": "",
+        //"proxyScheme": "http",
+        //"proxyUserName": "",
+        //"requestTimeoutMs": 60000,
+        //"retryStrategy": "<unknown>",
+        //"scheme": "https",
+        //"tcpKeepAliveIntervalMs": 30000,
+        //"useDualStack": false,
+        //"userAgent": "",
+        //"verifySSL": true
+        //}
+        //requestPayer: true isAmazon: true
+        //terminate called after throwing an instance of 'tuplex::s3exception'
+        //what():  /code/tuplex/io/src/S3File.cc:119 S3 Filesystem error for uri='s3://tuplex-leonhard/scratch/github-exp/spill_folder/lam090/original_request.json':
+        //buf pos: 1495937	buf size: 5242980	buf length: 1495937	file pos: 0	part no: 0
+        //details: The AWS Access Key Id you provided does not exist in our records. - this may be the result of accessing a public bucket with requester pay mode. Set tuplex.aws.requesterPay to true when initializing the context. Also make sure the object in the public repo has a proper ACL set. I.e., to make it publicly available use `aws s3api put-object-acl --bucket <bucket> --key <path> --acl public-read --request-payer requester`{
+        //"caFile": "/etc/pki/tls/certs/ca-bundle.crt",
+        //"caPath": "",
+        //"connectTimeoutMs": 10000,
+        //"enableTcpKeepAlive": true,
+        //"endpointOverride": "",
+        //"httpRequestTimeoutMs": 0,
+        //"lowSpeedLimit": 1,
+        //"maxConnections": 25,
+        //"proxyHost": "",
+        //"proxyPassword": "",
+        //"proxyPort": 0,
+        //"proxySSLCertPath": "",
+        //"proxySSLCertType": "",
+        //"proxySSLKeyPassword": "",
+        //"proxySSLKeyPath": "",
+        //"proxySSLKeyType": "",
+        //"proxyScheme": "http",
+        //"proxyUserName": "",
+        //"requestTimeoutMs": 60000,
+        //"retryStrategy": "<unknown>",
+        //"scheme": "https",
+        //"tcpKeepAliveIntervalMs": 30000,
+        //"useDualStack": false,
+        //"userAgent": "",
+        //"verifySSL": true
+        //}
+        //requestPayer: true isAmazon: true
+        //Stack trace (most recent call last):
+        //#24   Object "", at 0xffffffffffffffff, in
+        //#23   Object "", at 0xe92006, in
+        //#22   Object "/usr/lib64/libc-2.26.so", at 0x7fbfcc60d139, in __libc_start_main
+        //#21   Object "", at 0xcf7586, in
+        //#20   Object "", at 0xfda47d, in
+        //#19   Object "", at 0xe9b9d0, in
+        //#18   Object "", at 0xe9b6ee, in
+        //#17   Object "", at 0xe9b238, in
+        //#16   Object "", at 0xf8ba9f, in
+        //#15   Object "", at 0x141e95c, in
+        //#14   Object "", at 0xfa1913, in
+        //#13   Object "", at 0x14216dd, in
+        //#12   Object "", at 0x141aa36, in
+        //#11   Object "", at 0xfaa107, in
+        //#10   Object "", at 0x1227cf8, in
+        //#9    Object "", at 0x1227537, in
+        //#8    Object "", at 0xa28606, in
+        //#7    Object "/usr/lib64/libgcc_s-7-20180712.so.1", at 0x7fbfcc9a8bbd, in _Unwind_Resume
+        //#6    Object "/usr/lib64/libgcc_s-7-20180712.so.1", at 0x7fbfcc9a839c, in
+        //#5    Object "/usr/lib64/libstdc++.so.6.0.24", at 0x7fbfccf7e7a3, in __gxx_personality_v0
+        //#4    Object "/usr/lib64/libstdc++.so.6.0.24", at 0x7fbfccf7de7e, in
+        //#3    Object "/usr/lib64/libstdc++.so.6.0.24", at 0x7fbfccf7ee85, in
+        //#2    Object "/usr/lib64/libstdc++.so.6.0.24", at 0x7fbfccf810ee, in __gnu_cxx::__verbose_terminate_handler()
+        //#1    Object "/usr/lib64/libc-2.26.so", at 0x7fbfcc621147, in abort
+        //#0    Object "/usr/lib64/libc-2.26.so", at 0x7fbfcc61fca0, in raise
+        //Aborted (Signal sent by tkill() 8 993)
+        //END RequestId: 22ae7c3d-d2ef-43d4-9535-3507088b912e
+        //REPORT RequestId: 22ae7c3d-d2ef-43d4-9535-3507088b912e	Duration: 1273.24 ms	Billed Duration: 1274 ms	Memory Size: 1536 MB	Max Memory Used: 207 MB
+    }
+
     void LambdaWorkerApp::lambdaOnFailure(SelfInvokeRequest &request, int statusCode, const std::string &errorName,
                                           const std::string &errorMessage) {
 
         static const std::string tag = "TUPLEX_LAMBDA";
 
-        // Log failure:
-        std::stringstream ss;
-        ss<<"LAMBDA request failed with code ["<<statusCode<<"]: "<<errorName<<": "<<errorMessage;
-        logger().info(ss.str());
+        // On AWS Lambda, S3 happen because of session token refresh (I assume, not 100% sure).
+        // Retry them.
+        if(is_failed_s3_access_request(statusCode, errorMessage)) {
+
+            // Log should be contained, extract time.
+            auto lines = splitToLines(errorMessage);
+            lines.back();
+
+            // emit shorter message (simply stating the S3 access error).
+            std::stringstream ss;
+            ss<<"LAMBDA request failed with S3 filesystem access key error, retrying.";
+            logger().info(ss.str());
+        } else {
+            // emit full log.
+            // Log failure:
+            std::stringstream ss;
+            ss<<"LAMBDA request failed with code ["<<statusCode<<"]: "<<errorName<<": "<<errorMessage;
+            logger().info(ss.str());
+        }
 
         // rate limit? => reissue request
         if(statusCode == static_cast<int>(Aws::Http::HttpResponseCode::TOO_MANY_REQUESTS) || // i.e. 429
            statusCode == static_cast<int>(Aws::Http::HttpResponseCode::INTERNAL_SERVER_ERROR) ||
-           statusCode == static_cast<int>(Aws::Http::HttpResponseCode::SERVICE_UNAVAILABLE)) { // 503
+           statusCode == static_cast<int>(Aws::Http::HttpResponseCode::SERVICE_UNAVAILABLE) || // 503
+           is_failed_s3_access_request(statusCode, errorMessage) // S3 credentials not ok, expired etc.
+           ) {
 
             // (silent retry)
             if(request.retries < request.max_retries) {
@@ -1136,11 +1291,19 @@ namespace tuplex {
                                                Aws::MakeShared<LambdaRequestContext>(tag.c_str(), this, request.requestIdx));
                 }
             } else {
-                std::stringstream ss;
-                ss<<"Self-invoke request "<<request.requestIdx<<" failed with HTTP="<<statusCode;
-                ss<<"exceeded "<<request.retries<<" retries.";
-                request.response.returnCode = statusCode; // indicate failure.
-                logger().warn(ss.str());
+
+                if(is_failed_s3_access_request(statusCode, errorMessage)) {
+                    std::stringstream ss;
+                    ss<<"Lambda request with S3 problems failed, exceeded "<<request.retries<<" retries.";
+                    request.response.returnCode = statusCode; // indicate failure.
+                    logger().warn(ss.str());
+                } else {
+                    std::stringstream ss;
+                    ss<<"Self-invoke request "<<request.requestIdx<<" failed with HTTP="<<statusCode;
+                    ss<<"exceeded "<<request.retries<<" retries.";
+                    request.response.returnCode = statusCode; // indicate failure.
+                    logger().warn(ss.str());
+                }
             }
         } else {
             std::stringstream ss;
