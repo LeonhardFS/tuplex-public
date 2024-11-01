@@ -35,16 +35,97 @@ namespace tuplex {
         return total_parts;
     }
 
+
+    struct AWSLambdaTimings {
+        // These are displayed at the end of the log in the form of
+        // Duration: <val> Billed Duration: <val> Memory Size: <val> Max Memory Used: <val> Init Duration: <val>
+        double initTimeInMs;
+        double durationInMs;
+        size_t billedDurationInMs;
+        size_t memorySizeInMb;
+        size_t maxMemoryUsedInMb;
+
+        AWSLambdaTimings(): initTimeInMs(0), durationInMs(0), billedDurationInMs(0), memorySizeInMb(0), maxMemoryUsedInMb(0) {}
+
+        static AWSLambdaTimings from_proto(const messages::LambdaTimings& msg) {
+            AWSLambdaTimings t;
+            t.initTimeInMs = msg.inittimeinms();
+            t.durationInMs = msg.durationinms();
+            t.billedDurationInMs = msg.billeddurationinms();
+            t.memorySizeInMb = msg.memorysizeinmb();
+            t.maxMemoryUsedInMb = msg.maxmemoryusedinmb();
+            return t;
+        }
+
+        void fill_proto(messages::LambdaTimings* msg) const {
+            if(!msg)
+                return;
+
+            msg->set_inittimeinms(initTimeInMs);
+            msg->set_durationinms(durationInMs);
+            msg->set_billeddurationinms(billedDurationInMs);
+            msg->set_memorysizeinmb(memorySizeInMb);
+            msg->set_maxmemoryusedinmb(maxMemoryUsedInMb);
+        }
+
+
+        static AWSLambdaTimings parse_from_log(const std::string& line) {
+            AWSLambdaTimings t;
+
+            std::vector<std::string> tabCols;
+            splitString(line, '\t', [&](const std::string &s) { tabCols.emplace_back(s); });
+
+            if (tabCols.empty())
+                return t;
+
+            // extract parts
+            for (auto col: tabCols) {
+                trim(col);
+
+                if (strStartsWith(col, "Init Duration: ") && strEndsWith(col, " ms")) {
+                    // extract ID and store it
+                    auto r = col.substr(strlen("Init Duration: "), col.length() - 3 - strlen("Init Duration: "));
+                    t.initTimeInMs = std::stod(r);
+                }
+
+                if (strStartsWith(col, "Duration: ") && strEndsWith(col, " ms")) {
+                    // extract ID and store it
+                    auto r = col.substr(strlen("Duration: "), col.length() - 3 - strlen("Duration: "));
+                    t.durationInMs = std::stod(r);
+                }
+
+                if (strStartsWith(col, "Billed Duration: ") && strEndsWith(col, " ms")) {
+                    // extract ID and store it
+                    auto r = col.substr(strlen("Billed Duration: "), col.length() - 3 - strlen("Billed Duration: "));
+                    t.billedDurationInMs = std::stoi(r);
+                }
+
+                if (strStartsWith(col, "Memory Size: ") && strEndsWith(col, " MB")) {
+                    // extract ID and store it
+                    auto r = col.substr(strlen("Memory Size: "), col.length() - 3 - strlen("Memory Size: "));
+                    t.memorySizeInMb = std::stoi(r);
+                }
+
+                if (strStartsWith(col, "Max Memory Used: ") && strEndsWith(col, " MB")) {
+                    // extract ID and store it
+                    auto r = col.substr(strlen("Max Memory Used: "), col.length() - 3 - strlen("Max Memory Used: "));
+                    t.maxMemoryUsedInMb = std::stoi(r);
+                }
+            }
+
+            return t;
+        }
+    };
+
     /*!
      * helper struct holding decoded information obtained from a log of a Lambda request
      */
     struct RequestInfo {
         std::string requestId;
         std::string containerId; //! uuid of container
-        double durationInMs;
-        size_t billedDurationInMs;
-        size_t memorySizeInMb;
-        size_t maxMemoryUsedInMb;
+
+        // Lambda timings (measured from log)
+        AWSLambdaTimings awsTimings;
 
         uint64_t tsRequestStart; //! ns UTC timestamp
         uint64_t tsRequestEnd; //! ns UTC timestamp
@@ -66,7 +147,7 @@ namespace tuplex {
         // time infos
         double fast_path_time, general_and_interpreter_time, compile_time, hyper_time;
 
-        RequestInfo() : durationInMs(0), billedDurationInMs(100), memorySizeInMb(0), maxMemoryUsedInMb(0),
+        RequestInfo() :
         returnCode(0), tsRequestStart(0), tsRequestEnd(0),
         in_normal(0), in_general(0), in_fallback(0), in_unresolved(0), out_normal(0), out_unresolved(0),
         fast_path_time(0), general_and_interpreter_time(0), compile_time(0), hyper_time(0) {}
@@ -75,8 +156,7 @@ namespace tuplex {
         RequestInfo(const messages::RequestInfo& info) : in_normal(0), in_general(0), in_fallback(0), in_unresolved(0), out_normal(0), out_unresolved(0),
                                                          fast_path_time(0), general_and_interpreter_time(0), compile_time(0), hyper_time(0), requestId(info.requestid().c_str()),
         containerId(info.containerid()),
-        durationInMs(info.durationinms()), billedDurationInMs(info.billeddurationinms()), memorySizeInMb(info.memorysizeinmb()),
-        maxMemoryUsedInMb(info.maxmemoryusedinmb()), returnCode(info.returncode()), errorMessage(info.errormessage().c_str()),
+                                                         awsTimings(std::move(AWSLambdaTimings::from_proto(info.timings()))), returnCode(info.returncode()), errorMessage(info.errormessage().c_str()),
         tsRequestStart(info.tsrequeststart()), tsRequestEnd(info.tsrequestend()) {}
 #endif
 
@@ -112,10 +192,11 @@ namespace tuplex {
             std::stringstream ss;
             ss<<"{\"requestId\":\""<<requestId<<"\"";
             ss<<",\"containerId\":\""<<containerId<<"\"";
-            ss<<",\"durationInMs\":"<<durationInMs;
-            ss<<",\"billedDurationInMs\":"<<billedDurationInMs;
-            ss<<",\"memorySizeInMb\":"<<memorySizeInMb;
-            ss<<",\"maxMemoryUsedInMb\":"<<maxMemoryUsedInMb;
+            ss<<",\"initTimeInMs\":"<<awsTimings.initTimeInMs;
+            ss<<",\"durationInMs\":"<<awsTimings.durationInMs;
+            ss<<",\"billedDurationInMs\":"<<awsTimings.billedDurationInMs;
+            ss<<",\"memorySizeInMb\":"<<awsTimings.memorySizeInMb;
+            ss<<",\"maxMemoryUsedInMb\":"<<awsTimings.maxMemoryUsedInMb;
             ss<<",\"returnCode\":"<<returnCode;
             ss<<",\"errorMessage\":\""<<errorMessage<<"\"";
             // row stats
@@ -154,10 +235,7 @@ namespace tuplex {
 
             r->set_requestid(requestId.c_str());
             r->set_containerid(containerId.c_str());
-            r->set_durationinms(durationInMs);
-            r->set_billeddurationinms(billedDurationInMs);
-            r->set_memorysizeinmb(memorySizeInMb);
-            r->set_maxmemoryusedinmb(maxMemoryUsedInMb);
+            awsTimings.fill_proto(r->mutable_timings());
             r->set_returncode(returnCode);
             r->set_errormessage(errorMessage.c_str());
             r->set_tsrequeststart(tsRequestStart);

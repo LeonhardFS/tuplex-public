@@ -298,7 +298,7 @@ namespace tuplex {
             info.containerId = response.container().uuid();
 
             // update cost info
-            lctx->getService()->addCost(info.billedDurationInMs, info.memorySizeInMb);
+            lctx->getService()->addCost(info.awsTimings.billedDurationInMs, info.awsTimings.memorySizeInMb);
 
             if (response.status() == messages::InvocationResponse_Status_SUCCESS) {
 

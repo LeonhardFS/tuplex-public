@@ -986,7 +986,7 @@ namespace tuplex {
         if(!desc.errorMessage.empty()) {
             ss<<"LAMBDA ["<<(int)response.status()<<"] Error: "<<desc.returnCode<<" "<<desc.errorMessage;
         } else {
-            ss<<"LAMBDA ["<<(int)response.status()<<"] succeeded, took "<<desc.durationInMs<<"ms, billed: "<<desc.billedDurationInMs<<"ms";
+            ss<<"LAMBDA ["<<(int)response.status()<<"] succeeded, took "<<desc.awsTimings.durationInMs<<"ms, billed: "<<desc.awsTimings.billedDurationInMs<<"ms";
         }
 
         logger().info(ss.str());
@@ -1613,7 +1613,7 @@ namespace tuplex {
                                                              const tuplex::AwsLambdaResponse &response) {
         {
             std::stringstream ss;
-            ss << "LAMBDA request done (rc=" << response.info.returnCode << ", duration=" << response.info.durationInMs
+            ss << "LAMBDA request done (rc=" << response.info.returnCode << ", duration=" << response.info.awsTimings.durationInMs
                << "ms" << ").";
 
             // Additional debug info.

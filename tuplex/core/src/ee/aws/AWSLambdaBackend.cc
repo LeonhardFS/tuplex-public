@@ -545,12 +545,12 @@ namespace tuplex {
         auto cost_before = lambdaCost();
 
         // Add this request to cost.
-        addBilling(resp.info.billedDurationInMs * resp.info.memorySizeInMb, 1);
+        addBilling(resp.info.awsTimings.billedDurationInMs * resp.info.awsTimings.memorySizeInMb, 1);
 
         // Recursive invocations? Add them too.
         if(resp.response.invokedrequests_size() > 0) {
             for(auto info : resp.response.invokedrequests()) {
-                addBilling(static_cast<size_t>(info.billeddurationinms()) * static_cast<size_t>(info.memorysizeinmb()), 1);
+                addBilling(static_cast<size_t>(info.timings().billeddurationinms()) * static_cast<size_t>(info.timings().memorysizeinmb()), 1);
             }
         }
 

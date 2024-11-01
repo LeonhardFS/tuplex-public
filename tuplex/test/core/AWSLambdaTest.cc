@@ -36,6 +36,22 @@ protected:
     }
 };
 
+
+TEST_F(AWSTest, LambdaLogLineExtract) {
+    // Check log line from lambda gets correctly parsed.
+    using namespace std;
+    using namespace tuplex;
+
+    string test_input = "REPORT RequestId: 8f507cfc-xmpl-4697-b07a-ac58fc914c95 \tDuration: 15.74 ms\tBilled Duration: 16 ms\tMemory Size: 128 MB\tMax Memory Used: 56 MB\tInit Duration: 130.49 ms\n";
+
+    auto t = AWSLambdaTimings::parse_from_log(test_input);
+    EXPECT_DOUBLE_EQ(t.durationInMs, 15.74);
+    EXPECT_EQ(t.billedDurationInMs, 16);
+    EXPECT_EQ(t.memorySizeInMb, 128);
+    EXPECT_EQ(t.maxMemoryUsedInMb, 56);
+    EXPECT_DOUBLE_EQ(t.initTimeInMs, 130.49);
+}
+
 TEST_F(AWSTest, MultiSDKInit) {
 #ifdef SKIP_AWS_TESTS
     GTEST_SKIP();

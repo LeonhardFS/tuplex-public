@@ -185,21 +185,28 @@ message ContainerInfo {
     uint64 deadline = 7;
 }
 
+// stored info about AWS Lambda timings.
+message LambdaTimings {
+    double initTimeInMs = 1;
+    double durationInMs = 2;
+    uint32 billedDurationInMs = 3;
+    uint32 memorySizeInMb = 4;
+    uint32 maxMemoryUsedInMb = 5;
+}
+
 // Info about a single request , cf. Request Info struct.
 message RequestInfo {
     string requestId = 1;
     string containerId = 2;
-    double durationInMs = 3;
-    uint32 billedDurationInMs = 4;
-    uint32 memorySizeInMb = 5;
-    uint32 maxMemoryUsedInMb = 6;
 
-    uint64 tsRequestStart = 7; // UTC timestamp when request was invoked
-    uint64 tsRequestEnd = 8; // UTC timestamp when request returned
+    LambdaTimings timings = 3;
+
+    uint64 tsRequestStart = 4; // UTC timestamp when request was invoked
+    uint64 tsRequestEnd = 5; // UTC timestamp when request returned
 
     // in case of failure, these fields here are filled.
-    uint32 returnCode = 9;
-    string errorMessage = 10;
+    uint32 returnCode = 6;
+    string errorMessage = 7;
 }
 
 // Statistics about how input rows were processed.
