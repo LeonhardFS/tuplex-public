@@ -265,9 +265,7 @@ namespace tuplex {
         }
         inline size_t numRequests() const { return _total_requests; }
 
-        inline double lambdaCost() const {
-            double cost_per_request = 0.0000002;
-
+        inline double costPerGBSecond() const {
             // depends on ARM or x86 architecture
             // values from https://aws.amazon.com/lambda/pricing/ (Nov 2021)
             double cost_per_gb_second_x86 = 0.0000166667;
@@ -278,6 +276,13 @@ namespace tuplex {
             // check architecture, else assume x86 cost
             if(_functionArchitecture == "arm64")
                 cost_per_gb_second = cost_per_gb_second_arm;
+            return cost_per_gb_second;
+        }
+
+        inline double lambdaCost() const {
+            double cost_per_request = 0.0000002;
+
+            auto cost_per_gb_second = costPerGBSecond();
 
             auto usedGBSeconds = this->usedGBSeconds();
             auto numRequests = this->numRequests();

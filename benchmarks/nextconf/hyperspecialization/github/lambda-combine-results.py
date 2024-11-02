@@ -54,6 +54,14 @@ def load_and_combine_results_to_df(result_dir):
             # Extract how much time was spent on lambda.
             lambda_time = sum([x['durationInMs'] for x in data['detailed_job_stats']['requests']])
             lambda_billed_time = sum([x['billedDurationInMs'] for x in data['detailed_job_stats']['requests']])
+
+            # Add invoked requests on top of this (one-level for now).
+            for r in data['responses']:
+                if 'invokedRequests' in r:
+                    for i_r in r['invokedRequests']:
+                        lambda_time += i_r['timings']['durationInMs']
+                        lambda_billed_time += i_r['timings']['billedDurationInMs']
+
             row['total_lambda_time_in_s'] = lambda_time / 1000.0
             row['total_lambda_billed_time_in_s'] = lambda_billed_time / 1000.0
 

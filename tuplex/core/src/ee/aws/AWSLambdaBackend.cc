@@ -2240,6 +2240,14 @@ namespace tuplex {
         // settings etc.
         ss << "\"hyper_mode\":" << (_options.USE_EXPERIMENTAL_HYPERSPECIALIZATION() ? "true" : "false") << ",";
         ss << "\"cost\":" << _info.cost << ",";
+
+        // detailed billing info to breakdown better.
+        ss <<"\"billing\":{";
+        ss<<"\"requestCount\":"<<numRequests()<<",";
+        ss<<"\"mbms\":"<<_total_mbms<<",";
+        ss<<"\"costPerGBSecond\":"<<costPerGBSecond();
+        ss<<"},";
+
         ss << "\"input_paths_taken\":{"
            << "\"normal\":" << _info.total_input_normal_path << ","
            << "\"general\":" << _info.total_input_general_path << ","
