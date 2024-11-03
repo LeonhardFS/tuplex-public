@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.11
 import logging
 from typing import Optional
 import os
@@ -56,7 +56,7 @@ def load_and_combine_results_to_df(result_dir):
             lambda_billed_time = sum([x['billedDurationInMs'] for x in data['detailed_job_stats']['requests']])
 
             # Add invoked requests on top of this (one-level for now).
-            for r in data['responses']:
+            for r in data['detailed_job_stats']['responses']:
                 if 'invokedRequests' in r:
                     for i_r in r['invokedRequests']:
                         lambda_time += i_r['timings']['durationInMs']

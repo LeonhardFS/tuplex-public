@@ -634,3 +634,4 @@ if __name__ == '__main__':
         json.dump(ans, f, sort_keys=True)
         f.write('\n')
     logging.info("Done.")
+    os._exit(0)
