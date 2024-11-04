@@ -18,7 +18,7 @@
 namespace tuplex {
     namespace codegen {
 
-        bool check_llvm_type(LLVMEnvironment& env, const python::Type& type, const SerializableValue& v, std::ostream* os=nullptr);
+        bool check_llvm_type(LLVMEnvironment& env, const python::Type& type, const SerializableValue& v, bool allow_incompatible_options, std::ostream* os=nullptr);
 
         std::vector<python::Type> FlattenedTuple::getFieldTypes() const {
             return _tree.fieldTypes();
@@ -1690,7 +1690,7 @@ namespace tuplex {
             return upcasted_row;
         }
 
-        bool check_llvm_type(LLVMEnvironment& env, const python::Type& type, const SerializableValue& v, std::ostream* os) {
+        bool check_llvm_type(LLVMEnvironment& env, const python::Type& type, const SerializableValue& v, bool allow_incompatible_options, std::ostream* os) {
 
             std::stringstream err_stream;
             bool rc = true;

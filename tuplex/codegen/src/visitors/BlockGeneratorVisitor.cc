@@ -4694,7 +4694,9 @@ namespace tuplex {
                     } else {
                         // can always upcast None to any option!
                         _lfb->addException(builder, ExceptionCode::NORMALCASEVIOLATION, _env->i1neg(builder, el.is_null), "normal-case violation in returnWithNullExtraction");
-                        el_target = SerializableValue::None(builder);
+
+                        // because it is option type, create dummy for specific option type.
+                        el_target = _env->None(builder, el_target_type);
                     }
                 } else if(el_type == el_target_type) {
                     el_target = el;

@@ -185,7 +185,6 @@ namespace tuplex {
              * @param value
              * @param size size of the element. Must be i64
              * @param isnull nullptr or i1 element
-             * @return
              */
             void set(const codegen::IRBuilder& builder, const std::vector<int>& index, llvm::Value *value, llvm::Value *size, llvm::Value *is_null);
 

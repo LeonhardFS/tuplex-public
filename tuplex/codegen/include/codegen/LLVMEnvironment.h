@@ -1168,6 +1168,19 @@ namespace tuplex {
                                                                                           bool reverse=false);
 
             llvm::Value *cbool_const(bool b);
+
+            inline SerializableValue None(const IRBuilder& builder, const python::Type& target_type) {
+                if(target_type == python::Type::NULLVALUE)
+                    return SerializableValue::None(builder);
+
+                // Create dummy and set to null.
+                if(!target_type.isOptionType())
+                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__)+ " to create None type must be " + python::Type::NULLVALUE.desc() + " or Option[...].");
+
+                auto ans = dummyValue(builder, target_type);
+                ans.is_null = i1Const(true);
+                return ans;
+            }
         };
 
 // i.e. there should be a function
