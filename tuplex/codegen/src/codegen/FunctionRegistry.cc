@@ -2291,14 +2291,23 @@ namespace tuplex {
         // return true if rhs == lhs, false else.
         llvm::Value* equal_comparison(LLVMEnvironment& env,
                                       const IRBuilder& builder,
-                                      const python::Type& rhs_type,
-                                      const SerializableValue& rhs,
-                                      const python::Type& lhs_type,
-                                      const SerializableValue& lhs) {
+                                      python::Type rhs_type,
+                                      SerializableValue rhs,
+                                      python::Type lhs_type,
+                                      SerializableValue lhs) {
             using namespace llvm;
 
-            if(lhs_type != rhs_type)
-                throw std::runtime_error("not yet supported, compare between " + lhs_type.desc() + " == " + rhs_type.desc());
+            if(lhs_type != rhs_type) {
+                // is either option type and underlying types match (or null)? Then unify.
+                if((lhs_type.isOptionType() || rhs_type.isOptionType()) && (unifyTypes(lhs_type, rhs_type, false) != python::Type::UNKNOWN)) {
+                    auto uni_type = python::Type::makeOptionType(lhs_type.withoutOption());
+                    lhs = env.upcastValue(builder, lhs, lhs_type, uni_type);
+                    rhs = env.upcastValue(builder, rhs, rhs_type, uni_type);
+                    lhs_type = rhs_type = uni_type;
+                } else {
+                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet supported, compare between " + lhs_type.desc() + " == " + rhs_type.desc());
+                }
+            }
 
             auto llvm_ret_var_type = env.i1Type();
             auto ret_var = env.CreateFirstBlockAlloca(builder, llvm_ret_var_type);

@@ -108,6 +108,8 @@ namespace tuplex {
         m["input_path"] = "/hot/data/flights_all/flights*.csv";
         m["tuplex.aws.scratchDir"] = "";
 
+        m["tuplex.experimental.opportuneCompilation"] = "false";
+
         return m;
     }
 
