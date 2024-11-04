@@ -1028,9 +1028,13 @@ namespace tuplex {
                 throw std::runtime_error("failed to create target machine for CPU=" + CPU + ", features="=Features);
 
             llvm::LLVMTargetMachine& LLVMTM = static_cast<llvm::LLVMTargetMachine&>(*TargetMachine);
+
+#if LLVM_VERSION_MAJOR == 9
+            llvm::MachineModuleInfo* MMIWP = nullptr;
+#else
             llvm::MachineModuleInfoWrapperPass *MMIWP = new llvm::MachineModuleInfoWrapperPass(&LLVMTM);
             const_cast<llvm::TargetLoweringObjectFile *>(LLVMTM.getObjFileLowering())->Initialize(MMIWP->getMMI().getContext(), *TargetMachine);
-
+#endif
             // check: https://llvm.org/docs/tutorial/MyFirstLanguageFrontend/LangImpl08.html
             mod.setDataLayout(TargetMachine->createDataLayout());
             mod.setTargetTriple(target_triple);

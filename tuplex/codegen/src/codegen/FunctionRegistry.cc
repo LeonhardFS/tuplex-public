@@ -2300,7 +2300,7 @@ namespace tuplex {
             if(lhs_type != rhs_type) {
                 // is either option type and underlying types match (or null)? Then unify.
                 if((lhs_type.isOptionType() || rhs_type.isOptionType()) && (unifyTypes(lhs_type, rhs_type, false) != python::Type::UNKNOWN)) {
-                    auto uni_type = python::Type::makeOptionType(lhs_type.withoutOption());
+                    auto uni_type = unifyTypes(lhs_type, rhs_type, false);
                     lhs = env.upcastValue(builder, lhs, lhs_type, uni_type);
                     rhs = env.upcastValue(builder, rhs, rhs_type, uni_type);
                     lhs_type = rhs_type = uni_type;
