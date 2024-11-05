@@ -2495,7 +2495,7 @@ namespace tuplex {
             // create call to created func & fill-in missing from dummy_val.
             auto val = needle.val ? needle.val : dummy_val.val;
             auto size = needle.size ? needle.size : _env.i64Const(0);
-            auto is_null = needle.is_null ? needle.is_null : dummy_val.val;
+            auto is_null = needle.is_null ? needle.is_null : dummy_val.is_null;
 
             // Check that types add up for val (else, throw exception!)
             auto expected_val_type = func->getFunctionType()->getParamType(1);
