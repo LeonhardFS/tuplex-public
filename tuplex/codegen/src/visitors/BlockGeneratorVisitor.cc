@@ -1058,9 +1058,10 @@ namespace tuplex {
                 return _env->boolConst(true);
             }
 
-            if (superType.isNumericType()) {
+            if (superType.withoutOption().isNumericType()) {
                 return numericCompareInst(builder, L, leftType, tt, R, rightType);
             } else {
+                assert(superType.withoutOption() == python::Type::STRING);
                 return stringCompareInst(builder, L, leftType, tt, R, rightType);
             }
         }
