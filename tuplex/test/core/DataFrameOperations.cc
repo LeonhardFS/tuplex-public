@@ -638,3 +638,14 @@ TEST_F(DataFrameTest, HeterogeneouslyTypedCSVFile) {
     ASSERT_FALSE(v.empty());
     EXPECT_EQ(v.size(), 7);
 }
+
+TEST_F(DataFrameTest, ListOfOptionsIndexNull) {
+    //  List[Option[str]]  needle type: null
+    using namespace tuplex;
+    Context c(microTestOptions());
+
+    auto test_data = std::vector<Row>{Row(Field::null())};
+    auto v = c.parallelize(test_data).map(UDF("lambda x: ['a', 'b', None, 'c'].index(x)")).collectAsVector();
+    ASSERT_EQ(v.size(), 1);
+    EXPECT_EQ(v[0].getInt(0), 2);
+}

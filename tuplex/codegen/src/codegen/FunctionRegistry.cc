@@ -2477,11 +2477,32 @@ namespace tuplex {
             }
 
             auto list_ptr = list.val;
+            auto& logger = Logger::instance().logger("codegen");
+            {
+                std::stringstream ss;
+                ss<<"list type: "<<list_type.desc()<<"  needle type: "<<needle_type.desc();
+                logger.debug(ss.str());
+            }
 
-            // create call to created func
-            auto val = needle.val ? needle.val : _env.i64Const(0);
+            // TODO: Need to provide fill-in value here for some special edge case (null / Option[str] / ...)
+            auto uni_type = unifyTypes(needle_type, list_type.elementType(), false);
+            if(uni_type == python::Type::UNKNOWN)
+                uni_type = needle_type;
+            auto dummy_val =  _env.dummyValue(builder, uni_type);
+            if(needle_type == python::Type::NULLVALUE)
+                dummy_val.is_null = _env.i1Const(true);
+
+            // create call to created func & fill-in missing from dummy_val.
+            auto val = needle.val ? needle.val : dummy_val.val;
             auto size = needle.size ? needle.size : _env.i64Const(0);
-            auto is_null = needle.is_null ? needle.is_null : _env.i1Const(false);
+            auto is_null = needle.is_null ? needle.is_null : dummy_val.val;
+
+            // Check that types add up for val (else, throw exception!)
+            auto expected_val_type = func->getFunctionType()->getParamType(1);
+            if(expected_val_type != val->getType()) {
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " val type mismatch.");
+            }
+
             auto ret = builder.CreateCall(func, {list_ptr, val, size, is_null});
 
             return SerializableValue(ret, _env.i64Const(sizeof(int64_t)), _env.i1Const(false));
