@@ -188,11 +188,11 @@ namespace tuplex {
                         auto fileop = std::dynamic_pointer_cast<FileInputOperator>(op);
                         if (fileop->fileFormat() == FileFormat::OUTFMT_CSV) {
                             // use cells, b.c. parser already has string contents.
-                            ppb.cellInput(op->getID(), op->columns(), fileop->null_values(), fileop->typeHints(),
+                            ppb.cellInput(op->getID(), op->inputColumns(), fileop->null_values(), fileop->typeHints(),
                                           fileop->inputColumnCount(), fileop->projectionMap());
                         } else if (fileop->fileFormat() == FileFormat::OUTFMT_TEXT) {
                             // text pipeline is the same with forced string type!
-                            ppb.cellInput(op->getID(), op->columns(), fileop->null_values(), {{0, python::Type::STRING}}, 1);
+                            ppb.cellInput(op->getID(), op->inputColumns(), fileop->null_values(), {{0, python::Type::STRING}}, 1);
                             Logger::instance().defaultLogger().warn("accessing untested feature in Tuplex");
                         } else {
                             throw std::runtime_error("Unsupported file input type!");
@@ -2071,6 +2071,14 @@ namespace tuplex {
                     auto py_path = generatePythonCode(ctx, number(), _conf.pure_python_mode);
                     stage->_pyCode = py_path.pyCode;
                     stage->_pyPipelineName = py_path.pyPipelineName;
+
+#ifndef NDEBUG
+                    // Save for debugging.
+                    auto debug_py_uri = URI(stage->_pyPipelineName + ".py");
+                    logger.debug("Saving python pipeline code to " + debug_py_uri.toString());
+                    stringToFile(debug_py_uri, stage->_pyCode);
+#endif
+
                 }
 
                 // use fast path context

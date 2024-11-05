@@ -309,17 +309,47 @@ namespace tuplex {
     }
 
 
-void PythonPipelineBuilder::cellInput(int64_t operatorID, std::vector<std::string> columns,
+void PythonPipelineBuilder::cellInput(int64_t operatorID, std::vector<std::string> input_columns,
                                          const std::vector<std::string> &na_values,
                                          const std::unordered_map<size_t, python::Type>& typeHints,
                                          size_t numColumns, const std::unordered_map<int, int>& projectionMap) {
 
     _lastProjectionMap = projectionMap;
-    _lastColumns = columns;
+    _lastColumns = input_columns;
     _numUnprojectedColumns = numColumns;
 
-    if(!columns.empty())
-        assert(columns.size() == numColumns);
+    if(!input_columns.empty())
+        assert(input_columns.size() == numColumns);
+
+    // In debug mode print out if projection map exists, which columns are read.
+    if(!projectionMap.empty() && !input_columns.empty()) {
+
+        // Check that indices make sense.
+        for(auto kv : projectionMap) {
+            if(kv.first < 0 || kv.first >= input_columns.size())
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " invalid index found: " + std::to_string(kv.first) + " (must be 0, ..., " + std::to_string(input_columns.size() - 1) + ")");
+
+            if(kv.second < 0 || kv.second >= projectionMap.size()) {
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " invalid (projected) index found: " + std::to_string(kv.second) + " (must be 0, ..., " + std::to_string(projectionMap.size() - 1) + ")");
+            }
+        }
+
+#ifndef NDEBUG
+        std::vector<std::string> columns_to_keep(projectionMap.size(), "");
+        for(unsigned i = 0; i < input_columns.size(); ++i) {
+            if(projectionMap.find(i) != projectionMap.end()) {
+                auto it = projectionMap.find(i);
+                columns_to_keep[it->second] = input_columns[it->first];
+            }
+        }
+
+        std::stringstream ss;
+        ss << "Keeping " << pluralize(columns_to_keep.size(), "column") << " from " << pluralize(input_columns.size(), "input column") << ":\n";
+        ss<<columns_to_keep;
+        auto& logger = Logger::instance().logger("codegen");
+        logger.debug(ss.str());
+#endif
+    }
 
     std::stringstream code;
     code<<"if not isinstance("<<lastInputRowName()<<", (tuple, list)):\n";
@@ -407,19 +437,21 @@ void PythonPipelineBuilder::cellInput(int64_t operatorID, std::vector<std::strin
         for(const auto& keyval: projectionMap)
             writeLine("projected_row[" + std::to_string(keyval.first) + "] = parsed_row[" + std::to_string(keyval.second) + "]\n");
 
-        if(!columns.empty()) {
+        if(!input_columns.empty()) {
             std::vector<std::string> projected_columns(numColumns, "");
-            for(const auto& keyval : projectionMap)
-                projected_columns[keyval.first] = columns[keyval.second];
-            columns = projected_columns;
+            for(const auto& keyval : projectionMap) {
+                projected_columns[keyval.first] = input_columns[keyval.first];
+            }
+
+            input_columns = projected_columns;
         }
         writeLine("parsed_row = projected_row\n");
     }
 
         // are there columns present? If so, add to row representation!
-        if (!columns.empty()) {
-            writeLine(row() + " = Row(parsed_row, " + columnsToList(columns) + ")");
-            writeLine("res['outputColumns'] = " + columnsToList(columns));
+        if (!input_columns.empty()) {
+            writeLine(row() + " = Row(parsed_row, " + columnsToList(input_columns) + ")");
+            writeLine("res['outputColumns'] = " + columnsToList(input_columns));
         } else
             writeLine(row() + " = Row(parsed_row)");
     }

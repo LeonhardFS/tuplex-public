@@ -56,14 +56,14 @@ namespace tuplex {
         /*!
          * add new cell based input, i.e. strings that get parsed to types depending on the hierarchy being defined.
          * @param operatorID ID of the input operator
-         * @param columns names of the columns. If empty, ignored
+         * @param input_columns names of the columns. If empty, ignored. These are the original input columns.
          * @param typeHints column index -> python type hint.
          * @param na_values list of strings to identify as NULL/None
          * @param numColumns number of input columns
          * @param projectionMap mapping how in the case of projection pushdown columns are mapped.
          */
         void cellInput(int64_t operatorID,
-                       std::vector<std::string> columns=std::vector<std::string>(),
+                       std::vector<std::string> input_columns=std::vector<std::string>(),
                        const std::vector<std::string>& na_values=std::vector<std::string>(),
                        const std::unordered_map<size_t, python::Type>& typeHints = std::unordered_map<size_t, python::Type>(),
                        size_t numColumns=0, const std::unordered_map<int, int>& projectionMap=std::unordered_map<int, int>());
