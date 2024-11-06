@@ -468,3 +468,12 @@ TEST(TypeSys, UnknownHash) {
     // make sure this holds;
     ASSERT_EQ(python::Type::UNKNOWN.hash(), 0);
 }
+
+TEST(TypeSys, DecodeRowTypeWithConstantInt) {
+    using namespace tuplex;
+    auto s = "Row['YEAR'->_Constant[i64,value=2003],'QUARTER'->_Constant[i64,value=3],'MONTH'->_Constant[i64,value=7],'DAY_OF_MONTH'->i64,'DAY_OF_WEEK'->i64,'OP_UNIQUE_CARRIER'->str,'OP_CARRIER_FL_NUM'->i64,'ORIGIN_AIRPORT_ID'->i64,'ORIGIN'->str,'ORIGIN_STATE_NM'->str,'DEST_AIRPORT_ID'->i64,'DEST'->str,'DEST_STATE_NM'->str,'CRS_DEP_TIME'->i64,'DEP_DELAY'->f64,'CRS_ARR_TIME'->i64,'ARR_DELAY'->f64,'DISTANCE'->f64,'CARRIER_DELAY'->Option[f64],'WEATHER_DELAY'->Option[f64],'NAS_DELAY'->Option[f64],'SECURITY_DELAY'->Option[f64],'LATE_AIRCRAFT_DELAY'->Option[f64]]";
+
+    auto t = python::Type::decode(s);
+
+    EXPECT_TRUE(t.isRowType());
+}

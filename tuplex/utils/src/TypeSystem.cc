@@ -2409,10 +2409,24 @@ namespace python {
                     // decode the string (no nested structure allowed)
                     pos += strlen("value=");
 
-                    // escape the json string...
-                    size_t json_length = 0;
-                    json_constant_value = decodeJSONStringGreedily(s.substr(pos), &json_length);
-                    pos += json_length;
+                    // is first char at pos '"'? => decode JSON string.
+                    if(s.at(pos) == '"') {
+                        // escape the json string...
+                        size_t json_length = 0;
+                        json_constant_value = decodeJSONStringGreedily(s.substr(pos), &json_length);
+                        pos += json_length;
+                    } else if(isdigit(s.at(pos))) {
+                        // TODO: decode float, ...
+                        int json_length = 0;
+                        while(pos + json_length < s.length() && isdigit(s.at(pos + json_length)))
+                            json_length++;
+
+                        // greedily decode number.
+                        json_constant_value = s.substr(pos, json_length);
+                        pos += json_length;
+                    } else {
+                        throw std::runtime_error("Can not decode value from constant valued type: "  + s.substr(pos));
+                    }
                 }
 
             } else if(s.substr(pos, strlen("_Constant[")).compare("_Constant[") == 0) {
