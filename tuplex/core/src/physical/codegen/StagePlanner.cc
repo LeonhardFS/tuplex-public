@@ -996,8 +996,8 @@ namespace tuplex {
                     constant_type = simplifyConstantType(constant_type);
 
                     // check if empty tuple, list, dict, ... -> skip. Parser will handle this.
-                    if(constant_type.underlying() == python::Type::EMPTYDICT || constant_type.underlying() == python::Type::EMPTYTUPLE
-                    || constant_type.underlying() == python::Type::EMPTYLIST || constant_type.underlying() == python::Type::EMPTYSET)
+                    if(constant_type.isConstantValued() && (constant_type.underlying() == python::Type::EMPTYDICT || constant_type.underlying() == python::Type::EMPTYTUPLE
+                    || constant_type.underlying() == python::Type::EMPTYLIST || constant_type.underlying() == python::Type::EMPTYSET))
                         continue;
 
                     // which column is considered constant.

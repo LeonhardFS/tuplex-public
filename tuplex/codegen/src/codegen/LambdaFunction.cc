@@ -171,9 +171,8 @@ namespace tuplex {
                     // special case: (Row[]) --> HACK
                     if(pyArgType.parameters().front() == python::Type::EMPTYROW)
                         pyArgType = python::Type::EMPTYTUPLE;
-
                     // transform row to tuple type (physical representation)
-                    if(pyArgType.parameters().front().isRowType())
+                    else if(pyArgType.parameters().front().isRowType())
                         pyArgType = pyArgType.parameters().front().get_columns_as_tuple_type();
 
                     // create ftarg from llvm struct val (i.e. the pointer)
