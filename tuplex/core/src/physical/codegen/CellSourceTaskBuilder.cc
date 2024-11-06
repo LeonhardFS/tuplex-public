@@ -138,7 +138,10 @@ namespace tuplex {
                                     "general-case violation. Hence, resolve code or fallback code must "
                                     "restore correcy exception code for display.");
                         auto original_ecCode = ecCode;
-                        _env->printValue(builder, original_ecCode, "forcing exception code to become GENERALCASEVIOLATION, original code is: ");
+
+#ifndef NDEBUG
+                        // _env->printValue(builder, original_ecCode, "forcing exception code to become GENERALCASEVIOLATION, original code is: ");
+#endif
                         ecCode = _env->i64Const(ecToI64(ExceptionCode::GENERALCASEVIOLATION)); // <-- hack
 
                         // _env->debugPrint(builder, "exception rows serialized to buffer.");
@@ -157,8 +160,10 @@ namespace tuplex {
                                                           [this, original_ecCode, ft, outputRowNumberVar](const IRBuilder& builder) {
                            ExceptionDetails except_details;
 
+#ifndef NDEBUG
                            // debug: print original ecCode
-                           env().printValue(builder, original_ecCode, "upcsast code to ec=8, original ecCode=");
+                           env().printValue(builder, original_ecCode, "upcast code to ec=8, original ecCode=");
+#endif
 
                             // -> move this here into exception block! rtmalloc makes optimization else impossible...
                             auto serialized_row = serializedExceptionRow(builder, ft, exception_serialization_format());

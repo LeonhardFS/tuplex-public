@@ -291,9 +291,9 @@ namespace tuplex {
             assert(buf_size && buf_size->getType() == env.i64Type());
 
             auto& ctx = builder.getContext();
-
+#ifndef NDEBUG
             env.debugPrint(builder, "handling general case exception from memory");
-
+#endif
             // make sure pipeline func and row type are compatible
             // @TODO
 
@@ -303,26 +303,26 @@ namespace tuplex {
             FlattenedTuple ft(&env);
             ft.init(general_case_input_row_type);
             ft.deserializationCode(builder, buf);
-
+#ifndef NDEBUG
             env.printValue(builder, ecCode, "got in resolve path ec: ");
-
+#endif
             auto pip_res = PipelineBuilder::call(builder, pipeline_func, ft, userData, rowNumber); // no intermediate support right now.
 
             // create if based on resCode to go into exception block
             ecCode = builder.CreateZExtOrTrunc(pip_res.resultCode, env.i64Type());
             auto ecOpID = builder.CreateZExtOrTrunc(pip_res.exceptionOperatorID, env.i64Type());
             auto numRowsCreated = builder.CreateZExtOrTrunc(pip_res.numProducedRows, env.i64Type());
-
+#ifndef NDEBUG
             env.printValue(builder, ecCode, "pipeline call in slow path resulted in ec code: ");
-
+#endif
             // if ecCode is not 0 (success), set to GENERALCASEVIOLATION so interpreter can decode correctly with general case schema
             auto success_code = env.i64Const(ecToI64(ExceptionCode::SUCCESS));
             ecCode = builder.CreateSelect(builder.CreateICmpEQ(ecCode, success_code),
                                           success_code, env.i64Const(ecToI64(ExceptionCode::GENERALCASEVIOLATION)));
 
-
+#ifndef NDEBUG
             env.printValue(builder, ecCode, "promoted ec code is going to result in: slow pip ec= ");
-
+#endif
             // use provided return code.
             env.freeAll(builder);
             builder.CreateRet(ecCode);
@@ -432,7 +432,9 @@ namespace tuplex {
 
             auto general_case_input_row_type = pip_input_row_type;
             logger.debug("Assuming exceptions are given as general case rows with schema=" + general_case_input_row_type.desc());
+#ifndef NDEBUG
             env.printValue(builder, ecCode, "handling general case exceptions " + pip_input_row_type.desc() + " of ec=");
+#endif
             handleGeneralCaseExceptionsFromTuplexMemory(env, builder, pip_input_row_type, pipFunc, ecCode, rowNo, userData, dataPtr, dataSize);
 
             // check if current block is not terminated, if so end function with original ecCode and free all runtime memory before.
