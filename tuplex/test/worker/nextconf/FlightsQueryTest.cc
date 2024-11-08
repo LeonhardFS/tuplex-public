@@ -380,7 +380,12 @@ namespace tuplex {
         // disable filter promo
         // co.set("tuplex.optimizer.filterPromotion", "false");
 
-        // creater context according to settings
+
+        // // disable hyperspecialization but enable constant-folding to trigger wrong, global mode.
+        // co.set("tuplex.experimental.hyperspecialization", "false");
+        // co.set("tuplex.optimizer.constantFoldingOptimization", "true");
+
+        // create context according to settings
         Context ctx(co);
 
         runtime::init(co.RUNTIME_LIBRARY().toPath());
@@ -391,10 +396,10 @@ namespace tuplex {
         input_pattern = "/hot/data/flights_all/flights_on_time_performance_1987_10.csv,/hot/data/flights_all/flights_on_time_performance_2001_01.csv,/hot/data/flights_all/flights_on_time_performance_2021_11.csv";
 
         // resource pattern
-        //input_pattern = "../resources/hyperspecialization/flights_all/flights_*.csv.sample";
+        input_pattern = "../resources/hyperspecialization/flights_all/flights_*.csv.sample";
 
         //// full input pattern (all files)
-        input_pattern = "/hot/data/flights_all/flights_on_time_performance_*.csv";
+        // input_pattern = "/hot/data/flights_all/flights_on_time_performance_*.csv";
 
         // now perform query...
         auto& ds = ctx.csv(input_pattern, {}, option<bool>::none, option<char>::none, '"', {""}, {}, {}, sm);

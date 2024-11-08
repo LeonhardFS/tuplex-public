@@ -697,6 +697,40 @@ TEST_F(ListFunctions, ListOfNestedOptionStructsSerializeII) {
     EXPECT_EQ(d_r.toPythonString(), r.toPythonString());
 }
 
+TEST_F(ListFunctions, ListOfOptionF64Length) {
+    using namespace tuplex;
+    using namespace std;
+
+    // TODO: Need to fix length here for List[Option[F64]]. Symbol table types it wrong.
+
+    auto& os = std::cout;
+    std::vector<List> test_lists{
+        List(option<double>(1.0), option<double>::none),
+        List(option<double>(1.0), option<double>::none, option<double>(1.0), option<double>::none, option<double>(4.0)),
+        List(option<double>(1.0), option<double>(1.0), option<double>(4.0)),
+        List(option<double>::none, option<double>::none,option<double>::none,option<double>::none,option<double>::none)
+    };
+
+    auto ctx_options = microTestOptions();
+    ctx_options.set("tuplex.useLLVMOptimizer", "false");
+    ctx_options.set("tuplex.experimental.traceExecution", "false"); // <-- super slow trace per instruction.
+    auto ctx = Context(ctx_options);
+
+    for(unsigned test_case_no = 0; test_case_no < test_lists.size(); ++test_case_no) {
+        auto test_list = test_lists[test_case_no];
+
+        // check test case is valid
+        auto num_list_elements = test_list.numElements();
+        os << "Running test case " << (test_case_no + 1) << "/" << test_lists.size() << ": "
+           << test_list.getType().desc() << endl;
+
+        ASSERT_EQ(test_list.getType().desc(),python::Type::makeListType(python::Type::makeOptionType(python::Type::F64)).desc());
+
+        auto v = ctx.parallelize({Row(test_list)}).map(UDF("lambda x: len(x)")).collectAsVector();
+        ASSERT_EQ(v.size(), 1);
+        EXPECT_EQ(v.front().getInt(0), test_list.numElements());
+    }
+}
 
 TEST_F(ListFunctions, ListOf3Elements) {
     using namespace tuplex;
