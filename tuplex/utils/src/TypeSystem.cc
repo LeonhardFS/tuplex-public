@@ -1695,6 +1695,13 @@ namespace python {
      * @return
      */
     bool canUpcastToRowType(const python::Type& minor, const python::Type& major) {
+        // Convert row types to tuple. No check on column names here.
+        if(minor.isRowType())
+            return canUpcastToRowType(minor.get_columns_as_tuple_type(), major);
+        if(major.isRowType())
+            return canUpcastToRowType(minor, major.get_columns_as_tuple_type());
+
+        // check using tuple type.
         if(!minor.isTupleType() || !major.isTupleType())
             throw std::runtime_error("upcast check requires both types to be tuple types!");
 

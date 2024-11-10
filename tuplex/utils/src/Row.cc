@@ -403,12 +403,12 @@ namespace tuplex {
         os.flush();
     }
 
-    python::Type detectMajorityRowType(const std::vector<Row>& rows,
+    python::Type detectMajorityRowType(const std::vector<python::Type>& row_types,
                                        double threshold,
                                        bool independent_columns,
                                        bool use_nvo,
                                        const TypeUnificationPolicy& t_policy) {
-        if(rows.empty())
+        if(row_types.empty())
             return python::Type::UNKNOWN;
 
         assert(0.0 <= threshold <= 1.0);
@@ -417,8 +417,7 @@ namespace tuplex {
             // count each column independently
             // hashmap is type, col -> count
             std::unordered_map<std::tuple<unsigned, unsigned>, unsigned> counts;
-            for(const auto& row : rows) {
-                auto t = row.getRowType();
+            for(const auto& t : row_types) {
                 if(t.isTupleType()) {
                     for(unsigned i = 0; i < t.parameters().size(); ++i) {
                         counts[std::make_tuple(t.parameters()[i].hash(), i)]++;
@@ -454,62 +453,62 @@ namespace tuplex {
             // compute majority, account for null-value prevalence!
             std::vector<python::Type> col_types(col_counts.size());
             for(unsigned i = 0; i < col_counts.size(); ++i) {
-               // single type? -> trivial.
-               // empty? pyobject
-               if(col_counts[i].empty()) {
-                   col_types[i] = python::Type::PYOBJECT;
-               } else if(col_counts[i].size() == 1) {
-                   col_types[i] = python::Type::fromHash(col_counts[i].begin()->second);
-               } else {
+                // single type? -> trivial.
+                // empty? pyobject
+                if(col_counts[i].empty()) {
+                    col_types[i] = python::Type::PYOBJECT;
+                } else if(col_counts[i].size() == 1) {
+                    col_types[i] = python::Type::fromHash(col_counts[i].begin()->second);
+                } else {
 
-                   assert(col_counts[i].size() > 0);
+                    assert(col_counts[i].size() > 0);
 
-                   // more than one count. Now it's getting tricky...
-                   // is the first null and something else present? => use threshold to determine whether option type or not!
-                   auto most_common_type = python::Type::fromHash(col_counts[i].begin()->second);
-                   auto most_freq = col_counts[i].begin()->first;
-                   unsigned total_freq = 0;
-                   for(auto kv : col_counts[i])
-                       total_freq += kv.first;
-                   if(python::Type::NULLVALUE == most_common_type) {
-                       // second one present?
-                       auto it = std::next(col_counts[i].begin());
-                       if(it != col_counts[i].end()) {
-                           auto second_freq = it->first;
-                           auto second_type = python::Type::fromHash(it->second);
+                    // more than one count. Now it's getting tricky...
+                    // is the first null and something else present? => use threshold to determine whether option type or not!
+                    auto most_common_type = python::Type::fromHash(col_counts[i].begin()->second);
+                    auto most_freq = col_counts[i].begin()->first;
+                    unsigned total_freq = 0;
+                    for(auto kv : col_counts[i])
+                        total_freq += kv.first;
+                    if(python::Type::NULLVALUE == most_common_type) {
+                        // second one present?
+                        auto it = std::next(col_counts[i].begin());
+                        if(it != col_counts[i].end()) {
+                            auto second_freq = it->first;
+                            auto second_type = python::Type::fromHash(it->second);
 
-                           // threshold?
-                           if(most_freq >= threshold * total_freq && use_nvo) {
-                               // null value
-                               col_types[i] = python::Type::NULLVALUE;
-                           } else {
-                               // create opt type to cover other cases...
-                               col_types[i] = python::Type::makeOptionType(second_type);
-                           }
-                       }
-                   } else {
-                       // is there null value somewhere so Opt covers most of the cases?
-                       auto it = col_counts[i].begin();
-                       while(it != col_counts[i].end() && it->second != python::Type::NULLVALUE.hash())
-                           ++it;
+                            // threshold?
+                            if(most_freq >= threshold * total_freq && use_nvo) {
+                                // null value
+                                col_types[i] = python::Type::NULLVALUE;
+                            } else {
+                                // create opt type to cover other cases...
+                                col_types[i] = python::Type::makeOptionType(second_type);
+                            }
+                        }
+                    } else {
+                        // is there null value somewhere so Opt covers most of the cases?
+                        auto it = col_counts[i].begin();
+                        while(it != col_counts[i].end() && it->second != python::Type::NULLVALUE.hash())
+                            ++it;
 
-                       // take original value
-                       col_types[i] = most_common_type;
+                        // take original value
+                        col_types[i] = most_common_type;
 
-                       // null value found? --> form option type!
-                       if(it != col_counts[i].end()) {
-                           assert(it->second == python::Type::NULLVALUE.hash());
-                           // check counts, in case of non-nvo always use Option type
-                           auto nv_count = it->first;
-                           // when most freq count >= threshold, use that. else use option type.
-                           if(most_freq >= threshold * total_freq && use_nvo) {
-                               // nothing
-                           } else {
-                               col_types[i] = python::Type::makeOptionType(most_common_type);
-                           }
-                       }
-                   }
-               }
+                        // null value found? --> form option type!
+                        if(it != col_counts[i].end()) {
+                            assert(it->second == python::Type::NULLVALUE.hash());
+                            // check counts, in case of non-nvo always use Option type
+                            auto nv_count = it->first;
+                            // when most freq count >= threshold, use that. else use option type.
+                            if(most_freq >= threshold * total_freq && use_nvo) {
+                                // nothing
+                            } else {
+                                col_types[i] = python::Type::makeOptionType(most_common_type);
+                            }
+                        }
+                    }
+                }
             }
 
             // // debug print:
@@ -534,6 +533,20 @@ namespace tuplex {
         }
 
         return python::Type::UNKNOWN;
+    }
+
+    python::Type detectMajorityRowType(const std::vector<Row>& rows,
+                                       double threshold,
+                                       bool independent_columns,
+                                       bool use_nvo,
+                                       const TypeUnificationPolicy& t_policy) {
+        if(rows.empty())
+            return python::Type::UNKNOWN;
+
+        std::vector<python::Type> row_types(rows.size());
+        for(unsigned i = 0; i < rows.size(); ++i)
+            row_types[i] = rows[i].getRowType();
+        return detectMajorityRowType(row_types, threshold, independent_columns, use_nvo, t_policy);
     }
 
     Row Row::with_columns(const std::vector<std::string>& column_names) const {

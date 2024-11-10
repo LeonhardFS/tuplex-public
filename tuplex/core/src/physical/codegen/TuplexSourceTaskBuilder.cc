@@ -198,7 +198,7 @@ namespace tuplex {
             builder.SetInsertPoint(bbLoopBody);
             // decode tuple from input ptr
             FlattenedTuple ft(_env.get());
-            ft.init(_inputRowType);
+            ft.init(_inputRowType.isRowType() ? _inputRowType.get_columns_as_tuple_type() : _inputRowType);
             Value* oldInputPtr = builder.CreateLoad(env().i8ptrType(), currentInputPtrVar, "ptr");
             ft.deserializationCode(builder, oldInputPtr);
             Value* newInputPtr = builder.MovePtrByBytes(oldInputPtr, ft.getSize(builder));

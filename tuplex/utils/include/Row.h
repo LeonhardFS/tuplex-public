@@ -247,6 +247,12 @@ namespace tuplex {
                                               bool use_nvo=true,
                                               const TypeUnificationPolicy& t_policy=TypeUnificationPolicy::defaultPolicy());
 
+    extern python::Type detectMajorityRowType(const std::vector<python::Type>& row_types,
+                                       double threshold,
+                                       bool independent_columns=true,
+                                       bool use_nvo=true,
+                                       const TypeUnificationPolicy& t_policy=TypeUnificationPolicy::defaultPolicy());
+
     template<typename T> bool vec_set_eq(const std::vector<T>& lhs, const std::vector<T>& rhs) {
         std::set<T> L(lhs.begin(), lhs.end());
         std::set<T> R(rhs.begin(), rhs.end());

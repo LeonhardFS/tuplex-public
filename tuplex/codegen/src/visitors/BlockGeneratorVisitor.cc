@@ -4128,7 +4128,7 @@ namespace tuplex {
                     auto num_elements = list_length(*_env, builder, list_ptr, list_type);
 
 #ifndef NDEBUG
-                    _env->printValue(builder, index.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " indexing [] into list with value: ");
+                    _env->printValue(builder, index.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " indexing [] into list of type " + list_type.desc() + " with value: ");
                     _env->printValue(builder, num_elements, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " list has #elements: ");
 #endif
 

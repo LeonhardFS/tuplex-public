@@ -267,6 +267,60 @@ namespace tuplex {
         }
     }
 
+
+    python::Type inferRowTypeFromRows(const std::vector<Row>& rows, const SamplingMode& sm, const ContextOptions& options) {
+        auto& logger = Logger::instance().defaultLogger();
+
+        if(rows.empty())
+            return python::Type::EMPTYROW;
+
+        // For small enough sample, use all rows to detect type.
+        if(rows.size() <= options.SAMPLE_MAX_DETECTION_ROWS()) {
+            std::set<python::Type> unique_types;
+            for(const auto& row : rows) {
+                unique_types.insert(row.getRowType());
+            }
+            if(unique_types.size() != 1) {
+
+                bool null_value_optimization = false;
+                if(options.OPT_NULLVALUE_OPTIMIZATION()) {
+                    logger.warn("Null-value optimization is set, but for now ignoring when using parallelize.");
+                }
+
+                // try first to unify all types. If this fails, use majority type. Else, return unified type.
+                auto it = unique_types.begin();
+                python::Type uni_type = *it;
+                while(uni_type != python::Type::UNKNOWN && it != unique_types.end()) {
+                    uni_type = unifyTypes(uni_type, *it);
+                    it++;
+                }
+                if(uni_type != python::Type::UNKNOWN)
+                    return uni_type;
+
+                // create majority type.
+                auto majority_type = detectMajorityRowType(std::vector<python::Type>(unique_types.begin(), unique_types.end()), options.NORMALCASE_THRESHOLD(), true, null_value_optimization);
+
+                {
+                    std::stringstream ss;
+                    ss<<"Found "<<pluralize(unique_types.size(), "unique row type")<<", detected "<<majority_type.desc()<<" as majority type.";
+                    logger.info(ss.str());
+                }
+
+                if(majority_type == python::Type::UNKNOWN)
+                    return rows.front().getRowType();
+
+                return majority_type;
+            } else {
+                // No need to log out, use default row type.
+                return rows.front().getRowType();
+            }
+        }
+
+        // else, use larger detection mode.
+        logger.warn(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " got sample of " + pluralize(rows.size(), "row") + ", using first rows to infer schema. Other sampling modes not yet supported.");
+        return inferRowTypeFromRows(std::vector<Row>(rows.cbegin(), rows.cbegin() + options.SAMPLE_MAX_DETECTION_ROWS()), sm, options);
+    }
+
     DataSet& Context::parallelize(const std::vector<Row>& rows,
                                   const std::vector<std::string>& columnNames,
                                   const SamplingMode& sampling_mode) {
@@ -283,20 +337,22 @@ namespace tuplex {
             return *dsptr;
         } else {
             std::vector<PartitionGroup> partitionGroups;
-            // get row type from first element @TODO: should be inferred from sample, no?
-            auto rtype = rows.front().getRowType();
+            // Infer row type from sample (TODO: incomplete, need to support all types & normal-case/general case handling).
+
+            auto rtype = inferRowTypeFromRows(rows, sampling_mode, _options);
+
             schema = Schema(Schema::MemoryLayout::ROW, rtype);
             dsptr->_schema = schema;
             int numRows = rows.size();
 
-            size_t minBytesRequired = rows.front().serializedLength();
+            size_t minBytesRequired = rows.front().serializedLength() * 2; // use overestimate by factor 2 here.
 
             int numPartitions = 0;
             Partition *partition = requestNewPartition(schema, dataSetID, minBytesRequired);
             numPartitions++;
             int numWrittenRowsInPartition = 0;
             if(!partition)
-                return makeError("no memory left to hold data in driver memory");
+                return makeError("No memory left to hold data in driver memory.");
 
             uint8_t* base_ptr = (uint8_t*)partition->lock();
 
@@ -306,16 +362,23 @@ namespace tuplex {
             int i = 0;
             while(i < numRows) {
 
+                Row row = rows[i];
+
                 // different row type? => i.e. already exception here!
-                if(rtype != rows[i].getRowType()) {
-#ifndef NDEBUG
-                    std::cout<<"Row has different type: "<<rows[i].toPythonString()<<std::endl;
-#endif
+                if(rtype != row.getRowType()) {
+                    // Need to upcast row, if this doesn't work -> error out. Not yet supported.
+                    if(!canUpcastToRowType(row.getRowType(), rtype)) {
+                        partition->unlock();
+                        std::stringstream ss;
+                        ss<<__FILE__<<":"<<__LINE__<<" failed to upcast row "<<i<<" from "<<row.getRowType().desc()<<" to target type "<<rtype.desc();
+                        throw std::runtime_error(ss.str());
+                    }
+                    row = row.upcastedRow(rtype);
                 }
 
-                int64_t bytesWritten = static_cast<int64_t>(rows[i].serializeToMemory(base_ptr, capacityRemaining));
+                int64_t bytesWritten = static_cast<int64_t>(row.serializeToMemory(base_ptr, capacityRemaining));
 
-                auto serializedLength = rows[i].serializedLength(); // can be 0 for null values, empty dict, empty tuple, ...
+                auto serializedLength = row.serializedLength(); // can be 0 for null values, empty dict, empty tuple, ...
 
                 minBytesRequired = std::max(minBytesRequired, serializedLength);
 

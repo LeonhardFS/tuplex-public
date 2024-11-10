@@ -2299,8 +2299,8 @@ namespace tuplex {
                     col_idxs.emplace_back(i);
             }
         } else {
-            // check from type
-            auto num_columns = ops.front()->getOutputSchema().getRowType().parameters().size();
+            // check from type.
+            auto num_columns = extract_columns_from_type(ops.front()->getOutputSchema().getRowType());
             for(unsigned i = 0; i < num_columns; ++i)
                 col_idxs.emplace_back(i);
         }

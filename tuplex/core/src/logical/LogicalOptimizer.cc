@@ -977,8 +977,8 @@ namespace tuplex {
                 }
 
                 vector<size_t> colsToSerialize;
-                assert(rowtype.isTupleType());
-                for(auto i = 0; i < rowtype.parameters().size(); ++i)
+                assert(rowtype.isTupleType() || rowtype.isRowType());
+                for(auto i = 0; i < extract_columns_from_type(rowtype); ++i)
                     colsToSerialize.emplace_back(i);
 
                 return colsToSerialize;

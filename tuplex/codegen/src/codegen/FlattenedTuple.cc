@@ -360,9 +360,10 @@ namespace tuplex {
                         if(isnull)
                             assert(list_value.is_null);
 
-                        // _env->printValue(builder, list_size_in_bytes, "dserialized list " + type.desc() + " with bytes: ");
+#ifndef NDEBUG
+                        _env->printValue(builder, list_size_in_bytes, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " deserialized list " + type.desc() + " with bytes: ");
                         // _env->printValue(builder, size, "stored field size used for skipping, this number should match: ");
-
+#endif
                         // set the deserialized list
                         _tree.set(i, list_value);
                     } else {

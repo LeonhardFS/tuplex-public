@@ -732,6 +732,115 @@ TEST_F(ListFunctions, ListOfOptionF64Length) {
     }
 }
 
+namespace tuplex {
+    // Helper functions
+    std::vector<std::string> map_to_names(const std::unordered_map<std::string, Field> & m) {
+        using namespace std;
+        vector<string> v;
+
+        for(auto kv: m) {
+            v.push_back(kv.first);
+        }
+
+        std::sort(v.begin(), v.end());
+        return v;
+    }
+
+    Row map_to_row(const std::unordered_map<std::string, Field> & m) {
+        using namespace std;
+        auto names = map_to_names(m);
+        vector<Field> fields;
+        for(auto name : names) {
+            fields.push_back(m.at(name));
+        }
+        return Row::from_vector(fields);
+    }
+}
+
+TEST_F(ListFunctions, ListOfOptionF64Pipeline) {
+    using namespace tuplex;
+    using namespace std;
+
+    // TODO: Need to fix length here for List[Option[F64]]. Symbol table types it wrong.
+
+    auto& os = std::cout;
+
+    auto ctx_options = microTestOptions();
+    ctx_options.set("tuplex.useLLVMOptimizer", "false");
+    ctx_options.set("tuplex.experimental.traceExecution", "false"); // <-- super slow trace per instruction.
+    auto ctx = Context(ctx_options);
+
+
+    // Running test case
+    std::unordered_map<std::string, Field> single_row_map_a{make_pair("CRS_ARR_TIME", Field(0.0)),
+                                                          make_pair("CRS_DEP_TIME", Field(1.0)),
+                                                          make_pair("QUARTER", Field((int64_t)2)),
+                                                          make_pair("MONTH", Field((int64_t)4)),
+                                                          make_pair("DAY_OF_MONTH", Field((int64_t)2)),
+                                                          make_pair("DAY_OF_WEEK", Field((int64_t)2)),
+                                                          make_pair("OP_UNIQUE_CARRIER", Field("UA")),
+                                                          make_pair("ORIGIN", Field("SFO")),
+                                                          make_pair("DEST", Field("BOS")),
+                                                          make_pair("DEST_STATE_NM", Field("Massachusetts")),
+                                                          make_pair("ORIGIN_STATE_NM", Field("California")),
+                                                          make_pair("DEP_DELAY", Field(10.0)),
+                                                          make_pair("ARR_DELAY", Field(0.0))};
+
+    // this fails, because unvisited statements cause issue.
+    // The issue is the if stmt.
+    // def foo(x):
+    //    if ...:
+    //       return ...    # <-- only here visited
+    //    <stmt>  # never visited, errors type annotator visitor.
+    //    return ...
+    std::unordered_map<std::string, Field> single_row_map_b{make_pair("CRS_ARR_TIME", Field::null()),
+                                                          make_pair("CRS_DEP_TIME", Field(1.0)),
+                                                          make_pair("QUARTER", Field((int64_t)2)),
+                                                          make_pair("MONTH", Field((int64_t)4)),
+                                                          make_pair("DAY_OF_MONTH", Field((int64_t)2)),
+                                                          make_pair("DAY_OF_WEEK", Field((int64_t)2)),
+                                                          make_pair("OP_UNIQUE_CARRIER", Field("UA")),
+                                                          make_pair("ORIGIN", Field("SFO")),
+                                                          make_pair("DEST", Field("BOS")),
+                                                          make_pair("DEST_STATE_NM", Field("Massachusetts")),
+                                                          make_pair("ORIGIN_STATE_NM", Field("California")),
+                                                          make_pair("DEP_DELAY", Field(10.0)),
+                                                          make_pair("ARR_DELAY", Field(0.0))};
+
+    auto column_names = map_to_names(single_row_map_a);
+    vector<vector<Row>> test_scenarios;
+    // both rows.
+    test_scenarios.push_back({map_to_row(single_row_map_a), map_to_row(single_row_map_b)});
+
+    // Only row a
+    test_scenarios.push_back({map_to_row(single_row_map_a)});
+
+    // This scenario here fails, because some statements are not visited.
+    // Only row b
+    //test_scenarios.push_back({map_to_row(single_row_map_b)});
+
+    auto extractFeatureCode = fileToString("../resources/python/nextconf/flights/extractFeatures.py");
+
+    ASSERT_FALSE(extractFeatureCode.empty());
+
+    int pos = 1;
+    for(auto test_data : test_scenarios) {
+
+        os<<"Testing scenario "<<pos<<"/"<<test_scenarios.size()<<endl;
+
+        // Use two UDFs.
+        auto v = ctx.parallelize(test_data, column_names).map(UDF(extractFeatureCode)).map(UDF("lambda x: len(x)")).collectAsVector();
+
+        ASSERT_EQ(v.size(), test_data.size());
+        EXPECT_EQ(v.front().getInt(0), column_names.size()); // length of fields.
+        os << "Test result is: " <<endl;
+        for(const auto& row: v) {
+            os<<"-- "<<row.toPythonString()<<endl;
+        }
+        pos++;
+    }
+}
+
 TEST_F(ListFunctions, ListOf3Elements) {
     using namespace tuplex;
     using namespace std;
