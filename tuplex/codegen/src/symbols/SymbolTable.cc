@@ -155,11 +155,30 @@ namespace tuplex {
         addSymbol("str", python::Type::makeFunctionType(python::Type::makeOptionType(python::Type::STRING),
                                                         python::Type::STRING));
 
-        addSymbol("len", python::Type::makeFunctionType(python::Type::STRING, python::Type::I64));
-        auto n = findSymbol(std::string("len"))->fullyQualifiedName();
-        addSymbol("len", python::Type::makeFunctionType(python::Type::makeTupleType({python::Type::GENERICTUPLE}), python::Type::I64));
-        addSymbol("len", python::Type::makeFunctionType(python::Type::makeTupleType({python::Type::GENERICDICT}), python::Type::I64));
-        addSymbol("len", python::Type::makeFunctionType(python::Type::makeTupleType({python::Type::GENERICLIST}), python::Type::I64));
+//        addSymbol("len", python::Type::makeFunctionType(python::Type::STRING, python::Type::I64));
+//        auto n = findSymbol(std::string("len"))->fullyQualifiedName();
+//        addSymbol("len", python::Type::makeFunctionType(python::Type::makeTupleType({python::Type::GENERICTUPLE}), python::Type::I64));
+//        addSymbol("len", python::Type::makeFunctionType(python::Type::makeTupleType({python::Type::GENERICDICT}), python::Type::I64));
+//        addSymbol("len", python::Type::makeFunctionType(python::Type::makeTupleType({python::Type::GENERICLIST}), python::Type::I64));
+
+        // add symbol with typer for len.
+        // TODO: Use python protocols.
+        auto lenFunctionTyper = [this](const python::Type& parameterType) {
+
+            if(parameterType.parameters().size() != 1) {
+                // len() supports single parameter only.
+                return python::Type::makeFunctionType(parameterType, python::Type::UNKNOWN);
+            }
+
+            auto iterableType = parameterType.parameters().front();
+
+            if(iterableType == python::Type::STRING ||
+            iterableType.isListType() || iterableType.isDictionaryType() || iterableType.isTupleType())
+                return python::Type::makeFunctionType(parameterType, python::Type::I64);
+
+            return python::Type::UNKNOWN;
+        };
+        addSymbol(make_shared<Symbol>("len", lenFunctionTyper));
 
         addSymbol("abs", python::Type::makeFunctionType(python::Type::BOOLEAN,
                                                         python::Type::I64)); // note that abs converts to i64

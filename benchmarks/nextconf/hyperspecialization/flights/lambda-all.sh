@@ -61,12 +61,31 @@ run_benchmarks() {
   aws s3 rm --recursive --dryrun "${OUTPUT_PATH}/"
   aws s3 rm --recursive "${OUTPUT_PATH}/"
 
-  echo ">>> Running tuplex on LAMBDA with interpreter only"
-  mode=python
-  ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode python --no-hyper --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH}/output/${mode} \
+# This is ok.
+#  echo ">>> Running tuplex on LAMBDA with interpreter only"
+#  mode=python
+#  ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode python --no-hyper --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH}/output/${mode} \
+#                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
+#                             --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
+
+  echo ">>> Running tuplex on LAMBDA hyper with constant-folding"
+  mode=tuplex-hyper-cf
+  ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode tuplex --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH}/output/${mode} \
                              --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
                              --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
 
+  echo " !!! DONE !!!"
+  exit 0
+
+# this here errors.
+  echo ">>> Running tuplex on LAMBDA global with constant-folding"
+  mode=tuplex-global-cf
+  ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode tuplex --no-hyper --internal-fmt --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH}/output/${mode} \
+                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
+                             --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
+
+
+# OLD
 #  echo ">>> Running tuplex on LAMBDA with no hyper, no sparse structs"
 #  mode=tuplex-global-structs
 #  ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode tuplex --no-hyper --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH}/output/${mode} \

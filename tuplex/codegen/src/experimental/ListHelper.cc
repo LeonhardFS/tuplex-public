@@ -1194,6 +1194,7 @@ namespace tuplex {
                     return list_ptr;
                 }
             } else {
+                // element at 0 is capacity.
                 auto size_position = 1;
 
                 auto ans = builder.CreateStructLoadOrExtract(llvm_list_type, list_ptr, size_position);
