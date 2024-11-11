@@ -3079,9 +3079,8 @@ namespace tuplex {
 
             auto list_size = list_length(env, builder, list_ptr, list_type);
 
-            // debug:
 #ifndef NDEBUG
-            env.printValue(builder, list_size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " got input list " + list_type.desc() + " to upcast to " + target_list_type.desc() + " of size: ");
+            // env.printValue(builder, list_size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " got input list " + list_type.desc() + " to upcast to " + target_list_type.desc() + " of size: ");
 #endif
 
             list_init_empty(env, builder, target_list_ptr, target_list_type);

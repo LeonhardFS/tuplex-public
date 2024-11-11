@@ -4140,8 +4140,8 @@ namespace tuplex {
                     auto num_elements = list_length(*_env, builder, list_ptr, list_type);
 
 #ifndef NDEBUG
-                    _env->printValue(builder, index.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " indexing [] into list of type " + list_type.desc() + " with value: ");
-                    _env->printValue(builder, num_elements, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + _funcNames.top()+ ": list has #elements: ");
+                    // _env->printValue(builder, index.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " indexing [] into list of type " + list_type.desc() + " with value: ");
+                    // _env->printValue(builder, num_elements, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + _funcNames.top()+ ": list has #elements: ");
 #endif
 
                     // correct for negative indices (once)
@@ -4416,11 +4416,11 @@ namespace tuplex {
                 auto ret = ft.getLoad(builder, {idx});
 
 #ifndef NDEBUG
-                if(value_type.get_column_type(idx).withoutOption().isListType()) {
-                    auto list_type = value_type.get_column_type(idx);
-                    auto L_length = list_length(*_env, builder, ret.val, list_type);
-                    _env->printValue(builder, L_length, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + _funcNames.top() + ": got from row " + key + " of list type " + list_type.desc() + " of length: ");
-                }
+                // if(value_type.get_column_type(idx).withoutOption().isListType()) {
+                //     auto list_type = value_type.get_column_type(idx);
+                //     auto L_length = list_length(*_env, builder, ret.val, list_type);
+                //     _env->printValue(builder, L_length, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + _funcNames.top() + ": got from row " + key + " of list type " + list_type.desc() + " of length: ");
+                // }
 #endif
 
                 _lfb->setLastBlock(builder.GetInsertBlock());
@@ -4791,12 +4791,11 @@ namespace tuplex {
             _logger.debug("Deoptimized func ret type:   " + deopt_func_return_type.desc());
             _logger.debug("Deoptimized target ret type: " + deopt_target_type.desc());
 
-            // debug
 #ifndef NDEBUG
-            if(funcReturnType.isListType()) {
-                auto L_length = list_length(*_env, builder, retVal.val, expression_type);
-                _env->printValue(builder, L_length, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + _funcNames.top() + ": returning list (before upcast) of type " + expression_type.desc() + " of length: ");
-            }
+            // if(funcReturnType.isListType()) {
+            //     auto L_length = list_length(*_env, builder, retVal.val, expression_type);
+            //     _env->printValue(builder, L_length, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + _funcNames.top() + ": returning list (before upcast) of type " + expression_type.desc() + " of length: ");
+            // }
 #endif
 
             if(python::canUpcastType(deopt_target_type, deopt_func_return_type)) {
@@ -4806,10 +4805,10 @@ namespace tuplex {
                 retVal = upCastReturnType(builder, retVal, expression_type, funcReturnType);
 
 #ifndef NDEBUG
-                if(funcReturnType.isListType()) {
-                    auto L_length = list_length(*_env, builder, retVal.val, funcReturnType);
-                    _env->printValue(builder, L_length, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + _funcNames.top() + ": returning list (after upcast) of type " + funcReturnType.desc() + " of length: ");
-                }
+                // if(funcReturnType.isListType()) {
+                //     auto L_length = list_length(*_env, builder, retVal.val, funcReturnType);
+                //     _env->printValue(builder, L_length, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + _funcNames.top() + ": returning list (after upcast) of type " + funcReturnType.desc() + " of length: ");
+                // }
 #endif
 
                 _lfb->setLastBlock(builder.GetInsertBlock());

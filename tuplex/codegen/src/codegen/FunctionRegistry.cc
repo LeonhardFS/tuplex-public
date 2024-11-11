@@ -2507,7 +2507,7 @@ namespace tuplex {
 
 
 #ifndef NDEBUG
-            _env.printValue(builder, ret, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " list findcall result for needle type " + needle_type.desc() + ": ");
+          //  _env.printValue(builder, ret, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " list findcall result for needle type " + needle_type.desc() + ": ");
 #endif
 
             return SerializableValue(ret, _env.i64Const(sizeof(int64_t)), _env.i1Const(false));
