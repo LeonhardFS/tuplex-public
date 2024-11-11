@@ -114,6 +114,8 @@ namespace tuplex {
         // was a break statement executed in the ongoing loop?
         std::vector<bool> _loopBreakStack;
 
+        bool _functionReturned; // TODO: for nested functions, use stack.
+
         // each element vector corresponds to {{symbols created before loop}, symbolTypeChange} for an ongoing loop
         // whenever the type of a symbol that is in {symbols created before loop} changes, set symbolTypeChange to true
         std::vector<std::pair<std::vector<std::string>, bool>> _symbolsTypeChangeStack;

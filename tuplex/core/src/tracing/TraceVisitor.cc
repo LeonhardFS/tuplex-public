@@ -26,6 +26,7 @@ namespace tuplex {
 
         _argsColumns = columns;
         _functionSeen = false;
+        _functionReturned = false; // no return executed yet.
         _evalStack.clear();
         _symbols.clear();
 
@@ -367,13 +368,26 @@ namespace tuplex {
             // check whether statement can be optimized. Can be optimized iff result of optimizeNext is a different
             // memory address
             setLastParent(node);
+
+            // Avoid counting visits twice, hence check count here
+            auto visit_count = stmt->annotation().numTimesVisited;
+
             stmt->accept(*this);
+
+            // add annotation and mark as visited. This is important when early return is used.
+            if(stmt->annotation().numTimesVisited != visit_count + 1)
+                stmt->annotation().numTimesVisited++;
 
             if(stmt->type() == ASTNodeType::Break) {
                 _loopBreakStack.back() = true;
                 break;
             }
             if(stmt->type() == ASTNodeType::Continue) {
+                break;
+            }
+
+            // Did function return? -> Stop executing function altogether.
+            if(_functionReturned) {
                 break;
             }
         }
@@ -747,6 +761,8 @@ namespace tuplex {
         } else {
             _retColTypes.emplace_back(std::vector<python::Type>{retType});
         }
+
+        _functionReturned = true; // TODO: same will be true for raise statement!
     }
 
     void TraceVisitor::visit(NAssign *node) {

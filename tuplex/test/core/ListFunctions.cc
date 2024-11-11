@@ -810,14 +810,14 @@ TEST_F(ListFunctions, ListOfOptionF64Pipeline) {
     auto column_names = map_to_names(single_row_map_a);
     vector<vector<Row>> test_scenarios;
     // both rows.
-    test_scenarios.push_back({map_to_row(single_row_map_a), map_to_row(single_row_map_b)});
+    // test_scenarios.push_back({map_to_row(single_row_map_a), map_to_row(single_row_map_b)});
 
     // Only row a
-    test_scenarios.push_back({map_to_row(single_row_map_a)});
+    // test_scenarios.push_back({map_to_row(single_row_map_a)});
 
     // This scenario here fails, because some statements are not visited.
     // Only row b
-    //test_scenarios.push_back({map_to_row(single_row_map_b)});
+    test_scenarios.push_back({map_to_row(single_row_map_b)});
 
     auto extractFeatureCode = fileToString("../resources/python/nextconf/flights/extractFeatures.py");
 

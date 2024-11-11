@@ -47,41 +47,55 @@ namespace tuplex {
 
     void TypeAnnotatorVisitor::visit(NSuite *suite) {
 
+        bool has_speculative_statements = has_any_statement_positive_visits(suite);
+
         // visit statements until the first return is encountered!!!
         // => note: clean ast visitor could remove anything that comes after return!
         for (auto & stmt : suite->_statements) {
+            // does suite have speculative statements? If so, stop when visited count is 0 or no annotation.
+            // This if check needs to come first.
+            if(has_speculative_statements) {
+                if(!stmt->hasAnnotation() || stmt->annotation().numTimesVisited == 0)
+                    return;
+            }
+
             // check whether statement can be optimized. Can be optimized iff result of optimizeNext is a different
             // memory address
             setLastParent(suite);
             stmt->accept(*this);
-            // do not process statements after return (early exit suite)
-            if(stmt->type() == ASTNodeType::Return) {
-                suite->setInferredType(stmt->getInferredType());
-                return;
-            }
 
-            // similarly, stop at a raise statement
-            if(stmt->type() == ASTNodeType::Raise) {
-                // set type of suite to exception being raised...
-                // special case: if left side is NOT an exception, then set to TypeError
-                // i.e. something like raise 20 produces a type error...
-                // >>> raise 20
-                //Traceback (most recent call last):
-                //  File "<stdin>", line 1, in <module>
-                //TypeError: exceptions must derive from BaseException
-                auto raise = (NRaise*)stmt.get();
-                if(!raise->_expression->getInferredType().isExceptionType()) {
-                    suite->setInferredType(_symbolTable.lookupType("TypeError"));
-                } else {
-                    suite->setInferredType(raise->_expression->getInferredType());
+            switch(stmt->type()) {
+                case ASTNodeType::Return: {
+                    // do not process statements after return (early exit suite)
+                    suite->setInferredType(stmt->getInferredType());
+                    return;
                 }
-                return;
-            }
-
-            if(stmt->type() == ASTNodeType::Break || stmt->type() == ASTNodeType::Continue) {
-                // skip statements after break or continue
-                suite->setInferredType(stmt->getInferredType());
-                return;
+                case ASTNodeType::Raise: {
+                    // similarly, stop at a raise statement
+                    // set type of suite to exception being raised...
+                    // special case: if left side is NOT an exception, then set to TypeError
+                    // i.e. something like raise 20 produces a type error...
+                    // >>> raise 20
+                    //Traceback (most recent call last):
+                    //  File "<stdin>", line 1, in <module>
+                    //TypeError: exceptions must derive from BaseException
+                    auto raise = (NRaise*)stmt.get();
+                    if(!raise->_expression->getInferredType().isExceptionType()) {
+                        suite->setInferredType(_symbolTable.lookupType("TypeError"));
+                    } else {
+                        suite->setInferredType(raise->_expression->getInferredType());
+                    }
+                    return;
+                }
+                case ASTNodeType::Break:
+                case ASTNodeType::Continue: {
+                    // skip statements after break or continue
+                    suite->setInferredType(stmt->getInferredType());
+                    return;
+                }
+                default: {
+                    // nothing todo.
+                }
             }
         }
 
