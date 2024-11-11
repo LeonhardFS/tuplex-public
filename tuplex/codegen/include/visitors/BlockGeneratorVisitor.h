@@ -198,6 +198,9 @@ namespace codegen {
                             auto tmp = value_to_store;
                             auto llvm_tmp_type = value_to_store->getType();
                             value_to_store = env->CreateFirstBlockAlloca(builder, llvm_tmp_type);
+
+                            // store tmp (the old, original value form before) into newly allocated pointer.
+                            builder.CreateStore(tmp, value_to_store);
                         }
 
                         assert(value_to_store->getType()->isPointerTy());

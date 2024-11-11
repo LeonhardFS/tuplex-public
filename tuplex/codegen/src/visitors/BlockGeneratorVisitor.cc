@@ -1748,6 +1748,13 @@ namespace tuplex {
                 auto type = std::get<1>(paramInfo[i]);
                 auto param = _lfb->getParameter(name);
 
+#ifndef NDEBUG
+                if(type.withoutOption().isListType()) {
+                    auto L_length = list_length(*_env, builder, param.val, type);
+                    _env->printValue(builder, L_length, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + _funcNames.top() + ": got parameter " + name + " of list type " + type.desc() + " of length: ");
+                }
+#endif
+
                 VariableSlot slot;
                 slot.type = type;
                 slot.definedPtr = _env->CreateFirstBlockAlloca(builder, _env->i1Type(), name + "_defined");
@@ -3323,6 +3330,10 @@ namespace tuplex {
                 // create list ptr (in any case!)
                 auto num_elements = vals.size();
                 auto list_llvm_type = _env->createOrGetListType(list_type);
+
+                // Needs to be heap allocated (for case when list is returned). If just used within a function, can use stack.
+                // TODO: optimize allocations.
+                // auto list_ptr = _env->CreateHeapAlloca(builder, list_llvm_type); //_env->CreateFirstBlockAlloca(builder, list_llvm_type);
                 auto list_ptr = _env->CreateFirstBlockAlloca(builder, list_llvm_type);
                 list_init_empty(*_env, builder, list_ptr, list_type);
                 bool initialize_elements_as_null = false; // can skip this b.c. all elements are anyways going to be initialized.
@@ -3530,6 +3541,7 @@ namespace tuplex {
                 auto hasnorem = builder.CreateICmpEQ(builder.CreateSRem(diff, step), _env->i64Const(0));
                 numiters = builder.CreateSelect(hasnorem, numiters, builder.CreateAdd(numiters, _env->i64Const(1)));
 
+                // @TODO: Fix with heap allocation here...
                 llvm::Value *list_ptr = _env->CreateFirstBlockAlloca(builder, listLLVMType,
                                                                      "BGV_listComprehensionAlloc");
                 llvm::Value *listSize =  _env->CreateFirstBlockAlloca(builder, _env->i64Type(), "BGV_listComprehensionSize");
@@ -4129,7 +4141,7 @@ namespace tuplex {
 
 #ifndef NDEBUG
                     _env->printValue(builder, index.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " indexing [] into list of type " + list_type.desc() + " with value: ");
-                    _env->printValue(builder, num_elements, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " list has #elements: ");
+                    _env->printValue(builder, num_elements, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + _funcNames.top()+ ": list has #elements: ");
 #endif
 
                     // correct for negative indices (once)
@@ -4402,6 +4414,15 @@ namespace tuplex {
                 // if not, fetch from FlattenedTuple index
                 auto ft = FlattenedTuple::fromLLVMStructVal(_env, builder, value.val, value_type);
                 auto ret = ft.getLoad(builder, {idx});
+
+#ifndef NDEBUG
+                if(value_type.get_column_type(idx).withoutOption().isListType()) {
+                    auto list_type = value_type.get_column_type(idx);
+                    auto L_length = list_length(*_env, builder, ret.val, list_type);
+                    _env->printValue(builder, L_length, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + _funcNames.top() + ": got from row " + key + " of list type " + list_type.desc() + " of length: ");
+                }
+#endif
+
                 _lfb->setLastBlock(builder.GetInsertBlock());
                 if(out_ret)
                     *out_ret = ret;
@@ -4770,11 +4791,27 @@ namespace tuplex {
             _logger.debug("Deoptimized func ret type:   " + deopt_func_return_type.desc());
             _logger.debug("Deoptimized target ret type: " + deopt_target_type.desc());
 
+            // debug
+#ifndef NDEBUG
+            if(funcReturnType.isListType()) {
+                auto L_length = list_length(*_env, builder, retVal.val, expression_type);
+                _env->printValue(builder, L_length, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + _funcNames.top() + ": returning list (before upcast) of type " + expression_type.desc() + " of length: ");
+            }
+#endif
+
             if(python::canUpcastType(deopt_target_type, deopt_func_return_type)) {
                 // ok, fits the globally agreed function return type!
                 _logger.debug("emit return type upcast  " + expression_type.desc() + " -> " + funcReturnType.desc());
                 // the retval popped could need extension to an option type!
                 retVal = upCastReturnType(builder, retVal, expression_type, funcReturnType);
+
+#ifndef NDEBUG
+                if(funcReturnType.isListType()) {
+                    auto L_length = list_length(*_env, builder, retVal.val, funcReturnType);
+                    _env->printValue(builder, L_length, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + _funcNames.top() + ": returning list (after upcast) of type " + funcReturnType.desc() + " of length: ");
+                }
+#endif
+
                 _lfb->setLastBlock(builder.GetInsertBlock());
                 // this adds a retValue
                 _lfb->addReturn(retVal);
