@@ -36,7 +36,7 @@ if [[ -f "${TUPLEX_LAMBDA_ZIP}" ]]; then
 fi
 
 # add to environment, e.g. TUPLEX_BUILD_TYPE=tsan to force a tsan build. Release is the default mode
-export CIBW_ENVIRONMENT="CMAKE_BUILD_TYPE=Debug TUPLEX_LAMBDA_ZIP='./tuplex/other/tplxlam.zip' CMAKE_ARGS='-DBUILD_WITH_AWS=ON -DBUILD_WITH_CEREAL=ON -DBUILD_WITH_ORC=ON' LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64:/opt/lib"
+export CIBW_ENVIRONMENT="CMAKE_BUILD_TYPE=Release TUPLEX_LAMBDA_ZIP='./tuplex/other/tplxlam.zip' CMAKE_ARGS='-DBUILD_WITH_AWS=ON -DBUILD_WITH_CEREAL=ON -DBUILD_WITH_ORC=ON' LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64:/opt/lib"
 
 # Use the following line to build only python3.7-3.11 wheel
 export CIBW_BUILD="cp311-*"

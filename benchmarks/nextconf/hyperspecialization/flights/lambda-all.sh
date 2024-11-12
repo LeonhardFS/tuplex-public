@@ -29,24 +29,24 @@ validate_benchmarks() {
   if [ -d "$LOCAL_RESULT_DIR/output/python" ]; then
     echo ">>> Found local result directory, validating files."
 
-      # Copy S3 output files to local storage to compare with local reference. (Skip if not there)
+    # Copy S3 output files to local storage to compare with local reference. (Skip if not there)
     echo ">>> Copying S3 results to local folder for validation."
     aws s3 cp --recursive "${OUTPUT_PATH}/" $RESULT_DIR
 
-    echo ">>> Validating python baseline vs. tuplex with no hyper, no sparse structs"
-    ${PYTHON} validate.py "${LOCAL_RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-global-structs"
-
-    echo ">>> Validating python baseline vs. tuplex with no hyper, generic dicts"
-    ${PYTHON} validate.py "${LOCAL_RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-global-generic-dicts"
-
-    echo ">>> Validating python baseline vs. tuplex with hyper, generic dicts"
-    ${PYTHON} validate.py "${LOCAL_RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-hyper-generic-dicts"
-
-    echo ">>> Validating python baseline vs. tuplex with no hyper, sparse structs"
-    ${PYTHON} validate.py "${LOCAL_RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-global-sparse-structs"
-
-    echo ">>> Validating python baseline vs. tuplex with hyper, sparse structs"
-    ${PYTHON} validate.py "${LOCAL_RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-hyper-sparse-structs"
+#    echo ">>> Validating python baseline vs. tuplex with no hyper, no sparse structs"
+#    ${PYTHON} validate.py "${LOCAL_RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-global-structs"
+#
+#    echo ">>> Validating python baseline vs. tuplex with no hyper, generic dicts"
+#    ${PYTHON} validate.py "${LOCAL_RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-global-generic-dicts"
+#
+#    echo ">>> Validating python baseline vs. tuplex with hyper, generic dicts"
+#    ${PYTHON} validate.py "${LOCAL_RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-hyper-generic-dicts"
+#
+#    echo ">>> Validating python baseline vs. tuplex with no hyper, sparse structs"
+#    ${PYTHON} validate.py "${LOCAL_RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-global-sparse-structs"
+#
+#    echo ">>> Validating python baseline vs. tuplex with hyper, sparse structs"
+#    ${PYTHON} validate.py "${LOCAL_RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-hyper-sparse-structs"
   else
     echo ">>> Skipping validation, no local dir found. Run run-tuplex-experiments.sh to create local dir."
   fi
@@ -56,7 +56,7 @@ run_benchmarks() {
   run=$1
   LAMBDA_ARGS="--lambda --lambda-parallelism ${LAMBDA_PARALLELISM} --lambda-size ${LAMBDA_SIZE}"
 
-  # Delete results from S3 (this may take a while)
+  # Delete results from S3 (this may take a while).
   echo ">>> Deleting existing results from S3:"
   aws s3 rm --recursive --dryrun "${OUTPUT_PATH}/"
   aws s3 rm --recursive "${OUTPUT_PATH}/"
@@ -67,23 +67,24 @@ run_benchmarks() {
 #  ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode python --no-hyper --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH}/output/${mode} \
 #                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
 #                             --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
+# This is now also ok.
+#  echo ">>> Running tuplex on LAMBDA hyper with constant-folding"
+#  mode=tuplex-hyper-cf
+#  ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode tuplex --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH}/output/${mode} \
+#                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
+#                             --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
 
-  echo ">>> Running tuplex on LAMBDA hyper with constant-folding"
-  mode=tuplex-hyper-cf
-  ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode tuplex --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH}/output/${mode} \
+
+
+  # Check what the status of this here is.
+  echo ">>> Running tuplex on LAMBDA global with constant-folding"
+  mode=tuplex-global-cf
+  ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode tuplex --no-hyper --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH}/output/${mode} \
                              --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
                              --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
 
   echo " !!! DONE !!!"
   exit 0
-
-# this here errors.
-  echo ">>> Running tuplex on LAMBDA global with constant-folding"
-  mode=tuplex-global-cf
-  ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode tuplex --no-hyper --internal-fmt --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH}/output/${mode} \
-                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
-                             --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
-
 
 # OLD
 #  echo ">>> Running tuplex on LAMBDA with no hyper, no sparse structs"
