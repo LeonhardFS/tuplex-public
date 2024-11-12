@@ -61,62 +61,35 @@ run_benchmarks() {
   aws s3 rm --recursive --dryrun "${OUTPUT_PATH}/"
   aws s3 rm --recursive "${OUTPUT_PATH}/"
 
-# This is ok.
-#  echo ">>> Running tuplex on LAMBDA with interpreter only"
-#  mode=python
-#  ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode python --no-hyper --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH}/output/${mode} \
-#                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
-#                             --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
-# This is now also ok.
-#  echo ">>> Running tuplex on LAMBDA hyper with constant-folding"
-#  mode=tuplex-hyper-cf
-#  ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode tuplex --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH}/output/${mode} \
-#                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
-#                             --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
+  echo ">>> Running tuplex on LAMBDA with interpreter only"
+  mode=python
+  ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode python --no-hyper --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH}/output/${mode} \
+                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
+                             --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
 
+  echo ">>> Running tuplex on LAMBDA hyper with constant-folding"
+  mode=tuplex-hyper-cf
+  ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode tuplex --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH}/output/${mode} \
+                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
+                             --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
 
-
-  # Check what the status of this here is.
   echo ">>> Running tuplex on LAMBDA global with constant-folding"
   mode=tuplex-global-cf
   ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode tuplex --no-hyper --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH}/output/${mode} \
                              --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
                              --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
 
-  echo " !!! DONE !!!"
-  exit 0
+  echo ">>> Running tuplex on LAMBDA hyper without constant-folding"
+  mode=tuplex-hyper
+  ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode tuplex --no-cf --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH}/output/${mode} \
+                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
+                             --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
 
-# OLD
-#  echo ">>> Running tuplex on LAMBDA with no hyper, no sparse structs"
-#  mode=tuplex-global-structs
-#  ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode tuplex --no-hyper --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH}/output/${mode} \
-#                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
-#                             --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
-#
-#  echo ">>> Running tuplex on LAMBDA with no hyper, generic dicts"
-#  mode=tuplex-global-generic-dicts
-#  ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode tuplex --no-hyper --generic-dicts --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH}/output/${mode} \
-#                            --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
-#                            --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
-#
-#  echo ">>> Running tuplex on LAMBDA with hyper, generic dicts"
-#  mode=tuplex-hyper-generic-dicts
-#  ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode tuplex --generic-dicts --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH}/output/${mode} \
-#                            --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
-#                            --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
-#
-#  echo ">>> Running tuplex on LAMBDA with no hyper, sparse structs"
-#  mode=tuplex-global-sparse-structs
-#  ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode tuplex --no-hyper --sparse-structs --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH}/output/${mode} \
-#                            --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
-#                            --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
-#
-#  echo ">>> Running tuplex on LAMBDA with hyper, sparse structs"
-#  mode=tuplex-hyper-sparse-structs
-#  ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode tuplex --sparse-structs --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH}/output/${mode} \
-#                            --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
-#                            --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
-
+  echo ">>> Running tuplex on LAMBDA global without constant-folding"
+  mode=tuplex-global
+  ${PYTHON} runtuplex-new.py ${LAMBDA_ARGS} --mode tuplex --no-hyper --no-cf --input-pattern "${INPUT_PATTERN}" --output-path ${OUTPUT_PATH}/output/${mode} \
+                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
+                             --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
 }
 
 # Run all benchmarks once (run 0 is validation run)
@@ -124,14 +97,14 @@ run_benchmarks 0
 
 #validate_benchmarks
 
-## Run a few benchmarks.
-#NUM_RUNS=${NUM_RUNS:-5}
-#
-#for ((r = 1; r <= NUM_RUNS; r++)); do
-#  echo "-- RUN ${r}/${NUM_RUNS}"
-#
-#  run_benchmarks $r
-#done
+# Run a few benchmarks.
+NUM_RUNS=${NUM_RUNS:-1}
+
+for ((r = 1; r <= NUM_RUNS; r++)); do
+  echo "-- RUN ${r}/${NUM_RUNS}"
+
+  run_benchmarks $r
+done
 
 # Create plots necessary.
 
