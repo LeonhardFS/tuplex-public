@@ -49,12 +49,21 @@ namespace tuplex {
 
         bool has_speculative_statements = has_any_statement_positive_visits(suite);
 
+        // hack: Not sure why this is needed.
+        // basically, for whichever reason - some statements may be missing num visited.
+        // if there are speculative statements. check till first stmt with counts is encountered.
+        bool first_stmt_with_counts_already_seen = false;
+
         // visit statements until the first return is encountered!!!
         // => note: clean ast visitor could remove anything that comes after return!
         for (auto & stmt : suite->_statements) {
+
+            if(stmt->hasAnnotation() && stmt->annotation().numTimesVisited > 0)
+                first_stmt_with_counts_already_seen = true;
+
             // does suite have speculative statements? If so, stop when visited count is 0 or no annotation.
             // This if check needs to come first.
-            if(has_speculative_statements) {
+            if(has_speculative_statements && first_stmt_with_counts_already_seen) {
                 if(!stmt->hasAnnotation() || stmt->annotation().numTimesVisited == 0)
                     return;
             }

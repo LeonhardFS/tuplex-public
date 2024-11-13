@@ -801,6 +801,8 @@ namespace tuplex {
 
             it->value = ti.value; // update value of symbol!
         }
+
+        node->annotation().numTimesVisited++;
     }
 
     void TraceVisitor::visit(NCall *node) {
