@@ -97,14 +97,14 @@ run_benchmarks 0
 
 validate_benchmarks
 
-## Run a few benchmarks.
-#NUM_RUNS=${NUM_RUNS:-5}
-#
-#for ((r = 1; r <= NUM_RUNS; r++)); do
-#  echo "-- RUN ${r}/${NUM_RUNS}"
-#
-#  run_benchmarks $r
-#done
+# Run a few benchmarks.
+NUM_RUNS=${NUM_RUNS:-5}
+
+for ((r = 1; r <= NUM_RUNS; r++)); do
+  echo "-- RUN ${r}/${NUM_RUNS}"
+
+  run_benchmarks $r
+done
 
 # Create plots necessary.
 

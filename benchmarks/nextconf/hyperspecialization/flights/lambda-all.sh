@@ -99,7 +99,7 @@ run_benchmarks 0
 
 # Run a few benchmarks.
 NUM_RUNS=${NUM_RUNS:-1}
-
+echo "Using ${NUM_RUNS}"
 for ((r = 1; r <= NUM_RUNS; r++)); do
   echo "-- RUN ${r}/${NUM_RUNS}"
 
