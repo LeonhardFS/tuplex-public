@@ -1015,6 +1015,126 @@ namespace tuplex {
         python::closeInterpreter();
     }
 
+    TEST(AllQueries, GithubWithSparseStructs) {
+
+        // corresponds to experiment setting: tuplex-hyper-sparse-structs
+        // Detailed options:
+        // {"tuplex.useLLVMOptimizer": true, "tuplex.autoUpcast": true, "tuplex.allowUndefinedBehavior": false, "tuplex.optimizer.codeStats": false,
+        // "tuplex.optimizer.generateParser": false, "tuplex.optimizer.nullValueOptimization": true, "tuplex.optimizer.filterPushdown": true,
+        // "tuplex.optimizer.sharedObjectPropagation": true, "tuplex.optimizer.mergeExceptionsInOrder": true, "tuplex.optimizer.operatorReordering": false,
+        // "tuplex.optimizer.filterPromotion": true, "tuplex.interleaveIO": true, "tuplex.resolveWithInterpreterOnly": false,
+        // "tuplex.experimental.interchangeWithObjectFiles": false, "tuplex.optimizer.sparsifyStructs": true, "tuplex.experimental.useGenericDicts": false,
+        // "tuplex.network.verifySSL": false, "tuplex.redirectToPythonLogging": false, "tuplex.useInterpreterOnly": false, "tuplex.aws.lambdaInvokeOthers": true,
+        // "tuplex.experimental.hyperspecialization": true, "tuplex.experimental.opportuneCompilation": false, "tuplex.experimental.forceBadParseExceptFormat": true,
+        // "tuplex.optimizer.selectionPushdown": true, "tuplex.optimizer.simplifyLargeStructs": true, "tuplex.webui.enable": false, "tuplex.executorCount": 0,
+        // "tuplex.sample.maxDetectionRows": 10000, "tuplex.webui.port": 5000, "tuplex.webui.mongodb.port": 27017, "tuplex.webui.exceptionDisplayLimit": 5,
+        // "tuplex.optimizer.simplifyLargeStructs.threshold": 20, "tuplex.aws.requestTimeout": 600, "tuplex.aws.connectTimeout": 1,
+        // "tuplex.aws.maxConcurrency": 100, "tuplex.aws.httpThreadCount": 100, "tuplex.aws.lambdaMemory": 1536, "tuplex.aws.lambdaTimeout": 900,
+        // "tuplex.aws.requesterPay": true, "tuplex.normalcaseThreshold": 0.9, "tuplex.optionalThreshold": 0.7, "tuplex.aws.endpoint": "",
+        // "tuplex.aws.lambdaInvocationStrategy": "tree", "tuplex.aws.lambdaThreads": "auto", "tuplex.aws.name": "tuplex-lambda-runner",
+        // "tuplex.aws.region": "us-east-1", "tuplex.aws.scratchDir": "s3://tuplex-leonhard/scratch/github-exp", "tuplex.aws.verboseLogging": "false",
+        // "tuplex.backend": "lambda", "tuplex.csv.comments": ["#", "~"], "tuplex.csv.quotechar": "\"", "tuplex.csv.separators": [",", ";", "|", "\t"],
+        // "tuplex.driverMemory": "2G", "tuplex.env.hostname": "leonhards-System-Product-Name", "tuplex.env.mode": "file", "tuplex.env.user": "leonhards",
+        // "tuplex.executorMemory": "2G", "tuplex.experimental.aws.minimumInputSizePerLambda": "128MB", "tuplex.experimental.minimumSizeToSpecialize": "0",
+        // "tuplex.experimental.s3PreCacheSize": "0", "tuplex.experimental.specializationUnitSize": "0", "tuplex.experimental.traceExecution": "false",
+        // "tuplex.experimental.worker.numWorkers": "0", "tuplex.experimental.worker.workerBufferSize": "256MB", "tuplex.experimental.worker.workerPath": "",
+        // "tuplex.inputSplitSize": "20G", "tuplex.lambda.sample.maxDetectionMemory": "auto", "tuplex.lambda.sample.maxDetectionRows": "auto",
+        // "tuplex.lambda.sample.samplesPerStrata": "auto", "tuplex.lambda.sample.strataSize": "auto", "tuplex.logDir": ".", "tuplex.network.caFile": "",
+        // "tuplex.network.caPath": "", "tuplex.optimizer.constantFoldingOptimization": "false", "tuplex.partitionSize": "32MB", "tuplex.readBufferSize": "128KB",
+        // "tuplex.runTimeLibrary": "/home/leonhards/.pyenv/versions/3.11.6/lib/python3.11/site-packages/tuplex/libexec/tuplex_runtime.cpython-311-x86_64-linux-gnu.so",
+        // "tuplex.runTimeMemory": "128MB", "tuplex.runTimeMemoryBlockSize": "4MB", "tuplex.sample.maxDetectionMemory": "32MB", "tuplex.sample.samplesPerStrata": "1",
+        // "tuplex.sample.strataSize": "1024", "tuplex.scratchDir": "/tmp/tuplex-cache-leonhards", "tuplex.webui.mongodb.path": "/tmp/tuplex-cache-leonhards/mongodb",
+        // "tuplex.webui.mongodb.url": "localhost", "tuplex.webui.url": "localhost"}
+        using namespace std;
+        using namespace tuplex;
+
+        string input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
+
+        // full data
+        input_pattern = "/hot/data/github_daily/*.json";
+
+        string testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
+        auto output_path = "./local-exp/" + testName + "/" + "output" + "/";
+
+        // init interpreter
+        python::initInterpreter();
+        python::unlockGIL();
+
+        // check now with pipeline and set type.
+        ContextOptions co = ContextOptions::defaults();
+
+        co.set("tuplex.backend", "worker");
+
+        // co.set("tuplex.experimental.traceExecution", "true");
+
+        // this allows large files to be processed without splitting.
+        co.set("tuplex.experimental.worker.numWorkers", "0"); // <-- single worker.
+        co.set("tuplex.inputSplitSize", "20G");
+        co.set("tuplex.experimental.worker.workerBufferSize",
+               "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
+
+        // use explicitly generic dicts instead of sparse type.
+        co.set("tuplex.experimental.useGenericDicts", "false");
+        co.set("tuplex.optimizer.sparsifyStructs", "true");
+        co.set("tuplex.resolveWithInterpreterOnly", "true");
+
+        // use hyper specialization here.
+        co.set("tuplex.experimental.hyperspecialization", "true");
+        cout<<"Using hyperspecialization: "<<std::boolalpha<<co.USE_EXPERIMENTAL_HYPERSPECIALIZATION()<<endl;
+
+        // create context according to settings
+        Context ctx(co);
+        runtime::init(co.RUNTIME_LIBRARY().toPath());
+
+        // start pipeline incl. output
+        auto repo_id_code = "def extract_repo_id(row):\n"
+                            "    if 2012 <= row['year'] <= 2014:\n"
+                            "        \n"
+                            "        if row['type'] == 'FollowEvent':\n"
+                            "            return row['payload']['target']['id']\n"
+                            "        \n"
+                            "        if row['type'] == 'GistEvent':\n"
+                            "            return row['payload']['id']\n"
+                            "        \n"
+                            "        repo = row.get('repository')\n"
+                            "        \n"
+                            "        if repo is None:\n"
+                            "            return None\n"
+                            "        return repo.get('id')\n"
+                            "    else:\n"
+                            "        repo =  row.get('repo')\n"
+                            "        if repo:\n"
+                            "            return repo.get('id')\n"
+                            "        else:\n"
+                            "            return None\n";
+
+        // remove output files if they exist
+        cout << "Removing files (if they exist) from " << output_path << endl;
+        boost::filesystem::remove_all(output_path.c_str());
+
+        // original:
+        ctx.json(input_pattern, true, true, SamplingMode::SINGLETHREADED)
+                .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
+                .withColumn("repo_id", UDF(repo_id_code))
+                .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
+                .withColumn("commits", UDF("lambda row: row['payload'].get('commits')"))
+                .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
+                .selectColumns(vector<string>{"type", "repo_id", "year", "number_of_commits"})
+                .tocsv(output_path);
+
+        auto result_row_count = csv_row_count_for_pattern(output_path + "*.csv");
+
+        auto expected_row_count = 378;
+        // full data?
+        if (!strEndsWith(input_pattern, ".sample"))
+            expected_row_count = 294195; // full query result.
+
+        EXPECT_EQ(result_row_count, expected_row_count); // result which is correct for all rows.
+
+        python::lockGIL();
+        python::closeInterpreter();
+    }
+
     TEST(AllQueries, GetAccessedColumnsInExtractRepoIDWithStaticAnnotation) {
         using namespace tuplex;
         using namespace std;
