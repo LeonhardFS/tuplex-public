@@ -137,6 +137,13 @@ static void lazyGuard(MemoryHeap *heap) {
     }
 }
 
+extern "C" size_t getDefaultHeapBlockSize() noexcept {
+    if(!heap)
+        return RUNTIME_DEFAULT_BLOCK_SIZE;
+    else
+        return heap->defaultBlockSize;
+}
+
 /*!
  * externally called runtime function to (re)set the runtime memory that can be used from LLVM code
  * @param size
@@ -163,7 +170,6 @@ extern "C" void freeRunTimeMemory() noexcept {
         heap = new MemoryHeap();
 
     // go through chain & delete memory
-
     auto cur = heap->memory;
     while(cur) {
         auto block = cur;
@@ -223,9 +229,34 @@ extern "C" void *rtmalloc(const size_t requested_size) noexcept {
         // @Todo: maybe increase block size?
         // @Todo: Request super large block?
 
-        printf("fatal error: Requested object size %lu, is larger than default block size %lu! Can't handle memory request!\n", size, heap->defaultBlockSize);
-        exit(-1);
-        return NULL;
+        // Need to request block larger than what is used by default.
+        // -> Check if block is larger than 512MB, then error with bad alloc for now.
+        if(size > 512 * 1024 * 1024) {
+            printf("fatal error: Requested object size %lu, is larger than default block size %lu! Can't handle memory request, because it is exceeding hard limit of 512MB!\n", size, heap->defaultBlockSize);
+            exit(-1);
+        }
+
+        // has heap been initialized?
+        if(!heap->memory) {
+            // not yet, first block is larger than default block.
+            heap->memory = initMemoryBlock(size);
+            heap->lastBlock = heap->memory;
+        } else {
+            // Need for sure a new block, so add new last block to list.
+            heap->lastBlock->next = initMemoryBlock(size);
+            heap->lastBlock = heap->lastBlock->next;
+        }
+
+        uint8_t *memaddr = heap->lastBlock->mem;
+
+        // make sure addr is heap aligned
+        // cf. https://pzemtsov.github.io/2016/11/06/bug-story-alignment-on-x86.html
+        assert(is_aligned(HEAP_ALIGNMENT, memaddr));
+
+        // inc offset to clarify that block is full.
+        heap->lastBlock->offset += size;
+
+        return memaddr;
     }
 
     lazyGuard(heap);

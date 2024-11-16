@@ -33,6 +33,8 @@ extern "C" {
 EXPORT_SYMBOL extern void    setRunTimeMemory(const size_t size, size_t blockSize) noexcept;
 EXPORT_SYMBOL extern size_t  getRunTimeMemorySize() noexcept;
 
+EXPORT_SYMBOL extern size_t getDefaultHeapBlockSize() noexcept;
+
 /*!
  * needs to be called in order to free all memory as used by UDFs.
  */
