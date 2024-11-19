@@ -55,7 +55,7 @@ namespace tuplex {
             // getValuesView() --> codegen object
 
             python::Type dictType() const {
-                throw std::runtime_error("not yet implemented");
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented");
             }
 
             python::Type specializedDictType() const {

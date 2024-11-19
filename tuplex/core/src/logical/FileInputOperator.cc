@@ -2480,7 +2480,7 @@ namespace tuplex {
     }
 
     std::vector<Row> FileInputOperator::sampleORCFile(const URI& uri, size_t uri_size, const SamplingMode& mode) {
-        throw std::runtime_error("not yet implemented");
+        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented");
         return {};
     }
 

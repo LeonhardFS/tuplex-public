@@ -1959,7 +1959,7 @@ namespace tuplex {
                         struct_dict_store_value(env, builder, src_element, dest_ptr, dest_type, dst_access_path);
                         struct_dict_store_present(env, builder, dest_ptr, dest_type, dst_access_path, env.i1Const(true));
                     } else {
-                        throw std::runtime_error("not yet implemented");
+                        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented");
                     }
 
                     // old

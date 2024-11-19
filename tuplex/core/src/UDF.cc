@@ -1460,7 +1460,7 @@ namespace tuplex {
             if(hints.size() == 1)
                 hints[0] = std::make_pair(std::get<0>(hints[0]), new_row_type);
             else
-                throw std::runtime_error("not yet implemented");
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented");
             for(const auto &el : hints)
                 getAnnotatedAST().addTypeHint(std::get<0>(el), std::get<1>(el));
 

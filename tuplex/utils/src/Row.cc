@@ -526,7 +526,7 @@ namespace tuplex {
             return python::Type::makeTupleType(col_types);
         } else {
 
-            std::cerr<<"not yet implemented"<<std::endl;
+            std::cerr<<std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented"<<std::endl;
 
             // joint aggregate
             return python::Type::UNKNOWN;

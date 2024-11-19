@@ -505,7 +505,7 @@ namespace tuplex {
 
                                 if(expected_type.isStructuredDictionaryType()) {
                                     // full check:
-                                    throw std::runtime_error("not yet implemented");
+                                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented");
                                 } else {
                                     assert(expected_type.isSparseStructuredDictionaryType());
                                     // partial check:

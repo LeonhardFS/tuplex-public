@@ -2583,7 +2583,7 @@ namespace tuplex {
                 lfb.addException(builder, ExceptionCode::VALUEERROR, not_found, "ValueError on list.index, entry not found");
 
                 return find_res;
-                throw std::runtime_error("not yet implemented");
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented");
             } else {
                 throw std::runtime_error("requesting .index on unsupported type " + callerType.desc());
             }
@@ -3608,7 +3608,7 @@ namespace tuplex {
 
 
 #warning "TODO: add code here AND change the typing to use constant type for .get function (to avoid costly tracing)"
-            throw std::runtime_error("not yet implemented");
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented");
             return {};
         }
 

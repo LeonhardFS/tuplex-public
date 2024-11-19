@@ -1051,27 +1051,27 @@ namespace tuplex {
             buf_size -= parsed_bytes;
             json_obj = cJSON_ParseWithLengthOpts(buf, buf_size, &end_ptr, false);
         }
-        throw std::runtime_error("not yet implemented");
+        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented");
     }
 
     //@March: implement, columns present in json file
     std::vector<std::string> JsonStatistic::columns() const {
-        throw std::runtime_error("not yet implemented");
+        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented");
     }
 
     //@March: implement, how many full rows are contained in the sample
     size_t JsonStatistic::rowCount() const {
-        throw std::runtime_error("not yet implemented");
+        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented");
     }
 
     //@March: implement, normal-case type. I.e. specialized according to threshold
     python::Type JsonStatistic::type() const {
-        throw std::runtime_error("not yet implemented");
+        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented");
     }
 
     //@March: implement, general-case type. I.e. type has to be a subtyoe of superType, i.e. canUpcastRowType(type(), superType()) must always hold
     python::Type JsonStatistic::superType() const {
-        throw std::runtime_error("not yet implemented");
+        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented");
     }
 
     std::tuple<std::vector<Row>, std::vector<std::string>> sortRowsAndIdentifyColumns(const std::vector<Row> &rows,

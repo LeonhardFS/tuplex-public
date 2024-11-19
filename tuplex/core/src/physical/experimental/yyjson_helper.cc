@@ -149,7 +149,7 @@ namespace tuplex {
         std::string s;
 
         // TOOD:
-        s = "NOT YET IMPLEMENTED";
+        s = std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented";
 
         auto ptr = runtime::rtmalloc(s.length() + 1);
         memcpy(ptr, s.c_str(), s.length() + 1);

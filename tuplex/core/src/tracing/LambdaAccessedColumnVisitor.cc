@@ -71,7 +71,7 @@ namespace tuplex {
 
                         if(get_arg->type() == ASTNodeType::Number && get_arg->getInferredType() == python::Type::I64) {
                             // integer index
-                            throw std::runtime_error("not yet implemented");
+                            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented");
                             return;
                         }
                     }

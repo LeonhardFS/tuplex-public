@@ -1054,7 +1054,7 @@ namespace tuplex {
                     cout<<"And MAP type is: "<<mop->getInputSchema().getRowType().desc()<<endl;
 #endif
                     if(isMapSelect(mop.get())) {
-                        throw std::runtime_error("not yet implemented");
+                        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented");
                     } else {
                         mop->rewriteParametersInAST(rewriteMap);
                     }
