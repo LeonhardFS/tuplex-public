@@ -26,35 +26,35 @@ def extract_logs_to_df(data):
 
                 request_id = response['container']['requestId']
 
-                logs.append({'requestId': request_id, 'lam_no': lam_no, 'log':log})
+                logs.append({'requestId': request_id, 'lam_no': lam_no, 'log':log, 'time':response['taskExecutionTime']})
 
-        # Recursive log extract from self-invocations
-        if 'invokedResponses' in response.keys():
-            for self_response in response['invokedResponses']:
-                for resource in self_response['resources']:
-                    if resource.get('type') == 1:
-                        log = resource['payload']
+    # Recursive log extract from self-invocations
+    if 'invokedResponses' in response.keys():
+        for self_response in response['invokedResponses']:
+            for resource in self_response['resources']:
+                if resource.get('type') == 1:
+                    log = resource['payload']
 
-                        bytes_data = base64.b64decode(log)
-                        log = zlib.decompress(bytes_data).decode()
+                    bytes_data = base64.b64decode(log)
+                    log = zlib.decompress(bytes_data).decode()
 
-                        # extract from log Lambda number (to save log to).
-                        # For these messages, this is likely not found directly.
-                        try:
-                            lam_no = int(re.findall(r"Lambda (\d+) writing to", log)[0])
-                        except:
+                    # extract from log Lambda number (to save log to).
+                    # For these messages, this is likely not found directly.
+                    try:
+                        lam_no = int(re.findall(r"Lambda (\d+) writing to", log)[0])
+                    except:
 
-                            if "settings from message are different, reinitialized with:" in log:
-                                needle = "settings from message are different, reinitialized with:"
-                            else:
-                                needle = "current worker settings: "
+                        if "settings from message are different, reinitialized with:" in log:
+                            needle = "settings from message are different, reinitialized with:"
+                        else:
+                            needle = "current worker settings: "
 
-                            lines = log.splitlines()
-                            line = list(filter(lambda line: needle in line, lines))[0]
-                            raw_info = line[line.find(needle) + len(needle):].strip()
-                            info = json.loads(raw_info)
-                            lam_no = int(os.path.basename(info['spillRootURI'])[3:])
+                        lines = log.splitlines()
+                        line = list(filter(lambda line: needle in line, lines))[0]
+                        raw_info = line[line.find(needle) + len(needle):].strip()
+                        info = json.loads(raw_info)
+                        lam_no = int(os.path.basename(info['spillRootURI'])[3:])
 
-                        request_id = response['container']['requestId']
-                        logs.append({'requestId': request_id, 'lam_no': lam_no, 'log':log})
+                    request_id = self_response['container']['requestId']
+                    logs.append({'requestId': request_id, 'lam_no': lam_no, 'log':log, 'time':self_response['taskExecutionTime']})
     return pd.DataFrame(logs)
