@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import logging
+from datetime import datetime
 from typing import Optional
 import os
 import pathlib
@@ -83,8 +84,15 @@ def extract_per_file_stats_tuplex(job_stats):
         L[i]['input_path'] = req_uri[:req_uri.rfind(':')]
         L[i]['req_uri'] = req_uri
         L[i]['duration'] = job_stats['responses'][i]['taskExecutionTime']
-        #L[i]['num_input_rows'] = L[i]['input']['total_input_row_count']
-        #L[i]['num_output_rows'] = L[i]['output']['normal']
+        inp = job_stats['requests'][i]['input_paths_taken']
+        outp = job_stats['requests'][i]['output_paths_taken']
+        L[i]['num_input_rows'] = inp['normal'] + inp['general'] + inp['fallback'] + inp['unresolved']
+        L[i]['num_output_rows'] = outp['normal'] + outp['unresolved']
+
+        # request time and hyperspecialization time
+        L[i]['request_time_in_s'] = (datetime.utcfromtimestamp(job_stats['requests'][i]['tsRequestEnd'] / 1000000000) - datetime.utcfromtimestamp(job_stats['requests'][i]['tsRequestStart'] / 1000000000)).total_seconds()
+        L[i]['hyperspecialization_time'] = job_stats['requests'][i].get('t_hyper')
+
     return L
 
 # expand per_file_stats in df
@@ -126,6 +134,7 @@ def expand_tuplex_df(df_tplx):
                 'input_path': t['input_path']
                 }
         if t.get('hyper_active') is not None:
+            # deprecated code, can likely remove...
             more_data = {'hyper': t.get('hyper_active'),
                          'request_time_in_s': t['request_total_time'],
                          'compile_time_in_s': t['timings'].get('compile_time'),
@@ -133,7 +142,9 @@ def expand_tuplex_df(df_tplx):
                          'general_and_interpreter_time_in_s':t['timings'].get('general_and_interpreter_time'),
                          'hyperspecialization_time':t['timings'].get('hyperspecialization_time'),}
             data.update(more_data)
-
+        else:
+            data['request_time_in_s'] = t['request_time_in_s']
+            data['hyperspecialization_time'] = t['hyperspecialization_time']
         return pd.Series(list(data.values()), index=(data.keys()))
     df = pd.merge(df, df['per_file_stats'].apply(expand_helper), left_index=True, right_index=True)
     df.drop(columns=['options', 'scratch_path'], inplace=True)
