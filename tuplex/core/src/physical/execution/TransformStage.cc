@@ -1084,10 +1084,22 @@ namespace tuplex {
                 // metrics.setLLVMOptimizationTime(llvm_optimization_time);
                 logger.info("TransformStage - Optimization via LLVM passes took " + std::to_string(llvm_optimization_time) + " ms");
 
+                bool output_fast_path = false;
+
 #ifndef NDEBUG
-                auto opt_code = codegen::moduleToString(*fast_path_mod);
-                stringToFile(URI("fastpath_transform_stage_" + std::to_string(number()) + "_optimized.txt"), opt_code);
+                output_fast_path = true;
 #endif
+                // debug env variable.
+                auto env_value = getEnv("TUPLEX_DEBUG_SAVE_IR_FILES");
+                if(!env_value.empty())
+                    output_fast_path = stringToBool(env_value);
+
+                if(output_fast_path) {
+                    auto debug_uri = URI("fastpath_transform_stage_" + std::to_string(number()) + "_optimized.txt");
+                    logger.info("Saving fast path (LLVM IR) to " + debug_uri.toString());
+                    auto opt_code = codegen::moduleToString(*fast_path_mod);
+                    stringToFile(debug_uri, opt_code);
+                }
 
                 timer.reset();
             }

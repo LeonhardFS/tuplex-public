@@ -3262,7 +3262,7 @@ namespace tuplex {
 
             auto n_elements = call_cjson_getarraysize(builder, item);
 
-            env.printValue(builder, n_elements, "decoding List[Dict[pyobject,pyobject]] with n elements: ");
+            // env.printValue(builder, n_elements, "decoding List[Dict[pyobject,pyobject]] with n elements: ");
 
             auto i_var = env.CreateFirstBlockAlloca(builder, env.i64Type());
 
@@ -3287,7 +3287,7 @@ namespace tuplex {
                 builder.SetInsertPoint(bbLoopBody);
                 auto i = builder.CreateLoad(builder.getInt64Ty(), i_var);
 
-                env.printValue(builder, i, "loop i: ");
+                // env.printValue(builder, i, "loop i: ");
 
                 // fetch cJSON and store within list!
                 auto arr_item = get_cjson_array_item(builder, item, i);
