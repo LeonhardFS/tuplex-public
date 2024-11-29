@@ -2,7 +2,7 @@
 // Created by Leonhard Spiegelberg on 1/31/22.
 //
 
-#include <ee/aws/RequestInfo.h>
+#include <ee/RequestInfo.h>
 #include <AWSCommon.h>
 #include <aws/core/utils/HashingUtils.h>
 

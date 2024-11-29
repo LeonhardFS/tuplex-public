@@ -7,12 +7,8 @@
 
 #include <Base.h>
 #include <StringUtils.h>
-
-#ifdef BUILD_WITH_AWS
 #include <utils/Messages.h>
 #include "JSONUtils.h"
-
-#endif
 
 namespace tuplex {
 
@@ -34,7 +30,6 @@ namespace tuplex {
         }
         return total_parts;
     }
-
 
     struct AWSLambdaTimings {
         // These are displayed at the end of the log in the form of
@@ -118,7 +113,7 @@ namespace tuplex {
     };
 
     /*!
-     * helper struct holding decoded information obtained from a log of a Lambda request
+     * Helper struct holding decoded information obtained from a log of a Lambda request.
      */
     struct RequestInfo {
         std::string requestId;
@@ -152,13 +147,12 @@ namespace tuplex {
         in_normal(0), in_general(0), in_fallback(0), in_unresolved(0), out_normal(0), out_unresolved(0),
         fast_path_time(0), general_and_interpreter_time(0), compile_time(0), hyper_time(0) {}
 
-#ifdef BUILD_WITH_AWS
+
         RequestInfo(const messages::RequestInfo& info) : in_normal(0), in_general(0), in_fallback(0), in_unresolved(0), out_normal(0), out_unresolved(0),
                                                          fast_path_time(0), general_and_interpreter_time(0), compile_time(0), hyper_time(0), requestId(info.requestid().c_str()),
         containerId(info.containerid()),
                                                          awsTimings(std::move(AWSLambdaTimings::from_proto(info.timings()))), returnCode(info.returncode()), errorMessage(info.errormessage().c_str()),
         tsRequestStart(info.tsrequeststart()), tsRequestEnd(info.tsrequestend()) {}
-#endif
 
         static RequestInfo parseFromLog(const std::string& log);
 
@@ -228,14 +222,15 @@ namespace tuplex {
             return ss.str();
         }
 
-#ifdef BUILD_WITH_AWS
         inline void fill(messages::RequestInfo* r) const {
             if(!r)
                 return;
 
             r->set_requestid(requestId.c_str());
             r->set_containerid(containerId.c_str());
+
             awsTimings.fill_proto(r->mutable_timings());
+
             r->set_returncode(returnCode);
             r->set_errormessage(errorMessage.c_str());
             r->set_tsrequeststart(tsRequestStart);
@@ -247,7 +242,14 @@ namespace tuplex {
             fill(r);
             return r;
         }
-#endif
+    };
+
+
+    // Helper structure to track client-side request info, request and response.
+    struct TaskTriplet {
+        RequestInfo client_info;
+        messages::InvocationRequest request;
+        messages::InvocationResponse response;
     };
 }
 

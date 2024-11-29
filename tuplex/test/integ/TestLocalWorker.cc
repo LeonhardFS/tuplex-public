@@ -177,7 +177,6 @@ TEST_F(LocalWorkerFixture, GithubGenericDictHyper) {
     ASSERT_FALSE(job_data.empty());
 
 
-
     // check results (from python reference number, add up total line count)
     cout << "Analyzing result: " << endl;
     auto output_uris = glob(output_path + "*.csv");

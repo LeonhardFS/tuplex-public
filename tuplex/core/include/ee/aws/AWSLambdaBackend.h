@@ -28,7 +28,7 @@
 
 #include "AWSCommon.h"
 #include "ContainerInfo.h"
-#include "RequestInfo.h"
+#include "../RequestInfo.h"
 #include "AWSLambdaInvocationService.h"
 #include <aws/core/Aws.h>
 #include <aws/core/utils/Outcome.h>

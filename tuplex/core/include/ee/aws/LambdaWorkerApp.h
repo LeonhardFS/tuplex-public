@@ -18,7 +18,7 @@
 
 #include <AWSCommon.h>
 #include <ee/aws/ContainerInfo.h>
-#include <ee/aws/RequestInfo.h>
+#include <ee/RequestInfo.h>
 #include <aws/core/Aws.h>
 #include <aws/core/utils/Outcome.h>
 #include <aws/core/utils/logging/DefaultLogSystem.h>

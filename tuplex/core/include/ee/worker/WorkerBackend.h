@@ -7,6 +7,7 @@
 
 
 #include "../IRequestBackend.h"
+#include "../RequestInfo.h"
 #include <vector>
 #include <physical/execution/TransformStage.h>
 #include <physical/execution/HashJoinStage.h>

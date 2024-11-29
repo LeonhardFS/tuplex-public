@@ -549,7 +549,7 @@ namespace tuplex {
 
         // Recursive invocations? Add them too.
         if(resp.response.invokedrequests_size() > 0) {
-            for(auto info : resp.response.invokedrequests()) {
+            for(const auto& info : resp.response.invokedrequests()) {
                 addBilling(static_cast<size_t>(info.timings().billeddurationinms()) * static_cast<size_t>(info.timings().memorysizeinmb()), 1);
             }
         }
@@ -2231,122 +2231,154 @@ namespace tuplex {
         using namespace std;
         stringstream ss;
 
-        ss << "{";
-
-        // 0. general info
-        ss << "\"stageStartTimestamp\":" << _startTimestamp << ",";
-        ss << "\"stageEndTimestamp\":" << _endTimestamp << ",";
-
-        // settings etc.
-        ss << "\"hyper_mode\":" << (_options.USE_EXPERIMENTAL_HYPERSPECIALIZATION() ? "true" : "false") << ",";
-        ss << "\"cost\":" << _info.cost << ",";
-
-        // detailed billing info to breakdown better.
-        ss <<"\"billing\":{";
-        ss<<"\"requestCount\":"<<numRequests()<<",";
-        ss<<"\"mbms\":"<<_total_mbms<<",";
-        ss<<"\"costPerGBSecond\":"<<costPerGBSecond();
-        ss<<"},";
-
-        ss << "\"input_paths_taken\":{"
-           << "\"normal\":" << _info.total_input_normal_path << ","
-           << "\"general\":" << _info.total_input_general_path << ","
-           << "\"fallback\":" << _info.total_input_fallback_path << ","
-           << "\"unresolved\":" << _info.total_input_unresolved
-           << "},";
-        ss << "\"output_paths_taken\":{"
-           << "\"normal\":" << _info.total_output_rows << ","
-           << "\"unresolved\":" << _info.total_output_exceptions
-           << "},";
-
-
-        // 1. tasks
-        ss << "\"tasks\":[";
+        // Extract triplets from internal storage.
+        vector<TaskTriplet> requests_responses;
         {
             std::lock_guard<std::mutex> lock(_mutex);
-
-            int task_counter = 0;
             for (const auto &task: _tasks) {
-                ContainerInfo info = task.response.container();
-                ss << "{\"container\":" << info.asJSON() << ",\"invoked_containers\":[";
-                for (unsigned i = 0; i < task.response.invokedresponses_size(); ++i) {
-                    auto invoked_response = task.response.invokedresponses(i);
-                    ContainerInfo info = invoked_response.container();
-                    ss << info.asJSON();
-                    if (i != task.response.invokedresponses_size() - 1)
-                        ss << ",";
-                }
-                ss << "]";
+                messages::InvocationRequest req;
+                req.set_type(messages::MessageType::MT_UNKNOWN); // Unknown means missing here.
 
-                // log
-                for (const auto &r: task.response.resources()) {
-                    if (r.type() == static_cast<uint32_t>(ResourceType::LOG)) {
-                        auto log = decompress_string(r.payload());
-                        ss << ",\"log\":" << escape_for_json(log) << "";
-                        break;
+                // Lookup based on dict, if not check for failed requests.
+                auto requestId = task.info.requestId;
+                if(_invokedRequests.find(requestId) != _invokedRequests.end()) {
+                    req = _invokedRequests.at(requestId).body;
+                } else {
+                    logger().debug("Did not find request for " + requestId + ", checking failed requests.");
+                    for(const auto& failed_request_info : _failedRequests) {
+                        if(uuidToString(get<2>(failed_request_info).id) == requestId) {
+                            req = get<2>(failed_request_info).body;
+                            break;
+                        }
+                    }
+                    if(req.type() == messages::MessageType::MT_UNKNOWN) {
+                        logger().error("Could not find request in successful and failed requests with id " + requestId +", storing dummy.");
                     }
                 }
-
-                ss << ",\"invoked_requests\":[";
-                RequestInfo r_info;
-                for (int i = 0; i < task.response.invokedrequests_size(); ++i) {
-                    r_info = task.response.invokedrequests(i);
-                    r_info.fillInFromResponse(task.response.invokedresponses(i));
-                    ss << r_info.asJSON();
-                    if (i != task.response.invokedrequests_size() - 1)
-                        ss << ",";
-                }
-                ss << "]";
-
-                // invoked input uris
-                ss << ",\"input_uris\":[";
-                for (unsigned i = 0; i < task.response.inputuris_size(); ++i) {
-                    ss << "\"" << task.response.inputuris(i) << "\"";
-                    if (i != task.response.inputuris_size() - 1)
-                        ss << ",";
-                }
-
-                ss << "]";
-
-                // end container.
-                ss << "}";
-                if (task_counter != _tasks.size() - 1)
-                    ss << ",";
-                task_counter++;
+                requests_responses.push_back({task.info, req, task.response});
             }
         }
-        ss << "],";
 
+        IRequestBackend::dumpAsJSON(ss, _startTimestamp, _endTimestamp, _options.USE_EXPERIMENTAL_HYPERSPECIALIZATION(),_info.cost,
+                                    numRequests(), _total_mbms, costPerGBSecond(), _info.total_input_normal_path, _info.total_input_general_path, _info.total_input_fallback_path, _info.total_input_unresolved,
+                                    _info.total_output_rows, _info.total_output_exceptions, requests_responses);
 
-        // 2. requests & responses?
-        // 1. tasks
-        ss << "\"requests\":[";
-        {
-            std::lock_guard<std::mutex> lock(_mutex);
-            for (unsigned i = 0; i < _tasks.size(); ++i) {
-                auto &info = _tasks[i].info;
-                ss << info.asJSON();
-                if (i != _tasks.size() - 1)
-                    ss << ",";
-            }
-        }
-        ss << "]";
-
-        // Dump all responses (full data for analysis).
-        ss << ",\"responses\":[";
-        {
-            std::lock_guard<std::mutex> lock(_mutex);
-            for (unsigned i = 0; i < _tasks.size(); ++i) {
-                std::string response_as_str;
-                google::protobuf::util::MessageToJsonString(_tasks[i].response, &response_as_str);
-                ss << response_as_str;
-                if (i != _tasks.size() - 1)
-                    ss << ",";
-            }
-        }
-        ss << "]";
-
-        ss << "}";
+//        ss << "{";
+//
+//        // 0. general info
+//        ss << "\"stageStartTimestamp\":" << _startTimestamp << ",";
+//        ss << "\"stageEndTimestamp\":" << _endTimestamp << ",";
+//
+//        // settings etc.
+//        ss << "\"hyper_mode\":" << (_options.USE_EXPERIMENTAL_HYPERSPECIALIZATION() ? "true" : "false") << ",";
+//        ss << "\"cost\":" << _info.cost << ",";
+//
+//        // detailed billing info to breakdown better.
+//        ss <<"\"billing\":{";
+//        ss<<"\"requestCount\":"<<numRequests()<<",";
+//        ss<<"\"mbms\":"<<_total_mbms<<",";
+//        ss<<"\"costPerGBSecond\":"<<costPerGBSecond();
+//        ss<<"},";
+//
+//        ss << "\"input_paths_taken\":{"
+//           << "\"normal\":" << _info.total_input_normal_path << ","
+//           << "\"general\":" << _info.total_input_general_path << ","
+//           << "\"fallback\":" << _info.total_input_fallback_path << ","
+//           << "\"unresolved\":" << _info.total_input_unresolved
+//           << "},";
+//        ss << "\"output_paths_taken\":{"
+//           << "\"normal\":" << _info.total_output_rows << ","
+//           << "\"unresolved\":" << _info.total_output_exceptions
+//           << "},";
+//
+//
+//        // 1. tasks
+//        ss << "\"tasks\":[";
+//        {
+//            std::lock_guard<std::mutex> lock(_mutex);
+//
+//            int task_counter = 0;
+//            for (const auto &task: _tasks) {
+//                ContainerInfo info = task.response.container();
+//                ss << "{\"container\":" << info.asJSON() << ",\"invoked_containers\":[";
+//                for (unsigned i = 0; i < task.response.invokedresponses_size(); ++i) {
+//                    auto invoked_response = task.response.invokedresponses(i);
+//                    ContainerInfo info = invoked_response.container();
+//                    ss << info.asJSON();
+//                    if (i != task.response.invokedresponses_size() - 1)
+//                        ss << ",";
+//                }
+//                ss << "]";
+//
+//                // log
+//                for (const auto &r: task.response.resources()) {
+//                    if (r.type() == static_cast<uint32_t>(ResourceType::LOG)) {
+//                        auto log = decompress_string(r.payload());
+//                        ss << ",\"log\":" << escape_for_json(log) << "";
+//                        break;
+//                    }
+//                }
+//
+//                ss << ",\"invoked_requests\":[";
+//                RequestInfo r_info;
+//                for (int i = 0; i < task.response.invokedrequests_size(); ++i) {
+//                    r_info = task.response.invokedrequests(i);
+//                    r_info.fillInFromResponse(task.response.invokedresponses(i));
+//                    ss << r_info.asJSON();
+//                    if (i != task.response.invokedrequests_size() - 1)
+//                        ss << ",";
+//                }
+//                ss << "]";
+//
+//                // invoked input uris
+//                ss << ",\"input_uris\":[";
+//                for (unsigned i = 0; i < task.response.inputuris_size(); ++i) {
+//                    ss << "\"" << task.response.inputuris(i) << "\"";
+//                    if (i != task.response.inputuris_size() - 1)
+//                        ss << ",";
+//                }
+//
+//                ss << "]";
+//
+//                // end container.
+//                ss << "}";
+//                if (task_counter != _tasks.size() - 1)
+//                    ss << ",";
+//                task_counter++;
+//            }
+//        }
+//        ss << "],";
+//
+//
+//        // 2. requests & responses?
+//        // 1. tasks
+//        ss << "\"requests\":[";
+//        {
+//            std::lock_guard<std::mutex> lock(_mutex);
+//            for (unsigned i = 0; i < _tasks.size(); ++i) {
+//                auto &info = _tasks[i].info;
+//                ss << info.asJSON();
+//                if (i != _tasks.size() - 1)
+//                    ss << ",";
+//            }
+//        }
+//        ss << "]";
+//
+//        // Dump all responses (full data for analysis).
+//        ss << ",\"responses\":[";
+//        {
+//            std::lock_guard<std::mutex> lock(_mutex);
+//            for (unsigned i = 0; i < _tasks.size(); ++i) {
+//                std::string response_as_str;
+//                google::protobuf::util::MessageToJsonString(_tasks[i].response, &response_as_str);
+//                ss << response_as_str;
+//                if (i != _tasks.size() - 1)
+//                    ss << ",";
+//            }
+//        }
+//        ss << "]";
+//
+//        ss << "}";
 
         stringToFile(json_path, ss.str());
     }

@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # (c) 2024 L.Spiegelberg
-# collects script invocations required to produce graphs for flight experiments
-
-# Contains a pure C++ version with a perfect sparse struct type to check how fast it is compared to python baseline.
+# Runs experiment for github using local worker tuplex version.
 
 set -e pipefail
 
@@ -21,7 +19,7 @@ PYTHON=python3
 DESIRED_PYTHON_VERSION=3.11
 
 
-echo "-- Tuplex benchmarking -- "
+echo "-- Tuplex benchmarking (local) -- "
 
 # Check python3 version
 PYTHON3_VERSION=$($PYTHON --version | cut -f2 -d ' ')
@@ -167,7 +165,7 @@ python3 validate.py "${RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-h
 # Actual benchmark now.
 
 # Run a couple runs here.
-NUM_RUNS=${NUM_RUNS:-5}
+NUM_RUNS=${NUM_RUNS:-0}
 
 for ((r = 1; r <= NUM_RUNS; r++)); do
   echo "-- RUN ${r}/${NUM_RUNS}"

@@ -8,6 +8,7 @@
 #include <google/protobuf/util/json_util.h>
 #include "ee/worker/WorkerApp.h"
 #include "ee/local/LocalBackend.h"
+#include "ee/aws/ContainerInfo.h"
 
 namespace tuplex {
 
@@ -650,5 +651,4 @@ namespace tuplex {
         throw std::runtime_error("failed to ensure a worker path for path '" + exe_path + "'");
         return "";
     }
-
 }

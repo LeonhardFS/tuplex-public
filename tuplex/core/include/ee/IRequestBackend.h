@@ -9,6 +9,7 @@
 
 // Protobufs.
 #include <utils/Messages.h>
+#include "RequestInfo.h"
 
 namespace tuplex {
     class IRequestBackend : public IBackend {
@@ -66,6 +67,40 @@ namespace tuplex {
                 }
             }
         }
+
+        /*!
+         * Helper function to print out (Lambda and Worker compatible) as JSON.
+         * @param ss where to print data
+         * @param startTimestamp
+         * @param endTimestamp
+         * @param use_hyper
+         * @param cost
+         * @param n_requests
+         * @param total_mbmbs
+         * @param cost_per_gb_second
+         * @param total_input_normal_path
+         * @param total_general_path
+         * @param total_input_fallback_path
+         * @param total_unresolved_path
+         * @param total_output_rows
+         * @param total_output_exceptions
+         * @param requests_responses vector of triplets: First is the client-side request info (i.e. time from client), then the request and its response.
+         */
+        static void dumpAsJSON(std::stringstream& ss, uint64_t startTimestamp,
+                               uint64_t endTimestamp,
+                               bool use_hyper,
+                               double cost,
+                               size_t n_requests,
+                               size_t total_mbmbs,
+                               double cost_per_gb_second,
+                               size_t total_input_normal_path,
+                               size_t total_general_path,
+                               size_t total_input_fallback_path,
+                               size_t total_unresolved_path,
+                               size_t total_output_rows,
+                               size_t total_output_exceptions,
+                               const std::vector<TaskTriplet>& requests_responses
+        );
     };
 }
 #endif //TUPLEX_IREQUESTBACKEND_H
