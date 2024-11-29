@@ -79,12 +79,12 @@ def extract_per_file_stats_tuplex(job_stats):
     n_requests = len(job_stats['responses'])
     L = [job_stats['responses'][i]['rowStats'] for i in range(n_requests)]
     for i in range(n_requests):
-        req_uri = job_stats['requests'][i]['inputURIS'][0]
+        req_uri = job_stats['tasks'][i]['input_uris'][0]
         L[i]['input_path'] = req_uri[:req_uri.rfind(':')]
         L[i]['req_uri'] = req_uri
         L[i]['duration'] = job_stats['responses'][i]['taskExecutionTime']
-        L[i]['num_input_rows'] = L[i]['input']['total_input_row_count']
-        L[i]['num_output_rows'] = L[i]['output']['normal']
+        #L[i]['num_input_rows'] = L[i]['input']['total_input_row_count']
+        #L[i]['num_output_rows'] = L[i]['output']['normal']
     return L
 
 # expand per_file_stats in df

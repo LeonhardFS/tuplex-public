@@ -847,6 +847,11 @@ namespace tuplex {
 
     void LambdaWorkerApp::fill_with_result(messages::InvocationResponse& response) {
 
+        // Reset fields (if modified before)
+        response.clear_inputuris();
+        response.clear_outputuris();
+        response.clear_invokedrequests();
+
         for(const auto& r_info : _requests) {
             auto element = response.add_invokedrequests();
             r_info.fill(element);

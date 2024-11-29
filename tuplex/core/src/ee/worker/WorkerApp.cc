@@ -671,6 +671,13 @@ namespace tuplex {
         // Start processing Transform Stage.
         URI outputURI = outputURIFromReq(req);
 
+        // Clear fields in response, set input/output uris
+        _response.clear_inputuris();
+        _response.clear_outputuris();
+        for(const auto& in_uri: req.inputuris())
+            _response.add_inputuris(in_uri);
+        _response.add_outputuris(outputURI.toString());
+
         // So far all of this has been setup.
         // Does request call for self-invocation?
         // If so, fire off self-requests (async) and wait for result.
