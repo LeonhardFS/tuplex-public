@@ -165,7 +165,7 @@ python3 validate.py "${RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-h
 # Actual benchmark now.
 
 # Run a couple runs here.
-NUM_RUNS=${NUM_RUNS:-0}
+NUM_RUNS=${NUM_RUNS:-1}
 
 for ((r = 1; r <= NUM_RUNS; r++)); do
   echo "-- RUN ${r}/${NUM_RUNS}"

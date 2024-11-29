@@ -89,6 +89,9 @@ def extract_per_file_stats_tuplex(job_stats):
         L[i]['num_input_rows'] = inp['normal'] + inp['general'] + inp['fallback'] + inp['unresolved']
         L[i]['num_output_rows'] = outp['normal'] + outp['unresolved']
 
+        L[i]['input_paths_taken'] = inp
+        L[i]['output_paths_taken'] = outp
+
         # request time and hyperspecialization time
         L[i]['request_time_in_s'] = (datetime.utcfromtimestamp(job_stats['requests'][i]['tsRequestEnd'] / 1000000000) - datetime.utcfromtimestamp(job_stats['requests'][i]['tsRequestStart'] / 1000000000)).total_seconds()
         L[i]['hyperspecialization_time'] = job_stats['requests'][i].get('t_hyper')

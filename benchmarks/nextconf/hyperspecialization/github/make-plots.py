@@ -170,7 +170,7 @@ def plot_row_count_breakdown(df, mode_to_select, run_to_select, path):
     df = df.sort_values(by='name').reset_index(drop=True)
 
     for k in ['fallback', 'normal', 'general']:
-        df[f'in_{k}'] = df['per_file_stats'].apply(lambda x: x['input'][k])
+        df[f'in_{k}'] = df['per_file_stats'].apply(lambda x: x['input_paths_taken'][k])
 
     xq = np.array(range(len(df['name'].unique())))
     plt.figure(figsize=(10, 4))
