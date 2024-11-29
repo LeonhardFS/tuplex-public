@@ -77,9 +77,9 @@ def load_python(path):
 
 def extract_per_file_stats_tuplex(job_stats):
     n_requests = len(job_stats['responses'])
-    L =  [job_stats['responses'][i]['stats'] for i in range(n_requests)]
+    L = [job_stats['responses'][i]['rowStats'] for i in range(n_requests)]
     for i in range(n_requests):
-        req_uri = job_stats['responses'][i]['request'][0]
+        req_uri = job_stats['requests'][i]['inputURIS'][0]
         L[i]['input_path'] = req_uri[:req_uri.rfind(':')]
         L[i]['req_uri'] = req_uri
         L[i]['duration'] = L[i]['request_total_time']
@@ -152,8 +152,9 @@ def load_tuplex(path, mode):
                 ans[k] = row.get(k)
             try:
                 ans['per_file_stats'] = extract_per_file_stats_tuplex(row['detailed_job_stats'])
-            except:
+            except Exception as e:
                 print(f'--- ERR: extract failed for path {path}')
+                raise e
             row = ans
             data.append(row)
         df = pd.DataFrame(data).reset_index().rename(columns={'index':'run', 'job_time_in_s':'total_time_in_s'})

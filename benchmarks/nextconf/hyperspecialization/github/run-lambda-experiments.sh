@@ -5,6 +5,10 @@
 # more detailed debugging
 set -euxo pipefail
 
+
+echo "FIX SCRIPT"
+exit 1
+
 # get shell script location
 BASE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
@@ -16,6 +20,8 @@ ALT_BUILD_DIR=$BASE_DIR/alt-build
 PYTHON=python3
 DESIRED_PYTHON_VERSION=3.11
 
+# Local input pattern.
+INPUT_PATTERN="/hot/data/github_daily/*.json"
 
 echo "-- Tuplex on Lambda benchmarking -- "
 

@@ -3344,7 +3344,7 @@ namespace tuplex {
             }
 
             if(python::Type::BOOLEAN == retType) {
-
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Not yet implemented.");
             }
 
             if(python::Type::I64 == retType) {
@@ -3578,7 +3578,6 @@ namespace tuplex {
             // was item received?
             // -> if not found and no default value is specified -> KeyError.
             // else: return default value
-
 
            return {};
         }

@@ -83,8 +83,7 @@ def load_and_combine_results_to_df(result_dir):
             total_unresolved_row_count = data['detailed_job_stats']['input_paths_taken']['unresolved']
             total_output_row_count = data['detailed_job_stats']['output_paths_taken']['normal']
 
-            row[
-                'input_row_count'] = total_fallback_row_count + total_general_row_count + total_normal_row_count + total_unresolved_row_count
+            row['input_row_count'] = total_fallback_row_count + total_general_row_count + total_normal_row_count + total_unresolved_row_count
             row['output_row_count'] = total_output_row_count
             row['normal_count'] = total_normal_row_count
             row['general_count'] = total_general_row_count
