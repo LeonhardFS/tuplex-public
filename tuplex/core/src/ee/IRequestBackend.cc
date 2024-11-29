@@ -131,4 +131,20 @@ namespace tuplex {
 
         ss << "}";
     }
+
+    JobInfo gather_total_stats_from_triplets(const std::vector<TaskTriplet>& tasks) {
+        JobInfo info;
+
+        for (const auto &task: tasks) {
+            info.total_output_rows += task.response.numrowswritten();
+            info.total_output_exceptions += task.response.numexceptions();
+
+            info.total_input_normal_path += task.response.rowstats().normal();
+            info.total_input_general_path += task.response.rowstats().general();
+            info.total_input_fallback_path += task.response.rowstats().interpreter();
+            info.total_input_unresolved += task.response.rowstats().unresolved();
+        }
+
+        return info;
+    }
 }

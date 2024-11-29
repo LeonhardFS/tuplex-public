@@ -66,6 +66,8 @@ namespace tuplex {
     void WorkerBackend::execute(PhysicalStage* stage) {
         using namespace std;
 
+        auto ts_stage_start = current_utc_timestamp();
+
         auto tstage = dynamic_cast<TransformStage *>(stage);
         if (!tstage)
             throw std::runtime_error("only transform stage from AWS Lambda backend yet supported");
@@ -132,11 +134,6 @@ namespace tuplex {
             }
             logger().info("Debug files written (" + pluralize(requests.size(), "file") + ").");
 #endif
-            nlohmann::json responses_array;
-            nlohmann::json req_array;
-            size_t total_input_rows = 0;
-            size_t total_num_output_rows = 0;
-
 
             // process using multiple processes? -> i.e. pass message to worker executable
             auto num_processes = _options.EXPERIMENTAL_WORKER_BACKEND_NUM_WORKERS();
@@ -148,22 +145,17 @@ namespace tuplex {
             } else {
                 // actually process requests.
                 logger().info("Start processing " + pluralize(requests.size(), "request") + ".");
-                processRequestsWithProcessPool(requests, &responses_array, &req_array, &total_input_rows, &total_num_output_rows, num_processes);
+                auto tasks = processRequestsWithProcessPool(requests, num_processes);
 
-                logger().info("Total input row count: " + std::to_string(total_input_rows));
-                logger().info("Total output row count: " + std::to_string(total_num_output_rows));
+                auto job_info = gather_total_stats_from_triplets(tasks);
 
-                // dump
-                logger().info("JSON:\n" + responses_array.dump(2));
+                logger().info("Total input row count: " + std::to_string(job_info.total_input_rows()));
+                logger().info("Total output row count: " + std::to_string(job_info.total_output_rows));
 
-                // write output to file
-                nlohmann::json j_all;
-                j_all["responses"] = responses_array;
-                j_all["requests"] = req_array;
-                j_all["total_input_row_count"] = total_input_rows;
+                // dump as JSON. Using here the common shared abstraction.
                 auto job_uri = URI("worker_app_job.json");
-                stringToFile(job_uri, j_all.dump());
-                logger().info("Saved job to " + job_uri.toPath());
+                auto ts_stage_end = current_utc_timestamp();
+                dumpAsJSON(job_uri.toPath(), tasks, ts_stage_start, ts_stage_end);
             }
         } else {
             logger().warn("No requests generated, skipping stage.");
@@ -171,11 +163,27 @@ namespace tuplex {
         tstage->setMemoryResult({});
     }
 
-    void WorkerBackend::processRequestsInline(const std::vector<messages::InvocationRequest> &requests,
-                                              nlohmann::json *out_resp_array, nlohmann::json *out_req_array,
-                                              size_t *out_total_input_rows, size_t *out_total_num_output_rows) const {
-        auto resp_array = nlohmann::json::array();
-        auto req_array= nlohmann::json::array();
+    void
+    WorkerBackend::dumpAsJSON(const std::string &job_path, const std::vector<TaskTriplet> &tasks, uint64_t tsStageStart,
+                              uint64_t tsStageEnd) {
+
+        auto info = gather_total_stats_from_triplets(tasks);
+
+        std::stringstream ss;
+        IRequestBackend::dumpAsJSON(ss, tsStageStart, tsStageEnd, _options.USE_EXPERIMENTAL_HYPERSPECIALIZATION(), 0,
+                                    tasks.size(), 0, 0, info.total_input_normal_path, info.total_input_general_path,
+                                    info.total_input_fallback_path, info.total_input_unresolved,
+                                    info.total_output_rows, info.total_output_exceptions, tasks);
+
+        stringToFile(job_path, ss.str());
+        logger().info("Saved job to " + job_path);
+    }
+
+    std::vector<TaskTriplet> WorkerBackend::processRequestsInline(const std::vector<messages::InvocationRequest> &requests) const {
+        using namespace std;
+
+        vector<TaskTriplet> tasks;
+
         auto total_input_rows= 0;
         auto total_num_output_rows= 0;// process using local app
 
@@ -190,22 +198,21 @@ namespace tuplex {
         Timer agg_timer;
         for (const auto &req: requests) {
             Timer timer;
+
+            RequestInfo info;
+            info.requestId = uuidToString(getUniqueID());
+
             std::string json_buf;
             google::protobuf::json::MessageToJsonString(req, &json_buf);
 
             logger().info("Start processing request " + std::to_string(request_counter) + "/" + std::to_string(requests.size()) + "  current RSS: " +
                                   sizeToMemString(getCurrentRSS()) + " peak RSS: " + sizeToMemString(getPeakRSS()));
 
-//            // snippet to select single relevant request.
-//#warning "REMOVE THIS CODE HERE"
-//#ifndef NDEBUG
-//            if(req.inputuris(0).find("2018-10-15") == std::string::npos) {
-//                logger().info("DEBUG: --> Skipping request for uri=" + req.inputuris(0));
-//                continue;
-//            }
-//#endif
-
+            // Issue request.
+            info.tsRequestStart = current_utc_timestamp();
             auto rc = app->processJSONMessage(json_buf);
+            info.tsRequestEnd = current_utc_timestamp();
+
             // fetch result
             auto stats = app->jsonStats();
 
@@ -226,31 +233,28 @@ namespace tuplex {
             std::string str_response;
             google::protobuf::util::MessageToJsonString(resp, &str_response);
             auto j_resp = nlohmann::json::parse(str_response);
-            resp_array.push_back(j_resp);
 
             total_num_output_rows += j_stats["output"]["normal"].get<std::size_t>() + j_stats["output"]["except"].get<std::size_t>();
             total_input_rows += j_stats["input"]["total_input_row_count"].get<std::size_t>();
-            req_array.push_back(j_req);
+
+            // extract client-side info from response.
+            info.fillInFromResponse(resp);
 
             double remaining_estimate = ((double)requests.size() - (double)request_counter) * (agg_timer.time() / (double) request_counter);
 
+            // add to tasks.
+            auto task_time = timer.time();
+            tasks.push_back({info, req, resp});
+
             std::stringstream ss;
-            ss<<"Processed request "<<request_counter<<"/"<<requests.size()<<" in " + std::to_string(timer.time()) + "s, rc=" + std::to_string(rc)<<", elapsed="<<agg_timer.time()<<"s, est. remaining="<<remaining_estimate<<"s, current rss="<<sizeToMemString(getCurrentRSS())<<".";
+            ss<<"Processed request "<<request_counter<<"/"<<requests.size()<<" in " + std::to_string(task_time) + "s, rc=" + std::to_string(rc)<<", elapsed="<<agg_timer.time()<<"s, est. remaining="<<remaining_estimate<<"s, current rss="<<sizeToMemString(getCurrentRSS())<<".";
             logger().info(ss.str());
             request_counter++;
         }
 
         app->shutdown();
 
-        // output
-        if(out_req_array)
-            *out_req_array = req_array;
-        if(out_resp_array)
-            *out_resp_array = resp_array;
-        if(out_total_input_rows)
-            *out_total_input_rows = total_input_rows;
-        if(out_total_num_output_rows)
-            *out_total_num_output_rows = total_num_output_rows;
+        return tasks;
     }
 
     std::vector<messages::InvocationRequest>
@@ -421,23 +425,22 @@ namespace tuplex {
         return result;
     }
 
-    void WorkerBackend::processRequestsWithProcessPool(std::vector<messages::InvocationRequest> requests,
-                                                       nlohmann::json *out_stats_array, nlohmann::json *out_req_array,
-                                                       size_t *out_total_input_rows, size_t *out_total_output_rows,
-                                                       size_t num_processes_to_use) const {
+    std::vector<TaskTriplet>
+    WorkerBackend::processRequestsWithProcessPool(std::vector<messages::InvocationRequest> requests,
+                                                  size_t num_processes_to_use) const {
 
         if(requests.empty()) {
-            logger().info("no requests given, skip processing.");
-            return;
+            logger().info("No requests given, skip processing.");
+            return {};
         }
 
         // fallback to inline if 0 given
         if(0 == num_processes_to_use) {
            logger().info("Processing requests within this process.");
-           processRequestsInline(requests, out_stats_array, out_req_array, out_total_input_rows, out_total_output_rows);
-           return;
+           return processRequestsInline(requests);
         }
 
+        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Only supporting single-threaded worker pool yet.");
 
         throw std::runtime_error("TODO: need to update stats array to response array here.");
 
@@ -550,24 +553,6 @@ namespace tuplex {
 
             std::copy(stat.begin(), stat.end(), std::back_inserter(stats));
         }
-
-        if(out_stats_array)
-            *out_stats_array = stats;
-        //if(out_req_array) // --> correspondence must be achieved, i.e. read files back???
-        //    *out_req_array = requests;
-        if(out_total_input_rows)
-            *out_total_input_rows = total_input_rows;
-        if(out_total_output_rows)
-            *out_total_output_rows = total_output_rows;
-
-//        auto arr = nlohmann::json::array();
-//        for(const auto& stat : stats)
-//            arr.push_back(stat);
-//
-//        auto full_json_string = arr.dump();
-//        auto save_path = URI("./process_pool_stats.json");
-//        logger().info("Save detailed process pool stats to " + save_path.toString());
-//        stringToFile(save_path, full_json_string);
 
         logger().info("Pool processing done.");
     }

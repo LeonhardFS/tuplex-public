@@ -104,31 +104,6 @@ namespace tuplex {
         uint64_t _startTimestamp;
         uint64_t _endTimestamp;
 
-        // statistics/info
-        struct JobInfo {
-            size_t total_input_normal_path;
-            size_t total_input_general_path;
-            size_t total_input_fallback_path;
-            size_t total_input_unresolved;
-
-            size_t total_output_rows;
-            size_t total_output_exceptions;
-
-            double cost;
-
-            JobInfo() { reset(); }
-
-            inline void reset() {
-                total_input_normal_path = 0;
-                total_input_general_path= 0;
-                total_input_fallback_path = 0;
-                total_input_unresolved = 0;
-                total_output_rows = 0;
-                total_output_exceptions = 0;
-                cost =0.0;
-            }
-        };
-
         JobInfo _info;
 
         std::vector<std::tuple<LambdaStatusCode, std::string, AwsLambdaRequest>> _failedRequests;

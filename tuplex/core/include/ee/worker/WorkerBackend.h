@@ -84,14 +84,23 @@ namespace tuplex {
          */
         URI scratchDir(const std::vector<URI>& hints=std::vector<URI>{});
 
-        void
-        processRequestsInline(const std::vector<messages::InvocationRequest> &requests, nlohmann::json *out_resp_array,
-                              nlohmann::json *out_req_array, size_t *out_total_input_rows, size_t *out_total_num_output_rows) const;
+        /*!
+         * Processes tasks within this process and returns task triplet collection.
+         * @param requests
+         * @return task triplets, to be dumped e.g. into a JSON file.
+         */
+        std::vector<TaskTriplet> processRequestsInline(const std::vector<messages::InvocationRequest> &requests) const;
 
-        void processRequestsWithProcessPool(std::vector<messages::InvocationRequest> requests,
-                                            nlohmann::json *out_stats_array,
-                                            nlohmann::json *out_req_array, size_t *out_total_input_rows,
-                                            size_t *out_total_output_rows, size_t num_processes_to_use) const;
+        /*! Process using pool of workers
+         * only single-threaded supported so far.
+         * @param requests
+         * @param num_processes_to_use
+         * @return
+         */
+        std::vector<TaskTriplet>  processRequestsWithProcessPool(std::vector<messages::InvocationRequest> requests, size_t num_processes_to_use) const;
+
+
+        void dumpAsJSON(const std::string& job_path, const std::vector<TaskTriplet>& tasks, uint64_t tsStageStart, uint64_t tsStageEnd);
     };
 
     extern void config_worker(messages::WorkerSettings *ws,

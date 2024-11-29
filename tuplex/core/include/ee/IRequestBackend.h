@@ -12,6 +12,37 @@
 #include "RequestInfo.h"
 
 namespace tuplex {
+
+    // statistics/info
+    struct JobInfo {
+        size_t total_input_normal_path;
+        size_t total_input_general_path;
+        size_t total_input_fallback_path;
+        size_t total_input_unresolved;
+
+        size_t total_output_rows;
+        size_t total_output_exceptions;
+
+        double cost;
+
+        JobInfo() { reset(); }
+
+        inline void reset() {
+            total_input_normal_path = 0;
+            total_input_general_path= 0;
+            total_input_fallback_path = 0;
+            total_input_unresolved = 0;
+            total_output_rows = 0;
+            total_output_exceptions = 0;
+            cost =0.0;
+        }
+
+        inline size_t total_input_rows() const {
+            return total_input_unresolved + total_input_fallback_path + total_input_general_path + total_input_normal_path;
+        }
+
+    };
+
     class IRequestBackend : public IBackend {
     public:
         IRequestBackend() = delete;
@@ -102,5 +133,13 @@ namespace tuplex {
                                const std::vector<TaskTriplet>& requests_responses
         );
     };
+
+    /*!
+     * Helper function to compute total stats from tasks.
+     * @param tasks
+     * @return JobInfo with totals.
+     */
+    extern JobInfo gather_total_stats_from_triplets(const std::vector<TaskTriplet>& tasks);
+
 }
 #endif //TUPLEX_IREQUESTBACKEND_H
