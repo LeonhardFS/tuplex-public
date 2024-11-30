@@ -193,3 +193,52 @@ TEST_F(LocalWorkerFixture, GithubGenericDictHyper) {
 
     //QueryConfiguration{"benchmark", , true, true, false, 294195}, // <-- hyper w. generic dicts.
 }
+
+TEST_F(LocalWorkerFixture, GithubSparseStructHyper) {
+    using namespace std;
+    using namespace tuplex;
+
+    // Test over github daily with generic hyper dicts.
+    auto input_pattern = "/hot/data/github_daily/*.json";
+    auto output_path = "./local-exp/" + testName + "/";
+    // remove output files if they exist
+    cout << "Removing files (if they exist) from " << output_path << endl;
+    boost::filesystem::remove_all(output_path.c_str());
+
+    std::unordered_map<std::string, std::string> conf;
+
+    // enable sparse structs, disable generic dicts
+    conf["tuplex.optimizer.sparsifyStructs"] = "true";
+    conf["tuplex.experimental.useGenericDicts"] = "false";
+    conf["tuplex.experimental.hyperspecialization"] = "true";
+
+    auto ctx = create_worker_context(conf);
+
+    cout<<"Running github pipeline."<<endl;
+
+    github_pipeline(ctx, input_pattern, output_path);
+
+    cout<<"Pipeline done."<<endl;
+
+    // Load stats result from json:
+    auto job_path = URI("worker_app_job.json");
+    auto job_data = fileToString(job_path);
+    ASSERT_FALSE(job_data.empty());
+
+
+    // check results (from python reference number, add up total line count)
+    cout << "Analyzing result: " << endl;
+    auto output_uris = glob(output_path + "*.csv");
+    cout << "Found " << pluralize(output_uris.size(), "output file") << endl;
+    size_t total_row_count = 0;
+    for (auto path: output_uris) {
+        auto row_count = csv_row_count(path);
+        cout << "-- file " << path << ": " << pluralize(row_count, "row") << endl;
+        total_row_count += row_count;
+    }
+    EXPECT_EQ(total_row_count, 294195);
+
+    // There should be two (!) output schemas.
+
+    //QueryConfiguration{"benchmark", , true, true, false, 294195}, // <-- hyper w. generic dicts.
+}

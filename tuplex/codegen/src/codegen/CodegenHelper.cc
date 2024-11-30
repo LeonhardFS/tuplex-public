@@ -1668,7 +1668,6 @@ namespace tuplex {
             set_yyjson_mut_obj(builder, yy_ret_val, yy_root_item);
             return builder.CreateLoad(llvm_type, yy_ret_val);
 #else
-
             auto func = getOrInsertFunction(mod, "JsonItem_to_cJSON", llvm::Type::getInt8PtrTy(ctx, 0),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
