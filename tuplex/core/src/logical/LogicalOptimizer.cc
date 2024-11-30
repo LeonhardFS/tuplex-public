@@ -805,7 +805,6 @@ namespace tuplex {
                 set<size_t> reqLeft;
                 set<size_t> reqRight;
 
-
 #ifdef TRACE_LOGICAL_OPTIMIZATION
                 cout<<"join requires columns: "<<endl;
                 for(auto idx : requiredCols) {

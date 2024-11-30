@@ -41,6 +41,10 @@ namespace tuplex {
     static const int MINIO_S3_ENDPOINT_PORT=9000;
     static const int MINIO_S3_CONSOLE_PORT=9001;
 
+    // the sampling mode to use in the experiments.
+    // NOTE: DEFAULT_SAMPLING_MODE is ONLY first rows.
+    static const SamplingMode DEFAULT_EXPERIMENT_SAMPLING_MODE=SamplingMode::FIRST_FILE | SamplingMode::LAST_FILE | SamplingMode::FIRST_ROWS | SamplingMode::LAST_ROWS;
+
     extern size_t csv_row_count(const std::string &path);
 
     extern size_t csv_row_count_for_pattern(const std::string &pattern);
@@ -63,7 +67,7 @@ namespace tuplex {
 
     extern messages::InvocationResponse process_request_with_worker(const std::string& worker_path, const std::string& scratch_dir, const messages::InvocationRequest& request, bool invoke_process=true);
 
-    extern void github_pipeline(Context& ctx, const std::string& input_pattern, const std::string& output_path);
+    extern void github_pipeline(Context& ctx, const std::string& input_pattern, const std::string& output_path, const SamplingMode& sm=DEFAULT_EXPERIMENT_SAMPLING_MODE);
 }
 
 #endif //TUPLEX_HELPER_H

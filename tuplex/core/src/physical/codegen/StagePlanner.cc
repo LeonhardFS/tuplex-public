@@ -182,6 +182,8 @@ namespace tuplex {
             using namespace std;
             vector<shared_ptr<LogicalOperator>> opt_ops; // the operators to return.
 
+            std::stringstream os; // output stream where to capture optimization details.
+
             auto& logger = Logger::instance().logger("specializing stage optimizer");
 
             // check current input node schema, if it contains no struct_dict - can skip.
@@ -280,14 +282,14 @@ namespace tuplex {
                         int num_accessed = 0;
                         for (unsigned i = 0; i < columns.size(); ++i) {
                             if (!column_access_paths[i].empty()) {
-                                std::cout << "Access paths for column: " << columns[i] << "\n";
+                                os << "Access paths for column: " << columns[i] << "\n";
                                 for (auto path: column_access_paths[i])
-                                    std::cout << " -- " << access_path_to_str(path) << "\n";
-                                std::cout << std::endl;
+                                    os << " -- " << access_path_to_str(path) << "\n";
+                                os << std::endl;
                                 num_accessed++;
                             }
                         }
-                        cout << num_accessed << "/" << pluralize(columns.size(), "column") << " accessed." << endl;
+                        os << num_accessed << "/" << pluralize(columns.size(), "column") << " accessed." << endl;
 
                         if(op->type() == LogicalOperatorType::MAP) {
                             // processing stops after the first map operator encountered.
@@ -334,23 +336,23 @@ namespace tuplex {
                         info_map[wop.get()].columns = tv.columns();
                         info_map[wop.get()].column_access_paths = tv.columnAccessPaths();
 
-                        cout<<"Sparsify struct tracing results for operator "<<op->name()<<"::\n";
+                        os<<"Sparsify struct tracing results for operator "<<op->name()<<"::\n";
 
-                        cout<<"UDF:\n"<<wop->getUDF().getCode()<<endl<<endl;
+                        os<<"UDF:\n"<<wop->getUDF().getCode()<<endl<<endl;
 
                         // check which names are accessed:
                         auto columns = tv.columns();
                         int num_accessed = 0;
                         for (unsigned i = 0; i < columns.size(); ++i) {
                             if (!column_access_paths[i].empty()) {
-                                std::cout << "Access paths for column: " << columns[i] << "\n";
+                                os << "Access paths for column: " << columns[i] << "\n";
                                 for (auto path: column_access_paths[i])
-                                    std::cout << " -- " << access_path_to_str(path) << "\n";
-                                std::cout << std::endl;
+                                    os << " -- " << access_path_to_str(path) << "\n";
+                                os << std::endl;
                                 num_accessed++;
                             }
                         }
-                        cout << num_accessed << "/" << pluralize(columns.size(), "column") << " accessed." << endl;
+                        os << num_accessed << "/" << pluralize(columns.size(), "column") << " accessed." << endl;
 
                         // update sample (and column names!)
                         if(wop->creates_new_column()) {
@@ -464,8 +466,8 @@ namespace tuplex {
 
             auto sparse_type = sparsify_and_project_row_type(r_row_type, r_access_paths);
 
-            cout<<"Input row type before sparsification:\n"<<r_row_type.desc()<<endl;
-            cout<<"Input row type after sparsification:\n"<<sparse_type.desc()<<endl;
+            os<<"Input row type before sparsification:\n"<<r_row_type.desc()<<endl;
+            os<<"Input row type after sparsification:\n"<<sparse_type.desc()<<endl;
 
 
             // if desired, relax type to make sure sample passes.
@@ -523,7 +525,7 @@ namespace tuplex {
                                         if(kv_pair.presence == python::ALWAYS_PRESENT) {
                                             // ensure that kv_pair is present, else relax to maybe present.
                                             if(!field_present) {
-                                                cout<<column_name<<": Path "<<access_path_to_str(path)<<" not present, relax struct pair for key "<<kv_pair.key<<" to maybe present"<<endl;
+                                                os<<column_name<<": Path "<<access_path_to_str(path)<<" not present, relax struct pair for key "<<kv_pair.key<<" to maybe present"<<endl;
                                                 relaxation_found = true;
                                                 kv_pair = python::StructEntry(kv_pair.key, kv_pair.keyType, kv_pair.valueType, python::MAYBE_PRESENT);
                                             }
@@ -547,7 +549,7 @@ namespace tuplex {
                                                 }
 
                                                 if(value_type != python::Type::UNKNOWN) {
-                                                    cout<<column_name<<": Path "<<access_path_to_str(path)<<" present, relax struct pair for key "<<kv_pair.key<<" to maybe present"<<endl;
+                                                    os<<column_name<<": Path "<<access_path_to_str(path)<<" present, relax struct pair for key "<<kv_pair.key<<" to maybe present"<<endl;
                                                     relaxation_found = true;
                                                     kv_pair = python::StructEntry(kv_pair.key, kv_pair.keyType, value_type, python::MAYBE_PRESENT);
                                                 }
@@ -584,7 +586,7 @@ namespace tuplex {
                 }
 
                 if(before_type != sparse_type) {
-                    cout<<"Relaxed row type from\n"<<before_type.desc()<<" to \n"<<sparse_type.desc()<<endl;
+                    os<<"Relaxed row type from\n"<<before_type.desc()<<" to \n"<<sparse_type.desc()<<endl;
                 }
 
             }
@@ -1242,9 +1244,9 @@ namespace tuplex {
 //                        // do opt only if input cols are valid...!
 //
 //                        // retype UDF
-//                        cout<<"input type before: "<<mop->getInputSchema().getRowType().desc()<<endl;
-//                        cout<<"output type before: "<<mop->getOutputSchema().getRowType().desc()<<endl;
-//                        cout<<"num input columns required: "<<mop->inputColumns().size()<<endl;
+//                        os<<"input type before: "<<mop->getInputSchema().getRowType().desc()<<endl;
+//                        os<<"output type before: "<<mop->getOutputSchema().getRowType().desc()<<endl;
+//                        os<<"num input columns required: "<<mop->inputColumns().size()<<endl;
 //                        // retype
 //                        auto input_cols = mop->inputColumns(); // HACK! won't work if no input cols are specified.
 //                        auto input_type = mop->getInputSchema().getRowType();
@@ -1287,11 +1289,11 @@ namespace tuplex {
 //                        // now update specialized type with constant if possible!
 //                        auto specialized_type = tuple_mode ? python::Type::makeTupleType({python::Type::makeTupleType(param_types)}) : python::Type::makeTupleType(param_types);
 //                        if(specialized_type != input_type) {
-//                            cout<<"specialized type "<<input_type.desc()<<endl;
-//                            cout<<"  - to - "<<endl;
-//                            cout<<specialized_type.desc()<<endl;
+//                            os<<"specialized type "<<input_type.desc()<<endl;
+//                            os<<"  - to - "<<endl;
+//                            os<<specialized_type.desc()<<endl;
 //                        } else {
-//                            cout<<"no specialization possible, same type";
+//                            os<<"no specialization possible, same type";
 //                            // @TODO: can skip THIS optimization, continue with the next one!
 //                        }
 //
@@ -1306,9 +1308,9 @@ namespace tuplex {
 //
 //
 //                        // check again
-//                        cout<<"input type after: "<<mop->getInputSchema().getRowType().desc()<<endl;
-//                        cout<<"output type after: "<<mop->getOutputSchema().getRowType().desc()<<endl;
-//                        cout<<"num input columns required after opt: "<<accCols.size()<<endl;
+//                        os<<"input type after: "<<mop->getInputSchema().getRowType().desc()<<endl;
+//                        os<<"output type after: "<<mop->getOutputSchema().getRowType().desc()<<endl;
+//                        os<<"num input columns required after opt: "<<accCols.size()<<endl;
 //
 //                        // which columns where eliminated?
 //                        //     const std::vector<int> v1 {1, 2, 5, 5, 5, 9};
@@ -1322,11 +1324,11 @@ namespace tuplex {
 //                        std::vector<size_t> diff;
 //                        std::set_difference(accColsBeforeOpt.begin(), accColsBeforeOpt.end(),
 //                                            accCols.begin(), accCols.end(), std::inserter(diff, diff.begin()));
-//                        cout<<"There were "<<pluralize(diff.size(), "column")<<" optimized away:"<<endl;
+//                        os<<"There were "<<pluralize(diff.size(), "column")<<" optimized away:"<<endl;
 //                        vector<string> opt_away_names;
 //                        for(auto idx : diff)
 //                            opt_away_names.push_back(mop->inputColumns()[idx]);
-//                        cout<<"-> "<<opt_away_names<<endl;
+//                        os<<"-> "<<opt_away_names<<endl;
 //
 //                        // rewrite which columns to access in input node
 //                        if(inputNode->type() != LogicalOperatorType::FILEINPUT) {
@@ -1339,10 +1341,10 @@ namespace tuplex {
 //                        for(unsigned i = 0; i < colsToSerialize.size(); ++i)
 //                            if(colsToSerialize[i])
 //                                colsToSerializeIndices.push_back(i);
-//                        cout<<"reading columns: "<<colsToSerializeIndices<<endl;
+//                        os<<"reading columns: "<<colsToSerializeIndices<<endl;
 //
-//                        cout<<"Column indices to read before opt: "<<accColsBeforeOpt<<endl;
-//                        cout<<"After opt only need to read: "<<accCols<<endl;
+//                        os<<"Column indices to read before opt: "<<accColsBeforeOpt<<endl;
+//                        os<<"After opt only need to read: "<<accCols<<endl;
 //
 //                        // TODO: need to also rewrite access in mop again
 //                        // mop->rewriteParametersInAST(rewriteMap);
@@ -1384,19 +1386,19 @@ namespace tuplex {
 //                            col_names_to_read_before.push_back(fop->inputColumns()[idx]);
 //                        for(auto idx : indices_to_read_from_previous_op)
 //                            col_names_to_read_after.push_back(fop->inputColumns()[idx]);
-//                        cout<<"Rewriting indices: "<<rewriteInfo<<endl;
+//                        os<<"Rewriting indices: "<<rewriteInfo<<endl;
 //
 //                        // this is quite hacky...
 //                        // ==> CLONE???
 //                        fop->selectColumns(indices_to_read_from_previous_op);
-//                        cout<<"file input now only reading: "<<indices_to_read_from_previous_op<<endl;
-//                        cout<<"I.e., read before: "<<col_names_to_read_before<<endl;
-//                        cout<<"now: "<<col_names_to_read_after<<endl;
+//                        os<<"file input now only reading: "<<indices_to_read_from_previous_op<<endl;
+//                        os<<"I.e., read before: "<<col_names_to_read_before<<endl;
+//                        os<<"now: "<<col_names_to_read_after<<endl;
 //                        fop->useNormalCase(); // !!! retype input op. mop already retyped above...
 //
 //                        mop->rewriteParametersInAST(rewriteMap);
 //                        // retype!
-//                        cout<<"mop updated: \ninput type: "<<mop->getInputSchema().getRowType().desc()
+//                        os<<"mop updated: \ninput type: "<<mop->getInputSchema().getRowType().desc()
 //                            <<"\noutput type: "<<mop->getOutputSchema().getRowType().desc()<<endl;
 //
 //#ifdef GENERATE_PDFS
@@ -1428,6 +1430,8 @@ namespace tuplex {
         void StagePlanner::optimize(bool use_sample) {
             using namespace std;
 
+            std::stringstream os;
+
             // clear checks
             //_checks.clear();
 
@@ -1450,12 +1454,12 @@ namespace tuplex {
                     sample_columns = sample.front().getRowType().get_column_names();
             }
 
-            cout<<"Got sample of "<<pluralize(sample.size(), "row")<<" with columns "<<sample_columns<<endl;
+            os<<"Got sample of "<<pluralize(sample.size(), "row")<<" with columns "<<sample_columns<<endl;
 
             if(!sample.empty()) {
-                cout<<"First sample:\n";
+                os<<"First sample:\n";
                 for(unsigned i = 0; i < sample_columns.size(); ++i) {
-                    cout<<"name="<<sample_columns[i]<<" type="<<sample.front().getType(i).desc()<<":\n"<<sample.front().get(i).toPythonString()<<endl;
+                    os<<"name="<<sample_columns[i]<<" type="<<sample.front().getType(i).desc()<<":\n"<<sample.front().get(i).toPythonString()<<endl;
                 }
             }
 
@@ -1475,13 +1479,13 @@ namespace tuplex {
                     if(rc_filter)
                         sample = sample_after_filter;
                     else {
-                        cout<<"Filter promo not carried out, because filter found no relevant rows to keep. Can't specialize."<<endl;
+                        os<<"Filter promo not carried out, because filter found no relevant rows to keep. Can't specialize."<<endl;
                     }
 
                     if(!sample.empty()) {
-                        cout<<"First sample (post-filter):\n";
+                        os<<"First sample (post-filter):\n";
                         for(unsigned i = 0; i < sample_columns.size(); ++i) {
-                            cout<<"name="<<sample_columns[i]<<" type="<<sample.front().getType(i).desc()<<":\n"<<sample.front().get(i).toPythonString()<<endl;
+                            os<<"name="<<sample_columns[i]<<" type="<<sample.front().getType(i).desc()<<":\n"<<sample.front().get(i).toPythonString()<<endl;
                         }
                     }
 
@@ -1497,9 +1501,9 @@ namespace tuplex {
                         sample_columns = _inputNode ? _inputNode->columns() : std::vector<std::string>();
 
                         if(!sample.empty()) {
-                            cout<<"First sample (retype due to filter promo):\n";
+                            os<<"First sample (retype due to filter promo):\n";
                             for(unsigned i = 0; i < sample_columns.size(); ++i) {
-                                cout<<"name="<<sample_columns[i]<<" type="<<sample.front().getType(i).desc()<<":\n"<<sample.front().get(i).toPythonString()<<endl;
+                                os<<"name="<<sample_columns[i]<<" type="<<sample.front().getType(i).desc()<<":\n"<<sample.front().get(i).toPythonString()<<endl;
                             }
                         }
 
@@ -1855,7 +1859,7 @@ namespace tuplex {
                         vector<std::shared_ptr<LogicalOperator>> parents;
                         if(lastNode == jop->left()) {
                             // left side is pipeline
-                            //cout<<"pipeline is left side"<<endl;
+                            //os<<"pipeline is left side"<<endl;
 
                             // i.e. leave right side as is => do not take normal case there!
                             parents.push_back(lastParent); // --> normal case on left side
@@ -1863,7 +1867,7 @@ namespace tuplex {
                         } else {
                             // right side is pipeline
                             assert(lastNode == jop->right());
-                            //cout<<"pipeline is right side"<<endl;
+                            //os<<"pipeline is right side"<<endl;
 
                             // i.e. leave left side as is => do not take normal case there!
                             parents.push_back(jop->left());
@@ -1919,7 +1923,7 @@ namespace tuplex {
                             last_rowtype = cop->getOptimizedOutputSchema().getRowType();
                             last_columns = cop->columns();
                             checkRowType(last_rowtype);
-                            // cout<<"cache is a source: optimized schema "<<last_rowtype.desc()<<endl;
+                            // os<<"cache is a source: optimized schema "<<last_rowtype.desc()<<endl;
 
                             // use normal case & clone WITHOUT parents
                             // clone, set normal case & push back
@@ -1930,8 +1934,8 @@ namespace tuplex {
                             // cache should not have any children
                             assert(cop->children().empty());
                             // => i.e. first time cache is seen, it's processed as action!
-                            // cout<<"cache is action, optimized schema: "<<endl;
-                            // cout<<"cache normal case will be: "<<last_rowtype.desc()<<endl;
+                            // os<<"cache is action, optimized schema: "<<endl;
+                            // os<<"cache normal case will be: "<<last_rowtype.desc()<<endl;
                             // => reuse optimized schema!
                             cop->setOptimizedOutputType(last_rowtype);
                             // simply push back, no cloning here necessary b.c. no data is altered
@@ -1998,8 +2002,8 @@ namespace tuplex {
                 }
 
                 if(!opt_ops.empty()) {
-                    // cout<<"last opt_op name: "<<opt_ops.back()->name()<<endl;
-                    // cout<<"last opt_op output type: "<<opt_ops.back()->getOutputSchema().getRowType().desc()<<endl;
+                    // os<<"last opt_op name: "<<opt_ops.back()->name()<<endl;
+                    // os<<"last opt_op output type: "<<opt_ops.back()->getOutputSchema().getRowType().desc()<<endl;
                     if(opt_ops.back()->type() != LogicalOperatorType::CACHE) {
                         last_rowtype = opt_ops.back()->getOutputSchema().getRowType();
                         last_columns = opt_ops.back()->columns();
@@ -2038,6 +2042,9 @@ namespace tuplex {
                          size_t samples_per_strata=1,
                          const codegen::StageBuilderConfiguration& conf=codegen::StageBuilderConfiguration()) {
         auto& logger = Logger::instance().logger("hyper specializer");
+
+        std::stringstream os;
+
         // run hyperspecialization using planner, yay!
         assert(stage);
 
@@ -2173,7 +2180,7 @@ namespace tuplex {
             auto col_types = path_ctx.inputSchema.getRowType().isRowType() ? path_ctx.inputSchema.getRowType().get_column_types() : path_ctx.inputSchema.getRowType().parameters();
             assert(fop->columns().size() == col_types.size());
             for(unsigned i = 0; i < fop->columns().size(); ++i) {
-                std::cout<<"col "<<i<<" (" + fop->columns()[i] + ")"<<": "<<col_types[i].desc()<<std::endl;
+                os<<"col "<<i<<" (" + fop->columns()[i] + ")"<<": "<<col_types[i].desc()<<std::endl;
             }
 
         } else {
@@ -2187,9 +2194,9 @@ namespace tuplex {
         logger.info("specialized to output: " + path_ctx.outputSchema.getRowType().desc());
 
         // print out:
-        // std::cout<<"input schema ("<<pluralize(path_ctx.inputSchema.getRowType().parameters().size(), "column")<<"): "<<path_ctx.inputSchema.getRowType().desc()<<std::endl;
-        // std::cout<<"read schema ("<<pluralize(path_ctx.readSchema.getRowType().parameters().size(), "column")<<"): "<<path_ctx.readSchema.getRowType().desc()<<std::endl;
-        // std::cout<<"output schema ("<<pluralize(path_ctx.outputSchema.getRowType().parameters().size(), "column")<<"): "<<path_ctx.outputSchema.getRowType().desc()<<std::endl;
+        // os<<"input schema ("<<pluralize(path_ctx.inputSchema.getRowType().parameters().size(), "column")<<"): "<<path_ctx.inputSchema.getRowType().desc()<<std::endl;
+        // os<<"read schema ("<<pluralize(path_ctx.readSchema.getRowType().parameters().size(), "column")<<"): "<<path_ctx.readSchema.getRowType().desc()<<std::endl;
+        // os<<"output schema ("<<pluralize(path_ctx.outputSchema.getRowType().parameters().size(), "column")<<"): "<<path_ctx.outputSchema.getRowType().desc()<<std::endl;
 
         size_t numToRead = 0;
         for(auto indicator : path_ctx.columnsToRead)
@@ -2562,7 +2569,7 @@ namespace tuplex {
                     ret.push_back(idx + numLeftColumnsBeforePushdown); // maybe correct for key column?
                 }
 
-                //cout<<"need to rewrite join here with combined "<<ret<<endl;
+                //os<<"need to rewrite join here with combined "<<ret<<endl;
                 // update join (because columns have changed)
                 assert(jop);
 
@@ -3002,7 +3009,7 @@ namespace tuplex {
                 t_counts[row.getRowType()]++;
             }
             // for(const auto& keyval : counts) {
-            //     std::cout<<keyval.second<<": "<<keyval.first<<std::endl;
+            //     os<<keyval.second<<": "<<keyval.first<<std::endl;
             // }
 
             if(use_sample && sample.empty()) {
@@ -3061,7 +3068,7 @@ namespace tuplex {
                 logger.debug("saved obtained sample to " + sample_dbg_save_path + " as ndjson");
                 logger.debug("Of " + pluralize(sample.size(), "sample row") + ", " + std::to_string(num_passing) + " adhere to detected majority type.");
                 for(unsigned i = 0; i < std::min(majRows.size(), 5ul); ++i)
-                    std::cout<<majRows[i].toPythonString()<<std::endl;
+                    os<<majRows[i].toPythonString()<<std::endl;
 
                 // check if any forkevents are found in the sample
                 std::vector<std::string> rows_as_python_strings;
@@ -3071,14 +3078,14 @@ namespace tuplex {
                     if(rows_as_python_strings.back().find("ForkEvent") != std::string::npos)
                         fork_events_found++;
                 }
-                std::cout<<"Found forkevents: "<<fork_events_found<<"x"<<std::endl;
+                os<<"Found forkevents: "<<fork_events_found<<"x"<<std::endl;
 #endif
             }
 
 
             // the detected majority type here is BEFORE projection pushdown.
             // --> therefore restrict it to the type of the input operator.
-            // std::cout<<"Majority detected row type is: "<<projectedMajType.desc()<<std::endl;
+            // os<<"Majority detected row type is: "<<projectedMajType.desc()<<std::endl;
 
             // if majType of sample is different from input node type input sample -> retype!
             // also need to restrict type first!

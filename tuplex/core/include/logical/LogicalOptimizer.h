@@ -14,8 +14,10 @@
 #include "StructCommon.h"
 #include <Context.h>
 
+#ifndef NDEBUG
 // uncomment to trace logical plan optimization
 #define TRACE_LOGICAL_OPTIMIZATION
+#endif
 
 namespace tuplex {
     class LogicalOptimizer {
