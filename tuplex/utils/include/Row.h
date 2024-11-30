@@ -51,10 +51,14 @@ namespace tuplex {
         size_t getSerializedLength() const;
 
         python::Type row_type_from_values() const;
+
+        // For faster size compute, have handy map ready to lookup types.
+        static const std::unordered_map<size_t, size_t> precomputed_size_map;
     public:
         Row() : _serializedLength(0) {}
 
         Row(const Row& other) : _schema(other._schema), _values(other._values), _serializedLength(other._serializedLength) {}
+
         Row& operator = (const Row& other) {
             _schema = other._schema;
             _values = other._values;

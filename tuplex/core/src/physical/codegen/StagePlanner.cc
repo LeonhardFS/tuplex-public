@@ -3000,6 +3000,10 @@ namespace tuplex {
                                            const std::vector<std::string>& sample_columns, bool use_sample) {
             auto& logger = Logger::instance().logger("specializing stage optimizer");
 
+            // helper stream to print out info if need be.
+            std::stringstream os;
+
+
             // @TODO: stats on types for sample. Use this to retype!
             // --> important first step!
             std::unordered_map<std::string, size_t> counts;

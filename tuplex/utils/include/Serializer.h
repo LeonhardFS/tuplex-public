@@ -374,7 +374,7 @@ namespace tuplex {
     }
 
     inline size_t calc_bitmap_size_in_64bit_blocks(size_t num_elements) {
-        auto numBitmapFields = core::ceilToMultiple(num_elements, 64ul)/64;
+        auto numBitmapFields = core::ceilToMultiple(num_elements, 64ul) / 64;
         auto bitmapSize = numBitmapFields * sizeof(uint64_t);
         return bitmapSize;
     }

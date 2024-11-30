@@ -12,6 +12,7 @@
 #include "JSONUtils.h"
 #include "Row.h"
 #include "JSONUtils.h"
+#include "StructCommon.h"
 
 namespace tuplex {
 
@@ -167,7 +168,52 @@ namespace tuplex {
     }
 
     size_t Row::getSerializedLength() const {
-        return getSerializer().length();
+        // Direct computation is faster than creating a serializer always.
+        // There is a lot of direct optimization here, because this routine gets called quite frequently.
+        size_t size = 0;
+        size_t n_options = 0;
+        size_t added_var_field = 0;
+
+        for(const auto& el : _values) {
+            // option type means, add to count and remove option.
+            auto type = el.getType();
+            if(type.isOptionType()) {
+                n_options++;
+                type = type.withoutOption();
+            }
+            auto hash = type.hash();
+
+            // Check if in precomputed map. If so, already done. The test here is against -1.
+            size_t cached_type_size = 0;
+            if(hash >= 0 && hash < 16 && (cached_type_size = python::Type::PRECOMPUTED_SIZE_TABLE[hash]) != -1) {
+                size += cached_type_size;
+            } else {
+                // Need to check type directly.
+                if(hash == python::Type::STRING.hash() || hash == python::Type::PYOBJECT.hash()) {
+                    // Append size
+                    added_var_field = 8;
+                    size += 8 + el.getPtrSize();
+                } else if(type.isStructuredDictionaryType()) {
+                    size += 8 + struct_dict_get_size(el); // regarded as var-length field.
+                } else if(type.isListType()) {
+                    size += 8 + el.serialized_list_size();
+                } else {
+                    // not supported, default back. -> this is also true for nested tuples...
+                    return getSerializer().length();
+                }
+            }
+        }
+
+        if(n_options != 0)
+            size += calc_bitmap_size_in_64bit_blocks(n_options);
+        size += added_var_field;
+
+#ifndef NDEBUG
+        auto reference_length = getSerializer().length();
+        assert(reference_length == size);
+#endif
+
+        return size;
     }
 
     Serializer Row::getSerializer() const {

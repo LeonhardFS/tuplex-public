@@ -55,6 +55,10 @@ namespace python {
         // -1 is reserved for undefined type
         int _hash;
     public:
+
+        // Precomputed size table for fast access of sizes of special hashes.
+        static size_t PRECOMPUTED_SIZE_TABLE[16];
+
         static const Type UNKNOWN; //! dummy for unknown type
         static const Type VOID; //! ??
         static const Type I64; //! a 64 bit integer value

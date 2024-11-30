@@ -29,25 +29,46 @@
 // ==> i.e. cf. wiki page on this. @TODO clarify later.
 
 namespace python {
+
+    // First init size memo (with -1 as default).
+    size_t Type::PRECOMPUTED_SIZE_TABLE[16] = {static_cast<size_t>(-1), static_cast<size_t>(-1), static_cast<size_t>(-1), static_cast<size_t>(-1),
+                                                    static_cast<size_t>(-1), static_cast<size_t>(-1), static_cast<size_t>(-1), static_cast<size_t>(-1),
+                                                     static_cast<size_t>(-1), static_cast<size_t>(-1), static_cast<size_t>(-1), static_cast<size_t>(-1),
+                                                     static_cast<size_t>(-1), static_cast<size_t>(-1), static_cast<size_t>(-1), static_cast<size_t>(-1)};
+
+    // Helper function to add size to table.
+    inline Type cacheSize(const Type& t, size_t size) {
+        if(t.hash() >= 0 && t.hash() < 16)
+            Type::PRECOMPUTED_SIZE_TABLE[t.hash()] = size;
+        return t;
+    }
+
+
+    // Trick: first define some types which have constant size, and save them in memo for fast lookup!
     const Type Type::UNKNOWN = TypeFactory::instance().createOrGetPrimitiveType("unknown");
-    // const Type Type::BOOLEAN = TypeFactory::instance().createOrGetPrimitiveType("boolean");
-    const Type Type::BOOLEAN = TypeFactory::instance().createOrGetPrimitiveType("bool");
-    const Type Type::I64 = TypeFactory::instance().createOrGetPrimitiveType("i64", {python::Type::BOOLEAN});
-    const Type Type::F64 = TypeFactory::instance().createOrGetPrimitiveType("f64", {python::Type::I64});
+    const Type Type::BOOLEAN = cacheSize(TypeFactory::instance().createOrGetPrimitiveType("bool"), 8);
+    const Type Type::I64 = cacheSize(TypeFactory::instance().createOrGetPrimitiveType("i64", {python::Type::BOOLEAN}), 8);
+    const Type Type::F64 = cacheSize(TypeFactory::instance().createOrGetPrimitiveType("f64", {python::Type::I64}), 8);
+    const Type Type::EMPTYTUPLE = cacheSize(python::TypeFactory::instance().createOrGetTupleType(std::vector<python::Type>()), 0);
+    const Type Type::EMPTYDICT = cacheSize(python::TypeFactory::instance().createOrGetPrimitiveType("{}"), 0); // empty dict
+    const Type Type::EMPTYSPARSEDICT = cacheSize(python::TypeFactory::instance().createOrGetStructuredDictType(std::vector<python::StructEntry>(), true), 0); // empty sparse dict
+    const Type Type::EMPTYLIST = cacheSize(python::TypeFactory::instance().createOrGetPrimitiveType("[]"), 0); // empty list: primitive because it can have any type element
+    const Type Type::EMPTYSET = cacheSize(python::TypeFactory::instance().createOrGetPrimitiveType("empty_set"), 0); // empty list: primitive because it can have any type element
+    const Type Type::NULLVALUE = cacheSize(python::TypeFactory::instance().createOrGetPrimitiveType("null"), 0);
+    // special case, empty row
+    const Type Type::EMPTYROW = cacheSize(python::TypeFactory::instance().createOrGetRowType({}), 0);
+
+    // Other types (for serialization these are typically var-length types).
     const Type Type::STRING = TypeFactory::instance().createOrGetPrimitiveType("str");
     const Type Type::ANY = TypeFactory::instance().createOrGetPrimitiveType("any");
     const Type Type::INF = TypeFactory::instance().createOrGetPrimitiveType("inf");
-    const Type Type::EMPTYTUPLE = python::TypeFactory::instance().createOrGetTupleType(std::vector<python::Type>());
-    const Type Type::EMPTYDICT = python::TypeFactory::instance().createOrGetPrimitiveType("{}"); // empty dict
-    const Type Type::EMPTYSPARSEDICT = python::TypeFactory::instance().createOrGetStructuredDictType(std::vector<python::StructEntry>(), true); // empty sparse dict
-    const Type Type::EMPTYLIST = python::TypeFactory::instance().createOrGetPrimitiveType("[]"); // empty list: primitive because it can have any type element
-    const Type Type::EMPTYSET = python::TypeFactory::instance().createOrGetPrimitiveType("empty_set"); // empty list: primitive because it can have any type element
-    const Type Type::NULLVALUE = python::TypeFactory::instance().createOrGetPrimitiveType("null");
+
     const Type Type::PYOBJECT = python::TypeFactory::instance().createOrGetPrimitiveType("pyobject");
     const Type Type::GENERICTUPLE = python::TypeFactory::instance().createOrGetPrimitiveType("tuple");
     const Type Type::GENERICDICT = python::TypeFactory::instance().createOrGetDictionaryType(python::Type::PYOBJECT, python::Type::PYOBJECT);
     const Type Type::GENERICLIST = python::TypeFactory::instance().createOrGetListType(python::Type::PYOBJECT);
     const Type Type::GENERICROW = python::TypeFactory::instance().createOrGetPrimitiveType("row");
+
     //const Type Type::GENERICSET = python::TypeFactory::instance().createOrGetSetType(python::Type::PYOBJECT); // @TODO: implement.
     const Type Type::VOID = python::TypeFactory::instance().createOrGetPrimitiveType("void");
     const Type Type::MATCHOBJECT = python::TypeFactory::instance().createOrGetPrimitiveType("matchobject");
@@ -57,8 +78,7 @@ namespace python {
     const Type Type::EMPTYITERATOR = python::TypeFactory::instance().createOrGetPrimitiveType("emptyiterator");
     const Type Type::TYPEOBJECT = python::TypeFactory::instance().registerOrGetType("type", python::TypeFactory::AbstractType::TYPE, std::vector<Type>{}, python::Type::VOID);
 
-    // special case, empty row
-    const Type Type::EMPTYROW = python::TypeFactory::instance().createOrGetRowType({});
+
     // builtin exception types
     // --> class system
 
