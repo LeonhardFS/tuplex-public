@@ -26,7 +26,8 @@ namespace tuplex {
     static const uint64_t REQUEST_MODE_COMPILE_ONLY=0x2;
     // In this mode, use provided object code.
     static const uint64_t REQUEST_MODE_SKIP_COMPILE=0x4;
-
+    // In this mode, do not perform actual computation - i.e. act as if no output was done. Useful to benchmark overheads.
+    static const uint64_t REQUEST_MODE_NO_OPERATION=0x8;
 
     inline std::vector<messages::Resource> find_resources_by_type(const messages::InvocationResponse& response, ResourceType type) {
         std::vector<messages::Resource> v;

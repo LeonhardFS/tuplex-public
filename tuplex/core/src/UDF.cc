@@ -1310,7 +1310,7 @@ namespace tuplex {
 
         if(!_tupleArgument) {
             // debug:
-            std::cout<<"Rewrite visitor not using tuple argument=true, because given function row type is: "<<function_row_type.desc()<<std::endl;
+            // std::cout<<"Rewrite visitor not using tuple argument=true, because given function row type is: "<<function_row_type.desc()<<std::endl;
         }
     }
 
@@ -1423,7 +1423,7 @@ namespace tuplex {
         if(PARAM_USE_ROW_TYPE && getInputSchema().getRowType().isRowType()) {
 
             // debug:
-            std::cout<<"using row type for UDF rewrite"<<std::endl;
+            // std::cout<<"using row type for UDF rewrite"<<std::endl;
 
             auto in_type = getInputSchema().getRowType();
             auto col_types = in_type.get_column_types();
@@ -1447,7 +1447,7 @@ namespace tuplex {
             // the string ones are fine.
             if(extract_columns_from_type(new_row_type) != extract_columns_from_type(in_type)) {
                 // debug:
-                std::cout<<"rewriting row types from "<<in_type.desc()<<" to "<<new_row_type.desc()<<std::endl;
+                // std::cout<<"rewriting row types from "<<in_type.desc()<<" to "<<new_row_type.desc()<<std::endl;
                 RewriteVisitor rv(rewriteMap); // <-- rewrite integers only.
                 root->accept(rv);
             }

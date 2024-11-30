@@ -414,11 +414,13 @@ namespace tuplex {
         int processTransformStage(TransformStage* tstage,
                                           const std::shared_ptr<TransformStage::JITSymbols>& syms,
                                           const std::vector<FilePart>& input_parts,
-                                          const URI& output_uri);
+                                          const URI& output_uri,
+                                          bool noop=false);
 
         int processTransformStageInPythonMode(const TransformStage* tstage,
                                               const std::vector<FilePart>& input_parts,
-                                              const URI& output_uri);
+                                              const URI& output_uri,
+                                              bool noop=false);
 
         int setup_transform_stage(const tuplex::messages::InvocationRequest& req,
                                              std::shared_ptr<TransformStage>& tstage,

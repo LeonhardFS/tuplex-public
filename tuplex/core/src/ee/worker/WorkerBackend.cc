@@ -20,7 +20,8 @@ namespace tuplex {
                                                                 _options(context.getOptions()),
                                                                 _deleteScratchDirOnShutdown(false),
                                                                 _logger(Logger::instance().logger("worker")),
-                                                                _scratchDir(URI::INVALID) {
+                                                                _scratchDir(URI::INVALID),
+                                                                _useNoOpMode(false) {
 
         _driver.reset(new Executor(_options.DRIVER_MEMORY(),
                                    _options.PARTITION_SIZE(),
@@ -295,6 +296,8 @@ namespace tuplex {
                 messages::InvocationRequest req;
                 fill_env(req);
                 req.set_type(messages::MessageType::MT_TRANSFORM);
+                if(_useNoOpMode)
+                    req.set_requestmode(REQUEST_MODE_NO_OPERATION);
                 auto pb_stage = tstage->to_protobuf();
 
                 auto rangeStart = cur_size;

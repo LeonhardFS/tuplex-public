@@ -43,6 +43,8 @@ namespace tuplex {
         Executor* driver() override { return _driver.get(); }
         void execute(PhysicalStage* stage) override;
 
+        void setNoOpMode(bool noop) { _useNoOpMode = noop; }
+
     protected:
         ContextOptions _options;
         std::unique_ptr<Executor> _driver;
@@ -76,6 +78,7 @@ namespace tuplex {
         URI _scratchDir;
         bool _deleteScratchDirOnShutdown;
         std::string _worker_exe_path;
+        bool _useNoOpMode;
 
         /*!
          * returns a scratch dir. If none is stored/found, abort

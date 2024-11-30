@@ -1447,8 +1447,10 @@ namespace tuplex {
                 }
             }
 
-
+#ifndef NDEBUG
             std::cout<<"HACK: need to fix resolver throwing exception case here."<<std::endl;
+#endif
+
             if(resolvers_found) {
                 // add exception callback (required when resolvers throw exceptions themselves!)
                 slowPip->addExceptionHandler(ret.writeExceptionCallbackName/*slowPathExceptionCallback*/);

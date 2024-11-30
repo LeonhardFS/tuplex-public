@@ -737,8 +737,10 @@ namespace tuplex {
             if(_settings.useObjectFileAsInterchangeFormat) {
                 logger().info("Using Object files (.o) to pass code to self-invoked Lambdas.");
 
+                auto current_mode = req.requestmode();
+
                 // No need to recompile AGAIN.
-                self_invoke_request.set_requestmode(REQUEST_MODE_SKIP_COMPILE);
+                self_invoke_request.set_requestmode(current_mode | REQUEST_MODE_SKIP_COMPILE);
 
                 auto object_code_fast_path = find_resources_by_type(_response, ResourceType::OBJECT_CODE_NORMAL_CASE).front().payload();
                 messages::CodePath fast_path_message;
@@ -784,11 +786,10 @@ namespace tuplex {
 
         // Python mode or compiled mode?
         if(req.settings().has_useinterpreteronly() && req.settings().useinterpreteronly()) {
-            rc = processTransformStageInPythonMode(tstage.get(), parts, outputURI);
+            rc = processTransformStageInPythonMode(tstage.get(), parts, outputURI, req.requestmode() & REQUEST_MODE_NO_OPERATION);
         } else {
-            rc = processTransformStage(tstage.get(), syms, parts, outputURI);
+            rc = processTransformStage(tstage.get(), syms, parts, outputURI, req.requestmode() & REQUEST_MODE_NO_OPERATION);
         }
-
 
         // If using self-invocation, wait for requests to finish.
         if(use_self_invocation(req)) {
@@ -855,7 +856,7 @@ namespace tuplex {
 
     int
     WorkerApp::processTransformStageInPythonMode(const TransformStage *tstage, const std::vector<FilePart> &input_parts,
-                                                 const URI &output_uri) {
+                                                 const URI &output_uri, bool noop) {
         logger().info("WorkerApp is processing everything in single-threaded python/fallback mode.");
 
         Timer timer;
@@ -890,22 +891,27 @@ namespace tuplex {
         // loop over parts & process
         python::lockGIL();
         logger().info("GIL locked, processing " + pluralize(input_parts.size(), "part"));
-        for(const auto& part : input_parts) {
-            size_t inputRowCount = 0;
-            auto rc = processSourceInPython(0, tstage->fileInputOperatorID(),
-                                            part, tstage, pipelineFunctionObj, false, &inputRowCount);
-            logger().info("part processed, rc=" + std::to_string(rc));
-            logger().info("process RSS: " + std::to_string(getCurrentRSS()) + " peak RSS: " + std::to_string(getPeakRSS()) + ", running python gc...");
-            // run garbage collector frequently
-            python::runGC();
-            logger().info("post python gc RSS: " + std::to_string(getCurrentRSS()) + " peak RSS: " + std::to_string(getPeakRSS()));
 
-            numInputRowsProcessed += inputRowCount;
-            if(rc != WORKER_OK) {
-                python::unlockGIL();
-                runtime::releaseRunTimeMemory();
-                return rc;
+        if(!noop) {
+            for(const auto& part : input_parts) {
+                size_t inputRowCount = 0;
+                auto rc = processSourceInPython(0, tstage->fileInputOperatorID(),
+                                                part, tstage, pipelineFunctionObj, false, &inputRowCount);
+                logger().info("part processed, rc=" + std::to_string(rc));
+                logger().info("process RSS: " + std::to_string(getCurrentRSS()) + " peak RSS: " + std::to_string(getPeakRSS()) + ", running python gc...");
+                // run garbage collector frequently
+                python::runGC();
+                logger().info("post python gc RSS: " + std::to_string(getCurrentRSS()) + " peak RSS: " + std::to_string(getPeakRSS()));
+
+                numInputRowsProcessed += inputRowCount;
+                if(rc != WORKER_OK) {
+                    python::unlockGIL();
+                    runtime::releaseRunTimeMemory();
+                    return rc;
+                }
             }
+        } else {
+            logger().info("Worker called with noop, computing as if there was an empty result.");
         }
 
         python::unlockGIL();
@@ -954,7 +960,7 @@ namespace tuplex {
 
     int WorkerApp::processTransformStage(TransformStage *tstage,
                                          const std::shared_ptr<TransformStage::JITSymbols> &syms,
-                                         const std::vector<FilePart> &input_parts, const URI &output_uri) {
+                                         const std::vector<FilePart> &input_parts, const URI &output_uri, bool noop) {
         Timer timer;
         size_t minimumPartSize = 1024 * 1024; // 1MB.
 
@@ -978,15 +984,19 @@ namespace tuplex {
             try {
                 // single-threaded
                 logger().info("Single-threaded worker starting fast-path execution.");
-                for(unsigned i = 0; i < input_parts.size(); ++i) {
-                   const auto& fp = input_parts[i];
-                    size_t inputRowCount = 0;
-                    processCodes[0] = processSource(0, tstage->fileInputOperatorID(), fp, tstage, syms, &inputRowCount);
-                    logger().info("processed file " + std::to_string(i + 1) + "/" + std::to_string(input_parts.size()));
+                if(!noop) {
+                    for(unsigned i = 0; i < input_parts.size(); ++i) {
+                        const auto& fp = input_parts[i];
+                        size_t inputRowCount = 0;
+                        processCodes[0] = processSource(0, tstage->fileInputOperatorID(), fp, tstage, syms, &inputRowCount);
+                        logger().info("processed file " + std::to_string(i + 1) + "/" + std::to_string(input_parts.size()));
 
-                    if(processCodes[0] != WORKER_OK)
-                        break;
-                    numInputRowsProcessed += inputRowCount;
+                        if(processCodes[0] != WORKER_OK)
+                            break;
+                        numInputRowsProcessed += inputRowCount;
+                    }
+                } else {
+                    logger().info("Worker called with noop, computing as if there was an empty result.");
                 }
             } catch(const s3exception& e) {
                 auto err_msg = "S3 exception occurred in single-threaded mode: " + std::string(e.what());
@@ -1035,19 +1045,23 @@ namespace tuplex {
             std::vector<size_t> v_inputRowCount(_numThreads, 0);
 
             for(int i = 1; i < _numThreads; ++i) {
-                threads.emplace_back([this, tstage, &syms, &processCodes, &processErrorMessages, &v_inputRowCount](int threadNo, const std::vector<FilePart>& parts) {
+                threads.emplace_back([this, tstage, &syms, &processCodes, &processErrorMessages, &v_inputRowCount, noop](int threadNo, const std::vector<FilePart>& parts) {
                     logger().debug("thread (" + std::to_string(threadNo) + ") started.");
 
                     runtime::setRunTimeMemory(_settings.runTimeMemory, _settings.runTimeMemoryDefaultBlockSize);
 
                     try {
-                        for(const auto& part : parts) {
-                            logger().debug("thread (" + std::to_string(threadNo) + ") processing part via fast-path");
-                            size_t inputRowCount = 0;
-                            processCodes[threadNo] = processSource(threadNo, tstage->fileInputOperatorID(), part, tstage, syms, &inputRowCount);
-                            if(processCodes[threadNo] != WORKER_OK)
-                                break;
-                            v_inputRowCount[threadNo] += inputRowCount;
+                        if(!noop) {
+                            for(const auto& part : parts) {
+                                logger().debug("thread (" + std::to_string(threadNo) + ") processing part via fast-path");
+                                size_t inputRowCount = 0;
+                                processCodes[threadNo] = processSource(threadNo, tstage->fileInputOperatorID(), part, tstage, syms, &inputRowCount);
+                                if(processCodes[threadNo] != WORKER_OK)
+                                    break;
+                                v_inputRowCount[threadNo] += inputRowCount;
+                            }
+                        } else {
+                            logger().info("Worker called with noop, computing as if there was an empty result.");
                         }
                     } catch(const s3exception& e) {
                         auto err_msg = std::string("exception recorded: ") + e.what();
@@ -1078,13 +1092,17 @@ namespace tuplex {
             runtime::setRunTimeMemory(_settings.runTimeMemory, _settings.runTimeMemoryDefaultBlockSize);
 
             try {
-                for(const auto& part : parts[0]) {
-                    logger().debug("thread (main) processing part");
-                    size_t inputRowCount = 0;
-                    processCodes[0] = processSource(0, tstage->fileInputOperatorID(), part, tstage, syms, &inputRowCount);
-                    if(processCodes[0] != WORKER_OK)
-                        break;
-                    v_inputRowCount[0] += inputRowCount;
+                if(!noop) {
+                    for(const auto& part : parts[0]) {
+                        logger().debug("thread (main) processing part");
+                        size_t inputRowCount = 0;
+                        processCodes[0] = processSource(0, tstage->fileInputOperatorID(), part, tstage, syms, &inputRowCount);
+                        if(processCodes[0] != WORKER_OK)
+                            break;
+                        v_inputRowCount[0] += inputRowCount;
+                    }
+                } else {
+                    logger().info("Worker called with noop, computing as if there was an empty result.");
                 }
             } catch(const std::exception& e) {
                 logger().error(std::string("exception recorded: ") + e.what());
@@ -1208,7 +1226,11 @@ namespace tuplex {
                 logger().info(ss.str());
             }
 
-            resolveOutOfOrder(i, tstage, syms); // note: this func is NOT thread-safe yet!!!
+            if(!noop) {
+                resolveOutOfOrder(i, tstage, syms); // note: this func is NOT thread-safe yet!!!
+            } else {
+                logger().info("Worker called with noop (resolve), computing as if there was an empty result.");
+            }
         }
 
         {
