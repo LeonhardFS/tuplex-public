@@ -185,7 +185,7 @@ namespace tuplex {
                 _useDelayedParsing = false;
                 _useFilterPromo = false;
                 _useSparsifyStructs = false;
-                _simplifyLargeStructs = true;
+                _simplifyLargeStructs = false;
                 _largeStructThreshold = 0;
             }
 
