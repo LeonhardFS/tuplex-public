@@ -280,9 +280,8 @@ def run_with_tuplex(args):
 
     # In hyper mode to avoid long LLVM IR optimization times, enable simplifyLargeStructs optimization. Deactivate it for global sparse structs,
     # as this mode specifically needs to measure how badly global structs affect everything.
-    if use_hyper_specialization:
-        conf["optimizer.simplifyLargeStructs"] = True
-        # leave threshold as above.
+    conf["optimizer.simplifyLargeStructs"] = use_hyper_specialization
+    # leave threshold as above.
 
     # if os.path.exists('tuplex_config.json'):
     #     with open('tuplex_config.json') as fp:
@@ -452,9 +451,8 @@ def run_with_tuplex_on_lambda(args):
 
     # In hyper mode to avoid long LLVM IR optimization times, enable simplifyLargeStructs optimization. Deactivate it for global sparse structs,
     # as this mode specifically needs to measure how badly global structs affect everything.
-    if use_hyper_specialization:
-        conf["optimizer.simplifyLargeStructs"] = True
-        # leave threshold as above.
+    conf["optimizer.simplifyLargeStructs"] = use_hyper_specialization
+    # leave threshold as above.
 
     conf['inputSplitSize'] = input_split_size
     # disable for now.
