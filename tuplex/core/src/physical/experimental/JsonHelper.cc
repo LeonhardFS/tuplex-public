@@ -302,11 +302,18 @@ namespace tuplex {
             if (error)
                 return translate_simdjson_error(error);
 
+            // // OLD:
+            // auto str_size = 1 + sv_value.size();
+            // char *buf = (char *) runtime::rtmalloc(str_size);
+            // for (unsigned i = 0; i < sv_value.size(); ++i)
+            //     buf[i] = sv_value.at(i);
+            // buf[str_size - 1] = '\0';
+
+            // Optimized (after godbolt inspection):
             auto str_size = 1 + sv_value.size();
             char *buf = (char *) runtime::rtmalloc(str_size);
-            for (unsigned i = 0; i < sv_value.size(); ++i)
-                buf[i] = sv_value.at(i);
-            buf[str_size - 1] = '\0';
+            memcpy(buf, sv_value.data(), sv_value.size());
+            buf[sv_value.size()] = '\0';
 
             assert(out);
             assert(size);

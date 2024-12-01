@@ -199,7 +199,7 @@ TEST_F(LocalWorkerFixture, GithubSparseStructHyper) {
     using namespace tuplex;
 
     // Config for test (useful for profiling)
-    bool use_noop_mode = true;
+    bool use_noop_mode = false;
 
 
     // Test over github daily with generic hyper dicts.
@@ -269,6 +269,61 @@ TEST_F(LocalWorkerFixture, GithubGlobalStructs) {
     conf["tuplex.optimizer.sparsifyStructs"] = "false";
     conf["tuplex.optimizer.simplifyLargeStructs"] = "false";
     conf["tuplex.experimental.useGenericDicts"] = "false";
+    conf["tuplex.experimental.hyperspecialization"] = "false";
+
+    auto ctx = create_worker_context(conf);
+
+    // Use Noop mode to benchmark overheads. This is useful for optimizing performance without actually calling tje JITed code.
+    auto wb = static_cast<WorkerBackend*>(ctx.backend());
+    wb->setNoOpMode(use_noop_mode);
+
+    cout<<"Running github pipeline."<<endl;
+
+    github_pipeline(ctx, input_pattern, output_path);
+
+    cout<<"Pipeline done."<<endl;
+
+    // Load stats result from json:
+    auto job_path = URI("worker_app_job.json");
+    auto job_data = fileToString(job_path);
+    ASSERT_FALSE(job_data.empty());
+
+
+    // check results (from python reference number, add up total line count)
+    if(!use_noop_mode) {
+        cout << "Analyzing result: " << endl;
+        auto output_uris = glob(output_path + "*.csv");
+        cout << "Found " << pluralize(output_uris.size(), "output file") << endl;
+        size_t total_row_count = 0;
+        for (auto path: output_uris) {
+            auto row_count = csv_row_count(path);
+            cout << "-- file " << path << ": " << pluralize(row_count, "row") << endl;
+            total_row_count += row_count;
+        }
+        EXPECT_EQ(total_row_count, 294195);
+    }
+}
+
+TEST_F(LocalWorkerFixture, GithubGlobalGenericDicts) {
+    using namespace std;
+    using namespace tuplex;
+
+    // Config for test (useful for profiling)
+    bool use_noop_mode = false;
+
+    // Test over github daily with generic hyper dicts.
+    auto input_pattern = "/hot/data/github_daily/*.json";
+    auto output_path = "./local-exp/" + testName + "/";
+    // remove output files if they exist
+    cout << "Removing files (if they exist) from " << output_path << endl;
+    boost::filesystem::remove_all(output_path.c_str());
+
+    std::unordered_map<std::string, std::string> conf;
+
+    // enable sparse structs, disable generic dicts
+    conf["tuplex.optimizer.sparsifyStructs"] = "false";
+    conf["tuplex.optimizer.simplifyLargeStructs"] = "false";
+    conf["tuplex.experimental.useGenericDicts"] = "true";
     conf["tuplex.experimental.hyperspecialization"] = "false";
 
     auto ctx = create_worker_context(conf);

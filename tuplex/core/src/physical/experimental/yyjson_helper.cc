@@ -124,20 +124,23 @@ namespace tuplex {
         yyjson_alc alc;
         yyjson_set_runtime_alc(&alc);
 
-#ifndef NDEBUG
+//#ifndef NDEBUG
         yyjson_read_err err;
         auto err_ptr = &err;
-#else
-        yyjson_read_err* err_ptr = nullptr;
-#endif
+//#else
+//        yyjson_read_err* err_ptr = nullptr;
+//#endif
+
+        // // print json line for inspection:
+        // std::cout<<"DEBUG: "<<json_line<<std::endl;
 
         auto yy_doc = yyjson_read_opts(const_cast<char*>(json_line.c_str()), json_line.size(), 0, nullptr, err_ptr);
 
-#ifndef NDEBUG
+//#ifndef NDEBUG
         if(err_ptr && err_ptr->code != YYJSON_READ_SUCCESS) {
             std::cerr<<yyjson_err_to_string(*err_ptr)<<std::endl;
         }
-#endif
+//#endif
 
         auto yy_mut_doc = yyjson_doc_mut_copy(yy_doc, &alc);
         yyjson_doc_free(yy_doc);
