@@ -121,6 +121,13 @@ run_benchmarks() {
                             --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
                             --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
                             --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
+
+  echo ">>> Running tuplex with no hyper, generic dicts"
+  mode=tuplex-global-generic-dicts
+  ${PYTHON} runtuplex-new.py --mode tuplex --no-hyper --generic-dicts --input-pattern "${INPUT_PATTERN}" --output-path ${RESULT_DIR}/output/${mode} \
+                            --tuplex-worker-path "$BUILD_DIR/dist/bin/tuplex-worker" \
+                            --scratch-dir ${RESULT_DIR}/scratch --log-path ${RESULT_DIR}/results/${mode}/log-run-${run}.txt \
+                            --result-path ${RESULT_DIR}/results/${mode}/log-run-${run}.ndjson
 }
 
 # Run all benchmarks once (run 0 is validation run)
@@ -134,7 +141,7 @@ python3 validate.py "${RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-h
 # Actual benchmark now.
 
 # Run a couple runs here.
-NUM_RUNS=${NUM_RUNS:-3}
+NUM_RUNS=${NUM_RUNS:-1}
 
 for ((r = 1; r <= NUM_RUNS; r++)); do
   echo "-- RUN ${r}/${NUM_RUNS}"

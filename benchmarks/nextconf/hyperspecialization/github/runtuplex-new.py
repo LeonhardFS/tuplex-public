@@ -278,6 +278,9 @@ def run_with_tuplex(args):
             "useInterpreterOnly": args.python_mode,
             "experimental.forceBadParseExceptFormat": not args.use_internal_fmt}
 
+    # Use Python logger to save whatever happens to file.
+    conf["redirectToPythonLogging"] = True
+
     # In hyper mode to avoid long LLVM IR optimization times, enable simplifyLargeStructs optimization. Deactivate it for global sparse structs,
     # as this mode specifically needs to measure how badly global structs affect everything.
     conf["optimizer.simplifyLargeStructs"] = use_hyper_specialization
@@ -438,6 +441,8 @@ def run_with_tuplex_on_lambda(args):
             "useInterpreterOnly": args.python_mode,
             "experimental.forceBadParseExceptFormat": not args.use_internal_fmt}
 
+    # Use Python logger to save whatever happens to file.
+    conf["redirectToPythonLogging"] = True
 
     # Special case: mode == python:
     if args.mode == "python":
