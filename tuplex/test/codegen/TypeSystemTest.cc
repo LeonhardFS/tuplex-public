@@ -10,9 +10,11 @@
 
 #include "gtest/gtest.h"
 #include "TypeSystem.h"
+#include "Timer.h"
 #include <TupleTree.h>
 #include <vector>
 #include <TypeHelper.h>
+#include <fstream>
 
 boost::any get_representative_value(const python::Type& type) {
     using namespace tuplex;
@@ -476,4 +478,34 @@ TEST(TypeSys, DecodeRowTypeWithConstantInt) {
     auto t = python::Type::decode(s);
 
     EXPECT_TRUE(t.isRowType());
+}
+
+
+// Helper function: (duplicate, because io is separate test folder)
+std::string fileToString(const std::string &Path) {
+    std::ifstream T(Path);
+    return std::string((std::istreambuf_iterator<char>(T)),
+                       std::istreambuf_iterator<char>());
+}
+
+TEST(TypeSys, TimeDecode) {
+    using namespace tuplex;
+    using namespace std;
+    // Can use this to profile decode function. It's quite slow atm, which is a problem for serialization/deserialization.
+
+    // Load file to string vector
+    auto data = fileToString("../resources/schemas.txt");
+    auto lines = splitToLines(data);
+
+    auto N_runs = 250;
+
+    Timer timer;
+    for(int i = 0; i < N_runs; ++i) {
+        for(const auto& line : lines) {
+            auto t = python::decodeType(line);
+            EXPECT_GT(t.hash(), 0); // should not be unknown or uninitialized.
+        }
+    }
+    auto duration = timer.time();
+    cout<<"Took "<<duration<<"s to decode everything.";
 }
