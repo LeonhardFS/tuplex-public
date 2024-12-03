@@ -1334,8 +1334,10 @@ namespace python {
             return makeTupleType(std::vector<python::Type>{type});
     }
 
-    std::unordered_map<std::string, Type> TypeFactory::get_primitive_keywords() const {
-        std::unordered_map<std::string, Type> keywords;
+    // std::unordered_map<std::string, Type> TypeFactory::get_primitive_keywords() const {
+    absl::flat_hash_map<std::string, Type> TypeFactory::get_primitive_keywords() const {
+        //std::unordered_map<std::string, Type> keywords;
+        absl::flat_hash_map<std::string, Type> keywords;
         _typeMapMutex.lock();
         for(const auto& keyval : _typeMap) {
             Type t;
@@ -2074,7 +2076,7 @@ namespace python {
         // fetch primitive keywords for decoding
         size_t min_keyword_length = s.length();
         size_t max_keyword_length = 0;
-        std::unordered_map<std::string, Type> keywords = TypeFactory::instance().get_primitive_keywords();
+        auto keywords = TypeFactory::instance().get_primitive_keywords();
 
         // add (), {}, and [] as keywords
         keywords["()"] = python::Type::EMPTYTUPLE;

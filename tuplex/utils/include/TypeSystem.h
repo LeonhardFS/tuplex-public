@@ -38,6 +38,9 @@
 #include "cereal/archives/binary.hpp"
 #endif
 
+// use absl flat hash map instead to speed up type system?
+#include <absl/container/flat_hash_map.h>
+
 namespace python {
 
     class Type;
@@ -619,8 +622,10 @@ namespace python {
         // need threadsafe hashmap here...
         // either tbb's or the one from folly...
         std::vector<TypeEntry> _typeVec;
-        std::unordered_map<int, unsigned> _typeMap; // points to typeVec
-        std::unordered_map<std::string, unsigned> _typeMapByName; // points to typeVec
+        //std::unordered_map<int, unsigned> _typeMap; // points to typeVec
+        //std::unordered_map<std::string, unsigned> _typeMapByName; // points to typeVec
+        absl::flat_hash_map<int, unsigned> _typeMap; // points to typeVec
+        absl::flat_hash_map<std::string, unsigned> _typeMapByName; // points to typeVec
         mutable std::mutex _typeMapMutex;
 
         TypeFactory() : _hash_generator(0)  { _typeVec.reserve(256); }
@@ -665,7 +670,8 @@ namespace python {
          * returns a lookup map of all registered primitive type keywords (they can be created dynamically...)
          * @return map of keywords -> type.
          */
-        std::unordered_map<std::string, Type> get_primitive_keywords() const;
+        // std::unordered_map<std::string, Type> get_primitive_keywords() const;
+        absl::flat_hash_map<std::string, Type> get_primitive_keywords() const;
 
         Type createOrGetPrimitiveType(const std::string& name, const std::vector<Type>& baseClasses=std::vector<Type>{});
 

@@ -20,6 +20,7 @@ TARGET_LINK_LIBRARIES(testcodegen
         ${ZSTD_LIBRARIES}
         ${ZLIB_LIBRARIES}
         ${CURSES_LIBRARIES}
+        absl::flat_hash_map
         runtime
         )
 
