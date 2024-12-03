@@ -410,7 +410,7 @@ namespace python {
 
         // Use stringstream instead of old += string building method.
         std::stringstream name;
-        name << is_sparse ? "SparseStruct[" : "Struct[";
+        name << (is_sparse ? "SparseStruct[" : "Struct[");
 
         // for each pair, construct tuple (val_type, value) -> type
         for(const auto& kv_pair : kv_pairs) {
