@@ -408,29 +408,38 @@ namespace python {
         if(kv_pairs.empty() && !is_sparse)
             return python::Type::EMPTYDICT;
 
-        std::string name = is_sparse ? "SparseStruct[" : "Struct[";
+        // Use stringstream instead of old += string building method.
+        std::stringstream name;
+        name << is_sparse ? "SparseStruct[" : "Struct[";
 
         // for each pair, construct tuple (val_type, value) -> type
         for(const auto& kv_pair : kv_pairs) {
-            std::string pair_str = "(";
+            // std::string pair_str = "(";
+            name<<"(";
 
             // @TODO: we basically need a mechanism to serialize/deserialize field values to string and back.
             // add mapping
             // escape non-string values as string
             auto py_string = kv_pair.keyType == python::Type::STRING ? kv_pair.key : escape_to_python_str(kv_pair.key);
             auto map_str = presence_to_string(kv_pair.presence);
-            pair_str += kv_pair.keyType.desc() + "," + py_string + map_str + kv_pair.valueType.desc();
+            //            pair_str += kv_pair.keyType.desc() + "," + py_string + map_str + kv_pair.valueType.desc();
+            name<<kv_pair.keyType.desc()<<","<<py_string<<map_str<<kv_pair.valueType.desc();
 
-            pair_str += ")";
-            name += pair_str + ",";
+            //pair_str += ")";
+            // name<<pair_str<<",";
+            name<<")";
+            name<<",";
         }
-        if(name.back() == ',')
-            name.back() = ']';
+        
+        auto name_str = name.str();
+        
+        if(name_str.back() == ',')
+            name_str.back() = ']';
         else
-            name += "]";
+            name_str += "]";
 
         // store as new type in type factory (@TODO)
-        auto t = registerOrGetType(name, is_sparse ? AbstractType::SPARSE_STRUCTURED_DICTIONARY : AbstractType::STRUCTURED_DICTIONARY,
+        auto t = registerOrGetType(name_str, is_sparse ? AbstractType::SPARSE_STRUCTURED_DICTIONARY : AbstractType::STRUCTURED_DICTIONARY,
                                    {}, {}, {}, false, kv_pairs);
         return t;
     }
