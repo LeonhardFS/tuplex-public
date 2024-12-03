@@ -805,7 +805,7 @@ namespace tuplex {
                               "    if 2011 == row['year']:\n"
                               "        return row['actor']['login']\n"
                               "    else:\n"
-                              "        return row['actor']\n";
+                              "        return row['actor']\n"; // <-- This doesn't look right... -> This should be dictionary I assume? Is the condition maybe the other way round??
 
         auto extract_forkee_url = "def extract_forkee_url(row):\n"
                                   "    if 2011 == row['year']:\n"
@@ -817,7 +817,7 @@ namespace tuplex {
         auto extract_watchers = "def extract_watchers(row):\n"
                                 "    # before 2012-08-06 watchers are stargazers, and no stat about watchers is available!\n"
                                 "    month = int(row['created_at'].split('-')[1])\n"
-                                "    day = int(row['created_at'].split('-')[1])\n"
+                                "    day = int(row['created_at'].split('-')[2])\n"
                                 "        \n"
                                 "    if 2011 == row['year']:\n"
                                 "        return None\n"
