@@ -3,6 +3,7 @@
 # TODO: build with cmake -G "Unix Makefiles" -DBUILD_WITH_CEREAL=ON -DSKIP_AWS_TESTS=OFF -DBUILD_WITH_ORC=OFF -DBUILD_WITH_AWS=ON -DPython3_EXECUTABLE=/home/leonhards/.pyenv/shims/python3.9 -DAWS_S3_TEST_BUCKET='tuplex-test' -DLLVM_ROOT_DIR=/opt/llvm-9 ..
 import logging
 import pathlib
+from email.policy import default
 from typing import Optional
 
 # Tuplex based cleaning script
@@ -55,7 +56,7 @@ def human_readable_size(size, decimal_places=2):
     return f"{size:.{decimal_places}f} {unit}"
 
 
-def process_path_with_python(input_path, dest_output_path):
+def process_path_with_python_fork_query(input_path, dest_output_path):
 
     # handwritten pipeline (optimized)
     # this resembles the following pipeline to process a JSON file to a CSV file
@@ -123,6 +124,81 @@ def process_path_with_python(input_path, dest_output_path):
 
     return {'output_path': dest_output_path, 'duration': duration, 'num_output_rows': num_output_rows, 'num_input_rows': num_input_rows}
 
+def process_path_with_python_push_query(input_path, dest_output_path):
+
+    # handwritten pipeline (optimized)
+    # this resembles the following pipeline to process a JSON file to a CSV file
+    #     ctx.json(input_pattern, True, True, sm) \
+    #        .filter(lambda x: x['type'] == 'PushEvent') \
+    #        .withColumn('year', lambda x: int(x['created_at'].split('-')[0])) \
+    #        .withColumn('repo_id', extract_repo_id) \
+    #        .withColumn('commits', lambda row: row['payload'].get('commits')) \
+    #        .withColumn('number_of_commits', lambda row: len(row['commits']) if row['commits'] else 0) \
+    #        .selectColumns(['type', 'repo_id', 'year', 'number_of_commits']) \
+    #        .tocsv(s3_output_path)
+    tstart = time.time()
+    rows = []
+    num_input_rows = 0
+    with open(input_path, 'r') as fp:
+        for line in fp:
+            row = json.loads(line.strip())
+            num_input_rows += 1
+
+            # .filter(lambda x: x['type'] == 'ForkEvent')
+            if row['type'] != 'PushEvent':
+                continue
+
+            # .withColumn('year', lambda x: int(x['created_at'].split('-')[0])) \
+            row['year'] = int(row['created_at'].split('-')[0])
+
+            # .withColumn('repo_id', extract_repo_id)
+            row['repo_id'] = extract_repo_id(row)
+
+            # .withColumn('commits', lambda row: row['payload'].get('commits'))
+            row['commits'] = row['payload'].get('commits')
+
+            # .withColumn('number_of_commits', lambda row: len(row['commits']) if row['commits'] else 0)
+            row['number_of_commits'] = len(row['commits']) if row['commits'] else 0
+
+            row = {'type': row['type'], 'repo_id': row['repo_id'],
+                   'year': row['year'], 'number_of_commits': row['number_of_commits']}
+            rows.append(row)
+
+    # write out as CSV (escape each)
+    if rows:
+
+        # create parent folder first
+        pathlib.Path(dest_output_path).parent.mkdir(parents=True, exist_ok=True)
+
+        with open(dest_output_path, 'w', newline='') as csvfile:
+            # use same order here as Tuplex does, alternative would be something like
+            # sorted([str(key) for key in rows[0].keys()])
+            fieldnames = ['type', 'repo_id', 'year', 'number_of_commits']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+            writer.writeheader()
+            for row in rows:
+                writer.writerow(row)
+
+    if os.path.exists(dest_output_path):
+        output_result = human_readable_size(os.path.getsize(dest_output_path))
+    else:
+        output_result = "skipped"
+
+    num_output_rows = len(rows)
+
+    duration = time.time() - tstart
+    logging.info(f"Done in {duration:.2f}s, wrote output to {dest_output_path} ({output_result}, {num_output_rows} rows)")
+
+    return {'output_path': dest_output_path, 'duration': duration, 'num_output_rows': num_output_rows, 'num_input_rows': num_input_rows}
+
+def process_path_with_python(query, input_path, dest_output_path):
+    if query == 'fork':
+        return process_path_with_python_fork_query(input_path, dest_output_path)
+    elif query == 'push':
+        return process_path_with_python_push_query(input_path, dest_output_path)
+    else:
+        raise ValueError(f"Unknown query {query}")
 
 def run_with_python_baseline(args):
     startup_time = 0
@@ -152,7 +228,7 @@ def run_with_python_baseline(args):
     path_stats = []
     for part_no, path in enumerate(input_paths):
         logging.info(f"Processing path {part_no+1}/{len(input_paths)}: {path} ({human_readable_size(os.path.getsize(path))})")
-        ans = process_path_with_python(path, os.path.join(output_path, "part_{:04d}.csv".format(part_no)))
+        ans = process_path_with_python(args.query, path, os.path.join(output_path, "part_{:04d}.csv".format(part_no)))
         ans['input_path'] = path
         path_stats.append(ans)
         total_output_rows += ans['num_output_rows']
@@ -166,16 +242,28 @@ def run_with_python_baseline(args):
              'total_output_rows': total_output_rows, 'total_input_rows': total_input_rows, 'per_file_stats': path_stats}
     return stats
 
-def github_pipeline(ctx, input_pattern, s3_output_path, sm):
-
-    ctx.json(input_pattern, True, True, sm) \
-       .withColumn('year', lambda x: int(x['created_at'].split('-')[0])) \
-       .withColumn('repo_id', extract_repo_id) \
-       .filter(lambda x: x['type'] == 'ForkEvent') \
-       .withColumn('commits', lambda row: row['payload'].get('commits')) \
-       .withColumn('number_of_commits', lambda row: len(row['commits']) if row['commits'] else 0) \
-       .selectColumns(['type', 'repo_id', 'year', 'number_of_commits']) \
-       .tocsv(s3_output_path)
+def github_pipeline(ctx, query, input_pattern, s3_output_path, sm):
+    if query == 'fork':
+        ctx.json(input_pattern, True, True, sm) \
+           .withColumn('year', lambda x: int(x['created_at'].split('-')[0])) \
+           .withColumn('repo_id', extract_repo_id) \
+           .filter(lambda x: x['type'] == 'ForkEvent') \
+           .withColumn('commits', lambda row: row['payload'].get('commits')) \
+           .withColumn('number_of_commits', lambda row: len(row['commits']) if row['commits'] else 0) \
+           .selectColumns(['type', 'repo_id', 'year', 'number_of_commits']) \
+           .tocsv(s3_output_path)
+    elif query == 'push':
+        # Same as in fork, but with push events.
+        ctx.json(input_pattern, True, True, sm) \
+            .withColumn('year', lambda x: int(x['created_at'].split('-')[0])) \
+            .withColumn('repo_id', extract_repo_id) \
+            .filter(lambda x: x['type'] == 'PushEvent') \
+            .withColumn('commits', lambda row: row['payload'].get('commits')) \
+            .withColumn('number_of_commits', lambda row: len(row['commits']) if row['commits'] else 0) \
+            .selectColumns(['type', 'repo_id', 'year', 'number_of_commits']) \
+            .tocsv(s3_output_path)
+    else:
+        raise ValueError(f"Unknown query {query}")
 
 # local worker version
 def run_with_tuplex(args):
@@ -317,7 +405,7 @@ def run_with_tuplex(args):
     tstart = time.time()
     ### QUERY HERE ###
 
-    github_pipeline(ctx, input_pattern, output_path, sm)
+    github_pipeline(ctx, args.query, input_pattern, output_path, sm)
 
     ### END QUERY ###
     job_time = time.time() - tstart
@@ -485,7 +573,7 @@ def run_with_tuplex_on_lambda(args):
     tstart = time.time()
     ### QUERY HERE ###
 
-    github_pipeline(ctx, input_pattern, output_path, sm)
+    github_pipeline(ctx, args.query, input_pattern, output_path, sm)
 
     ### END QUERY ###
     job_time = time.time() - tstart
@@ -595,6 +683,8 @@ if __name__ == '__main__':
     parser.add_argument('--lambda', dest="with_lambda", action="store_true")
     parser.add_argument('--lambda-parallelism', dest="lambda_parallelism", type=int, default=100)
     parser.add_argument('--lambda-size', dest="lambda_size", type=int, default=1536)
+    # Select which query to run (fork per default)
+    parser.add_argument('--query', default='fork', choices=['fork', 'push'], help='Select query to run.')
     args = parser.parse_args()
 
     # set up logging, by default always render to console. If log path is present, store file as well

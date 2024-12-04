@@ -263,5 +263,6 @@ if __name__ == '__main__':
     logging.info("Plotting full hyper mode vs. Python per file")
     plot_per_file_vs_python(df, 'tuplex-hyper-sparse-structs', os.path.join(args.output_dir, 'tuplex-hyper-per-file-vs-python.png'))
 
+    # This is buggy, leave out for now.
     # for all tuplex scenarios, plot row count breakdown per run.
-    plot_row_breakdown_for_all(df, os.path.join(args.output_dir, "runs"))
+    # plot_row_breakdown_for_all(df, os.path.join(args.output_dir, "runs"))
