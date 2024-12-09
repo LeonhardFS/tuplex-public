@@ -2882,7 +2882,7 @@ namespace tuplex {
                 retVal = dummyValue(builder, type.withoutOption());
                 retVal.is_null = i1Const(true);
             } else {
-                std::string err_msg = "Requested dummy for type " + type.desc() + " but not yet implemented";
+                std::string err_msg = std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Requested dummy for type " + type.desc() + " but not yet implemented";
                 Logger::instance().logger("codegen").error(err_msg);
                 throw std::runtime_error(err_msg);
             }

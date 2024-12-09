@@ -529,7 +529,8 @@ namespace python {
 //        // check that constant is valid python string in the string case
 //#ifndef NDEBUG
 //        if(python::Type::STRING == underlying) {
-//            if(constant.empty() || (constant[0] != '\'' && constant[0] != '"'))
+//            // needs to be JSON string, i.e. start with ".
+//            if(constant.empty() || (constant[0] != '"'))
 //                throw std::runtime_error("can only create string constant with properly escaped python string.");
 //        }
 //#endif
@@ -537,7 +538,12 @@ namespace python {
         std::string name;
         name += "_Constant[";
         name += TypeFactory::instance().getDesc(underlying._hash);
-        name += ",value=" + constant;
+        name += ",value=";
+
+        if(underlying == python::Type::STRING)
+            name += tuplex::escape_for_json(constant);
+        else
+            name += constant; // for integer, bool.
         name += "]";
 
         return registerOrGetType(name, AbstractType::OPTIMIZED_CONSTANT, {underlying},

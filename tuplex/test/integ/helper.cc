@@ -255,7 +255,7 @@ namespace tuplex {
         }
     }
 
-    void github_pipeline(Context& ctx, const std::string& input_pattern, const std::string& output_path, const SamplingMode& sm) {
+    void github_pipeline(Context& ctx, const std::string& input_pattern, const std::string& output_path, const SamplingMode& sm, const std::string& event_type) {
         using namespace std;
         // start pipeline incl. output
         auto repo_id_code = "def extract_repo_id(row):\n"
@@ -279,10 +279,13 @@ namespace tuplex {
                             "        else:\n"
                             "            return None\n";
 
+        // only ForkEvent and PushEvent supported.
+        assert(event_type == "ForkEvent" || event_type == "PushEvent");
+
         ctx.json(input_pattern, true, true, sm)
                 .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
                 .withColumn("repo_id", UDF(repo_id_code))
-                .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
+                .filter(UDF("lambda x: x['type'] == '" + event_type + "'")) // <-- this is challenging to push down.
                 .withColumn("commits", UDF("lambda row: row['payload'].get('commits')"))
                 .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
                 .selectColumns(vector<string>{"type", "repo_id", "year", "number_of_commits"})

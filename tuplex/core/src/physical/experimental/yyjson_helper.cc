@@ -11,7 +11,7 @@ namespace tuplex {
         if(!val)
             return false;
 
-        if(yyjson_mut_is_arr(val))
+        if(!yyjson_mut_is_arr(val))
             return false;
 
         yyjson_mut_arr_iter iter = yyjson_mut_arr_iter_with(val);

@@ -3421,7 +3421,23 @@ namespace tuplex {
                     // --> should cache this function...
 
                     auto is_not_array_of_objects = env.i1neg(builder, call_cjson_is_list_of_generic_dicts(builder, item));
-                    lfb.addException(builder, ExceptionCode::NORMALCASEVIOLATION, is_not_array_of_objects, "item given is not array of objects, can't decode as List[Dict[pyobject,pyobject]]");
+
+                    // debug mode: print out what kinf of object it is, simply by calling string conversion
+#ifndef NDEBUG
+                    auto bbPrint = llvm::BasicBlock::Create(env.getContext(), "print_debug", builder.GetInsertBlock()->getParent());
+                    auto bbNext = llvm::BasicBlock::Create(env.getContext(), "print_done", builder.GetInsertBlock()->getParent());
+                    builder.CreateCondBr(is_not_array_of_objects, bbPrint, bbNext);
+                    builder.SetInsertPoint(bbPrint);
+                    // print logic
+                    auto cjson_as_str = call_cjson_to_string(builder, item);
+                    env.printValue(builder, cjson_as_str.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " value of item: ");
+
+                    // end logic
+                    builder.CreateBr(bbNext);
+                    builder.SetInsertPoint(bbNext);
+#endif
+
+                    lfb.addException(builder, ExceptionCode::NORMALCASEVIOLATION, is_not_array_of_objects, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " item given is not array of objects, can't decode as List[Dict[pyobject,pyobject]]");
 
                     auto ret = decode_list_of_generic_dicts_from_cjson(env, lfb, builder, item, false);
                     lfb.setLastBlock(builder.GetInsertBlock());

@@ -14,6 +14,7 @@
 #include <visitors/ApplyVisitor.h>
 #include <ast/ASTHelpers.h>
 #include <visitors/type_deopt.h>
+#include "JSONUtils.h"
 
 namespace tuplex {
     bool isPythonIntegerType(const python::Type& t ) {

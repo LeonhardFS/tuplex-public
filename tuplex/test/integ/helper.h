@@ -67,7 +67,7 @@ namespace tuplex {
 
     extern messages::InvocationResponse process_request_with_worker(const std::string& worker_path, const std::string& scratch_dir, const messages::InvocationRequest& request, bool invoke_process=true);
 
-    extern void github_pipeline(Context& ctx, const std::string& input_pattern, const std::string& output_path, const SamplingMode& sm=DEFAULT_EXPERIMENT_SAMPLING_MODE);
+    extern void github_pipeline(Context& ctx, const std::string& input_pattern, const std::string& output_path, const SamplingMode& sm=DEFAULT_EXPERIMENT_SAMPLING_MODE, const std::string& event_type="ForkEvent");
 }
 
 #endif //TUPLEX_HELPER_H
