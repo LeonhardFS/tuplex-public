@@ -401,5 +401,50 @@ TEST_F(LocalWorkerFixture, GithubGenericDictHyperPushEvents) {
         cout << "-- file " << path << ": " << pluralize(row_count, "row") << endl;
         total_row_count += row_count;
     }
-    EXPECT_EQ(total_row_count, 294195);
+    EXPECT_EQ(total_row_count, 5727942);
+}
+
+TEST_F(LocalWorkerFixture, GithubGenericDictGlobalPushEvents) {
+    using namespace std;
+    using namespace tuplex;
+
+    // Test over github daily with generic hyper dicts.
+    auto input_pattern = "/hot/data/github_daily/*.json";
+    auto output_path = "./local-exp/" + testName + "/";
+    // remove output files if they exist
+    cout << "Removing files (if they exist) from " << output_path << endl;
+    boost::filesystem::remove_all(output_path.c_str());
+
+    std::unordered_map<std::string, std::string> conf;
+
+    // disable sparse structs, enable generic dicts
+    conf["tuplex.optimizer.sparsifyStructs"] = "false";
+    conf["tuplex.experimental.useGenericDicts"] = "true";
+    conf["tuplex.experimental.hyperspecialization"] = "false";
+
+    auto ctx = create_worker_context(conf);
+
+    cout<<"Running github pipeline (push_events)."<<endl;
+
+    github_pipeline(ctx, input_pattern, output_path, DEFAULT_EXPERIMENT_SAMPLING_MODE, "PushEvent");
+
+    cout<<"Pipeline done."<<endl;
+
+    // Load stats result from json:
+    auto job_path = URI("worker_app_job.json");
+    auto job_data = fileToString(job_path);
+    ASSERT_FALSE(job_data.empty());
+
+
+    // check results (from python reference number, add up total line count)
+    cout << "Analyzing result: " << endl;
+    auto output_uris = glob(output_path + "*.csv");
+    cout << "Found " << pluralize(output_uris.size(), "output file") << endl;
+    size_t total_row_count = 0;
+    for (auto path: output_uris) {
+        auto row_count = csv_row_count(path);
+        cout << "-- file " << path << ": " << pluralize(row_count, "row") << endl;
+        total_row_count += row_count;
+    }
+    EXPECT_EQ(total_row_count, 5727942);
 }
