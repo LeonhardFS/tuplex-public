@@ -1418,7 +1418,13 @@ namespace tuplex {
                 file->write(header, header_length);
                 delete [] header; // delete temp buffer.
 
-                std::cout<<"wrote header to: "<<outputURI.toString()<<std::endl;
+#ifndef NDEBUG
+                {
+                    std::stringstream  ss;
+                    ss<<"wrote header to: "<<outputURI.toString();
+                    logger().info(ss.str());
+                }
+#endif
             }
         }
 
@@ -1430,7 +1436,12 @@ namespace tuplex {
                 // -> directly to file!
                 assert(part_info.buf);
 
-                std::cout<<"wrote buf of size "<<part_info.buf_size<<" to "<<outputURI.toString()<<std::endl;
+                {
+                    std::stringstream ss;
+                    ss<<"Wrote buffer of size "<<sizeToMemString(part_info.buf_size)<<" ("<<part_info.buf_size<<"B) to "<<outputURI.toString();
+                    logger().info(ss.str());
+                }
+
                 if(part_info.buf)
                     file->write(part_info.buf, part_info.buf_size);
                 else
