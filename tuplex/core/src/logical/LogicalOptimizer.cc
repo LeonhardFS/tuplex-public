@@ -1685,8 +1685,9 @@ namespace tuplex {
             if(value_type.isIllDefined())
                 continue;
 
+#ifndef NDEBUG
             cout<<"path: "<<access_path_to_str(path)<<" present: "<<std::boolalpha<<is_present<<" value_type: "<<value_type.desc()<<endl;
-
+#endif
             insert_into_tree(node.get(), path, value_type, is_present);
         }
 
@@ -1773,7 +1774,9 @@ namespace tuplex {
 
                     type = access_paths_to_sparse_dict(column_access_paths[i], value_types, presence);
 
-                    cout<<"Sparsified type for column #"<<i<<"/"<<current_column_name<<": "<<type.desc()<<endl;
+#ifndef NDEBUG
+                     cout<<"Sparsified type for column #"<<i<<"/"<<current_column_name<<": "<<type.desc()<<endl;
+#endif
                 }
 
                 // restore if UNKNOWN/ill defined
@@ -1797,12 +1800,13 @@ namespace tuplex {
                                                                      std::vector<python::Type>(this_column_paths.size(), python::Type::PYOBJECT),
                                                                              std::vector<bool>(this_column_paths.size(), true));
                             // recursively mark as NOT_PRESENT
+#ifndef NDEBUG
                             cout<<"dummy is: "<<dummy_type.desc()<<endl;
-
+#endif
                             dummy_type = negate_struct_pairs(dummy_type);
-
+#ifndef NDEBUG
                             cout<<"negated dummy is: "<<dummy_type.desc()<<endl;
-
+#endif
                             type = dummy_type; // override with negated type.
                         }
                     }
@@ -1813,7 +1817,9 @@ namespace tuplex {
                 if(is_option)
                     type = python::Type::makeOptionType(type);
 
+#ifndef NDEBUG
                 cout<<"Adding type for column #"<<i<<": "<<type.desc()<<endl;
+#endif
                 reduced_types.push_back(type);
             }
         }

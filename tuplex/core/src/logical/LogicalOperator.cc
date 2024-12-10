@@ -69,9 +69,11 @@ namespace tuplex {
             Logger::instance().defaultLogger().info(ss.str());
         }
 
-        // free plan memory
+        // Free plan memory, print out time.
+        Timer timer;
         delete lp;
         delete pp;
+        Logger::instance().defaultLogger().info("Releasing resources (logical + physical plan) took " + std::to_string(timer.time()) + "s.");
 
         return rs;
     }
