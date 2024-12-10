@@ -20,5 +20,16 @@ namespace tuplex {
     extern yyjson_mut_doc* JsonItem_to_yyjson_mut_doc(codegen::JsonItem* item);
 
     extern yyjson_mut_doc* yyjson_mut_parse(const char* str, int64_t str_size);
+
+    /*!
+     * Helper function to parse string to mutable doc. Requires runtime alloc.
+     * @param str
+     * @return nullptr for empty string, else yyjson or throws error.
+     */
+    inline yyjson_mut_doc* yyjson_mut_parse_cc_string(const std::string& str) {
+        if(str.empty())
+            return nullptr;
+        return yyjson_mut_parse(str.c_str(), str.size());
+    }
 }
 #endif //TUPLEX_YYJSON_HELPER_H
