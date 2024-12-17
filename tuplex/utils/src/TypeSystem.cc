@@ -1032,6 +1032,12 @@ namespace python {
         return (*this).isIteratorType() || (*this).isListType() || (*this).isTupleType() || *this == python::Type::STRING || *this == python::Type::RANGE || (*this).isDictionaryType() || (*this).isDictKeysType() || (*this).isDictValuesType();
     }
 
+    bool Type::isAbstractPrimitiveType() const {
+        auto& factory = TypeFactory::instance();
+        auto it = factory._typeMap.find(_hash);
+        return factory._typeVec[it->second]._type == TypeFactory::AbstractType::PRIMITIVE;
+    }
+
     bool Type::isFixedSizeType() const {
 
         // constant valued types are fixed-size, i.e. null => they don't require memory per-instance

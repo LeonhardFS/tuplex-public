@@ -509,3 +509,137 @@ TEST(TypeSys, TimeDecode) {
     auto duration = timer.time();
     cout<<"Took "<<duration<<"s to decode everything.";
 }
+
+// Type -> id.
+int collect_unique_types_and_return_id(std::unordered_map<int, int>& unique_types_map, const python::Type& t) {
+    if(t.hash() < python::N_PREREGISTERED_TYPES)
+        return t.hash();
+
+    if(unique_types_map.find(t.hash()) != unique_types_map.end())
+        return unique_types_map.at(t.hash());
+
+    // Register in map, for compound types their primitives as well. --> this should be done as a post-processing step, to
+    // speed this collection step here up.
+    auto max_id = static_cast<int>(unique_types_map.size());
+    return unique_types_map[t.hash()] = max_id;
+}
+
+
+void add_primitives_if_not_present(std::unordered_map<int, int>& unique_types_map, const python::Type& t) {
+    auto max_id = static_cast<int>(unique_types_map.size());
+
+    // Add this type (recursive call chain) if not present.
+    if(unique_types_map.find(t.hash()) == unique_types_map.end() && t.hash() >= python::N_PREREGISTERED_TYPES) {
+        unique_types_map[t.hash()] = max_id;
+    }
+
+    // Assume hash of t is already added or is from the preregistered range.
+    assert(unique_types_map.find(t.hash()) != unique_types_map.end() || t.hash() < python::N_PREREGISTERED_TYPES);
+
+    // Primitive types have no children, and because t must be in unique_types_map -> skip.
+    if(t.isAbstractPrimitiveType())
+        return;
+
+    if(t.isTupleType()) {
+        for(const auto& bt : t.parameters())
+            add_primitives_if_not_present(unique_types_map, bt);
+        return;
+    }
+
+    if(t.isOptionType()) {
+        add_primitives_if_not_present(unique_types_map, t.getReturnType());
+        return;
+    }
+
+    if(t.isSparseStructuredDictionaryType() || t.isStructuredDictionaryType()) {
+        for(const auto& pairs: t.get_struct_pairs()) {
+            add_primitives_if_not_present(unique_types_map, pairs.keyType);
+            add_primitives_if_not_present(unique_types_map, pairs.valueType);
+        }
+        return;
+    }
+
+    // sparse/struct handled before.
+    if(t.isDictionaryType()) {
+        add_primitives_if_not_present(unique_types_map, t.keyType());
+        add_primitives_if_not_present(unique_types_map, t.valueType());
+        return;
+    }
+
+    if(t.isConstantValued()) {
+        add_primitives_if_not_present(unique_types_map, t.underlying());
+        return;
+    }
+
+    if(t.isListType()) {
+        add_primitives_if_not_present(unique_types_map, t.elementType());
+        return;
+    }
+
+    if(t.isRowType()) {
+        for(const auto& column_type : t.get_column_types()) {
+            add_primitives_if_not_present(unique_types_map, column_type);
+        }
+        return;
+    }
+
+    // unknown is special case
+    if(t == python::Type::UNKNOWN || t.hash() < 0)
+        return;
+
+    throw std::runtime_error("Unknown type, can not say whether all base types are present: " + t.desc());
+}
+
+// Ensure compound types have all primitives present.
+void post_process_unique_types(std::unordered_map<int, int>& unique_types_map) {
+    std::vector<int> keys; keys.reserve(unique_types_map.size());
+    for(const auto& keyval : unique_types_map)
+        keys.push_back(keyval.first);
+
+    for(const auto& key : keys) {
+        auto t = python::Type::fromHash(key);
+
+        // Can skip these, because they must have been encoded or skipped.
+        if(t.isAbstractPrimitiveType())
+            return;
+
+        add_primitives_if_not_present(unique_types_map, t);
+    }
+}
+
+void display_type_map(const std::unordered_map<int, int>& unique_types_map) {
+    using namespace std;
+
+    for(auto kv : unique_types_map) {
+        cout<<kv.second<<": hash="<<kv.first<<" "<<python::Type::fromHash(kv.first).desc();
+    }
+}
+
+TEST(TypeSys, LargeTypeEncodeDecode) {
+    using namespace tuplex;
+    using namespace std;
+
+    // use look up table to speed up type encoding/decoding.
+    // Load file to string vector
+    auto data = fileToString("../resources/schemas.txt");
+    auto lines = splitToLines(data);
+
+    std::unordered_map<int, int> unique_types_map;
+    for (const auto &line: lines) {
+        auto t = python::decodeType(line);
+        collect_unique_types_and_return_id(unique_types_map, t);
+    }
+
+    cout<<"Found "<<pluralize(unique_types_map.size(), "type")<<" before post processing."<<endl;
+
+    // post process
+    post_process_unique_types(unique_types_map);
+
+    cout<<"Found "<<pluralize(unique_types_map.size(), "type")<<" after post processing."<<endl;
+
+    cout<<"Map is: \n"<<endl;
+
+    display_type_map(unique_types_map);
+
+    cout<<endl;
+}

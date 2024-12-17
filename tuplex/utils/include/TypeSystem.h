@@ -43,6 +43,9 @@
 
 namespace python {
 
+    // which hashes < this to consider
+    static const size_t N_PREREGISTERED_TYPES = 25;
+
     class Type;
     class TypeFactory;
 
@@ -242,6 +245,12 @@ namespace python {
          * @return
          */
         bool isPrimitiveType() const;
+
+        /*!
+         * whether in type system this is registered as primitive type.
+         * @return
+         */
+        bool isAbstractPrimitiveType() const;
 
         /*!
          * check whether a given type is iterable. Currently true for iterator, list, tuple, string, range, dictionary, dict_keys, and dict_values.
