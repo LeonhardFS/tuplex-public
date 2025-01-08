@@ -26,7 +26,7 @@
 #include <tracing/TraceVisitor.h>
 
 #ifdef BUILD_WITH_CEREAL
-#include <utils/CustomArchive.h>
+#include <CustomArchive.h>
 #endif
 
 #define VERBOSE_BUILD

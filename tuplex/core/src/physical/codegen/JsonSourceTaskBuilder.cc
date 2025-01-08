@@ -9,7 +9,7 @@
 #include <logical/FilterOperator.h>
 
 #ifdef BUILD_WITH_CEREAL
-#include <utils/CustomArchive.h>
+#include "CustomArchive.h"
 #endif
 
 namespace tuplex {

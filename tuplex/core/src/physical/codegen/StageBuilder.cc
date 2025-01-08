@@ -30,7 +30,7 @@
 #include <climits>
 
 #ifdef BUILD_WITH_CEREAL
-#include <utils/CustomArchive.h>
+#include <CustomArchive.h>
 #endif
 
 // New: Stage Specialization, maybe rename?

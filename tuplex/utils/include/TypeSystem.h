@@ -36,6 +36,9 @@
 #include "cereal/types/string.hpp"
 #include "cereal/types/common.hpp"
 #include "cereal/archives/binary.hpp"
+
+#include "CustomArchive.h"
+
 #endif
 
 // use absl flat hash map instead to speed up type system?
@@ -496,7 +499,6 @@ namespace python {
 ////                                                  type_entry._constant_value);
         }
 
-
         template<class Archive>
         inline void save(Archive &archive) const {
 //            // @TODO: this seems wrong, better: need to encode type as string and THEN decode!
@@ -505,6 +507,11 @@ namespace python {
             auto encoded_str = encode();
             archive(encoded_str);
         }
+
+        template<> inline void save(tuplex::BinaryOutputArchive& archive) const {
+            archive.saveType(_hash);
+        }
+
 #endif
 
         bool all_struct_pairs_optional() const;

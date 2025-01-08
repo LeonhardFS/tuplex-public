@@ -34,6 +34,10 @@ class BinaryOutputArchive : public cereal::OutputArchive<BinaryOutputArchive, ce
                 throw cereal::Exception("Failed to write " + std::to_string(size) + " bytes to output stream! Wrote " + std::to_string(writtenSize));
         }
 
+        void saveType(int hash) {
+            std::cout<<"Saving hash: "<<hash<<std::endl;
+        }
+
     private:
         std::ostream & itsStream;
     };

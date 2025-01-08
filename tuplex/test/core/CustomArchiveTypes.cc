@@ -5,7 +5,7 @@
 #include "gtest/gtest.h"
 
 #ifdef BUILD_WITH_CEREAL
-#include <utils/CustomArchive.h>
+#include <CustomArchive.h>
 #include <Context.h>
 
 // Test to check more efficient encoding.
