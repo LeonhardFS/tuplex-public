@@ -29,6 +29,10 @@
 
 #include <climits>
 
+#ifdef BUILD_WITH_CEREAL
+#include <utils/CustomArchive.h>
+#endif
+
 // New: Stage Specialization, maybe rename?
 #include <physical/codegen/StagePlanner.h>
 #include <physical/codegen/CodeGenerationContext.h>
@@ -2171,7 +2175,8 @@ namespace tuplex {
                 // over to individual executors for specialization.
                 std::ostringstream oss(std::stringstream::binary);
                 {
-                    cereal::BinaryOutputArchive ar(oss);
+                    // cereal::BinaryOutputArchive ar(oss);
+                    BinaryOutputArchive ar(oss);
                     ar(ctx);
                     // ar going out of scope flushes everything
                 }

@@ -448,6 +448,10 @@ namespace python {
         static Type decode(const std::string& s);
         std::string encode() const;
 
+        // //! More compact encoding/decoding format. --> optimize using this as well.
+        // std::string compactEncode() const;
+        // static Type compactDecode(const std::string& s);
+
 #ifdef BUILD_WITH_CEREAL
         // cereal serialization functions
         template<class Archive>

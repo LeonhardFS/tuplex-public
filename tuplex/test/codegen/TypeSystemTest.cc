@@ -213,7 +213,8 @@ TEST(TypeSys, StructTypeStringKeyDecodingEncoding) {
 TEST(TypeSys, Cerealization) {
     auto row_type = python::Type::makeTupleType({python::Type::I64, python::Type::I64, python::Type::PYOBJECT});
     std::ostringstream oss; {
-        cereal::BinaryOutputArchive ar(oss);
+        // cereal::BinaryOutputArchive ar(oss);
+        BinaryOutputArchive ar(oss);
         ar(row_type);
     }
 

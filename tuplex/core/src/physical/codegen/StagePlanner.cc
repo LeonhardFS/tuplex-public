@@ -25,6 +25,10 @@
 #include <unordered_map>
 #include <tracing/TraceVisitor.h>
 
+#ifdef BUILD_WITH_CEREAL
+#include <utils/CustomArchive.h>
+#endif
+
 #define VERBOSE_BUILD
 
 namespace tuplex {
@@ -2068,7 +2072,8 @@ namespace tuplex {
             logger.info("Decompressed Code context from " + sizeToMemString(compressed_str.size()) + " to " + sizeToMemString(decompressed_str.size()));
             Timer deserializeTimer;
             std::istringstream iss(decompressed_str);
-            cereal::BinaryInputArchive ar(iss);
+            // cereal::BinaryInputArchive ar(iss);
+            BinaryInputArchive ar(iss);
             ar(ctx);
             logger.info("Deserialization of Code context took " + std::to_string(deserializeTimer.time()) + "s");
         }
@@ -2794,7 +2799,8 @@ namespace tuplex {
 #ifdef BUILD_WITH_CEREAL
             std::ostringstream oss(std::stringstream::binary);
             {
-                cereal::BinaryOutputArchive ar(oss);
+                // cereal::BinaryOutputArchive ar(oss);
+                BinaryOutputArchive ar(oss);
                 ar(fop);
                 // ar going out of scope flushes everything
             }

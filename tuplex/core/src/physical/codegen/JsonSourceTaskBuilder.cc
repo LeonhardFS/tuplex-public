@@ -8,6 +8,10 @@
 #include <physical/experimental/JSONParseRowGenerator.h>
 #include <logical/FilterOperator.h>
 
+#ifdef BUILD_WITH_CEREAL
+#include <utils/CustomArchive.h>
+#endif
+
 namespace tuplex {
     namespace codegen {
         JsonSourceTaskBuilder::JsonSourceTaskBuilder(const std::shared_ptr<LLVMEnvironment> &env,
@@ -241,7 +245,8 @@ namespace tuplex {
                     // use cereal deserialization
                     {
                         std::istringstream iss(check.data());
-                        cereal::BinaryInputArchive ar(iss);
+                        // cereal::BinaryInputArchive ar(iss);
+                        BinaryInputArchive ar(iss);
                         ar(fop);
                     }
 #else
