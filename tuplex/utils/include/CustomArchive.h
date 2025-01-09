@@ -52,10 +52,12 @@ class BinaryInputArchive : public cereal::InputArchive<BinaryInputArchive, cerea
     {
     public:
         //! Construct, loading from the provided stream
-        BinaryInputArchive(std::istream & stream) :
+        BinaryInputArchive(std::istream & stream, const std::vector<std::pair<int, std::string>>& type_map={}) :
                 InputArchive<BinaryInputArchive, cereal::AllowEmptyClassElision>(this),
                 itsStream(stream)
-        { }
+        {
+            init_type_map(type_map);
+        }
 
         ~BinaryInputArchive() CEREAL_NOEXCEPT = default;
 
@@ -73,6 +75,10 @@ class BinaryInputArchive : public cereal::InputArchive<BinaryInputArchive, cerea
 
     private:
         std::istream & itsStream;
+
+        // constructed by init_type_map.
+        std::unordered_map<int, int> this_type_system_to_encoded_hash_mapping;
+        void init_type_map(const std::vector<std::pair<int, std::string>>& type_map);
     };
 
     // ######################################################################
@@ -123,6 +129,13 @@ class BinaryInputArchive : public cereal::InputArchive<BinaryInputArchive, cerea
     {
         ar.loadBinary(bd.data, static_cast<std::streamsize>( bd.size ) );
     }
+
+    // Helper function to serialize typeClosure to byte string. (not safe for + string concat).
+    // Serialization format is 8 bytes for length, then 4 byte / 4 byte string length + actual string.
+    extern std::string serialize_type_closure(const std::vector<std::pair<int, std::string>>& v);
+
+    extern std::vector<std::pair<int, std::string>> deserialize_type_closure(const uint8_t* ptr, size_t* bytes_read=nullptr);
+
 } // namespace tuplex
 
 // register archives for polymorphic support
