@@ -36,9 +36,15 @@ class BinaryOutputArchive : public cereal::OutputArchive<BinaryOutputArchive, ce
 
         void saveType(int hash);
 
+        // Create (closure) of types encoded in this archive.
+        std::vector<std::pair<int, std::string>> typeClosure() const;
+
     private:
         std::ostream & itsStream;
 
+
+        // (unique) hashes in insert/serialization order.
+        std::vector<int> typeHashes;
         std::unordered_map<int, std::string> typeMap;
     };
 
@@ -61,6 +67,9 @@ class BinaryInputArchive : public cereal::InputArchive<BinaryInputArchive, cerea
             if(readSize != size)
                 throw cereal::Exception("Failed to read " + std::to_string(size) + " bytes from input stream! Read " + std::to_string(readSize));
         }
+
+        // Loads type via its hash and performs any registration necessary.
+        int loadTypeHash(int encoded_hash);
 
     private:
         std::istream & itsStream;

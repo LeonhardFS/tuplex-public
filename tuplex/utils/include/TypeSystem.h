@@ -54,6 +54,23 @@ namespace python {
 
     struct StructEntry;
 
+
+//    // GCC workaround for template specialization
+//    namespace detail {
+//        template <typename Archive> void save(Archive& ar, const Type& t) {
+//            //            // @TODO: this seems wrong, better: need to encode type as string and THEN decode!
+////            // that would avoid the remapping problem...!
+////            archive(_hash, TypeFactory::instance()._typeMap[_hash]);
+//            auto encoded_str = t.encode();
+//            archive(encoded_str);
+//        }
+//        template <> void save(tuplex::BinaryOutputArchive& ar, const Type& t) {
+//            ar.saveType(t.hash());
+//        }
+//    }
+
+    template<typename T> struct identity { typedef T type; };
+
     class Type {
         friend class TypeFactory;
         friend bool operator < (const Type& lhs, const Type& rhs);
@@ -63,6 +80,33 @@ namespace python {
         // id / hash of this type for type comparison
         // -1 is reserved for undefined type
         int _hash;
+
+#ifdef BUILD_WITH_CEREAL
+        template<typename Archive> void save(Archive& ar, identity<Archive> id) const {
+            auto encoded_str = encode();
+            ar(encoded_str);
+        }
+
+        void save(tuplex::BinaryOutputArchive& ar, identity<tuplex::BinaryOutputArchive> id) const {
+            ar.saveType(hash());
+        }
+
+        template<class Archive>
+        void load(Archive &ar, identity<Archive> id) {
+            // simply encode/decode type
+            std::string encoded_str = "";
+            ar(encoded_str);
+            auto t = Type::decode(encoded_str);
+            _hash = t._hash; // using hash works...
+        }
+
+        void load(tuplex::BinaryInputArchive& ar, identity<tuplex::BinaryInputArchive> id) {
+            int encoded_hash = 0;
+            ar(encoded_hash);
+            _hash = ar.loadTypeHash(encoded_hash);
+        }
+#endif
+
     public:
 
         // Precomputed size table for fast access of sizes of special hashes.
@@ -459,59 +503,15 @@ namespace python {
         // cereal serialization functions
         template<class Archive>
         inline void load(Archive &archive) {
-
-            // simply encode/decode type
-            std::string encoded_str = "";
-            archive(encoded_str);
-            auto t = Type::decode(encoded_str);
-            _hash = t._hash; // using hash works...
-
-//            TypeFactory::TypeEntry type_entry;
-//            archive(_hash, type_entry);
-//
-//            // @TODO: this here is dangerous!
-//            // => i.e. leads to TypeSystem out of sync!
-//            // imagine a type system being out of sync with the one on a host machine. Now, any type needs to
-//            // remap etc. -> difficult.
-//            // better idea: simply overwrite map here
-//
-//            // Type registerOrGetType(const std::string& name,
-//            //                               const AbstractType at,
-//            //                               const std::vector<Type>& params = std::vector<Type>(),
-//            //                               const python::Type& retval=python::Type::VOID,
-//            //                               const std::vector<Type>& baseClasses = std::vector<Type>(),
-//            //                               bool isVarLen=false,
-//            //                               int64_t lower_bound=std::numeric_limits<int64_t>::min(),
-//            //                               int64_t upper_bound=std::numeric_limits<int64_t>::max(),
-//            //                               const std::string& constant="");
-//            // !!! warning !!!
-//            TypeFactory::instance()._typeMap[_hash] = TypeFactory::TypeEntry(type_entry._desc, type_entry._type, type_entry._params,
-//                                                                             type_entry._ret, type_entry._baseClasses, type_entry._isVarLen,
-//                                                                             type_entry._lower_bound,
-//                                                                             type_entry._upper_bound,
-//                                                                             type_entry._constant_value);
-//
-////        // register the type again
-////        TypeFactory::instance().registerOrGetType(type_entry._desc, type_entry._type, type_entry._params,
-////                                                  type_entry._ret, type_entry._baseClasses, type_entry._isVarLen,
-////                                                  type_entry._lower_bound,
-////                                                  type_entry._upper_bound,
-////                                                  type_entry._constant_value);
+            load(archive, identity<Archive>());
         }
 
         template<class Archive>
         inline void save(Archive &archive) const {
-//            // @TODO: this seems wrong, better: need to encode type as string and THEN decode!
-//            // that would avoid the remapping problem...!
-//            archive(_hash, TypeFactory::instance()._typeMap[_hash]);
-            auto encoded_str = encode();
-            archive(encoded_str);
+            // indirection because of GCC bug.
+            // cf. https://stackoverflow.com/questions/3052579/explicit-specialization-in-non-namespace-scope
+            save(archive, identity<Archive>());
         }
-
-        template<> inline void save(tuplex::BinaryOutputArchive& archive) const {
-            archive.saveType(_hash);
-        }
-
 #endif
 
         bool all_struct_pairs_optional() const;
