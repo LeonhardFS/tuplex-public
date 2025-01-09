@@ -142,9 +142,9 @@ namespace tuplex {
         }
 
         BinaryOutputStream& operator << (std::string s) {
-            int size = size; // cast.
+            int size = s.size(); // cast.
             _stream.write(reinterpret_cast<const char*>(&size), sizeof(int));
-            _stream.write(s.data(), s.size());
+            _stream.write(s.data(), size);
             return *this;
         }
 
