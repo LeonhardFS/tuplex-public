@@ -2170,41 +2170,7 @@ namespace tuplex {
                 stringToFile("python_code_" + stage->_pyPipelineName + ".py", stage->_pyCode);
 #endif
 
-#ifdef BUILD_WITH_CEREAL
-                // use test-wise cereal to encode the context (i.e., the stage) to send
-                // over to individual executors for specialization.
-                std::ostringstream oss(std::stringstream::binary);
-                {
-                    // cereal::BinaryOutputArchive ar(oss);
-                    BinaryOutputArchive ar(oss);
-                    ar(ctx);
-                    // ar going out of scope flushes everything
-                }
-                auto bytes_str = oss.str();
-#else
-                std::string bytes_str;
-
-                // use custom written JSON serialization routine
-                bytes_str = ctx.toJSON();
-#endif
-                logger.info("Serialized CodeGeneration Context to " + sizeToMemString(bytes_str.size()));
-                // compress this now using zip or so...
-                // https://gist.github.com/gomons/9d446024fbb7ccb6536ab984e29e154a
-                auto compressed_cg_str = compress_string(bytes_str);
-                logger.info("ZLIB compressed CodeGeneration Context is: " + sizeToMemString(compressed_cg_str.size()));
-                // @TODO: remove the hacky stuff!
-
-                #ifndef NDEBUG
-                    // validate result
-                    auto decompressed_str = decompress_string(compressed_cg_str);
-                    if(decompressed_str != bytes_str)
-                        logger.error("decompressed string doesn't match compressed one.");
-                #endif
-
-//                auto json_str = ctx.toJSON();
-//                logger.info("serialized stage as JSON string (TODO: make this better, more efficient, ...");
-                // stage->_encodedData = json_str; // hack
-                stage->_encodedData = compressed_cg_str; // the codegen context
+                stage->_encodedData = codegen::serialize_codegen_context(ctx); // the codegen context
 
                 // fill in hashing
                 auto hash_key_cols = ctx.hashColKeys;

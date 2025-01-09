@@ -2063,33 +2063,7 @@ namespace tuplex {
         // deserialize using Cereal
 
         // fetch codeGenerationContext & restore logical operator tree!
-        codegen::CodeGenerationContext ctx;
-        Timer timer;
-#ifdef BUILD_WITH_CEREAL
-        {
-            auto compressed_str = stage->_encodedData;
-            auto decompressed_str = decompress_string(compressed_str);
-            logger.info("Decompressed Code context from " + sizeToMemString(compressed_str.size()) + " to " + sizeToMemString(decompressed_str.size()));
-            Timer deserializeTimer;
-            std::istringstream iss(decompressed_str);
-            // cereal::BinaryInputArchive ar(iss);
-            BinaryInputArchive ar(iss);
-            ar(ctx);
-            logger.info("Deserialization of Code context took " + std::to_string(deserializeTimer.time()) + "s");
-        }
-        logger.info("Total Stage Decode took " + std::to_string(timer.time()) + "s");
-#else
-        // use custom JSON encoding
-        auto compressed_str = stage->_encodedData;
-        auto decompressed_str = decompress_string(compressed_str);
-        logger.info("Decompressed Code context from " + sizeToMemString(compressed_str.size()) + " to " + sizeToMemString(decompressed_str.size()));
-        Timer deserializeTimer;
-        ctx = codegen::CodeGenerationContext::fromJSON(decompressed_str);
-        logger.info("Deserialization of Code context took " + std::to_string(deserializeTimer.time()) + "s");
-        logger.info("Total Stage Decode took " + std::to_string(timer.time()) + "s");
-#endif
-        // old hacky version
-        // auto ctx = codegen::CodeGenerationContext::fromJSON(stage->_encodedData);
+        codegen::CodeGenerationContext ctx = codegen::deserialize_codegen_context(stage->_encodedData);
 
         assert(ctx.slowPathContext.valid());
         // decoded, now specialize
@@ -2251,7 +2225,7 @@ namespace tuplex {
         // assignment to stage should happen below...
 
         // generate code! Add to stage, can then compile this. Yay!
-        timer.reset();
+        Timer timer;
         TransformStage::StageCodePath fast_code_path;
         try {
             fast_code_path = codegen::StageBuilder::generateFastCodePath(ctx,
@@ -2799,8 +2773,10 @@ namespace tuplex {
 #ifdef BUILD_WITH_CEREAL
             std::ostringstream oss(std::stringstream::binary);
             {
-                // cereal::BinaryOutputArchive ar(oss);
-                BinaryOutputArchive ar(oss);
+                // Use here regular encoding without typemap.
+                cereal::BinaryOutputArchive ar(oss);
+
+                //BinaryOutputArchive ar(oss);
                 ar(fop);
                 // ar going out of scope flushes everything
             }

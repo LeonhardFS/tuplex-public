@@ -159,6 +159,9 @@ namespace tuplex {
             }
 #endif
         };
+
+        extern std::string serialize_codegen_context(const CodeGenerationContext& ctx);
+        extern CodeGenerationContext deserialize_codegen_context(const std::string& data);
     }
 }
 

@@ -469,6 +469,12 @@ namespace tuplex {
         return input;
     }
 
+    inline std::string string_mem_cat(const std::string& lhs, const std::string rhs) {
+        std::string s(lhs.size() + rhs.size(), '\0');
+        lhs.copy(s.data(), lhs.size());
+        rhs.copy(s.data() + lhs.size(), rhs.size());
+        return s;
+    }
 }
 
 

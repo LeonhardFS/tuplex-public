@@ -245,8 +245,10 @@ namespace tuplex {
                     // use cereal deserialization
                     {
                         std::istringstream iss(check.data());
-                        // cereal::BinaryInputArchive ar(iss);
-                        BinaryInputArchive ar(iss);
+                        // Use here regular encoding (change filterToCheck function else!).
+                        cereal::BinaryInputArchive ar(iss);
+
+                        // BinaryInputArchive ar(iss);
                         ar(fop);
                     }
 #else

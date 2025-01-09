@@ -7,14 +7,12 @@
 
 namespace tuplex {
     void BinaryOutputArchive::saveType(int hash) {
-
         // Track hashes and their string encoding.
         if(typeMap.find(hash) == typeMap.end()) {
             typeMap[hash] = python::Type::fromHash(hash).encode();
             typeHashes.emplace_back(hash);
         }
 
-        std::cout<<"Saving hash: "<<hash<<std::endl;
         auto& ar = *this;
         ar(hash);
     }
@@ -32,12 +30,17 @@ namespace tuplex {
 
     int BinaryInputArchive::loadTypeHash(int encoded_hash) {
         // This is more tricky. Basically, with lookup map transform/check hash vs. TypeSystem.
+        // std::cout<<"Loading hash: "<<encoded_hash<<std::endl;
 
-        std::cout<<"Loading hash: "<<encoded_hash<<std::endl;
+        // debugging:
+        if(this_type_system_to_encoded_hash_mapping.find(encoded_hash) == this_type_system_to_encoded_hash_mapping.end()) {
+#ifndef NDEBUG
+            std::cerr<<"Could not find hash when loading type hash in deserialization."<<std::endl;
+#endif
+        }
 
         // return mapped version.
         return this_type_system_to_encoded_hash_mapping.at(encoded_hash);
-//        return encoded_hash;
     }
 
     void BinaryInputArchive::init_type_map(const std::vector<std::pair<int, std::string>> &type_map) {

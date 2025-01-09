@@ -247,5 +247,81 @@ namespace tuplex {
 
             return ctx;
         }
+
+        std::string serialize_codegen_context(const CodeGenerationContext& ctx) {
+            auto& logger = Logger::instance().logger("io");
+
+#ifdef BUILD_WITH_CEREAL
+            // use test-wise cereal to encode the context (i.e., the stage) to send
+            // over to individual executors for specialization.
+            std::ostringstream oss(std::stringstream::binary);
+            std::string serialized_type_closure;
+            {
+                // cereal::BinaryOutputArchive ar(oss);
+                BinaryOutputArchive ar(oss);
+                ar(ctx);
+                // ar going out of scope flushes everything
+
+                serialized_type_closure = serialize_type_closure(ar.typeClosure());
+            }
+            auto bytes_str = oss.str();
+            // prepend type closure.
+            bytes_str = string_mem_cat(serialized_type_closure, bytes_str);
+#else
+            std::string bytes_str;
+
+                // use custom written JSON serialization routine
+                bytes_str = ctx.toJSON();
+#endif
+            logger.info("Serialized CodeGeneration Context to " + sizeToMemString(bytes_str.size()));
+            // compress this now using zip or so...
+            // https://gist.github.com/gomons/9d446024fbb7ccb6536ab984e29e154a
+            auto compressed_cg_str = compress_string(bytes_str);
+            logger.info("ZLIB compressed CodeGeneration Context is: " + sizeToMemString(compressed_cg_str.size()));
+            // @TODO: remove the hacky stuff!
+
+#ifndef NDEBUG
+            // validate result
+            auto decompressed_str = decompress_string(compressed_cg_str);
+            if(decompressed_str != bytes_str)
+                logger.error("decompressed string doesn't match compressed one.");
+#endif
+            return compressed_cg_str;
+        }
+
+        CodeGenerationContext deserialize_codegen_context(const std::string& data) {
+            auto& logger = Logger::instance().logger("io");
+
+            CodeGenerationContext ctx;
+
+            Timer timer;
+#ifdef BUILD_WITH_CEREAL
+            {
+                auto decompressed_str = decompress_string(data);
+                logger.info("Decompressed Code context from " + sizeToMemString(data.size()) + " to " + sizeToMemString(decompressed_str.size()));
+                Timer deserializeTimer;
+
+                // extract type map first. and then set up archive.
+                size_t bytes_read_for_type_map = 0;
+                auto type_map = deserialize_type_closure(reinterpret_cast<const uint8_t *>(decompressed_str.data()), &bytes_read_for_type_map);
+
+                std::istringstream iss(decompressed_str.substr(bytes_read_for_type_map));
+                // cereal::BinaryInputArchive ar(iss);
+                BinaryInputArchive ar(iss, type_map);
+                ar(ctx);
+                logger.info("Deserialization of Code context took " + std::to_string(deserializeTimer.time()) + "s");
+            }
+            logger.info("Total Stage Decode took " + std::to_string(timer.time()) + "s");
+#else
+            // use custom JSON encoding
+        auto decompressed_str = decompress_string(data);
+        logger.info("Decompressed Code context from " + sizeToMemString(compressed_str.size()) + " to " + sizeToMemString(decompressed_str.size()));
+        Timer deserializeTimer;
+        ctx = codegen::CodeGenerationContext::fromJSON(decompressed_str);
+        logger.info("Deserialization of Code context took " + std::to_string(deserializeTimer.time()) + "s");
+        logger.info("Total Stage Decode took " + std::to_string(timer.time()) + "s");
+#endif
+            return ctx;
+        }
     }
 }
