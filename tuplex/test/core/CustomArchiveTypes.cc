@@ -454,6 +454,8 @@ TEST(TypeSys, CompactEncodeDecode) {
 
 
     // TEST:
+    std::vector<std::string> v_encoded_full;
+    std::vector<std::string> v_encoded_compact;
     for(unsigned i = 0; i < types_to_encode.size(); ++i) {
         auto t = types_to_encode[i];
         cout<<"type #"<<i<<"\t"<<"compact: "<<compact_type_encode(t).size()<<" B\t"<<t.desc().size()<<" B"<<endl;
@@ -464,5 +466,22 @@ TEST(TypeSys, CompactEncodeDecode) {
 
         EXPECT_EQ(decoded.desc(), t.desc());
 
+        v_encoded_full.push_back(t.desc());
+        v_encoded_compact.push_back(encoded);
     }
+
+
+    // timed test:
+    Timer timer;
+    std::vector<python::Type> v_decoded_full;
+    for(auto enc : v_encoded_full) {
+        v_decoded_full.push_back(python::Type::decode(enc));
+    }
+    cout<<"Took "<<timer.time()<<"s to decode all (non-compact)."<<endl;
+    timer.reset();
+    std::vector<python::Type> v_decoded_compact;
+    for(auto enc : v_encoded_compact) {
+        v_decoded_compact.push_back(compact_type_decode(enc));
+    }
+    cout<<"Took "<<timer.time()<<"s to decode all (compact)."<<endl;
 }
