@@ -262,7 +262,9 @@ namespace tuplex {
                 ar(ctx);
                 // ar going out of scope flushes everything
 
-                serialized_type_closure = serialize_type_closure(ar.typeClosure());
+                auto tc = ar.typeClosure();
+                serialized_type_closure = serialize_type_closure(tc);
+                logger.info("Speeding up encode with type closure: " + std::to_string(tc.size()) + " entries (" + std::to_string(serialized_type_closure.size()) + " B");
             }
             auto bytes_str = oss.str();
             // prepend type closure.
@@ -304,12 +306,13 @@ namespace tuplex {
                 // extract type map first. and then set up archive.
                 size_t bytes_read_for_type_map = 0;
                 auto type_map = deserialize_type_closure(reinterpret_cast<const uint8_t *>(decompressed_str.data()), &bytes_read_for_type_map);
+                double time_for_tc = deserializeTimer.time();
 
                 std::istringstream iss(decompressed_str.substr(bytes_read_for_type_map));
                 // cereal::BinaryInputArchive ar(iss);
                 BinaryInputArchive ar(iss, type_map);
                 ar(ctx);
-                logger.info("Deserialization of Code context took " + std::to_string(deserializeTimer.time()) + "s");
+                logger.info("Deserialization of Code context took " + std::to_string(deserializeTimer.time()) + "s (thereof type closure: " + std::to_string(time_for_tc) +"s)");
             }
             logger.info("Total Stage Decode took " + std::to_string(timer.time()) + "s");
 #else

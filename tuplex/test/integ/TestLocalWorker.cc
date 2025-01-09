@@ -454,7 +454,7 @@ TEST_F(LocalWorkerFixture, GithubSparseStructHyperPushEvents) {
     using namespace tuplex;
 
     // Config for test (useful for profiling)
-    bool use_noop_mode = false;
+    bool use_noop_mode = true; //false;
 
 
     // Test over github daily with generic hyper dicts.
