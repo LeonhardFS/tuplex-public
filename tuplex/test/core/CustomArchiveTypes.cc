@@ -117,6 +117,121 @@ TEST(TypeSys, EncodeManyTypes) {
 
 #endif
 
+namespace tuplex {
+
+    std::string i32tobuf(int i) {
+        char buf[4];
+        *(int*)buf = i;
+        return buf;
+    }
+
+
+    // Custom binary stream for types to store data efficiently.
+    // Also helps to decode.
+    class BinaryOutputStream {
+    public:
+        BinaryOutputStream() {}
+
+        std::string str() const {
+            return _stream.str();
+        }
+
+        BinaryOutputStream& operator << (int i) {
+            _stream.write(reinterpret_cast<const char*>(&i), sizeof(int));
+            return *this;
+        }
+
+        BinaryOutputStream& operator << (std::string s) {
+            int size = size; // cast.
+            _stream.write(reinterpret_cast<const char*>(&size), sizeof(int));
+            _stream.write(s.data(), s.size());
+            return *this;
+        }
+
+        BinaryOutputStream& operator << (const char c) {
+            _stream<<c;
+            return *this;
+        }
+
+        BinaryOutputStream& operator << (bool b) {
+            // use 1 byte, could use a bit as well...
+            if(b)
+                _stream<<"T";
+            else
+                _stream<<"F";
+            return *this;
+        }
+
+    private:
+        std::ostringstream _stream;
+    };
+
+
+    void type_encode(BinaryOutputStream& stream, const python::Type& t) {
+        // binary stream??
+
+        // some frequent python types get their own symbol
+        if(t == python::Type::NULLVALUE) {
+            stream<<'N';
+            return;
+        }
+        if(t == python::Type::BOOLEAN) {
+            stream<<'B';
+            return;
+        }
+        if(t == python::Type::I64) {
+            stream<<'I';
+            return;
+        }
+        if(t == python::Type::STRING) {
+            stream<<'S';
+            return;
+        }
+        if(t == python::Type::F64) {
+            stream<<'F';
+            return;
+        }
+
+        // simple encoding with hash
+        if(t.hash() < 16) {
+           stream<<'H'; // H for hash.
+           stream<<t.hash();
+           return;
+        }
+
+        // primitive? need to encode name, that's it.
+        if(t.isAbstractPrimitiveType()) {
+            stream<<'P'; // P for primitive
+            stream<<t.desc();
+            return;
+        }
+
+        // Option
+        if(t.isOptionType()) {
+            stream<<'O';
+            type_encode(stream, t.getReturnType());
+            return;
+        }
+
+        // List
+        if(t.isListType()) {
+            stream<<'L';
+            type_encode(stream, t.getReturnType());
+            return;
+        }
+
+        // encode each other type using desc() as fallback with U tag.
+        stream<<'U';
+        stream<<t.desc();
+    }
+
+    // TODO: reuse output buffer.
+    std::string compact_type_encode(const python::Type& t) {
+        BinaryOutputStream os;
+        type_encode(os, t);
+        return os.str();
+    }
+}
 
 TEST(TypeSys, CompactEncodeDecode) {
    using namespace tuplex;
@@ -126,4 +241,26 @@ TEST(TypeSys, CompactEncodeDecode) {
 
    // Basically encode with tag | content for each type.
 
+
+    using namespace tuplex;
+    using namespace std;
+
+    // use look up table to speed up type encoding/decoding.
+    // Load file to string vector
+    auto data = fileToString("../resources/schemas.txt");
+    auto lines = splitToLines(data);
+
+    std::unordered_map<int, int> unique_types_map;
+    std::vector<python::Type> types_to_encode;
+    for (const auto &line: lines) {
+        auto t = python::decodeType(line);
+        types_to_encode.emplace_back(t);
+    }
+
+
+    // TEST:
+    for(unsigned i = 0; i < types_to_encode.size(); ++i) {
+        auto t = types_to_encode[i];
+        cout<<"type #"<<i<<"\t"<<"compact: "<<compact_type_encode(t).size()<<" B\t"<<t.desc().size()<<" B"<<endl;
+    }
 }
