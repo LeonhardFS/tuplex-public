@@ -124,4 +124,6 @@ TEST(TypeSys, CompactEncodeDecode) {
    // new helper function for compact encoding/decoding of types (manual parse).
    // @TODO:
 
+   // Basically encode with tag | content for each type.
+
 }
