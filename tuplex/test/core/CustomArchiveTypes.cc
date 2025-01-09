@@ -258,7 +258,7 @@ namespace tuplex {
         // List
         if(t.isListType()) {
             stream<<'L';
-            type_encode(stream, t.getReturnType());
+            type_encode(stream, t.elementType());
             return;
         }
 
