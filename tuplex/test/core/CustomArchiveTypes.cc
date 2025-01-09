@@ -166,6 +166,44 @@ namespace tuplex {
         std::ostringstream _stream;
     };
 
+    class BinaryInputStream {
+    public:
+        BinaryInputStream(const std::string& data) : _stream(data) {}
+
+        std::string str() const {
+            return _stream.str();
+        }
+
+        BinaryInputStream& operator >> (int& i) {
+            _stream.read(reinterpret_cast<char*>(&i), sizeof(int));
+            return *this;
+        }
+
+        BinaryInputStream& operator >> (std::string& s) {
+            int size = 0; // cast.
+            _stream.read(reinterpret_cast<char*>(&size), sizeof(int));
+            s = std::string(size, '\0');
+            _stream.read(s.data(), s.size());
+            return *this;
+        }
+
+        BinaryInputStream& operator >> (char& c) {
+            _stream>>c;
+            return *this;
+        }
+
+        BinaryInputStream& operator << (bool& b) {
+            // use 1 byte, could use a bit as well...
+            char c;
+            _stream>>c;
+            b = c == 'T';
+            return *this;
+        }
+
+    private:
+        std::istringstream _stream;
+    };
+
 
     void type_encode(BinaryOutputStream& stream, const python::Type& t) {
         // binary stream??
@@ -191,6 +229,10 @@ namespace tuplex {
             stream<<'F';
             return;
         }
+        if(t == python::Type::PYOBJECT) {
+            stream<<'P';
+            return;
+        }
 
         // simple encoding with hash
         if(t.hash() < 16) {
@@ -201,7 +243,7 @@ namespace tuplex {
 
         // primitive? need to encode name, that's it.
         if(t.isAbstractPrimitiveType()) {
-            stream<<'P'; // P for primitive
+            stream<<'*'; // * for primitive
             stream<<t.desc();
             return;
         }
@@ -220,6 +262,52 @@ namespace tuplex {
             return;
         }
 
+        // Row
+        if(t.isRowType()) {
+            stream<<'R';
+            // how many names?
+            // which entries?
+            auto names = t.get_column_names();
+            stream<<static_cast<int>(names.size());
+            for(auto name: names)
+                stream<<name;
+            auto types = t.get_column_types();
+            stream<<static_cast<int>(types.size());
+            for(auto col_type: types)
+                type_encode(stream, col_type);
+            return;
+        }
+
+        // Struct/SparseStruct
+        if(t.isStructuredDictionaryType() || t.isSparseStructuredDictionaryType()) {
+            stream<<(t.isSparseStructuredDictionaryType() ? '<' : '{');
+            auto entries = t.get_struct_pairs();
+            stream<<static_cast<int>(entries.size());
+            for(const auto& entry: entries) {
+                type_encode(stream, entry.keyType);
+                type_encode(stream, entry.valueType);
+                stream<<entry.key;
+                stream<<static_cast<char>(entry.presence);
+            }
+            return;
+        }
+
+        // Dict (code must come AFTER struct dict/sparse dict)
+        if(t.isDictionaryType()) {
+            stream<<'D';
+            type_encode(stream, t.keyType());
+            type_encode(stream, t.valueType());
+            return;
+        }
+
+        // constant
+        if(t.isConstantValued()) {
+            stream<<'=';
+            type_encode(stream, t.underlying());
+            stream<<t.constant();
+            return;
+        }
+
         // encode each other type using desc() as fallback with U tag.
         stream<<'U';
         stream<<t.desc();
@@ -230,6 +318,113 @@ namespace tuplex {
         BinaryOutputStream os;
         type_encode(os, t);
         return os.str();
+    }
+
+
+
+    // FAST decode function
+    python::Type type_decode(BinaryInputStream& is) {
+        char c;
+        is>>c;
+
+        switch(c) {
+            // @TODO: use lower-case letters for options!
+            case 'N':
+                return python::Type::NULLVALUE;
+            case 'B':
+                return python::Type::BOOLEAN;
+            case 'I':
+                return python::Type::I64;
+            case 'S':
+                return python::Type::STRING;
+            case 'F':
+                return python::Type::F64;
+            case 'P':
+                return python::Type::PYOBJECT;
+
+            // compound types
+            case 'H': {
+                int hash;
+                is >> hash;
+                return python::Type::fromHash(hash);
+            }
+
+            case '*': {
+                std::string name;
+                is >> name;
+                return python::TypeFactory::instance().createOrGetPrimitiveType(name);
+            }
+
+
+            case 'O':
+                return python::Type::makeOptionType(type_decode(is));
+            case 'L':
+                return python::Type::makeListType(type_decode(is));
+
+            case 'R': {
+                int n_names;
+                int n_types;
+                std::vector<std::string> names;
+                std::vector<python::Type> types;
+                is >> n_names;
+                for(unsigned i = 0; i < n_names; ++i) {
+                    std::string name;
+                    is >> name;
+                    names.push_back(name);
+                }
+                is >> n_types;
+                for(unsigned i = 0; i < n_types; ++i) {
+                    types.push_back(type_decode(is));
+                }
+                return python::Type::makeRowType(types, names);
+            }
+
+            case '<':
+            case '{': {
+                auto is_sparse = c == '<';
+                std::vector<python::StructEntry> entries;
+
+                int n_entries;
+                is >> n_entries;
+                for(unsigned i = 0; i < n_entries; ++i) {
+                    python::StructEntry entry;
+                    entry.keyType = type_decode(is);
+                    entry.valueType = type_decode(is);
+                    is >> entry.key;
+                    char presence;
+                    is >> presence;
+                    entry.presence = static_cast<python::StructPresence>(presence);
+                    entries.push_back(entry);
+                }
+
+                return python::Type::makeStructuredDictType(entries, is_sparse);
+            }
+
+            case 'D':
+                return python::Type::makeDictionaryType(type_decode(is), type_decode(is));
+
+            case '=': {
+                python::Type underlying = type_decode(is);
+                std::string constant;
+                is >> constant;
+                return python::Type::makeConstantValuedType(underlying, constant);
+            }
+
+            case 'U': {
+                std::string desc;
+                is >> desc;
+                return python::Type::decode(desc);
+            }
+
+            default:
+                throw std::runtime_error("DECODE ERROR IN compact type decode for " + is.str());
+        }
+    }
+
+
+    python::Type compact_type_decode(const std::string& s) {
+        BinaryInputStream is(s);
+        return type_decode(is);
     }
 }
 
@@ -262,5 +457,12 @@ TEST(TypeSys, CompactEncodeDecode) {
     for(unsigned i = 0; i < types_to_encode.size(); ++i) {
         auto t = types_to_encode[i];
         cout<<"type #"<<i<<"\t"<<"compact: "<<compact_type_encode(t).size()<<" B\t"<<t.desc().size()<<" B"<<endl;
+
+        // Check encode/decode cycle
+        auto encoded = compact_type_encode(t);
+        auto decoded = compact_type_decode(encoded);
+
+        EXPECT_EQ(decoded.desc(), t.desc());
+
     }
 }
