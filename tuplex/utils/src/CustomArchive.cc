@@ -9,7 +9,10 @@ namespace tuplex {
     void BinaryOutputArchive::saveType(int hash) {
         // Track hashes and their string encoding.
         if(typeMap.find(hash) == typeMap.end()) {
-            typeMap[hash] = python::Type::fromHash(hash).encode();
+            // old: slow
+            // typeMap[hash] = python::Type::fromHash(hash).encode();
+            // new: fast compact
+            typeMap[hash] = compact_type_encode(python::Type::fromHash(hash));
             typeHashes.emplace_back(hash);
         }
 
@@ -47,10 +50,17 @@ namespace tuplex {
         if(type_map.empty())
             return;
 
+        // @TODO: can speed this up by removing locks. I.e., do typesystem.lock() ... typesystem.unlock().
+
         // Go through type map, for each encoded hash check if Type exists.
         for(const auto& p : type_map) {
             // can hash desc quickly to check if it already exists...
-            auto decoded_type = python::Type::decode(p.second);
+
+            // slow, old decode
+            // auto decoded_type = python::Type::decode(p.second);
+
+            // fast, compact decode (10x faster)
+            auto decoded_type = compact_type_decode(p.second);
 
             this_type_system_to_encoded_hash_mapping[p.first] = decoded_type.hash();
         }

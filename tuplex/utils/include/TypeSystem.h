@@ -1047,6 +1047,87 @@ namespace tuplex {
             return row_type.get_column_count();
         throw std::runtime_error("can not extract number of columns from type " + row_type.desc());
     }
+
+    // Custom binary stream for types to store data efficiently.
+    // Also helps to decode.
+    class BinaryOutputStream {
+    public:
+        BinaryOutputStream() {}
+
+        inline std::string str() const {
+            return _stream.str();
+        }
+
+        inline BinaryOutputStream& operator << (int i) {
+            _stream.write(reinterpret_cast<const char*>(&i), sizeof(int));
+            return *this;
+        }
+
+        inline BinaryOutputStream& operator << (std::string s) {
+            int size = s.size(); // cast.
+            _stream.write(reinterpret_cast<const char*>(&size), sizeof(int));
+            _stream.write(s.data(), size);
+            return *this;
+        }
+
+        inline BinaryOutputStream& operator << (const char c) {
+            _stream<<c;
+            return *this;
+        }
+
+        inline BinaryOutputStream& operator << (bool b) {
+            // use 1 byte, could use a bit as well...
+            if(b)
+                _stream<<"T";
+            else
+                _stream<<"F";
+            return *this;
+        }
+
+    private:
+        std::ostringstream _stream;
+    };
+
+    class BinaryInputStream {
+    public:
+        BinaryInputStream(const std::string& data) : _stream(data) {}
+
+        inline std::string str() const {
+            return _stream.str();
+        }
+
+        inline BinaryInputStream& operator >> (int& i) {
+            _stream.read(reinterpret_cast<char*>(&i), sizeof(int));
+            return *this;
+        }
+
+        inline BinaryInputStream& operator >> (std::string& s) {
+            int size = 0; // cast.
+            _stream.read(reinterpret_cast<char*>(&size), sizeof(int));
+            s = std::string(size, '\0');
+            _stream.read(s.data(), s.size());
+            return *this;
+        }
+
+        inline BinaryInputStream& operator >> (char& c) {
+            _stream>>c;
+            return *this;
+        }
+
+        inline BinaryInputStream& operator << (bool& b) {
+            // use 1 byte, could use a bit as well...
+            char c;
+            _stream>>c;
+            b = c == 'T';
+            return *this;
+        }
+
+    private:
+        std::istringstream _stream;
+    };
+
+    extern std::string compact_type_encode(const python::Type& t);
+    extern python::Type compact_type_decode(const std::string& s);
 }
 
 
