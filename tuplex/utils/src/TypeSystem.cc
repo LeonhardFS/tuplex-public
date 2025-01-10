@@ -2791,11 +2791,28 @@ namespace tuplex {
             return;
         }
 
-        // constant
+        // Constant.
         if(t.isConstantValued()) {
             stream<<'=';
             type_encode(stream, t.underlying());
             stream<<t.constant();
+            return;
+        }
+
+        // Tuple.
+        if(t.isTupleType() && t != python::Type::GENERICTUPLE) {
+            stream<<'T';
+            stream<<static_cast<int>(t.parameters().size());
+            for(auto param : t.parameters())
+                type_encode(stream, param);
+            return;
+        }
+
+        // Function type.
+        if(t.isFunctionType()) {
+            stream<<'^';
+            type_encode(stream, t.getParamsType());
+            type_encode(stream, t.getReturnType());
             return;
         }
 
@@ -2848,6 +2865,14 @@ namespace tuplex {
                 return python::Type::makeOptionType(type_decode(is));
             case 'L':
                 return python::Type::makeListType(type_decode(is));
+            case 'T': {
+                int n_params;
+                is >> n_params;
+                std::vector<python::Type> params(n_params);
+                for(unsigned i = 0; i < n_params; ++i)
+                    params[i] = type_decode(is);
+                return python::Type::makeTupleType(params);
+            }
 
             case 'R': {
                 int n_names;
@@ -2896,6 +2921,11 @@ namespace tuplex {
                 std::string constant;
                 is >> constant;
                 return python::Type::makeConstantValuedType(underlying, constant);
+            }
+
+            case '^': {
+                // func type.
+                return python::Type::makeFunctionType(type_decode(is), type_decode(is));
             }
 
             case 'U': {
