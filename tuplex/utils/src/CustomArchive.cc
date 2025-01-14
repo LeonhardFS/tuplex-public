@@ -9,9 +9,7 @@ namespace tuplex {
     void BinaryOutputArchive::saveType(int hash) {
         // Track hashes and their string encoding.
         if(typeMap.find(hash) == typeMap.end()) {
-            // old: slow
-            // typeMap[hash] = python::Type::fromHash(hash).encode();
-            // new: fast compact
+            // Encode using compact type encoding.
             typeMap[hash] = compact_type_encode(python::Type::fromHash(hash));
             typeHashes.emplace_back(hash);
         }
@@ -26,20 +24,26 @@ namespace tuplex {
         // Go in order of registered types.
         // This should minimize parsing.
         std::vector<std::pair<int, std::string>> v;
+        v.reserve(typeHashes.size());
         for(auto hash : typeHashes)
-            v.push_back(std::make_pair(hash, typeMap.at(hash)));
+            v.emplace_back(hash, typeMap.at(hash));
         return v;
     }
 
     int BinaryInputArchive::loadTypeHash(int encoded_hash) {
         // This is more tricky. Basically, with lookup map transform/check hash vs. TypeSystem.
-        // std::cout<<"Loading hash: "<<encoded_hash<<std::endl;
 
-        // debugging:
+        // Debugging:
         if(this_type_system_to_encoded_hash_mapping.find(encoded_hash) == this_type_system_to_encoded_hash_mapping.end()) {
 #ifndef NDEBUG
             std::cerr<<"Could not find hash when loading type hash in deserialization."<<std::endl;
 #endif
+        }
+
+        // If map is empty, return hash as is. May consider warning in debug mode.
+        // It's the responsibility of the caller to ensure map is present/decoded.
+        if(this_type_system_to_encoded_hash_mapping.empty()) {
+            return encoded_hash;
         }
 
         // return mapped version.
@@ -54,14 +58,8 @@ namespace tuplex {
 
         // Go through type map, for each encoded hash check if Type exists.
         for(const auto& p : type_map) {
-            // can hash desc quickly to check if it already exists...
-
-            // slow, old decode
-            // auto decoded_type = python::Type::decode(p.second);
-
-            // fast, compact decode (10x faster)
+            // fast, compact decoding (~ 10x faster than old solution using python::Type::decode()...)
             auto decoded_type = compact_type_decode(p.second);
-
             this_type_system_to_encoded_hash_mapping[p.first] = decoded_type.hash();
         }
     }
@@ -97,6 +95,7 @@ namespace tuplex {
         ptr += sizeof(int64_t);
 
         std::vector<std::pair<int, std::string>> v;
+        v.reserve(n_entries);
 
         // decode hashes + string representations.
         for(unsigned i = 0; i < n_entries; ++i) {
@@ -109,7 +108,7 @@ namespace tuplex {
             memcpy(s.data(), ptr, size);
             ptr += size;
 
-            v.emplace_back(std::make_pair(hash, s));
+            v.emplace_back(hash, s);
         }
 
         if(bytes_read)

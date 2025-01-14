@@ -17,7 +17,6 @@ TEST(TypeSys, EfficientTypeSerialization) {
 
     cout<<"Type to encode: "<<t1.desc()<<endl;
 
-
     // Encode:
     std::ostringstream oss(std::stringstream::binary);
     {
@@ -93,7 +92,6 @@ TEST(TypeSys, EncodeManyTypes) {
     {
         std::vector<python::Type> decoded_types;
 
-
         size_t bytes_read_for_type_map = 0;
         auto type_map = deserialize_type_closure(reinterpret_cast<const uint8_t *>(full_data.data()), &bytes_read_for_type_map);
 
@@ -112,7 +110,6 @@ TEST(TypeSys, EncodeManyTypes) {
         for(unsigned i = 0; i < types_to_encode.size(); ++i)
             EXPECT_EQ(types_to_encode[i].desc(), decoded_types[i].desc());
     }
-
 }
 
 #endif
@@ -146,6 +143,10 @@ TEST(TypeSys, CompactEncodeDecode) {
     // TEST:
     std::vector<std::string> v_encoded_full;
     std::vector<std::string> v_encoded_compact;
+
+    size_t total_size_old = 0;
+    size_t total_size_compact = 0;
+
     for(unsigned i = 0; i < types_to_encode.size(); ++i) {
         auto t = types_to_encode[i];
         cout<<"type #"<<i<<"\t"<<"compact: "<<compact_type_encode(t).size()<<" B\t"<<t.desc().size()<<" B"<<endl;
@@ -158,6 +159,10 @@ TEST(TypeSys, CompactEncodeDecode) {
 
         v_encoded_full.push_back(t.desc());
         v_encoded_compact.push_back(encoded);
+
+
+        total_size_compact += v_encoded_compact.back().size();
+        total_size_old += v_encoded_full.back().size();
     }
 
 
@@ -174,4 +179,10 @@ TEST(TypeSys, CompactEncodeDecode) {
         v_decoded_compact.push_back(compact_type_decode(enc));
     }
     cout<<"Took "<<timer.time()<<"s to decode all (compact)."<<endl;
+    cout<<"Total size (full):\t"<<total_size_old<<" B"<<endl;
+    cout<<"Total size (compact):\t"<<total_size_compact<<" B"<<endl;
+    auto pct = 100.0 * (double)total_size_compact / (double)total_size_old;
+    auto factor = (double)total_size_old / (double)total_size_compact;
+    std::cout.precision(2);
+    cout<<"compact is % of full: "<<pct<<" ("<<factor<<"x compression)"<<endl;
 }

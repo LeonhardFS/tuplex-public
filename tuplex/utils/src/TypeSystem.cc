@@ -2696,66 +2696,101 @@ namespace python {
 
 namespace tuplex {
 
+    // symbols for encoding (make sure there's no replication here)
+    static const char ENC_NULLVALUE_CHAR = 'N';
+    static const char ENC_BOOLEAN_CHAR = 'B';
+    static const char ENC_I64_CHAR = 'I';
+    static const char ENC_STRING_CHAR = 'S';
+    static const char ENC_F64_CHAR = 'F';
+    static const char ENC_PYOBJECT_CHAR = 'P';
+    static const char ENC_GENERICTUPLE_CHAR = '!';
+    static const char ENC_GENERICDICT_CHAR = '~';
+    // chars with other information encoded after them.
+    static const char ENC_HASH_CHAR = 'H';
+    static const char ENC_PRIMITIVE_CHAR = '*';
+    static const char ENC_OPTION_CHAR = 'O';
+    static const char ENC_LIST_CHAR = 'L';
+    static const char ENC_ROW_CHAR = 'R';
+    static const char ENC_SPARSE_STRUCT_CHAR = '<';
+    static const char ENC_STRUCT_CHAR = '{';
+    static const char ENC_DICT_CHAR = 'D';
+    static const char ENC_CONSTANT_CHAR = '=';
+    static const char ENC_TUPLE_CHAR = 'T';
+    static const char ENC_FUNCTION_CHAR = '^';
+    static const char ENC_OTHER_CHAR = 'U';
+
+
     void type_encode(BinaryOutputStream& stream, const python::Type& t) {
         // binary stream??
 
         // some frequent python types get their own symbol
         if(t == python::Type::NULLVALUE) {
-            stream<<'N';
+            stream<<ENC_NULLVALUE_CHAR;
             return;
         }
         if(t == python::Type::BOOLEAN) {
-            stream<<'B';
+            stream<<ENC_BOOLEAN_CHAR;
             return;
         }
         if(t == python::Type::I64) {
-            stream<<'I';
+            stream<<ENC_I64_CHAR;
             return;
         }
         if(t == python::Type::STRING) {
-            stream<<'S';
+            stream<<ENC_STRING_CHAR;
             return;
         }
         if(t == python::Type::F64) {
-            stream<<'F';
+            stream<<ENC_F64_CHAR;
             return;
         }
         if(t == python::Type::PYOBJECT) {
-            stream<<'P';
+            stream<<ENC_PYOBJECT_CHAR;
+            return;
+        }
+
+        // special symbols for generic dict/generic tuple.
+        if(t == python::Type::GENERICTUPLE) {
+            stream<<ENC_GENERICTUPLE_CHAR; // any symbol will do.
+            return;
+        }
+
+        if(t == python::Type::GENERICTUPLE) {
+            stream << ENC_GENERICDICT_CHAR;
             return;
         }
 
         // simple encoding with hash
         if(t.hash() < 16) {
-            stream<<'H'; // H for hash.
+            stream<<ENC_HASH_CHAR; // H for hash.
             stream<<t.hash();
             return;
         }
 
         // primitive? need to encode name, that's it.
         if(t.isAbstractPrimitiveType()) {
-            stream<<'*'; // * for primitive
+            stream<<ENC_PRIMITIVE_CHAR; // * for primitive
             stream<<t.desc();
             return;
         }
 
         // Option
         if(t.isOptionType()) {
-            stream<<'O';
+            stream<<ENC_OPTION_CHAR;
             type_encode(stream, t.getReturnType());
             return;
         }
 
         // List
         if(t.isListType()) {
-            stream<<'L';
+            stream<<ENC_LIST_CHAR;
             type_encode(stream, t.elementType());
             return;
         }
 
         // Row
         if(t.isRowType()) {
-            stream<<'R';
+            stream<<ENC_ROW_CHAR;
             // how many names?
             // which entries?
             auto names = t.get_column_names();
@@ -2771,7 +2806,7 @@ namespace tuplex {
 
         // Struct/SparseStruct
         if(t.isStructuredDictionaryType() || t.isSparseStructuredDictionaryType()) {
-            stream<<(t.isSparseStructuredDictionaryType() ? '<' : '{');
+            stream<<(t.isSparseStructuredDictionaryType() ? ENC_SPARSE_STRUCT_CHAR : ENC_STRUCT_CHAR);
             auto entries = t.get_struct_pairs();
             stream<<static_cast<int>(entries.size());
             for(const auto& entry: entries) {
@@ -2785,7 +2820,7 @@ namespace tuplex {
 
         // Dict (code must come AFTER struct dict/sparse dict)
         if(t.isDictionaryType()) {
-            stream<<'D';
+            stream<<ENC_DICT_CHAR;
             type_encode(stream, t.keyType());
             type_encode(stream, t.valueType());
             return;
@@ -2793,7 +2828,7 @@ namespace tuplex {
 
         // Constant.
         if(t.isConstantValued()) {
-            stream<<'=';
+            stream<<ENC_CONSTANT_CHAR;
             type_encode(stream, t.underlying());
             stream<<t.constant();
             return;
@@ -2801,7 +2836,7 @@ namespace tuplex {
 
         // Tuple.
         if(t.isTupleType() && t != python::Type::GENERICTUPLE) {
-            stream<<'T';
+            stream<<ENC_TUPLE_CHAR;
             stream<<static_cast<int>(t.parameters().size());
             for(auto param : t.parameters())
                 type_encode(stream, param);
@@ -2810,14 +2845,14 @@ namespace tuplex {
 
         // Function type.
         if(t.isFunctionType()) {
-            stream<<'^';
+            stream<<ENC_FUNCTION_CHAR;
             type_encode(stream, t.getParamsType());
             type_encode(stream, t.getReturnType());
             return;
         }
 
         // encode each other type using desc() as fallback with U tag.
-        stream<<'U';
+        stream<<ENC_OTHER_CHAR;
         stream<<t.desc();
     }
 
@@ -2834,38 +2869,41 @@ namespace tuplex {
 
         switch(c) {
             // @TODO: use lower-case letters for options!
-            case 'N':
+            case ENC_NULLVALUE_CHAR:
                 return python::Type::NULLVALUE;
-            case 'B':
+            case ENC_BOOLEAN_CHAR:
                 return python::Type::BOOLEAN;
-            case 'I':
+            case ENC_I64_CHAR:
                 return python::Type::I64;
-            case 'S':
+            case ENC_STRING_CHAR:
                 return python::Type::STRING;
-            case 'F':
+            case ENC_F64_CHAR:
                 return python::Type::F64;
-            case 'P':
+            case ENC_PYOBJECT_CHAR:
                 return python::Type::PYOBJECT;
+            case ENC_GENERICDICT_CHAR:
+                return python::Type::GENERICDICT;
+            case ENC_GENERICTUPLE_CHAR:
+                return python::Type::GENERICTUPLE;
 
-                // compound types
-            case 'H': {
+            // Compound types:
+            case ENC_HASH_CHAR: {
                 int hash;
                 is >> hash;
                 return python::Type::fromHash(hash);
             }
 
-            case '*': {
+            case ENC_PRIMITIVE_CHAR: {
                 std::string name;
                 is >> name;
                 return python::TypeFactory::instance().createOrGetPrimitiveType(name);
             }
 
-
-            case 'O':
+            case ENC_OPTION_CHAR:
                 return python::Type::makeOptionType(type_decode(is));
-            case 'L':
+            case ENC_LIST_CHAR:
                 return python::Type::makeListType(type_decode(is));
-            case 'T': {
+            case ENC_TUPLE_CHAR: {
                 int n_params;
                 is >> n_params;
                 std::vector<python::Type> params(n_params);
@@ -2874,7 +2912,7 @@ namespace tuplex {
                 return python::Type::makeTupleType(params);
             }
 
-            case 'R': {
+            case ENC_ROW_CHAR: {
                 int n_names;
                 int n_types;
                 std::vector<std::string> names;
@@ -2892,9 +2930,9 @@ namespace tuplex {
                 return python::Type::makeRowType(types, names);
             }
 
-            case '<':
-            case '{': {
-                auto is_sparse = c == '<';
+            case ENC_SPARSE_STRUCT_CHAR:
+            case ENC_STRUCT_CHAR: {
+                auto is_sparse = c == ENC_SPARSE_STRUCT_CHAR;
                 std::vector<python::StructEntry> entries;
 
                 int n_entries;
@@ -2913,22 +2951,22 @@ namespace tuplex {
                 return python::Type::makeStructuredDictType(entries, is_sparse);
             }
 
-            case 'D':
+            case ENC_DICT_CHAR:
                 return python::Type::makeDictionaryType(type_decode(is), type_decode(is));
 
-            case '=': {
+            case ENC_CONSTANT_CHAR: {
                 python::Type underlying = type_decode(is);
                 std::string constant;
                 is >> constant;
                 return python::Type::makeConstantValuedType(underlying, constant);
             }
 
-            case '^': {
+            case ENC_FUNCTION_CHAR: {
                 // func type.
                 return python::Type::makeFunctionType(type_decode(is), type_decode(is));
             }
 
-            case 'U': {
+            case ENC_OTHER_CHAR: {
                 std::string desc;
                 is >> desc;
                 return python::Type::decode(desc);
