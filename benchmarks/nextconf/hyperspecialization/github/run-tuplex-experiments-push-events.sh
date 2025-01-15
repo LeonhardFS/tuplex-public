@@ -82,7 +82,7 @@ WHL_FILE=$(ls ${BUILD_DIR}/dist/python/dist/*.whl)
 echo ">>> Installing tuplex (force) from wheel ${WHL_FILE}"
 ${PYTHON} -m pip install --upgrade --force-reinstall ${WHL_FILE}
 
-# There's an issue with an old cloudpickle version, remove and intall newer one
+# There's an issue with an old cloudpickle version, remove and install newer one
 ${PYTHON} -m pip uninstall -y cloudpickle && ${PYTHON} -m pip install "cloudpickle>=3.0"
 
 # start benchmarking, first single run + validate results.

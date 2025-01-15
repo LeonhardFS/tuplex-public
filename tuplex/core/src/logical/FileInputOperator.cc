@@ -1181,6 +1181,7 @@ namespace tuplex {
             return {};
         }
 
+        auto& logger = Logger::instance().defaultLogger();
 
         // restrict to num
         if(num <= _rowsSample.size()) {
@@ -1192,13 +1193,14 @@ namespace tuplex {
             else return randomSampleFromReservoir(_rowsSample, num);
         } else {
             // need to increase sample size!
-            Logger::instance().defaultLogger().warn("requested " + std::to_string(num)
+            logger.warn("Requested " + std::to_string(num)
                                                     + " rows for sampling, but only "
                                                     + std::to_string(_rowsSample.size())
                                                     + " stored. Consider decreasing sample size. Returning all available rows.");
-            if(!_isRowSampleProjected)
+            if(!_isRowSampleProjected) {
+                logger.info("Returning projected sample.");
                 return projectSample(_rowsSample);
-            else
+            } else
                 return _rowsSample;
         }
     }

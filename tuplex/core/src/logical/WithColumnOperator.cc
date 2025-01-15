@@ -195,6 +195,9 @@ namespace tuplex {
         // @TODO: refactor the whole sampling into SampleProcessor.
         using namespace std;
 
+        auto& logger = Logger::instance().defaultLogger();
+        logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " WithColumn operator getSample.");
+
         auto vSamples = parent()->getSample(num);
         auto pickledCode = _udf.getPickledCode();
 
@@ -353,6 +356,8 @@ namespace tuplex {
             + std::to_string(numExceptions) + " exceptions");
 
         python::unlockGIL();
+
+        logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " WithColumn operator return " + pluralize(vRes.size(), "sample") + ".");
 
         return vRes;
     }

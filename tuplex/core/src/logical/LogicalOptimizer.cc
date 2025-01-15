@@ -132,7 +132,7 @@ namespace tuplex {
         }
 
         if(!root->isActionable()) {
-            logger().error("given root is not actionable, skip optimization.");
+            logger().error("Given root is not actionable, skip optimization.");
             return root;
         }
 

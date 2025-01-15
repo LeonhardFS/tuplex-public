@@ -107,6 +107,9 @@ namespace tuplex {
         if(_udf.empty())
             return parent()->getSample(num);
 
+        auto& logger = Logger::instance().defaultLogger();
+        logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Map operator getSample.");
+
         // first retrieve samples from parent
         // then, apply lambda (python version)
         // and retrieve result
@@ -160,6 +163,8 @@ namespace tuplex {
                     "sampling map operator lead to " + std::to_string(numExceptions) + " exceptions");
 
         python::unlockGIL();
+
+        logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Map operator returns " + pluralize(vRes.size(), "sample") + ".");
 
         return vRes;
     }
