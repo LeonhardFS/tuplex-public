@@ -23,6 +23,37 @@ namespace tuplex {
     }
 
 
+    void S3FileCache::putChunk(tuplex::S3FileCache::CacheEntry &&chunk) {
+
+        auto target_uri = chunk.uri;
+        auto range_start = chunk.range_start;
+        auto range_end = chunk.range_end;
+
+        std::lock_guard<std::mutex> lock(_mutex);
+        auto it = std::find_if(_chunks.begin(), _chunks.end(), [target_uri, range_start, range_end](const CacheEntry& chunk) {
+            bool in_range = chunk.range_start <= range_start && range_end <= chunk.range_end;
+            return chunk.uri == target_uri && in_range && chunk.buf;
+        });
+
+        // chunk found? then return...
+        if(it != _chunks.end()) {
+            // free chunk, already exists.
+            delete [] chunk.buf;
+            chunk.buf = nullptr;
+            return;
+        }
+
+        // chunk too large? remove oldest.
+        if(chunk.size() > _maxSize)
+            return; // too large to store.
+
+        if(chunk.size() + _cacheSize > _maxSize)
+            pruneBy(chunk.size());
+
+        _cacheSize += chunk.size();
+        _chunks.emplace_back(std::move(chunk));
+    }
+
     uint8_t* S3FileCache::put(const URI &uri, size_t range_start, size_t range_end, size_t* bytes_written, option<size_t> uri_size) {
 
         URI target_uri = uri;
@@ -449,8 +480,14 @@ namespace tuplex {
 
             // no additional requests required? copy over whatever exists to buffer.
             if(requests_required.empty()) {
+
                 if(bytes_written)
                     *bytes_written = pos - range_start;
+
+                std::stringstream ss;
+                ss<<"Cache hit for "<<uri.toString()<<" ("<<pos - range_start<<" B).";
+                Logger::instance().defaultLogger().info(ss.str());
+
                 return true;
             }
         }
@@ -464,11 +501,15 @@ namespace tuplex {
             auto r_end = std::min(range_end, std::get<2>(r));
             auto r_uri = std::get<0>(r);
 
+            Timer timer;
             // fetch
             auto chunk = s3Read(r_uri, r_start, r_end);
 
             // copy over to buf
-            std::cout<<"got chunk: "<<chunk.range_start<<" - "<<chunk.range_end<<std::endl;
+            std::stringstream ss;
+            ss<<"URI: "<<r_uri<<" got chunk: "<<chunk.range_start<<" - "<<chunk.range_end<<" in "<<timer.time()<<"s.";
+            Logger::instance().defaultLogger().info(ss.str());
+
             auto buf_offset = chunk.range_start - range_start;
             size_t buf_capacity_remaining = buf_offset < buf_capacity ? buf_capacity - buf_offset : 0;
             size_t bytes_to_copy = std::min(buf_capacity_remaining, std::min(chunk.range_end - chunk.range_start, std::max(range_end, chunk.range_end) - chunk.range_start));
@@ -477,6 +518,12 @@ namespace tuplex {
                 memcpy(buf + buf_offset, chunk.buf, bytes_to_copy);
             pos = chunk.range_start + bytes_to_copy;
             cur_range_end = std::max(pos, cur_range_end);
+
+            // put chunk into cache.
+            {
+                putChunk(std::move(chunk));
+            }
+
         }
 
         if(bytes_written)
@@ -559,7 +606,7 @@ namespace tuplex {
         Timer timer;
         auto get_object_outcome = _s3fs->client().GetObject(req);
         _s3fs->_getRequests++;
-        logger.info("Requested from S3 in " + std::to_string(timer.time()) + "s");
+        logger.info("Requested from S3 in " + std::to_string(timer.time()) + "s.");
 
         if (get_object_outcome.IsSuccess()) {
             auto result = get_object_outcome.GetResultWithOwnership();

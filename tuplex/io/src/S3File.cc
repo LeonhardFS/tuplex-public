@@ -716,10 +716,12 @@ namespace tuplex {
             delete [] _buffer;
         _buffer = nullptr;
 
-         // print
-         std::stringstream ss;
-         ss<<"s3 request time spent on "<<_uri.toPath()<<": "<<_requestTime<<"s"<<std::endl;
-         Logger::instance().defaultLogger().info(ss.str());
+         // print if non-zero.
+         if(_requestTime > 0.00001) {
+             std::stringstream ss;
+             ss<<"s3 request time spent on "<<_uri.toPath()<<": "<<_requestTime<<"s"<<std::endl;
+             Logger::instance().defaultLogger().info(ss.str());
+         }
     }
 
     bool S3File::eof() const {

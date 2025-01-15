@@ -63,6 +63,10 @@ namespace tuplex {
             _useS3ReadCache = false;
         }
 
+        inline bool hasActiveReadCache() const {
+            return _useS3ReadCache;
+        }
+
         inline bool isAmazon() const {
             return _config.endpointOverride.empty();
         }

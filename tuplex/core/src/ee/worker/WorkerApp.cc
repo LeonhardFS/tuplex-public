@@ -105,16 +105,21 @@ namespace tuplex {
             // make sure s3 system is initialized
             auto s3impl = VirtualFileSystem::getS3FileSystemImpl();
             if(!s3impl) {
-                logger().error("required S3 cache, but S3 file system not initialized.");
+                logger().error("Required S3 cache, but S3 file system not initialized.");
                 return false;
             }
             s3impl->activateReadCache(_settings.s3PreCacheSize);
+            logger().info("Activated S3 read cache with " + sizeToMemString(_settings.s3PreCacheSize) + ".");
         } else {
             auto s3impl = VirtualFileSystem::getS3FileSystemImpl();
             if(!s3impl) {
-                logger().error("required S3 cache, but S3 file system not initialized.");
+                logger().error("Required S3 cache, but S3 file system not initialized.");
                 return false;
             }
+
+            if(s3impl->hasActiveReadCache())
+                logger().info("Disable previously active S3 cache.");
+
             s3impl->disableReadCache();
         }
 
