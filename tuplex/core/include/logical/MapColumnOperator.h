@@ -63,6 +63,9 @@ namespace tuplex {
         void rewriteParametersInAST(const std::unordered_map<size_t, size_t>& rewriteMap) override;
 
         Schema getInputSchema() const override {
+            if(0 == numParents())
+                return Schema::UNKNOWN;
+
             return parent()->getOutputSchema(); // overwrite here, because UDFOperator always returns the UDF's input schema. However, for mapColumn it's not a row but an element!
         }
 

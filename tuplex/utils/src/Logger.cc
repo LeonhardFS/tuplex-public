@@ -26,6 +26,7 @@ void Logger::initDefault() {
             // disable slow log in release mode
             _sinks.push_back(std::make_shared<spdlog::sinks::basic_file_sink_mt>("log.txt"));
 #endif
+
             _initialized = true;
 
             // create default logger
@@ -37,8 +38,13 @@ void Logger::initDefault() {
 
     // init default logger
     try {
-        if(!_default_handler)
+        if(!_default_handler) {
             _default_handler = std::make_shared<MessageHandler>();
+
+            auto spdlogger = std::make_shared<spdlog::logger>(_default_handler->name(), _sinks.begin(), _sinks.end());
+            spdlog::register_logger(spdlogger);
+        }
+
     } catch(const spdlog::spdlog_ex& ex) {
         std::cout<<"[FATAL] Could not add default logger, initialization of logging system failed: "<<ex.what()<<std::endl;
         exit(1);

@@ -1,0 +1,88 @@
+# (c) 2017-2024 L.Spiegelberg
+# Docker stack for local Lambda testing.
+# Use `docker compose up` to start.
+# USe `docker compose up -d` to start in detached mode.configs:
+# Call `docker compose rm -fsv` afterwards for fresh start.
+# Use `docker compose build --no-cache` for fresh build.configs:
+
+version: '3.8'
+
+services:
+  minio:
+    image: quay.io/minio/minio
+    container_name: minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      # MINIO_ROOT_USER: admin
+      # MINIO_ROOT_PASSWORD: test1234
+
+      # Use S3 keys, defined in helper.h.
+      # same as AWS_ACCESS_KEY
+      MINIO_ROOT_USER: "AKIAIOSFODNN7EXAMPLE"
+      # same as AWS_SECRET_ACCESS_KEY
+      MINIO_ROOT_PASSWORD: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    # Add volume here if desired to persist data.
+    #volumes:
+    #  - ~/minio/data:/data
+    command: server /data --console-address ":9001"
+
+  # Use `curl "http://localhost:8080/2015-03-31/functions/function/invocations" -d '{}'` on host machine
+  # or `curl "http://lambda:8080/2015-03-31/functions/function/invocations" -d '{}'` within docker containers.
+  lambda-1:
+    build:
+      context: ./lambda
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+
+    depends_on:
+      - minio
+
+    # The Lambda may exit or crash, restart then.
+    restart: always
+
+  lambda-2:
+    build:
+      context: ./lambda
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8080"
+
+    depends_on:
+      - minio
+
+    # The Lambda may exit or crash, restart then.
+    restart: always
+
+  # FastAPI mocking AWS Lambda service.
+  # Go to http://localhost:8090/docs, to debug (mock) API.
+  rest:
+    build:
+      context: ./rest
+      dockerfile: Dockerfile
+
+    ports:
+      - 8090:8090
+
+    depends_on:
+      - lambda-1
+      - lambda-2
+
+#  # For debugging.
+#  jupyter:
+#    build:
+#      # other popular way here would be:
+#      # context: .
+#      # dockerfile: ./docker/jupyter.docker
+#      context: ./jupyter
+#      dockerfile: Dockerfile
+#    #volumes:
+#    #  - ./work:/home/jovyan/work
+#    ports:
+#      - 8888:8888
+#    container_name: jupyter_notebook
+#    command: "start-notebook.sh --NotebookApp.token="
+#    depends_on:
+#      - minio

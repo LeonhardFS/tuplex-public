@@ -1,8 +1,8 @@
-cmake_minimum_required(VERSION 3.12 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.27 FATAL_ERROR)
 
-if(${CMAKE_VERSION} VERSION_GREATER "3.19.0")
-  cmake_policy(SET CMP0114 OLD) # policy update in 3.19, explicitly use old behavior
-endif()
+#if(${CMAKE_VERSION} VERSION_GREATER "3.19.0")
+#  cmake_policy(SET CMP0114 OLD) # policy update in 3.19, explicitly use old behavior
+#endif()
 
 include(ExternalProject)
 

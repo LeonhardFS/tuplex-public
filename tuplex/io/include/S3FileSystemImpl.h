@@ -63,8 +63,17 @@ namespace tuplex {
             _useS3ReadCache = false;
         }
 
+        inline bool hasActiveReadCache() const {
+            return _useS3ReadCache;
+        }
+
+        inline bool isAmazon() const {
+            return _config.endpointOverride.empty();
+        }
+
     private:
         std::shared_ptr<Aws::S3::S3Client> _client;
+        Aws::Client::ClientConfiguration _config;
         Aws::S3::Model::RequestPayer _requestPayer;
 
         // to compute pricing, use https://calculator.s3.amazonaws.com/index.html
@@ -111,8 +120,26 @@ namespace tuplex {
      */
     extern std::string s3GetHeadObject(Aws::S3::S3Client const& client, const URI& uri, std::ostream *os_err=nullptr);
 
-
     extern size_t s3GetContentLength(Aws::S3::S3Client const& client, const URI& uri, std::ostream *os_err=nullptr);
+
+    /*!
+     * Removes multiple objects with single request.
+     * @param client
+     * @param uris
+     * @param os_err
+     * @return true if ok, false if wrong.
+     */
+    extern bool s3RemoveObjects(Aws::S3::S3Client const& client, const std::vector<URI>& uris, std::ostream *os_err=nullptr);
+
+    /*!
+     * Helper function to test an endpoint for being a valid S3 connection via a listbuckets request.
+     * @param endpoint
+     * @param access_key
+     * @param secret_access_key
+     * @param session_token
+     * @return true if endpoint is valid, false else.
+     */
+    extern bool check_s3_connection(const std::string& endpoint, const std::string& access_key, const std::string& secret_access_key, const std::string& session_token);
 }
 
 

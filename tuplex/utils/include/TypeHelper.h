@@ -44,7 +44,7 @@ namespace tuplex {
             return python::Type::makeListType(deoptimizedType(optType.elementType()));
         }
 
-        if(optType.isDictionaryType()&& python::Type::GENERICDICT != optType && python::Type::EMPTYDICT != optType && !optType.isStructuredDictionaryType()) {
+        if(optType.isDictionaryType()&& python::Type::GENERICDICT != optType && python::Type::EMPTYDICT != optType && !optType.isStructuredDictionaryType() && !optType.isSparseStructuredDictionaryType()) {
             return python::Type::makeDictionaryType(deoptimizedType(optType.keyType()), deoptimizedType(optType.valueType()));
         }
 
@@ -82,7 +82,7 @@ namespace tuplex {
 #endif
 
         // struct dict? is fine.
-        if(optType.isStructuredDictionaryType())
+        if(optType.isStructuredDictionaryType() || optType.isSparseStructuredDictionaryType())
             return optType;
 
         if(optType == python::Type::ANY)
@@ -97,6 +97,10 @@ namespace tuplex {
                 return python::Type::makeRowType(col_types, names);
             }
         }
+
+        // range is the same (primitive type)
+        if(optType == python::Type::RANGE)
+            return optType;
 
         throw std::runtime_error("unsupported type " + optType.desc() + " encountered in "
                                  + std::string(__FILE__) + ":" + std::to_string(__LINE__));

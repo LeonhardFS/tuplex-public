@@ -41,6 +41,8 @@ namespace tuplex {
         size_t _originalRangeStart;
         size_t _originalRangeEnd;
 
+        size_t _total_bytes_parsed;
+
         // internal read buffer
         size_t _bufferSize;
         size_t _inBufferLength;

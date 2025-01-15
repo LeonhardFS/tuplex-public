@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# (c) 2022 Tuplex contributors
+# (c) 2017-2024 Tuplex contributors
 # builds notebook image
 
 while :; do

@@ -108,6 +108,8 @@ namespace tuplex {
 
         bool pruneBy(size_t size);
 
+        void putChunk(CacheEntry&& chunk);
+
         S3FileSystemImpl* _s3fs; // weak ptr.
         Aws::S3::Model::RequestPayer _requestPayer;
         CacheEntry s3Read(const URI& uri, size_t range_start, size_t range_end);

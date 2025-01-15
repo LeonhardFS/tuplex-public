@@ -26,7 +26,7 @@
 namespace tuplex {
     namespace codegen {
 
-        FlattenedTuple CompiledFunction::callWithExceptionHandler(llvm::IRBuilder<> &builder,
+        FlattenedTuple CompiledFunction::callWithExceptionHandler(const codegen::IRBuilder& builder,
                                                                   const FlattenedTuple &args,
                                                                   llvm::Value *const resPtr,
                                                                   llvm::BasicBlock *const handler,
@@ -37,7 +37,7 @@ namespace tuplex {
             using namespace llvm;
             BasicBlock *bbSerializationFailure = BasicBlock::Create(args.getEnv()->getContext(), "fallbackSerializationFailure", builder.GetInsertBlock()->getParent());
 
-            llvm::IRBuilder<> b(bbSerializationFailure);
+            IRBuilder b(bbSerializationFailure);
             b.CreateStore(args.getEnv()->i64Const(ecToI32(ExceptionCode::PYTHONFALLBACK_SERIALIZATION)), exceptionCode);
             b.CreateBr(handler);
 
@@ -50,7 +50,7 @@ namespace tuplex {
             return ret;
         }
 
-        FlattenedTuple CompiledFunction::callWithExceptionHandler(llvm::IRBuilder<> &builder,
+        FlattenedTuple CompiledFunction::callWithExceptionHandler(const codegen::IRBuilder &builder,
                                                                   const FlattenedTuple &args,
                                                                   llvm::Value* const resPtr,
                                                                   llvm::BasicBlock *const handler,
@@ -200,7 +200,8 @@ namespace tuplex {
                                                                                      Type::getInt32Ty(context)}, false);
 
                 auto wrapperFunc = mod->getOrInsertFunction(_pythonInvokeName, wrapperFuncType);
-                auto outputVar = builder.CreateAlloca(Type::getInt8PtrTy(context, 0));
+                auto output_var_type = Type::getInt8PtrTy(context, 0); // use i8* type.
+                auto outputVar = builder.CreateAlloca(output_var_type);
                 auto outputSizeVar = builder.CreateAlloca(Type::getInt64Ty(context));
                 auto resCode = builder.CreateCall(wrapperFunc, {function_ptr,
                                                                 outputVar,
@@ -224,7 +225,7 @@ namespace tuplex {
 
                 // flatten out
                 ftr.init(output_type);
-                ftr.deserializationCode(builder, builder.CreateLoad(outputVar));
+                ftr.deserializationCode(builder, builder.CreateLoad(output_var_type, outputVar));
                 fto = ftr;
             }
 

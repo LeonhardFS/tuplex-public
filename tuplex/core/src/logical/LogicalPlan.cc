@@ -54,12 +54,14 @@ namespace tuplex {
 
         // optimize first if desired (context options object)
         // ==> optimize creates a copy if required
+        auto logger_logical = Logger::instance().logger("logical planner");
 
+        logger_logical.info("Creating optimized logical plan.");
         auto optimized_plan = optimize(context, !copy_required); // overwrite
 
         double logical_optimization_time = timer.time();
         context.metrics().setLogicalOptimizationTime(logical_optimization_time);
-        Logger::instance().logger("logical planner").info("logical optimization took "
+        logger_logical.info("Logical optimization took "
         + std::to_string(logical_optimization_time) + "ms");
 
         Timer pp_timer;

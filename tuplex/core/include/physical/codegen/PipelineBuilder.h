@@ -64,8 +64,8 @@ namespace tuplex {
             }
 
             int _loopLevel; // at which loop level things are (used to call endLoop)
-            void beginForLoop(llvm::IRBuilder<>& builder, llvm::Value* numIterations);
-            void endForLoop(llvm::IRBuilder<>& builder);
+            void beginForLoop(const IRBuilder& builder, llvm::Value* numIterations);
+            void endForLoop(const IRBuilder& builder);
             std::unordered_map<std::string, llvm::Value*> _args;
 
             std::string _exceptionCallbackName; //! optional, indicates whether pipeline should call exception handler (or not). Often, this functionaliy is better placed a level up except for single row executors
@@ -86,19 +86,19 @@ namespace tuplex {
 
 
             // helper functions to use variables via alloc/store in code
-            std::map<std::string, llvm::Value *> _variables;
+            std::map<std::string, std::tuple<llvm::Type*, llvm::Value *>> _variables;
 
-            void addVariable(llvm::IRBuilder<> &builder, const std::string name, llvm::Type *type,
+            void addVariable(const IRBuilder &builder, const std::string name, llvm::Type *type,
                              llvm::Value *initialValue = nullptr);
 
-            llvm::Value *getVariable(llvm::IRBuilder<> &builder, const std::string name);
+            llvm::Value *getVariable(const IRBuilder &builder, const std::string name);
 
-            llvm::Value *getPointerToVariable(llvm::IRBuilder<> &builder, const std::string name);
+            llvm::Value *getPointerToVariable(const IRBuilder &builder, const std::string name);
 
-            void assignToVariable(llvm::IRBuilder<> &builder, const std::string name, llvm::Value *newValue);
+            void assignToVariable(const IRBuilder &builder, const std::string name, llvm::Value *newValue);
 
 //            inline llvm::Value *
-//            vec3_i64(llvm::IRBuilder<> &builder, llvm::Value *a0, llvm::Value *a1, llvm::Value *a2) {
+//            vec3_i64(const IRBuilder &builder, llvm::Value *a0, llvm::Value *a1, llvm::Value *a2) {
 //                using namespace llvm;
 //                assert(a0->getType() == env().i64Type()
 //                       && a1->getType() == env().i64Type()
@@ -130,15 +130,9 @@ namespace tuplex {
              * @param persist if true, then a copy will be made using C-malloc (not rtmalloc!)
              * @return
              */
-            SerializableValue makeKey(llvm::IRBuilder<>& builder, const SerializableValue& key, bool persist=true);
+            SerializableValue makeKey(const IRBuilder& builder, const SerializableValue& key, bool persist=true);
 
-            /*!
-             * return builder at current stage of pipeline building!
-             */
-            llvm::IRBuilder<> builder();
-
-
-            void createInnerJoinBucketLoop(llvm::IRBuilder<>& builder,
+            void createInnerJoinBucketLoop(const IRBuilder& builder,
                                            llvm::Value* num_rows_to_join,
                                            llvm::Value* bucketPtrVar,
                                            bool buildRight,
@@ -146,7 +140,7 @@ namespace tuplex {
                                            python::Type resultType,
                                            int probeKeyIndex);
 
-            void createLeftJoinBucketLoop(llvm::IRBuilder<>& builder,
+            void createLeftJoinBucketLoop(const IRBuilder& builder,
                                            llvm::Value* num_rows_to_join,
                                            llvm::Value* bucketPtrVar,
                                            bool buildRight,
@@ -157,7 +151,7 @@ namespace tuplex {
 
             static llvm::StructType* resultStructType(llvm::LLVMContext& ctx);
 
-            void assignWriteCallbackReturnValue(llvm::IRBuilder<> &builder, int64_t operatorID,
+            void assignWriteCallbackReturnValue(const IRBuilder &builder, int64_t operatorID,
                                                 llvm::CallInst *callbackECVal);
 
             llvm::Function *buildWithConstantKeyHashmapWriter(const std::string &callbackName,
@@ -165,19 +159,20 @@ namespace tuplex {
                                                               bool bucketize,
                                                               bool isAggregateByKey);
         protected:
-            llvm::StructType* resultStructType() const {
+            [[nodiscard]] llvm::StructType* resultStructType() const {
                 return resultStructType(_env->getContext());
             }
-            inline void createRet(llvm::IRBuilder<>& builder, llvm::Value* ecCode, llvm::Value* opID, llvm::Value* numRows) {
+            inline void createRet(const IRBuilder& builder, llvm::Value* ecCode, llvm::Value* opID, llvm::Value* numRows) {
                 // cast to i32
                 auto rc = builder.CreateZExtOrTrunc(ecCode, env().i32Type());
                 auto id = builder.CreateZExtOrTrunc(opID, env().i32Type());
                 auto nrows = builder.CreateZExtOrTrunc(numRows, env().i32Type());
 
                 // store into ret!
-                auto idx_rc = CreateStructGEP(builder, _args["result"], 0);
-                auto idx_id = CreateStructGEP(builder, _args["result"], 1);
-                auto idx_nrows = CreateStructGEP(builder, _args["result"], 2);
+                auto llvm_struct_type = resultStructType();
+                auto idx_rc = builder.CreateStructGEP(_args["result"], llvm_struct_type, 0);
+                auto idx_id = builder.CreateStructGEP(_args["result"], llvm_struct_type, 1);
+                auto idx_nrows = builder.CreateStructGEP(_args["result"], llvm_struct_type, 2);
 
                 builder.CreateStore(rc, idx_rc);
                 builder.CreateStore(id, idx_id);
@@ -217,7 +212,7 @@ namespace tuplex {
                 if (!verifyFunction(_func, &err)) {
 
                     // @TODO: use the better inspection capabilities...
-                    const size_t max_length = 50000; // max 50k chars
+                    const size_t max_length = 200000; // max 200k chars
                     auto irSample = _env->getIR();
                     if(irSample.length() > max_length)
                         irSample = irSample.substr(0, max_length);
@@ -459,7 +454,7 @@ namespace tuplex {
              * @return return value of this function
              */
             static PipelineResult
-            call(llvm::IRBuilder<> &builder, llvm::Function *func, const FlattenedTuple &ft, llvm::Value *userData,
+            call(const IRBuilder &builder, llvm::Function *func, const FlattenedTuple &ft, llvm::Value *userData,
                  llvm::Value *rowNumber, llvm::Value* intermediate=nullptr);
 
 
@@ -476,7 +471,6 @@ namespace tuplex {
                 }
                return false;
             }
-
         };
 
 

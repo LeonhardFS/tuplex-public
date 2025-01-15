@@ -1,3 +1,4 @@
+// Protobuf message for invoking Aws Lambda backend.
 syntax = "proto3";
 package tuplex.messages;
 
@@ -32,6 +33,13 @@ enum CodeFormat {
     LLVM_IR_BITCODE = 0;
     LLVM_IR = 1;
     OBJECT_CODE = 2;
+}
+
+// An optional message containing information on which file a Lambda should specialize on.
+message SpecializationUnit {
+    repeated string inputURIS = 1;
+    repeated uint64 inputSizes = 2;
+    uint64 sampleMode = 3;
 }
 
 message CodePath {
@@ -97,6 +105,9 @@ message TransformStage {
     // how many lambdas should each Lambda invoke? Recursive, i.e. {1, 1, 1} means the first Lambda invokes another
     // lambda, that again another etc. The total wait time thereby is baseDelay * depth
     repeated uint32 invocationCount = 32;
+
+    // Specialization unit (optional, must be set if hyper is active - else the input uri will be used).
+    optional SpecializationUnit specializationUnit = 33;
 }
 
 message WorkerSettings {
@@ -116,14 +127,14 @@ message WorkerSettings {
 }
 
 message WarmupMessage {
-    // how many lambdas should each Lambda invoke? Recursive, i.e. {1, 1, 1} means the first Lambda invokes another
+    // How many lambdas should each Lambda invoke? Recursive, i.e. {1, 1, 1} means the first Lambda invokes another
     // lambda, that again another etc. The total wait time thereby is baseDelay * depth
     repeated uint32 invocationCount = 1;
     uint32 baseDelayInMs = 2;
     uint32 timeOutInMs = 3;
 }
 
-// a simple message for a resource that may be send along an invocation request
+// A simple message for a resource that may be send along an invocation request.
 message Resource {
     string id = 1;
     uint32 type = 2;
@@ -131,24 +142,39 @@ message Resource {
 }
 
 message InvocationRequest {
+    // INPUT:
+    // The individual input uris (may be range based)
     repeated string inputURIS = 1;
+    // The actual full input size of each uri (NOT the range size).
     repeated uint64 inputSizes = 2;
-    string baseOutputURI = 3; // final output uri or base URI to form parts
-    optional uint32 partNoOffset = 4; // this is where to start the parts. important when recursive invocations are used
 
-    MessageType type = 5;
-    WorkerSettings settings = 6;
+    // OUTPUT:
+    // Final output uri or base URI to form parts
+    string baseOutputURI = 3;
+    // If true, then write everything to baseoutputuri. Do not generate baseOutputURI/part1.csv, ...
+    bool baseIsFinalOutput = 4;
+    // This is where to start the parts. important when recursive invocations are used.
+    optional uint32 partNoOffset = 5;
 
-    // optional resources attached with this message
-    repeated Resource resources = 7;
+    MessageType type = 6;
+    WorkerSettings settings = 7;
 
-    optional TransformStage stage = 8;
-    optional WarmupMessage warmup = 9;
-    bool verboseLogging = 10;
+    // Optional resources attached with this message.
+    repeated Resource resources = 8;
+
+    optional TransformStage stage = 9;
+    optional WarmupMessage warmup = 10;
+    bool verboseLogging = 11;
+
+    // How the request should be carried out (options etc.).
+    uint64 requestMode = 12;
+
+    // Environment overwrite.
+    map<string, string> env = 13;
 }
 
 
-// info about a running container, cf. ContainerInfo struct
+// Info about a running container, cf. ContainerInfo struct.
 message ContainerInfo {
     bool reused = 1;
     string requestId = 2;
@@ -159,24 +185,31 @@ message ContainerInfo {
     uint64 deadline = 7;
 }
 
-// info about a single request , cf. Request Info struct
+// stored info about AWS Lambda timings.
+message LambdaTimings {
+    double initTimeInMs = 1;
+    double durationInMs = 2;
+    uint32 billedDurationInMs = 3;
+    uint32 memorySizeInMb = 4;
+    uint32 maxMemoryUsedInMb = 5;
+}
+
+// Info about a single request , cf. Request Info struct.
 message RequestInfo {
     string requestId = 1;
     string containerId = 2;
-    double durationInMs = 3;
-    uint32 billedDurationInMs = 4;
-    uint32 memorySizeInMb = 5;
-    uint32 maxMemoryUsedInMb = 6;
 
-    uint64 tsRequestStart = 7; // UTC timestamp when request was invoked
-    uint64 tsRequestEnd = 8; // UTC timestamp when request returned
+    LambdaTimings timings = 3;
+
+    uint64 tsRequestStart = 4; // UTC timestamp when request was invoked
+    uint64 tsRequestEnd = 5; // UTC timestamp when request returned
 
     // in case of failure, these fields here are filled.
-    uint32 returnCode = 9;
-    string errorMessage = 10;
+    uint32 returnCode = 6;
+    string errorMessage = 7;
 }
 
-// statistics about how input rows were processed.
+// Statistics about how input rows were processed.
 message CodePathStats {
     uint64 normal = 1;
     uint64 general = 2;
@@ -208,11 +241,14 @@ message InvocationResponse {
     map<uint64, uint64> exceptionCounts = 9;
     CodePathStats rowStats = 10;
 
+    // Information about the container on which this response was generated on.
     ContainerInfo container = 11;
-    repeated ContainerInfo invokedContainers = 12;
+    // Responses from recursively invoked Lambdas (hold their container information)
+    repeated InvocationResponse invokedResponses = 12;
+    // Request information of recursively invoked Lambdas.
     repeated RequestInfo invokedRequests = 13;
 
-    // messages may contain already result data, given in form of a resource
+    // Messages may contain already result data, given in form of a list of resources.
     repeated Resource resources = 14;
 
     // stats

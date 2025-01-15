@@ -162,7 +162,10 @@ static size_t s3walk(const Aws::S3::S3Client& client, const std::string& bucket,
     Aws::S3::Model::ListObjectsV2Request objects_request;
     objects_request.WithBucket(Aws::String(bucket.c_str()));
     objects_request.WithPrefix(Aws::String(prefix.c_str()));
-    objects_request.SetRequestPayer(requestPayer);
+
+    if(requestPayer != Aws::S3::Model::RequestPayer::NOT_SET)
+        objects_request.SetRequestPayer(requestPayer);
+
     // use delimiter if suffix is not yet exhausted
     if(suffix.length() > 0)
         objects_request.WithDelimiter("/");
@@ -364,7 +367,10 @@ namespace tuplex {
                 objects_request.WithBucket(Aws::String(bucket.c_str()));
                 objects_request.WithPrefix(Aws::String(s3_prefix.c_str()));
                 objects_request.WithDelimiter("/");
-                objects_request.SetRequestPayer(_requestPayer);
+
+                // Amazon specific header.
+                if(isAmazon())
+                    objects_request.SetRequestPayer(_requestPayer);
 
                 auto list_objects_outcome = _client->ListObjectsV2(objects_request);
 #ifndef NDEBUG
@@ -396,7 +402,10 @@ namespace tuplex {
             objects_request.WithBucket(Aws::String(bucket.c_str()));
             objects_request.WithPrefix(Aws::String(s3_prefix.c_str()));
             objects_request.WithDelimiter("/");
-            objects_request.SetRequestPayer(_requestPayer);
+
+            // Amazon specific header.
+            if(isAmazon())
+                objects_request.SetRequestPayer(_requestPayer);
 
             auto list_objects_outcome = _client->ListObjectsV2(objects_request);
 #ifndef NDEBUG
@@ -484,7 +493,7 @@ namespace tuplex {
             return std::vector<URI>();
         }
 
-        _lsRequests += s3walk(client(), uri.s3Bucket(), "", uri.s3Key(), files, _requestPayer);
+        _lsRequests += s3walk(client(), uri.s3Bucket(), "", uri.s3Key(), files, isAmazon() ? _requestPayer : Aws::S3::Model::RequestPayer::NOT_SET);
         return files;
     }
 
@@ -531,6 +540,14 @@ namespace tuplex {
         // fill in config
         config.region = credentials.default_region;
 
+        // Use modified strategy.
+        config.retryStrategy.reset(new ModifiedRetryStrategy());
+
+        // Use larger timeout values.
+        config.requestTimeoutMs = 60000; // 60s.
+        config.connectTimeoutMs = 10000; // 10s
+        config.httpRequestTimeoutMs = 0;
+
         if(lambdaMode) {
             if(config.region.empty())
                 config.region = Aws::Environment::GetEnv("AWS_REGION");
@@ -545,57 +562,37 @@ namespace tuplex {
                                                     credentials.secret_key.c_str(),
                                                     credentials.session_token.c_str());
 
-        // lambda Mode? just use default settings.
+        // Lambda mode, shortcut. Use default values.
         if(lambdaMode) {
-            // AWS SDK 1.10 introduces endpoint config
-#if (1 == AWS_SDK_VERSION_MAJOR && 10 > AWS_SDK_VERSION_MINOR)
-
-            _client = std::make_shared<S3::S3Client>(aws_credentials);
-#else
-            auto s3_endpoint_provider = Aws::MakeShared<Aws::S3::S3EndpointProvider>("TUPLEX");
-            _client = std::make_shared<S3::S3Client>(aws_credentials,
-                                                    s3_endpoint_provider);
-#endif
-            _client = std::make_shared<S3::S3Client>(aws_credentials);
+            config.caFile = "/etc/pki/tls/certs/ca-bundle.crt";
+            this->_config = config;
+            _client = std::make_shared<S3::S3Client>(config);
             _requestPayer = Aws::S3::Model::RequestPayer::requester;
 
             std::stringstream ss;
-            ss<<"S3 Client initialized using defaults";
+            ss<<"Initialized S3 client (on LAMBDA).";
             Logger::instance().defaultLogger().info(ss.str());
             return;
         }
 
-                // AWS SDK 1.10 introduces endpoint config
-#if (1 == AWS_SDK_VERSION_MAJOR && 10 > AWS_SDK_VERSION_MINOR)
+        auto payload_signing_policy = Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Always;
+        if(!ns.signPayloads)
+            payload_signing_policy = Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never;
 
-        _client = std::make_shared<S3::S3Client>(Auth::AWSCredentials(credentials.access_key.c_str(),
-                                                                      credentials.secret_key.c_str(),
-                                                                      credentials.session_token.c_str()), config);
-#else
-        auto s3_endpoint_provider = Aws::MakeShared<Aws::S3::S3EndpointProvider>("TUPLEX");
-        _client = std::make_shared<S3::S3Client>(Auth::AWSCredentials(credentials.access_key.c_str(),
-                                                                      credentials.secret_key.c_str(),
-                                                                      credentials.session_token.c_str()),
-                                                 s3_endpoint_provider, config);
-#endif
+        // AWS SDK 1.10 introduces endpoint config
+//#if (1 == AWS_SDK_VERSION_MAJOR && 10 > AWS_SDK_VERSION_MINOR)
+//
+//            _client = std::make_shared<S3::S3Client>(aws_credentials, config, payload_signing_policy, ns.useVirtualAddressing);
+//#else
+//            auto s3_endpoint_provider = Aws::MakeShared<Aws::S3::S3EndpointProvider>("TUPLEX");
+//            _client = std::make_shared<S3::S3Client>(aws_credentials, s3_endpoint_provider, config, payload_signing_policy, ns.useVirtualAddressing);
+//#endif
 
-//        if(lambdaMode) {
-//            // disable virtual host to prevent curl code 6 https://guihao-liang.github.io/2020/04/08/aws-virtual-address
-//            _client = std::make_shared<S3::S3Client>(aws_credentials,
-//                                                     config,
-//                                                     Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-//                                                     false);
-//
-//            // log out settings quickly (debug)
-//            std::stringstream ss;
-//            ss<<"S3 settings: REGION="<<config.region.c_str()<<" VERIFY_SSL="<<config.verifySSL<<" CAFILE="<<config.caFile<<" CAPATH="<<config.caPath;
-//            Logger::instance().defaultLogger().info(ss.str());
-//
-//        } else {
-//
-//        }
+        _client = std::make_shared<S3::S3Client>(aws_credentials, config, payload_signing_policy, ns.useVirtualAddressing);
+
+        // save config, so parameters are easily accessible.
+        _config = config;
     }
-
 
     void S3FileSystemImpl::activateReadCache(size_t max_cache_size) {
         _useS3ReadCache = true;
@@ -634,7 +631,9 @@ namespace tuplex {
         Aws::S3::Model::ListObjectsV2Request objects_request;
         objects_request.WithBucket(Aws::String(bucket.c_str()));
         objects_request.WithPrefix(Aws::String(prefix.c_str()));
-        objects_request.SetRequestPayer(requestPayer);
+
+        if(requestPayer != Aws::S3::Model::RequestPayer::NOT_SET)
+            objects_request.SetRequestPayer(requestPayer);
 
         // use delimiter if suffix is not yet exhausted
         if(suffix.length() > 0)
@@ -759,7 +758,7 @@ namespace tuplex {
         // find longest non pattern prefix to speed up walking queries
         auto prefix = findLongestPrefix(uri.s3Key());
         auto suffix = uri.s3Key().substr(prefix.length());
-        auto res = s3walkEx(client(), uri.s3Bucket(), prefix, suffix, lsRequests, callback, userData, _requestPayer);
+        auto res = s3walkEx(client(), uri.s3Bucket(), prefix, suffix, lsRequests, callback, userData, isAmazon() ? _requestPayer : Aws::S3::Model::RequestPayer::NOT_SET);
         _lsRequests += lsRequests;
         return res;
     }
@@ -1116,6 +1115,113 @@ namespace tuplex {
         }
 
         return content_length;
+    }
+
+    bool check_s3_connection(const std::string& endpoint, const std::string& access_key, const std::string& secret_access_key, const std::string& session_token) {
+        using namespace Aws;
+
+        auto aws_credentials = Auth::AWSCredentials(access_key.c_str(),
+                                                    secret_access_key.c_str(),
+                                                    session_token.c_str());
+
+        auto use_virtual_addressing = endpoint.find(".amazonaws.com") == std::string::npos;
+        auto payload_signing_policy = Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Always;
+        if(strStartsWith(endpoint, "http://"))
+            payload_signing_policy = Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never;
+
+        auto config = Aws::Client::ClientConfiguration();
+        config.retryStrategy = std::make_shared<ModifiedRetryStrategy>();
+        NetworkSettings ns;
+        ns.endpointOverride = endpoint;
+        ns.useVirtualAddressing = use_virtual_addressing;
+        ns.verifySSL = payload_signing_policy == Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never;
+        applyNetworkSettings(ns, config);
+        auto client = std::make_shared<S3::S3Client>(aws_credentials, config, payload_signing_policy, use_virtual_addressing);
+        if(!client)
+            return false;
+
+        // Create quick check with list buckets
+        auto outcome = client->ListBuckets();
+
+        // Different errors possible, some errors may be access/role denied.
+        if(outcome.IsSuccess())
+            return true;
+
+        // Curl error -> not ok.
+        if(std::string(outcome.GetError().GetMessage().c_str()).find("curlCode: 6, Couldn't resolve host name") != std::string::npos)
+            return false;
+
+        if(outcome.GetError().ShouldRetry())
+            return true;
+
+        return false;
+    }
+
+    bool s3RemoveObjects(Aws::S3::S3Client const& client, const std::vector<URI>& uris, std::ostream *os_err) {
+        if(uris.empty())
+            return true;
+
+        // Must be the same bucket.
+        std::unordered_set<std::string> unique_buckets;
+        for(const auto& uri : uris) {
+            unique_buckets.insert(uri.s3Bucket());
+        }
+
+        if(unique_buckets.size() != 1) {
+            if(os_err)
+                *os_err<<"S3 uris given do not belong to the same bucket, found buckets: "<<std::vector<std::string>{unique_buckets.begin(), unique_buckets.end()};
+            return false;
+        }
+
+        auto bucket = *unique_buckets.begin();
+
+        // now issue for each of the files an async delete request
+        // use https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
+        Aws::S3::Model::DeleteObjectsRequest del_request;
+        Aws::S3::Model::Delete del_keys;
+        Aws::Vector<Aws::S3::Model::ObjectIdentifier> objects_to_delete;
+        for(const auto& p: uris) {
+            Aws::S3::Model::ObjectIdentifier id;
+            assert(p.s3Bucket() == bucket);
+            id.WithKey(p.s3Key());
+            objects_to_delete.emplace_back(id);
+        }
+        del_keys.WithObjects(objects_to_delete);
+        del_request.WithBucket(bucket);
+        del_request.WithDelete(del_keys);
+
+        // perform request
+        auto outcome = client.DeleteObjects(del_request);
+        if(outcome.IsSuccess()) {
+            auto res = outcome.GetResult();
+            auto deleted_paths = res.GetDeleted();
+            // for(auto p : deleted_paths) {
+            //    logger.debug("removed s3://" + bucket + "/" + p.GetKey() + " from S3");
+            //}
+
+            // errors? print!
+            auto errs = res.GetErrors();
+            if(errs.empty())
+                return true;
+
+            for(auto err : errs) {
+                std::stringstream ss;
+                ss<<"Could not remove s3://"<<bucket<<"/"<<err.GetKey()<<" ("<<err.GetCode()<<"), "<<err.GetMessage();
+                if(os_err)
+                    *os_err<<ss.str();
+            }
+            return false;
+        } else {
+            std::stringstream ss;
+            auto err = outcome.GetError();
+            auto err_message = err.GetMessage();
+            auto err_name = err.GetExceptionName();
+            ss<<"failed to delete "<<pluralize(uris.size(), "uri")<<". Details: "
+              <<err_name<<", "<<err_message;
+            if(os_err)
+                *os_err<<ss.str();
+            return false;
+        }
     }
 
 }

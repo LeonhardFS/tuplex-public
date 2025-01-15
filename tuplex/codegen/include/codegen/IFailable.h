@@ -34,6 +34,7 @@ enum class CompileError {
     COMPILE_ERROR_ALL_SAMPLES_PRODUCE_NORMALCASEVIOLATION, // every sample ended up raising normal case violation at some if statement
     TYPE_ERROR_UNSUPPORTED_LOOP_TESTLIST_TYPE, // type of testlist in for loop (for->expression) not supported
     TYPE_ERROR_INCOMPATIBLE_TYPES_FOR_IS_COMPARISON, // incompatible types for `is` comparison (one of the types is not BOOLEAN/NULLVALUE).
+    TYPE_ERROR_GENERIC_DICT_SUBSCRIPT, // generic dict is subscripted [], but return type can't be determined.
 };
 
 /*!

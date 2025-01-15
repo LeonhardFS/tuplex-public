@@ -58,7 +58,7 @@ namespace tuplex {
 
         virtual bool isDataSource() override { return false; }
 
-        virtual Schema getInputSchema() const override { assert(parent()); return parent()->getOutputSchema(); }
+        virtual Schema getInputSchema() const override { if(!parent())return Schema::UNKNOWN; assert(parent()); return parent()->getOutputSchema(); }
 
         virtual Schema getOutputSchema() const override {
             // depending on format:

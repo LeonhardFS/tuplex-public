@@ -15,6 +15,7 @@
 
 // error codes
 #define WORKER_OK 0
+#define WORKER_CONTINUE -1
 #define WORKER_ERROR_INVALID_JSON_MESSAGE 100
 #define WORKER_ERROR_NO_PYTHON_HOME 101
 #define WORKER_ERROR_NO_TUPLEX_RUNTIME 102
@@ -30,6 +31,10 @@
 #define WORKER_ERROR_GLOBAL_INIT 112
 #define WORKER_ERROR_MISSING_PYTHON_CODE 113
 #define WORKER_ERROR_INCOMPATIBLE_AST_FORMAT 114
+#define WORKER_ERROR_ENVIRONMENT 115
+#define WORKER_ERROR_LAMBDA_CLIENT 116
+#define WORKER_ERROR_SPILL_FILE_SIZE_MISMATCH 117
+#define WORKER_ERROR_S3 118
 
 // give 32MB standard buf size, 8MB for exceptions and hash
 #define WORKER_DEFAULT_BUFFER_SIZE 33554432
@@ -69,12 +74,19 @@ namespace tuplex {
         std::atomic<int64_t> rowsOnInterpreterPathCount;
         std::atomic<int64_t> unresolvedRowsCount;
 
+        python::Type normalCaseType;
+        python::Type generalCaseType;
+
         void reset() {
             inputRowCount = 0;
             rowsOnNormalPathCount = 0;
             rowsOnGeneralPathCount = 0;
             rowsOnInterpreterPathCount = 0;
             unresolvedRowsCount = 0;
+
+            // reset types.
+            normalCaseType = python::Type::UNKNOWN;
+            generalCaseType = python::Type::UNKNOWN;
         }
 
         CodePathStatistics() {
@@ -131,6 +143,9 @@ namespace tuplex {
         bool useCompiledGeneralPath;
         bool useFilterPromotion;
         bool useConstantFolding;
+        bool sparsifyStructs;
+        bool simplifyLargeStructs;
+        size_t simplifyLargeStructsThreshold;
 
         bool opportuneGeneralPathCompilation; // <-- whether to kick off query optimization as early on as possible
         size_t s3PreCacheSize; // <-- whether to load S3 first and activate cache
@@ -153,10 +168,11 @@ namespace tuplex {
         useInterpreterOnly(false), useCompiledGeneralPath(true),
         opportuneGeneralPathCompilation(true),
         useFilterPromotion(false), useConstantFolding(false),
+        sparsifyStructs(false),
         s3PreCacheSize(0),
         exceptionSerializationMode(codegen::ExceptionSerializationMode::SERIALIZE_AS_GENERAL_CASE),
         specializationUnitSize(0),
-        samplingSize(0), useObjectFileAsInterchangeFormat(false) {
+        samplingSize(0), useObjectFileAsInterchangeFormat(false), simplifyLargeStructs(false), simplifyLargeStructsThreshold(0) {
 
             // set some options from defaults...
             auto opt = ContextOptions::defaults();
@@ -168,6 +184,7 @@ namespace tuplex {
             strataSize = 1;
             samplesPerStrata = 1;
             samplingSize = opt.AWS_LAMBDA_SAMPLE_MAX_DETECTION_MEMORY();
+            useOptimizer = opt.USE_LLVM_OPTIMIZER();
         }
 
         WorkerSettings(const WorkerSettings& other) : numThreads(other.numThreads),
@@ -182,6 +199,7 @@ namespace tuplex {
         useCompiledGeneralPath(other.useCompiledGeneralPath),
         useFilterPromotion(other.useFilterPromotion),
         useConstantFolding(other.useConstantFolding),
+        sparsifyStructs(other.sparsifyStructs),
         opportuneGeneralPathCompilation(other.opportuneGeneralPathCompilation),
         s3PreCacheSize(other.s3PreCacheSize),
         useOptimizer(other.useOptimizer),
@@ -192,7 +210,9 @@ namespace tuplex {
         samplesPerStrata(other.samplesPerStrata),
         specializationUnitSize(other.specializationUnitSize),
         samplingSize(other.samplingSize),
-        useObjectFileAsInterchangeFormat(other.useObjectFileAsInterchangeFormat) {}
+        useObjectFileAsInterchangeFormat(other.useObjectFileAsInterchangeFormat),
+        simplifyLargeStructs(other.simplifyLargeStructs),
+        simplifyLargeStructsThreshold(other.simplifyLargeStructsThreshold) {}
 
         inline bool operator == (const WorkerSettings& other) const {
 
@@ -227,6 +247,8 @@ namespace tuplex {
                 return false;
             if(useConstantFolding != other.useConstantFolding)
                 return false;
+            if(sparsifyStructs != other.sparsifyStructs)
+                return false;
             if(!double_eq(normalCaseThreshold, other.normalCaseThreshold))
                 return false;
             if(s3PreCacheSize != other.s3PreCacheSize)
@@ -245,6 +267,12 @@ namespace tuplex {
                 return false;
 
             if(useObjectFileAsInterchangeFormat != other.useObjectFileAsInterchangeFormat)
+                return false;
+
+            if(simplifyLargeStructs != other.simplifyLargeStructs)
+                return false;
+
+            if(simplifyLargeStructsThreshold != other.simplifyLargeStructsThreshold)
                 return false;
 
             return true;
@@ -275,6 +303,9 @@ namespace tuplex {
         os << "\"samplesPerStrata\":"<<ws.samplesPerStrata<<", ";
         os << "\"useFilterPromotion\":"<<boolToString(ws.useFilterPromotion)<<", ";
         os << "\"useConstantFolding\":"<<boolToString(ws.useConstantFolding)<<", ";
+        os << "\"sparsifyStructs\":"<<boolToString(ws.sparsifyStructs)<<", ";
+        os << "\"simplifyLargeStructs\":"<<boolToString(ws.simplifyLargeStructs)<<", ";
+        os << "\"simplifyLargeStructsThreshold\":"<<ws.simplifyLargeStructsThreshold<<", ";
         os << "\"normalCaseThreshold\":"<<ws.normalCaseThreshold<<", ";
         os << "\"exceptionSerializationMode\":"<<(int)ws.exceptionSerializationMode<<", ";
         os << "\"s3PreCacheSize\":"<<ws.s3PreCacheSize<<",";
@@ -302,7 +333,7 @@ namespace tuplex {
         WorkerApp(const WorkerApp& other) =  delete;
 
         // create WorkerApp from settings
-        WorkerApp(const WorkerSettings& settings) : WorkerApp() {
+        explicit WorkerApp(const WorkerSettings& settings) : WorkerApp() {
 
             // set default reader size to 16MB
             _readerBufferSize = 16 * 1024 * 1024;
@@ -327,11 +358,21 @@ namespace tuplex {
 
         bool isInitialized() const;
 
-        virtual int globalInit(bool skip=false);
+        virtual int globalInit(bool skip);
 
         inline std::string jsonStats() const {
             return _lastStat;
         }
+
+        inline messages::InvocationResponse response(bool consume=true) {
+            auto msg = _response;
+            if(consume) {
+                // reset response.
+                _response.Clear();
+            }
+            return msg;
+        }
+
     protected:
 
         std::vector<MessageStatistic> _statistics; // statistics per message
@@ -345,11 +386,24 @@ namespace tuplex {
             _timeDict[label] = value;
         }
 
+        inline bool use_self_invocation(const tuplex::messages::InvocationRequest & req) const {
+            if(req.has_stage() && req.stage().invocationcount_size() > 0) {
+                // If one non-zero, there's self invocation.
+                for(const auto& count: req.stage().invocationcount())
+                    if(count != 0)
+                        return true;
+            }
+            return false;
+        }
+
         inline int64_t inputOperatorID() const { return _inputOperatorID; }
 
         WorkerSettings settingsFromMessage(const tuplex::messages::InvocationRequest& req);
 
         virtual int processMessage(const tuplex::messages::InvocationRequest& req);
+
+        virtual int waitForInvoker() const;
+        virtual void fill_response_with_self_invocation_state(messages::InvocationResponse& response) const;
 
         /*!
          * fetch information about worker environment as single JSON message (right now LLVM information)
@@ -360,11 +414,17 @@ namespace tuplex {
         int processTransformStage(TransformStage* tstage,
                                           const std::shared_ptr<TransformStage::JITSymbols>& syms,
                                           const std::vector<FilePart>& input_parts,
-                                          const URI& output_uri);
+                                          const URI& output_uri,
+                                          bool noop=false);
 
         int processTransformStageInPythonMode(const TransformStage* tstage,
                                               const std::vector<FilePart>& input_parts,
-                                              const URI& output_uri);
+                                              const URI& output_uri,
+                                              bool noop=false);
+
+        int setup_transform_stage(const tuplex::messages::InvocationRequest& req,
+                                             std::shared_ptr<TransformStage>& tstage,
+                                             std::shared_ptr<TransformStage::JITSymbols>& syms);
 
         tuplex::messages::InvocationResponse executeTransformTask(const TransformStage* tstage);
 
@@ -387,6 +447,17 @@ namespace tuplex {
             return _output_uris; // return where data has been written to (for response)
         }
 
+        // Recursive invocation:
+        virtual int invokeRecursivelyAsync(int num_to_invoke,
+                                           const std::string& lambda_endpoint,
+                                           const messages::InvocationRequest& req_template,
+                                           const std::vector<std::vector<FilePart>>& parts);
+
+
+        // Recursive invocation end:
+
+
+
         // stage types
         python::Type _stage_normal_input_type;
         python::Type _stage_normal_output_type;
@@ -408,6 +479,14 @@ namespace tuplex {
         Aws::SDKOptions _aws_options;
 #endif
 
+        // The message response to return.
+        messages::InvocationResponse _response;
+
+        /*!
+         * fill response object with current data.
+         * @param response
+         */
+        virtual void fill_response_with_state(messages::InvocationResponse& response);
 
         void registerSymbolsFromStageWithCompilers(TransformStage& stage);
 
@@ -426,6 +505,10 @@ namespace tuplex {
             bool isExceptionBuf;
 
             SpillInfo() : path(""), num_rows(0), file_size(0), originalPartNo(0), isExceptionBuf(false) {}
+
+            SpillInfo(const SpillInfo& other) : path(other.path), num_rows(other.num_rows),
+            file_size(other.file_size), originalPartNo(other.originalPartNo), isExceptionBuf(other.isExceptionBuf) {}
+
         };
 
         // 1MB growth constant (avoid to frequent reallocs)
@@ -607,7 +690,11 @@ namespace tuplex {
          * thread-safe logger function
          * @return message handler
          */
-        virtual MessageHandler& logger() const { return _logger; }
+        MessageHandler& logger() const { return _logger; }
+
+        void setLoggerName(const std::string& name) {
+            _logger = Logger::instance().logger(name);
+        }
 
         /*!
          * spill buffer out to somewhere & reset counter
@@ -736,6 +823,28 @@ namespace tuplex {
         }
 
         void preCacheS3(const std::vector<FilePart>& parts);
+
+        bool adjust_environment(const std::unordered_map<std::string, std::string>& env);
+
+        inline std::string condense_err_message(std::string* processErrorMessages, int numCodes) {
+            assert(processErrorMessages);
+
+            std::stringstream ss;
+            for(unsigned i = 0; i < numCodes; ++i) {
+                auto err_msg = processErrorMessages[i];
+                trim(err_msg);
+                if(!err_msg.empty()) {
+                    if(numCodes > 1) {
+                        if(i == 0)
+                            ss<<"thread (main):\n";
+                        else
+                            ss<<"thread ("<<i<<"):\n";
+                    }
+                    ss<<err_msg<<std::endl;
+                }
+            }
+            return ss.str();
+        }
     };
 
 

@@ -86,11 +86,29 @@ namespace tuplex {
         return o;
     }
 
-    python::Type TraceRowObject::rowType(bool autoUpcast) const {
+    python::Type TraceRowObject::rowTypeAsTupleType(bool autoUpcast) const {
         // map each element!
         std::vector<python::Type> col_types;
         for(auto item : items)
             col_types.push_back(python::mapPythonClassToTuplexType(item, autoUpcast));
         return python::Type::makeTupleType(col_types);
+    }
+
+    python::Type TraceRowObject::rowType(bool autoUpcast) const {
+        std::vector<python::Type> col_types;
+        for(auto item : items)
+            col_types.push_back(python::mapPythonClassToTuplexType(item, autoUpcast));
+        return python::Type::makeRowType(col_types, columns);
+    }
+
+    Tuple TraceRowObject::rowAsTuple(bool autoUpcast) const {
+        std::vector<Field> elements;
+
+        for(auto item : items) {
+            Py_XINCREF(item);
+            elements.push_back(python::pythonToField(item, autoUpcast));
+        }
+
+        return Tuple::from_vector(elements);
     }
 }

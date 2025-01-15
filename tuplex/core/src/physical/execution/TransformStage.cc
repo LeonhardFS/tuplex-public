@@ -572,9 +572,14 @@ namespace tuplex {
         // construct return partition
         auto p = context.getDriver()->allocWritablePartition(total_serialized_size + sizeof(uint64_t), schema, -1, context.id());
         auto data_region = reinterpret_cast<char *>(p->lockWrite());
-        for(const auto& pr: unique_rows) {
+        for(auto& pr: unique_rows) {
             memcpy(data_region, pr.first, pr.second);
             data_region += pr.second;
+
+            // free memory (allocated in appendRow)
+            delete [] pr.first;
+            pr.first = nullptr;
+            pr.second = 0;
         }
 
         // free allocated memory of rows.
@@ -873,6 +878,13 @@ namespace tuplex {
                 // others, nothing todo. Partitions should have been invalidated...
             }
         }
+
+        // free memory
+        delete [] hash_maps;
+        delete [] null_buckets;
+        hash_maps = nullptr;
+        null_buckets = nullptr;
+
     }
 
     std::vector<std::string> TransformStage::csvHeader() const {
@@ -921,7 +933,7 @@ namespace tuplex {
         // load to LLVM module for IR formats.
         llvm::LLVMContext ctx;
         std::unique_ptr<llvm::Module> slow_path_mod;
-        switch(fastPathCodeFormat()) {
+        switch(slowPathCodeFormat()) {
             case codegen::CodeFormat::LLVM_IR_BITCODE: {
                 slow_path_mod = codegen::bitCodeToModule(ctx, slow_path_code);
                 if(!slow_path_mod)
@@ -945,9 +957,14 @@ namespace tuplex {
 
         // IR formats require compilation
         if(slow_path_mod) {
+
+            // change name to slow path
+            slow_path_mod->setModuleIdentifier("slow_path"); // <-- this is used within JITCompiler to identify same modules.
+            slow_path_mod->setSourceFileName("generated_slow_path"); // <-- could use original python file here.
+
             // annotate module if desired to trace execution flow!
             if(traceExecution)
-                codegen::annotateModuleWithInstructionPrint(*slow_path_mod);
+                codegen::annotateModuleWithInstructionPrint(*slow_path_mod, true);
 
             if(optimizer) {
                 if (slow_path_mod) {
@@ -1044,6 +1061,10 @@ namespace tuplex {
 
         // IR formats require compilation
         if(fast_path_mod) {
+            // change name to fast path
+            fast_path_mod->setModuleIdentifier("fast_path"); // <-- this is used within JITCompiler to identify same modules.
+            fast_path_mod->setSourceFileName("generated_fast_path"); // <-- could use original python file here.
+
 #ifndef NDEBUG
             auto func_names = codegen::extractFunctionNames(fast_path_mod.get());
             {
@@ -1063,10 +1084,22 @@ namespace tuplex {
                 // metrics.setLLVMOptimizationTime(llvm_optimization_time);
                 logger.info("TransformStage - Optimization via LLVM passes took " + std::to_string(llvm_optimization_time) + " ms");
 
+                bool output_fast_path = false;
+
 #ifndef NDEBUG
-                auto opt_code = codegen::moduleToString(*fast_path_mod);
-                stringToFile(URI("fastpath_transform_stage_" + std::to_string(number()) + "_optimized.txt"), opt_code);
+                output_fast_path = true;
 #endif
+                // debug env variable.
+                auto env_value = getEnv("TUPLEX_DEBUG_SAVE_IR_FILES");
+                if(!env_value.empty())
+                    output_fast_path = stringToBool(env_value);
+
+                if(output_fast_path) {
+                    auto debug_uri = URI("fastpath_transform_stage_" + std::to_string(number()) + "_optimized.txt");
+                    logger.info("Saving fast path (LLVM IR) to " + debug_uri.toString());
+                    auto opt_code = codegen::moduleToString(*fast_path_mod);
+                    stringToFile(debug_uri, opt_code);
+                }
 
                 timer.reset();
             }
@@ -1167,6 +1200,7 @@ namespace tuplex {
         // lazy compile
         if(!_syms)
             _syms = std::make_shared<JITSymbols>();
+        _syms.get()->reset();
 
         Timer timer;
         //JobMetrics& metrics = PhysicalStage::plan()->getContext().metrics();
@@ -1301,6 +1335,32 @@ namespace tuplex {
         return stage;
     }
 
+    void TransformStage::fill_schemas_into_protobuf(messages::TransformStage *msg) const {
+        msg->clear_inputcolumns();
+        for(const auto& col : _inputColumns)
+            msg->add_inputcolumns(col);
+
+        msg->clear_outputcolumns();
+        for(const auto& col : _outputColumns)
+            msg->add_outputcolumns(col);
+
+        msg->set_readschema(_generalCaseReadSchema.getRowType().desc());
+        msg->set_inputschema(_generalCaseInputSchema.getRowType().desc());
+        msg->set_outputschema(_generalCaseOutputSchema.getRowType().desc());
+        msg->set_normalcaseinputschema(_normalCaseInputSchema.getRowType().desc());
+        msg->set_normalcaseoutputschema(_normalCaseOutputSchema.getRowType().desc());
+
+        msg->set_numcolumns(inputColumnCount());
+
+        msg->clear_normalcaseinputcolumnstokeep();
+        for(auto idx : _normalCaseColumnsToKeep)
+            msg->add_normalcaseinputcolumnstokeep(idx);
+
+        msg->clear_generalcaseinputcolumnstokeep();
+        for(auto idx : _generalCaseColumnsToKeep)
+            msg->add_generalcaseinputcolumnstokeep(idx);
+    }
+
     std::unique_ptr<messages::TransformStage> TransformStage::to_protobuf() const {
         auto msg = std::make_unique<messages::TransformStage>();
 
@@ -1317,26 +1377,13 @@ namespace tuplex {
         msg->set_stageserializationmode(messages::SF_JSON);
 #endif
 
-        for(const auto& col : _inputColumns)
-            msg->add_inputcolumns(col);
-        for(const auto& col : _outputColumns)
-            msg->add_outputcolumns(col);
-        msg->set_readschema(_generalCaseReadSchema.getRowType().desc());
-        msg->set_inputschema(_generalCaseInputSchema.getRowType().desc());
-        msg->set_outputschema(_generalCaseOutputSchema.getRowType().desc());
-        msg->set_normalcaseinputschema(_normalCaseInputSchema.getRowType().desc());
-        msg->set_normalcaseoutputschema(_normalCaseOutputSchema.getRowType().desc());
+        fill_schemas_into_protobuf(msg.get());
+
         msg->set_outputdatasetid(_outputDataSetID);
         msg->set_inputnodeid(_inputNodeID);
         msg->set_inputmode(static_cast<messages::EndPointMode>(_inputMode));
         msg->set_outputmode(static_cast<messages::EndPointMode>(_outputMode));
 
-        msg->set_numcolumns(inputColumnCount());
-
-        for(auto idx : _normalCaseColumnsToKeep)
-            msg->add_normalcaseinputcolumnstokeep(idx);
-        for(auto idx : _generalCaseColumnsToKeep)
-            msg->add_generalcaseinputcolumnstokeep(idx);
 //        for(int i = 0; i < _inputColumnsToKeep.size(); ++i) {
 //            if(_inputColumnsToKeep[i])
 //                msg->add_inputcolumnstokeep(i);
@@ -1355,19 +1402,6 @@ namespace tuplex {
             msg->set_allocated_fastpath(_fastCodePath.to_protobuf());
         if(!_slowCodePath.empty())
             msg->set_allocated_slowpath(_slowCodePath.to_protobuf());
-//        if(_encodedData.size() > 0)
-//            msg->set_serialized_stage()
-//        msg->set_funcstagename(_funcStageName);
-//        msg->set_funcmemorywritecallbackname(_funcMemoryWriteCallbackName);
-//        msg->set_funcfilewritecallbackname(_funcFileWriteCallbackName);
-//        msg->set_funchashwritecallbackname(_funcHashWriteCallbackName);
-//        msg->set_funcexceptioncallback(_funcExceptionCallback);
-//        msg->set_funcinitstagename(_initStageFuncName);
-//        msg->set_funcreleasestagename(_releaseStageFuncName);
-//        msg->set_resolverowfunctionname(_resolveRowFunctionName);
-//        msg->set_resolverowwritecallbackname(_resolveRowWriteCallbackName);
-//        msg->set_resolverowexceptioncallbackname(_resolveRowExceptionCallbackName);
-//        msg->set_resolvehashcallbackname(_resolveHashCallbackName);
 
         msg->set_stagenumber(number());
 
@@ -1422,9 +1456,34 @@ namespace tuplex {
         llvm::LLVMContext ctx;
         auto mod = path.codeFormat == codegen::CodeFormat::LLVM_IR_BITCODE ? codegen::bitCodeToModule(ctx, path.code) : codegen::stringToModule(ctx, path.code);
 
-
         auto object_code = codegen::compileToObjectFile(*mod);
         path.code = std::string(object_code.begin(), object_code.end());
         path.codeFormat = codegen::CodeFormat::OBJECT_CODE;
+    }
+
+
+    void TransformStage::annotatePathWithTraceInformation(StageCodePath& path) {
+        // skip non-existing path
+        if(path.code.empty())
+            return;
+
+        // skip opt for non llvm IR formats
+        if(path.codeFormat != codegen::CodeFormat::LLVM_IR_BITCODE && path.codeFormat != codegen::CodeFormat::LLVM_IR)
+            return;
+
+        llvm::LLVMContext ctx;
+        auto mod = path.codeFormat == codegen::CodeFormat::LLVM_IR_BITCODE ? codegen::bitCodeToModule(ctx, path.code) : codegen::stringToModule(ctx, path.code);
+
+        codegen::annotateModuleWithInstructionPrint(*mod);
+
+        if(path.codeFormat == codegen::CodeFormat::LLVM_IR_BITCODE)
+            path.code = codegen::moduleToBitCodeString(*mod);
+        else
+            path.code = codegen::moduleToString(*mod);
+    }
+
+    void TransformStage::annotateModulesWithTraceInformation() {
+        annotatePathWithTraceInformation(_fastCodePath);
+        annotatePathWithTraceInformation(_slowCodePath);
     }
 }

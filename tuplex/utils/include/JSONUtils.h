@@ -11,11 +11,6 @@
 #ifndef TUPLEX_JSONUTILS_H
 #define TUPLEX_JSONUTILS_H
 
-#ifdef BUILD_WITH_AWS
-#include <aws/core/external/cjson/cJSON.h>
-#else
-#include <cJSON.h>
-#endif
 #include <vector>
 #include "Base.h"
 #include "Utils.h"
@@ -187,8 +182,10 @@ namespace tuplex {
                     ss<<indent<<kv.key<<": ";
                 }
 
-                if(!kv.alwaysPresent)
+                if(kv.presence == python::MAYBE_PRESENT)
                     ss<<" (maybe) ";
+                if(kv.presence == python::NOT_PRESENT)
+                    ss<<" (never) ";
 
                 // check what type the other stuff is
                 auto subtype = prettyPrintStructType(kv.valueType);

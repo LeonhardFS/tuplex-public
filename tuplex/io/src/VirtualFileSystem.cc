@@ -118,7 +118,7 @@ namespace tuplex {
         MessageHandler& logger = Logger::instance().logger("filesystem");
 
         if(fsRegistry.find("s3://") != fsRegistry.end()) {
-            auto s3fs = dynamic_cast<S3FileSystemImpl*>(fsRegistry["s3://"].get());
+            auto s3fs = std::dynamic_pointer_cast<S3FileSystemImpl>(fsRegistry["s3://"]);
 
             if(!s3fs) {
                 logger.warn("under s3:// a system not called S3FileSystemImpl is registered. Can't upload file " + local_path + " to " + s3_uri.toPath());

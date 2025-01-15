@@ -21,7 +21,7 @@
 
 #include "AWSCommon.h"
 #include "ContainerInfo.h"
-#include "RequestInfo.h"
+#include "../RequestInfo.h"
 #include <aws/core/Aws.h>
 #include <aws/core/utils/Outcome.h>
 #include <aws/core/utils/logging/DefaultLogSystem.h>
@@ -35,19 +35,44 @@
 #include <regex>
 
 namespace tuplex {
-     enum class LambdaErrorCode {
+    enum class LambdaStatusCode {
+        OK = 0,
         ERROR_UNKNOWN,
         ERROR_TIMEOUT,
         ERROR_RATE_LIMIT,
         ERROR_RETRIES_EXHAUSTED,
-        ERROR_TASK
+        ERROR_TASK,
+        ERROR_WORKER_DOWN_WITH_UNRECOVERABLE_SIGNAL,
+        ERROR_WORKER_DOWN_WITH_EXIT_CODE
     };
+
+    inline std::string lambda_status_to_string(LambdaStatusCode code) {
+        switch(code) {
+            case LambdaStatusCode::OK:
+                return "ok";
+            case LambdaStatusCode::ERROR_UNKNOWN:
+                return "error unknown";
+            case LambdaStatusCode::ERROR_TIMEOUT:
+                return "error timeout";
+            case LambdaStatusCode::ERROR_RATE_LIMIT:
+                return "error rate limit";
+            case LambdaStatusCode::ERROR_RETRIES_EXHAUSTED:
+                return "error retries exhausted";
+            case LambdaStatusCode::ERROR_TASK:
+                return "error task";
+            case LambdaStatusCode::ERROR_WORKER_DOWN_WITH_UNRECOVERABLE_SIGNAL:
+                return "error worker down with unrecoverable signal";
+            case LambdaStatusCode::ERROR_WORKER_DOWN_WITH_EXIT_CODE:
+                return "error worker down with exit code";
+        }
+        return "missing entry to decode LambdaStatusCode (value=" + std::to_string((int)code) + ")";
+    }
 
     struct AwsLambdaRequest {
         uniqueid_t id;
         messages::InvocationRequest body;
         size_t retriesLeft;
-        std::vector<LambdaErrorCode> retryErrors;
+        std::vector<LambdaStatusCode> retryErrors;
 
         AwsLambdaRequest() : id(getUniqueID()), retriesLeft(5) {}
 
@@ -90,6 +115,9 @@ namespace tuplex {
                                         const Aws::Lambda::Model::InvokeOutcome &aws_outcome,
                                         const std::shared_ptr<const Aws::Client::AsyncCallerContext> &ctx);
 
+
+        static LambdaStatusCode specialEventHappened(const std::string& log, const messages::InvocationResponse& response, std::string* event_message=nullptr);
+
     public:
         AwsLambdaInvocationService() = delete;
         AwsLambdaInvocationService(const std::shared_ptr<Aws::Lambda::LambdaClient>& client,
@@ -116,17 +144,18 @@ namespace tuplex {
             _mbms += billedDurationInMs * memorySizeInMb;
         }
 
-        void waitForRequests(size_t sleepInterval=100*1000);
+
+        void waitForRequests(std::chrono::duration<double, std::milli> sleep_interval=std::chrono::duration<double, std::milli>(100.0));
 
         bool invokeAsync(const AwsLambdaRequest& req,
                          std::function<void(const AwsLambdaRequest&, const AwsLambdaResponse&)> onSuccess=[](const AwsLambdaRequest& req, const AwsLambdaResponse& resp) {},
-                         std::function<void(const AwsLambdaRequest&, LambdaErrorCode, const std::string&)> onFailure=[](const AwsLambdaRequest& req,
-                                                                                                                        LambdaErrorCode err_code,
-                                                                                                                        const std::string& err_msg) {},
-                         std::function<void(const AwsLambdaRequest&, LambdaErrorCode, const std::string&, bool)> onRetry=[](const AwsLambdaRequest& req,
-                                                                                                                            LambdaErrorCode retry_code,
-                                                                                                                            const std::string& retry_reason,
-                                                                                                                            bool willDecreaseRetryCount) {});
+                         std::function<void(const AwsLambdaRequest&, LambdaStatusCode, const std::string&)> onFailure=[](const AwsLambdaRequest& req,
+                                                                                                                         LambdaStatusCode err_code,
+                                                                                                                         const std::string& err_msg) {},
+                         std::function<void(const AwsLambdaRequest&, LambdaStatusCode, const std::string&, bool)> onRetry=[](const AwsLambdaRequest& req,
+                                                                                                                             LambdaStatusCode retry_code,
+                                                                                                                             const std::string& retry_reason,
+                                                                                                                             bool willDecreaseRetryCount) {});
     };
 
     extern messages::InvocationResponse AwsParseRequestPayload(const Aws::Lambda::Model::InvokeResult &result);

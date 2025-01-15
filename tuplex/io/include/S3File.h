@@ -21,6 +21,25 @@
 
 namespace tuplex {
 
+    class s3exception : public std::runtime_error {
+    public:
+        s3exception(const std::string& msg, int line_no=-1, const std::string file="") : std::runtime_error(msg) {
+            if(line_no < 0)
+               _message = std::runtime_error::what();
+            else {
+                std::stringstream ss;
+                ss<<file<<":"<<line_no<<" "<<std::runtime_error::what();
+                _message = ss.str();
+            }
+        }
+
+        const char * what() const noexcept override {
+            return _message.c_str();
+        }
+    private:
+        std::string _message;
+    };
+
     // from https://github.com/TileDB-Inc/TileDB/blob/dev/tiledb/sm/filesystem/s3.cc
     /**
      * Return the exception name and error message from the given outcome object.
@@ -62,7 +81,6 @@ namespace tuplex {
             ss<<aws_message;
         else
             ss<<"Unknown AWS error code";
-
         return ss.str();
     }
 
@@ -175,19 +193,22 @@ namespace tuplex {
 //#endif
 
         template <typename R, typename E>
-        std::string outcome_error_message(const Aws::Utils::Outcome<R, E>& outcome, const std::string& uri="") const {
+        std::string outcome_error_message(const Aws::Utils::Outcome<R, E>& outcome,
+                                          const Aws::Client::ClientConfiguration& config,
+                                          const std::string& uri="") const {
             auto s3_details = format_s3_outcome_error_message(outcome, uri);
 
             std::stringstream ss;
             ss<<"S3 Filesystem error for uri='"<<uri<<"':\n"
                <<"\tbuf pos: "<<_bufferPosition
-               <<"\n\tbuf size: "<<_bufferSize
-               <<"\n\tbuf length: "<<_bufferLength
-               <<"\n\tfile pos: "<<_filePosition
-               <<"\n\tpart no: "<<_partNumber;
+               <<"\tbuf size: "<<_bufferSize
+               <<"\tbuf length: "<<_bufferLength
+               <<"\tfile pos: "<<_filePosition
+               <<"\tpart no: "<<_partNumber;
             if(_partNumber > 0)
-                ss<<"\n\tmultipart id: "<<_uploadID;
-            ss<<"\ndetails:\n"<<s3_details;
+                ss<<"\tmultipart id: "<<_uploadID;
+            ss<<"\ndetails: "<<s3_details;
+            ss<<config;
             return ss.str();
         }
     };

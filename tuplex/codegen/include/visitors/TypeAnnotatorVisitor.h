@@ -34,7 +34,7 @@ namespace tuplex {
         void deopt_tables();
 
         void resolveNameConflicts(const std::unordered_map<std::string, python::Type>& table);
-        void resolveNamesForIfStatement(std::unordered_map<std::string, python::Type>& if_table,
+        bool resolveNamesForIfStatement(std::unordered_map<std::string, python::Type>& if_table,
                                         std::unordered_map<std::string, python::Type>& else_table);
 
         inline python::Type lookupType(const std::string& name ) {

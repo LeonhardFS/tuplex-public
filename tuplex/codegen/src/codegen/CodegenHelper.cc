@@ -16,14 +16,20 @@
 #include <llvm/Target/TargetOptions.h>
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Support/TargetSelect.h>
+#if LLVM_VERSION_MAJOR < 14
 #include <llvm/Support/TargetRegistry.h>
+#else
+#include <llvm/MC/TargetRegistry.h>
+#endif
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/IRReader/IRReader.h>
+#if LLVM_VERSION_MAJOR < 17
 #include <llvm/MC/SubtargetFeature.h>
+#endif
 #include <llvm/IR/CFG.h> // to iterate over predecessors/successors easily
 #include <codegen/LLVMEnvironment.h>
 #include <codegen/LambdaFunction.h>
@@ -40,9 +46,22 @@
 #include <llvm/IR/Constant.h>
 #include <llvm/Support/CodeGen.h>
 
+// llvm 10 refactored sys into Host
+#if LLVM_VERSION_MAJOR > 9
+#include <llvm/Support/Host.h>
+#endif
+
+#include <llvm/CodeGen/MachineModuleInfo.h>
+#include <llvm/Target/TargetLoweringObjectFile.h>
+
+#include <llvm/Support/ManagedStatic.h>
+
+#ifdef USE_YYJSON_INSTEAD
+#include <yyjson.h>
+#endif
+
 namespace tuplex {
     namespace codegen {
-
         // global var because often only references are passed around.
         // CompilePolicy DEFAULT_COMPILE_POLICY = CompilePolicy();
 
@@ -53,8 +72,19 @@ namespace tuplex {
                 llvm::InitializeNativeTarget();
                 llvm::InitializeNativeTargetAsmPrinter();
                 llvm::InitializeNativeTargetAsmParser();
+
+//                llvm::InitializeAllTargetInfos();
+//                llvm::InitializeAllTargets();
+//                llvm::InitializeAllTargetMCs();
+//                llvm::InitializeAllAsmParsers();
+//                llvm::InitializeAllAsmPrinters();
+
                 llvmInitialized = true;
             }
+        }
+
+        bool is_llvm_initialized() {
+            return llvmInitialized;
         }
 
         void shutdownLLVM() {
@@ -62,8 +92,109 @@ namespace tuplex {
             llvmInitialized = false;
         }
 
+        // IRBuilder definitions
+        IRBuilder::IRBuilder(llvm::BasicBlock *bb) {
+            _llvm_builder = std::make_unique<llvm::IRBuilder<>>(bb);
+        }
+
+        IRBuilder::IRBuilder(llvm::IRBuilder<> &llvm_builder) {
+            _llvm_builder = std::make_unique<llvm::IRBuilder<>>(llvm_builder.getContext());
+            _llvm_builder->SetInsertPoint(llvm_builder.GetInsertBlock(), llvm_builder.GetInsertPoint());
+        }
+
+        IRBuilder::IRBuilder(const IRBuilder &other) : _llvm_builder(nullptr) {
+            if(other._llvm_builder) {
+                // cf. https://reviews.llvm.org/D74693
+                auto& ctx = other._llvm_builder->getContext();
+                const llvm::DILocation *DL = nullptr;
+                _llvm_builder.reset(new llvm::IRBuilder<>(ctx));
+                llvm::Instruction* InsertBefore = nullptr;
+                auto InsertBB = other._llvm_builder->GetInsertBlock();
+                if(InsertBB && !InsertBB->empty()) {
+                    auto& inst = *InsertBB->getFirstInsertionPt();
+                    InsertBefore = &inst;
+                }
+                if(InsertBefore)
+                    _llvm_builder->SetInsertPoint(InsertBefore);
+                else if(InsertBB)
+                    _llvm_builder->SetInsertPoint(InsertBB);
+                _llvm_builder->SetCurrentDebugLocation(DL);
+            }
+        }
+
+        IRBuilder::IRBuilder(llvm::LLVMContext& ctx) {
+            _llvm_builder = std::make_unique<llvm::IRBuilder<>>(ctx);
+        }
+
+        IRBuilder::~IRBuilder() {
+            if(_llvm_builder)
+                _llvm_builder->ClearInsertionPoint();
+        }
+
+        IRBuilder IRBuilder::firstBlockBuilder(bool insertAtEnd) const {
+            // create new IRBuilder for first block
+
+            // empty builder? I.e., no basicblock?
+            if(!_llvm_builder)
+                return IRBuilder();
+
+            assert(_llvm_builder->GetInsertBlock());
+            assert(_llvm_builder->GetInsertBlock()->getParent());
+
+            // function shouldn't be empty when this function here is called!
+            assert(!_llvm_builder->GetInsertBlock()->getParent()->empty());
+
+            // create new builder to avoid memory issues
+            auto b = std::make_unique<llvm::IRBuilder<>>(_llvm_builder->GetInsertBlock());
+
+            // special case: no instructions yet present?
+            auto func = b->GetInsertBlock()->getParent();
+            auto is_empty = b->GetInsertBlock()->getParent()->empty();
+            //auto num_blocks = func->getBasicBlockList().size();
+            auto firstBlock = &func->getEntryBlock();
+
+            if(firstBlock->empty())
+                return IRBuilder(firstBlock);
+
+            if(!insertAtEnd) {
+                auto it = firstBlock->getFirstInsertionPt();
+                auto inst_name = it->getName().str();
+                return IRBuilder(it);
+            } else {
+                // create inserter unless it's a branch instruction
+                auto it = firstBlock->getFirstInsertionPt();
+                auto lastit = it;
+                while(it != firstBlock->end() && !llvm::isa<llvm::BranchInst>(*it)) {
+                    lastit = it;
+                    ++it;
+                }
+                return IRBuilder(lastit);
+            }
+        }
+
+        void IRBuilder::initFromIterator(llvm::BasicBlock::iterator it) {
+            if(it->getParent()->empty())
+                _llvm_builder = std::make_unique<llvm::IRBuilder<>>(it->getParent());
+            else {
+                auto& ctx = it->getParent()->getContext();
+                _llvm_builder = std::make_unique<llvm::IRBuilder<>>(ctx);
+
+                // instruction & basic block
+                auto bb = it->getParent();
+
+                auto pt = llvm::IRBuilderBase::InsertPoint(bb, it);
+                _llvm_builder->restoreIP(pt);
+            }
+        }
+
+        IRBuilder::IRBuilder(const llvm::IRBuilder<> &llvm_builder) : IRBuilder(llvm_builder.GetInsertPoint()) {}
+
+        IRBuilder::IRBuilder(llvm::BasicBlock::iterator it) {
+            initFromIterator(it);
+        }
+
         // Clang doesn't work well with ASAN, disable here container overflow.
-        __attribute__((no_sanitize_address)) std::string getLLVMFeatureStr() {
+        ATTRIBUTE_NO_SANITIZE_ADDRESS std::string getLLVMFeatureStr() {
             using namespace llvm;
             SubtargetFeatures Features;
 
@@ -90,7 +221,7 @@ namespace tuplex {
             auto triple = sys::getProcessTriple();//sys::getDefaultTargetTriple();
             std::string error;
             auto theTarget = llvm::TargetRegistry::lookupTarget(triple, error);
-            std::string CPUStr = sys::getHostCPUName();
+            std::string CPUStr = sys::getHostCPUName().str();
 
             //logger.info("using LLVM for target triple: " + triple + " target: " + theTarget->getName() + " CPU: " + CPUStr);
 
@@ -131,9 +262,12 @@ namespace tuplex {
 #if LLVM_VERSION_MAJOR == 9
             target_machine->addPassesToEmitFile(pass_manager, asm_sstream, nullptr,
                                                 llvm::TargetMachine::CGFT_AssemblyFile);
-#else
+#elif LLVM_VERSION_MAJOR < 9
             target_machine->addPassesToEmitFile(pass_manager, asm_sstream,
                                                 llvm::TargetMachine::CGFT_AssemblyFile);
+#else
+            target_machine->addPassesToEmitFile(pass_manager, asm_sstream, nullptr,
+                                                llvm::CodeGenFileType::CGFT_AssemblyFile);
 #endif
 
             pass_manager.run(*module);
@@ -184,7 +318,7 @@ namespace tuplex {
             using namespace llvm;
 
             // Note: check llvm11 for parallel codegen https://llvm.org/doxygen/ParallelCG_8cpp_source.html
-            auto res = parseBitcodeFile(llvm::MemoryBufferRef(llvm::StringRef((char*)buf, bufSize), "<module>"), context);
+            auto res = parseBitcodeFile(llvm::MemoryBufferRef(llvm::StringRef((const char*)buf, bufSize), "<module>"), context);
 
             // check if any errors occurred during module parsing
             if (!res) {
@@ -193,11 +327,11 @@ namespace tuplex {
                 std::string err_msg;
                 raw_string_ostream os(err_msg);
 #if LLVM_VERSION_MAJOR >= 9
-		os<<err; 
+		os<<err;
 #else
 		err_msg = toString(std::move(err));
 #endif
-		
+
 		os.flush();
                 Logger::instance().logger("LLVM Backend").error("could not parse module from bitcode");
                 Logger::instance().logger("LLVM Backend").error(err_msg);
@@ -222,7 +356,7 @@ namespace tuplex {
             return mod;
         }
 
-        llvm::Value* upCast(llvm::IRBuilder<> &builder, llvm::Value *val, llvm::Type *destType) {
+        llvm::Value* upCast(const codegen::IRBuilder& builder, llvm::Value *val, llvm::Type *destType) {
             // check if types are the same, then just return val
             if (val->getType() == destType)
                 return val;
@@ -247,7 +381,7 @@ namespace tuplex {
         }
 
         llvm::Value *
-        dictionaryKey(llvm::LLVMContext &ctx, llvm::Module *mod, llvm::IRBuilder<> &builder, llvm::Value *key_value,
+        dictionaryKey(llvm::LLVMContext &ctx, llvm::Module *mod, const codegen::IRBuilder &builder, llvm::Value *key_value,
                       python::Type keyType, python::Type valType) {
 
             // optimized types? deoptimize!
@@ -309,15 +443,15 @@ namespace tuplex {
         // TODO: Do we need to use lfb to add checks?
         SerializableValue
         dictionaryKeyCast(llvm::LLVMContext &ctx, llvm::Module* mod,
-                          llvm::IRBuilder<> &builder, llvm::Value *val, python::Type keyType) {
+                          const codegen::IRBuilder& builder, llvm::Value *val, python::Type keyType) {
             // type chars
             auto s_char = llvm::Constant::getIntegerValue(llvm::Type::getInt8Ty(ctx), llvm::APInt(8, 's'));
             auto b_char = llvm::Constant::getIntegerValue(llvm::Type::getInt8Ty(ctx), llvm::APInt(8, 'b'));
             auto i_char = llvm::Constant::getIntegerValue(llvm::Type::getInt8Ty(ctx), llvm::APInt(8, 'i'));
             auto f_char = llvm::Constant::getIntegerValue(llvm::Type::getInt8Ty(ctx), llvm::APInt(8, 'f'));
 
-            auto typechar = builder.CreateLoad(val);
-            auto keystr = builder.CreateGEP(val, llvm::Constant::getIntegerValue(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, 2)));
+            auto typechar = builder.CreateLoad(builder.getInt8Ty(), val);
+            auto keystr = builder.MovePtrByBytes(val, llvm::Constant::getIntegerValue(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, 2)));
             auto keylen = builder.CreateCall(strlen_prototype(ctx, mod), {keystr});
             if(keyType == python::Type::STRING) {
 //                lfb.addException(builder, ExceptionCode::UNKNOWN, builder.CreateICmpEQ(typechar, s_char));
@@ -326,39 +460,39 @@ namespace tuplex {
 //                lfb.addException(builder, ExceptionCode::UNKNOWN, builder.CreateICmpEQ(typechar, b_char));
                 auto value = builder.CreateAlloca(llvm::Type::getInt8Ty(ctx), 0, nullptr);
                 auto strBegin = keystr;
-                auto strEnd = builder.CreateGEP(strBegin, keylen);
+                auto strEnd = builder.MovePtrByBytes(strBegin, keylen);
                 auto resCode = builder.CreateCall(fastatob_prototype(ctx, mod), {strBegin, strEnd, value});
                 auto cond = builder.CreateICmpNE(resCode, llvm::Constant::getIntegerValue(llvm::Type::getInt32Ty(ctx),
                                                                                           llvm::APInt(32,
                                                                                                       ecToI32(ExceptionCode::SUCCESS))));
 //                lfb.addException(builder, ExceptionCode::VALUEERROR, cond);
-                return SerializableValue(builder.CreateLoad(value),
+                return SerializableValue(builder.CreateZExtOrTrunc(builder.CreateLoad(llvm::Type::getInt8Ty(ctx), value), builder.getInt64Ty()),
                         llvm::Constant::getIntegerValue(llvm::Type::getInt64Ty(ctx),
                                 llvm::APInt(64, sizeof(int64_t))));
             } else if (keyType == python::Type::I64) {
 //                lfb.addException(builder, ExceptionCode::UNKNOWN, builder.CreateICmpEQ(typechar, i_char));
                 auto value = builder.CreateAlloca(llvm::Type::getInt64Ty(ctx), 0, nullptr);
                 auto strBegin = keystr;
-                auto strEnd = builder.CreateGEP(strBegin, keylen);
+                auto strEnd = builder.MovePtrByBytes(strBegin, keylen);
                 auto resCode = builder.CreateCall(fastatoi_prototype(ctx, mod), {strBegin, strEnd, value});
                 auto cond = builder.CreateICmpNE(resCode, llvm::Constant::getIntegerValue(llvm::Type::getInt32Ty(ctx),
                                                                                           llvm::APInt(32,
                                                                                                       ecToI32(ExceptionCode::SUCCESS))));
 //                lfb.addException(builder, ExceptionCode::VALUEERROR, cond);
-                return SerializableValue(builder.CreateLoad(value),
+                return SerializableValue(builder.CreateLoad(llvm::Type::getInt64Ty(ctx), value),
                                          llvm::Constant::getIntegerValue(llvm::Type::getInt64Ty(ctx),
                                                                          llvm::APInt(64, sizeof(int64_t))));
             } else if (keyType == python::Type::F64) {
 //                lfb.addException(builder, ExceptionCode::UNKNOWN, builder.CreateICmpEQ(typechar, f_char));
                 auto value = builder.CreateAlloca(llvm::Type::getDoubleTy(ctx), 0, nullptr);
                 auto strBegin = keystr;
-                auto strEnd = builder.CreateGEP(strBegin, keylen);
+                auto strEnd = builder.MovePtrByBytes(strBegin, keylen);
                 auto resCode = builder.CreateCall(fastatod_prototype(ctx, mod), {strBegin, strEnd, value});
                 auto cond = builder.CreateICmpNE(resCode, llvm::Constant::getIntegerValue(llvm::Type::getInt32Ty(ctx),
                                                                                           llvm::APInt(32,
                                                                                                       ecToI32(ExceptionCode::SUCCESS))));
 //                lfb.addException(builder, ExceptionCode::VALUEERROR, cond);
-                return SerializableValue(builder.CreateLoad(value),
+                return SerializableValue(builder.CreateLoad(llvm::Type::getDoubleTy(ctx), value),
                                          llvm::Constant::getIntegerValue(llvm::Type::getInt64Ty(ctx),
                                                                          llvm::APInt(64, sizeof(double))));
             } else {
@@ -419,20 +553,6 @@ namespace tuplex {
             InstructionCounts inst_count(*name);
             inst_count.runOnModule(*mod);
             return inst_count.formattedStats(include_detailed_counts);
-        }
-
-        std::string globalVariableToString(llvm::Value* value) {
-            using namespace llvm;
-            assert(value);
-
-            if(!value || !dyn_cast<ConstantExpr>(value))
-                throw std::runtime_error("value is not a constant expression");
-            auto *CE = dyn_cast<ConstantExpr>(value);
-            StringRef Str;
-            if(getConstantStringInfo(CE, Str)) {
-                return Str.str();
-            }
-            return "";
         }
 
 
@@ -503,8 +623,32 @@ namespace tuplex {
                 Buffer.push_back(0);
         }
 
+        bool validateModule(const llvm::Module& mod) {
+            // check if module is ok, if not print out issues & throw exception
+
+            // run verify pass on module and print out any errors, before attempting to compile it
+            std::string moduleErrors = "";
+            llvm::raw_string_ostream os(moduleErrors);
+            if(llvm::verifyModule(mod, &os)) {
+                std::stringstream errStream;
+                os.flush();
+                auto llvmIR = moduleToString(mod);
+
+                errStream<<"could not verify module:\n>>>>>>>>>>>>>>>>>\n"<<core::withLineNumbers(llvmIR)<<"\n<<<<<<<<<<<<<<<<<\n";
+                errStream<<moduleErrors;
+
+                throw std::runtime_error("failed to verify module (code: " + std::to_string(llvm::inconvertibleErrorCode().value()) + "), details: " + errStream.str());
+            }
+            return true;
+        }
+
         uint8_t* moduleToBitCode(const llvm::Module& module, size_t* bufSize) {
             using namespace llvm;
+
+            // in debug mode validate module first before writing it out
+#ifndef NDEBUG
+            validateModule(module);
+#endif
 
             SmallVector<char, 0> Buffer;
             Buffer.reserve(256 * 1014); // 256K
@@ -546,24 +690,28 @@ namespace tuplex {
         std::string moduleToBitCodeString(const llvm::Module& module) {
             using namespace llvm;
 
-            // in debug mode, verify module first
+            // in debug mode validate module first before writing it out
 #ifndef NDEBUG
+            validateModule(module);
+#endif
+
+            // iterate over functions
             {
-                // run verify pass on module and print out any errors, before attempting to compile it
-                std::string moduleErrors;
-                llvm::raw_string_ostream os(moduleErrors);
-                if (verifyModule(module, &os)) {
-                    os.flush();
-                    auto llvmIR = moduleToString(module);
-                    Logger::instance().logger("LLVM Backend").error("could not verify module:\n>>>>>>>>>>>>>>>>>\n"
-                                                                    + core::withLineNumbers(llvmIR)
-                                                                    + "\n<<<<<<<<<<<<<<<<<");
-                    Logger::instance().logger("LLVM Backend").error(moduleErrors);
-                    return "";
+                std::stringstream ss;
+                for(auto& func : module) {
+                    ss<<"function: "<<func.getName().str()<<std::endl;
+
+                    // type
+                    auto type = func.getType();
+                    ss<<"type: "<<type<<std::endl;
                 }
+
+                Logger::instance().logger("LLVM Backend").debug(ss.str());
             }
 
-#endif
+
+            // cf. https://github.com/llvm-mirror/llvm/blob/master/tools/verify-uselistorder/verify-uselistorder.cpp#L179
+            // to check that everything is mappable?
 
             // simple conversion using LLVM builtins...
             std::string out_str;
@@ -607,7 +755,6 @@ namespace tuplex {
             // return bc_str;
         }
 
-
         inline llvm::Type* i8ptrType(llvm::LLVMContext& ctx) {
             return llvm::Type::getInt8PtrTy(ctx, 0);
         }
@@ -630,8 +777,8 @@ namespace tuplex {
             return llvm::Constant::getIntegerValue(llvm::Type::getInt1Ty(ctx), llvm::APInt(64, value));
         }
 
-        llvm::Value* stringCompare(llvm::IRBuilder<> &builder, llvm::Value *ptr, const std::string &str,
-                                                bool include_zero=false) {
+        llvm::Value* stringCompare(const IRBuilder& builder, llvm::Value *ptr, const std::string &str,
+                                   bool include_zero=false) {
 
             auto& ctx = builder.getContext();
 
@@ -650,7 +797,7 @@ namespace tuplex {
                 // create str const by extracting string data
                 str_const = *((int64_t *) (str.c_str() + pos));
 
-                auto val = builder.CreateLoad(builder.CreatePointerCast(builder.CreateGEP(ptr, i32Const(ctx, pos)), i64ptrType(ctx)));
+                auto val = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(builder.MovePtrByBytes(ptr,  pos), i64ptrType(ctx)));
 
                 auto comp = builder.CreateICmpEQ(val, i64Const(ctx, str_const));
                 cond = builder.CreateAnd(cond, comp);
@@ -664,7 +811,7 @@ namespace tuplex {
 
                 // create str const by extracting string data
                 str_const = *((uint32_t *) (str.c_str() + pos));
-                auto val = builder.CreateLoad(builder.CreatePointerCast(builder.CreateGEP(ptr, i32Const(ctx, pos)), i32ptrType(ctx)));
+                auto val = builder.CreateLoad(builder.getInt32Ty(), builder.CreatePointerCast(builder.MovePtrByBytes(ptr,  pos), i32ptrType(ctx)));
                 auto comp = builder.CreateICmpEQ(val, i32Const(ctx, str_const));
                 cond = builder.CreateAnd(cond, comp);
 
@@ -675,7 +822,7 @@ namespace tuplex {
             // only 0, 1, 2, 3 bytes left.
             // do 8 bit compares
             for (int i = 0; i < numBytes; ++i) {
-                auto val = builder.CreateLoad(builder.CreateGEP(ptr, i32Const(ctx, pos)));
+                auto val = builder.CreateLoad(builder.getInt8Ty(), builder.MovePtrByBytes(ptr,  pos));
                 auto comp = builder.CreateICmpEQ(val, i8Const(ctx, str.c_str()[pos]));
                 cond = builder.CreateAnd(cond, comp);
                 pos++;
@@ -731,7 +878,7 @@ namespace tuplex {
             return nullptr;
         }
 
-        void annotateModuleWithInstructionPrint(llvm::Module& mod) {
+        void annotateModuleWithInstructionPrint(llvm::Module& mod, bool print_values) {
 
             auto printf_func = codegen::printf_prototype(mod.getContext(), &mod);
 
@@ -754,11 +901,8 @@ namespace tuplex {
                 }
             }
 
-
             // go over all functions in mod
             for(auto& func : mod) {
-                // std::cout<<"Annotating "<<func.getName().str()<<std::endl;
-
                 // go over blocks
                 size_t num_blocks = 0;
                 size_t num_instructions = 0;
@@ -769,6 +913,11 @@ namespace tuplex {
                     for(auto& inst : bb) {
                         // only call printf IFF not a branching instruction and not a ret instruction
                         auto inst_ptr = &inst;
+
+                        // inst not found in names? -> skip!
+                        if(names.end() == names.find(inst_ptr))
+                            continue;
+
                         auto inst_name = names.at(inst_ptr);
                         if(!llvm::isa<llvm::BranchInst>(inst_ptr) && !llvm::isa<llvm::ReturnInst>(inst_ptr) && !llvm::isa<llvm::PHINode>(inst_ptr)) {
                             llvm::IRBuilder<> builder(inst_ptr);
@@ -781,16 +930,63 @@ namespace tuplex {
                                 printed_enter = true;
                             }
 
+                            // value trace format
+                            // bb= : %19 = load i64, i64* %exceptionCode : %19 = 42
 
-                            llvm::Value *sFormat = builder.CreateGlobalStringPtr("  %s\n");
-                            builder.CreateCall(printf_func, {sFormat, sConst});
+                            if(print_values) {
+
+                                llvm::Value* value_to_print = nullptr;
+                                std::string format = "bb=" + bb.getName().str() + " : " + inst_name;
+
+                                if(!inst_ptr->getNextNode()) {
+                                    // nothing to do, else print value as well.
+                                } else {
+                                    builder.SetInsertPoint(inst_ptr->getNextNode());
+
+                                    auto inst_number = splitToArray(inst_name, '=').front();
+                                    trim(inst_number);
+
+                                    if(inst_ptr->hasValueHandle()) {
+                                        // check what type of value it is and adjust printing accordingly
+                                        if(inst.getType() == builder.getInt8Ty()) {
+                                            static_assert(sizeof(int32_t) == 4);
+                                            value_to_print = builder.CreateZExtOrTrunc(inst_ptr, builder.getInt32Ty());
+                                            format += " : [i8] " + inst_number + " = %d";
+                                        } else if(inst.getType() == builder.getInt16Ty()) {
+                                            static_assert(sizeof(int32_t) == 4);
+                                            value_to_print = builder.CreateZExtOrTrunc(inst_ptr, builder.getInt32Ty());
+                                            format += " : [i16] " + inst_number + " = %d";
+                                        } else if(inst.getType() == builder.getInt32Ty()) {
+                                            value_to_print = inst_ptr;
+                                            format += " : [i32] " + inst_number + " = %d";
+                                        } else if(inst.getType() == builder.getInt64Ty()) {
+                                            value_to_print = inst_ptr;
+                                            format += " : [i64] " + inst_number + " = %" PRId64;
+                                        } else if(inst.getType()->isPointerTy()) {
+                                            value_to_print = inst_ptr;
+                                            format += " : [ptr] " + inst_number + " = %p";
+                                        }
+                                    }
+                                }
+
+                                // call func
+                                llvm::Value *sFormat = builder.CreateGlobalStringPtr(format + "\n");
+                                std::vector<llvm::Value*> llvm_args{sFormat};
+                                if(value_to_print)
+                                    llvm_args.push_back(value_to_print);
+                                builder.CreateCall(printf_func, llvm_args);
+                            } else {
+                                // Trace format:
+                                llvm::Value *sFormat = builder.CreateGlobalStringPtr("  %s\n");
+                                builder.CreateCall(printf_func, {sFormat, sConst});
+                            }
+
                             num_instructions++;
                         }
                     }
 
                     num_blocks++;
                 }
-                // std::cout<<"Annotated "<<pluralize(num_blocks, "basic block")<<", "<<pluralize(num_instructions, "instruction")<<std::endl;
             }
         }
 
@@ -798,6 +994,11 @@ namespace tuplex {
         std::vector<uint8_t> compileToObjectFile(llvm::Module& mod,
                                                  const std::string& target_triple,
                                                  const std::string& cpu) {
+
+            // -O2.
+            auto OLvl = llvm::CodeGenOpt::Default;
+            auto NoVerify = true;
+
             std::string error;
             auto target = llvm::TargetRegistry::lookupTarget(target_triple, error);
 
@@ -814,8 +1015,11 @@ namespace tuplex {
             }
 
             llvm::TargetOptions opt;
+#if LLVM_VERSION_MAJOR == 9
             auto RM = llvm::Optional<llvm::Reloc::Model>();
-
+#else
+            auto RM = std::optional<llvm::Reloc::Model>(llvm::Reloc::Model());
+#endif
             // use position independent code
             RM = llvm::Reloc::PIC_;
             auto TargetMachine = target->createTargetMachine(target_triple, CPU, Features, opt, RM);
@@ -823,20 +1027,37 @@ namespace tuplex {
             if(!TargetMachine)
                 throw std::runtime_error("failed to create target machine for CPU=" + CPU + ", features="=Features);
 
+            llvm::LLVMTargetMachine& LLVMTM = static_cast<llvm::LLVMTargetMachine&>(*TargetMachine);
+
+#if LLVM_VERSION_MAJOR == 9
+            llvm::MachineModuleInfo* MMIWP = nullptr;
+#else
+            llvm::MachineModuleInfoWrapperPass *MMIWP = new llvm::MachineModuleInfoWrapperPass(&LLVMTM);
+            const_cast<llvm::TargetLoweringObjectFile *>(LLVMTM.getObjFileLowering())->Initialize(MMIWP->getMMI().getContext(), *TargetMachine);
+#endif
             // check: https://llvm.org/docs/tutorial/MyFirstLanguageFrontend/LangImpl08.html
             mod.setDataLayout(TargetMachine->createDataLayout());
             mod.setTargetTriple(target_triple);
 
-            llvm::legacy::PassManager pass;
+            llvm::legacy::PassManager pass_manager;
+
+#if LLVM_VERSION_MAJOR == 9
             auto FileType = llvm::LLVMTargetMachine::CGFT_ObjectFile;
+#else
+            auto FileType = llvm::CGFT_ObjectFile;
+#endif
             llvm::SmallVector<char, 0> buffer;
             llvm::raw_svector_ostream dest(buffer);
-            if (TargetMachine->addPassesToEmitFile(pass, dest, nullptr, FileType)) {
+
+
+
+            if (TargetMachine->addPassesToEmitFile(pass_manager, dest, nullptr, FileType, NoVerify, MMIWP)) {
                 throw std::runtime_error("TargetMachine can't emit a file of this type");
             }
 
-            pass.run(mod);
+            pass_manager.run(mod);
 
+            // Works under linux, fails tests under mac OS.
             return std::vector<uint8_t>(buffer.begin(), buffer.end());
         }
 
@@ -858,19 +1079,26 @@ namespace tuplex {
             if(target_triple.find("unknown") != std::string::npos)
                 target_triple = llvm::sys::getDefaultTargetTriple();
 
-            std::string cpu = llvm::sys::getHostCPUName();
+            std::string cpu = llvm::sys::getHostCPUName().str();
             std::string features = getLLVMFeatureStr();
 
             j["llvmVersion"] = LLVM_VERSION_STRING;
             j["targetTriple"] = target_triple;
             j["cpu"] = cpu;
+#if LLVM_VERSION_MAJOR == 9
             j["cpuCores"] = llvm::sys::getHostNumPhysicalCores();
+#else
+            j["cpuCores"] = llvm::get_physical_cores();
+#endif
             j["cpuFeatures"] = features;
 
             // get data layout
             llvm::TargetOptions opt;
+#if LLVM_VERSION_MAJOR == 9
             auto RM = llvm::Optional<llvm::Reloc::Model>();
-
+#else
+            auto RM = std::optional<llvm::Reloc::Model>(llvm::Reloc::Model());
+#endif
             // use position independent code
             RM = llvm::Reloc::PIC_;
             std::string error;
@@ -891,182 +1119,492 @@ namespace tuplex {
             return j;
         }
 
-        llvm::Value* call_cjson_getitem(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj, llvm::Value* key) {
+        void codegen_debug_printf(const IRBuilder& builder, const std::string& message) {
+#ifndef NDEBUG
+            auto printf_func = printf_prototype(builder.getContext(), builder.GetInsertBlock()->getModule());
+            llvm::Value *sConst = builder.CreateGlobalStringPtr(message);
+            llvm::Value *sFormat = builder.CreateGlobalStringPtr("%s\n");
+            builder.CreateCall(printf_func, {sFormat, sConst});
+#endif
+        }
+
+#ifdef USE_YYJSON_INSTEAD
+        // yyjson uses a doc to store a couple values.
+        // These structures are detailed in https://github.com/ibireme/yyjson/blob/master/doc/DataStructure.md.
+        // Practically this means, that when replacing cjson_obj with yyjson, an indirection struct holding a pointer to
+        // both the doc, and the current object needs to be used.
+        // LLVM may optimize parts of this away.
+        // In addition, yyjson memory management needs to be intercepted when calling init/reset stage.
+        llvm::Type* get_or_create_yyjson_shim_type(llvm::LLVMContext& ctx) {
+            using namespace llvm;
+            std::vector<llvm::Type*> member_types(2, i8ptrType(ctx)); // first is doc, second current obj
+            auto stype = llvm::StructType::get(ctx, member_types);
+            stype->setName("yyjson");
+            return stype;
+        }
+
+        llvm::Type* get_or_create_yyjson_shim_type(const IRBuilder& builder) {
+            return get_or_create_yyjson_shim_type(builder.getContext());
+        }
+
+        llvm::Value* get_yyjson_doc(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            return builder.CreateStructLoadOrExtract(get_or_create_yyjson_shim_type(builder), cjson_obj, 0);
+        }
+
+        llvm::Value* get_yyjson_mut_obj(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            return builder.CreateStructLoadOrExtract(get_or_create_yyjson_shim_type(builder), cjson_obj, 1);
+        }
+
+        void set_yyjson_mut_obj(const IRBuilder& builder, llvm::Value* cjson_obj, llvm::Value* yyjson_obj) {
+            builder.CreateStructStore(get_or_create_yyjson_shim_type(builder), cjson_obj, 1, yyjson_obj);
+        }
+
+        void set_yyjson_mut_doc(const IRBuilder& builder, llvm::Value* cjson_obj, llvm::Value* yyjson_doc) {
+            builder.CreateStructStore(get_or_create_yyjson_shim_type(builder), cjson_obj, 0, yyjson_doc);
+        }
+
+        llvm::Value* yy_key_string(const IRBuilder& builder, llvm::Value* yy_doc, llvm::Value* str) {
+            // can safely use yyjson_mut_str here, because pointers backing strings will be read-only in Tuplex.
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+            auto& ctx = mod->getContext();
+            auto func = getOrInsertFunction(mod, "yyjson_mut_str", i8ptrType(ctx), i8ptrType(ctx), i8ptrType(ctx));
+
+            return builder.CreateCall(func, {yy_doc, str});
+        }
+#endif
+
+
+        llvm::Value* call_cjson_is_null_object(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            auto& ctx = builder.getContext();
+#ifdef USE_YYJSON_INSTEAD
+            auto null_pointer = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(get_or_create_yyjson_shim_type(ctx)->getPointerTo()));
+            return builder.CreateICmpEQ(cjson_obj, null_pointer);
+#else
+          return builder.CreateICmpEQ(cjson_obj, llvm::ConstantPointerNull::get(
+                  static_cast<llvm::PointerType *>(i8ptrType(ctx))));
+#endif
+        }
+
+        llvm::Value* call_cjson_getitem(const IRBuilder& builder, llvm::Value* cjson_obj, llvm::Value* key, llvm::Value** out_item_found) {
             assert(cjson_obj);
             assert(key);
             assert(builder.GetInsertBlock());
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+#ifdef USE_YYJSON_INSTEAD
+            auto func = getOrInsertFunction(mod, "yyjson_mut_obj_get", i8ptrType(ctx), i8ptrType(ctx), i8ptrType(ctx));
+
+            auto yyjson_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_getitem");
+
+            auto yy_doc = get_yyjson_doc(builder, cjson_obj);
+            auto yy_ret_item = builder.CreateCall(func, {yyjson_obj, key});
+
+            // alloc and then return object
+            auto ctor_builder = builder.firstBlockBuilder(false); // insert at beginning.
+            auto llvm_type = get_or_create_yyjson_shim_type(builder);
+            auto yy_ret_val = ctor_builder.CreateAlloca(llvm_type, 0, nullptr, "yy_retval");
+
+            // output whether item is found.
+            auto null_i8ptr = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(i8ptrType(ctx)));
+            if(out_item_found) {
+                *out_item_found = builder.CreateICmpNE(yy_ret_item, null_i8ptr);
+            }
+
+            set_yyjson_mut_doc(builder, yy_ret_val, yy_doc);
+            set_yyjson_mut_obj(builder, yy_ret_val, yy_ret_item);
+            return builder.CreateLoad(llvm_type, yy_ret_val);
+#else
             auto func = getOrInsertFunction(mod, "cJSON_GetObjectItemCaseSensitive", llvm::Type::getInt8PtrTy(ctx, 0),
                                             llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt8PtrTy(ctx, 0));
 
-            return builder.CreateCall(func, {cjson_obj, key});
+            auto ans = builder.CreateCall(func, {cjson_obj, key});
+
+            auto null_i8ptr = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(i8ptrType(ctx)));
+            if(out_item_found) {
+                *out_item_found = builder.CreateICmpNE(ans, null_i8ptr);
+            }
+
+            return ans;
+#endif
         }
 
-        llvm::Value* call_cjson_isnumber(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj) {
+        llvm::Value* call_cjson_object_set_item(const IRBuilder& builder, llvm::Value* cjson_obj, llvm::Value* key, llvm::Value* cjson_item) {
+            // basically cjson_obj[key] = cjson_item
+            // return cjson_obj.
+
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+
+            auto& ctx = mod->getContext();
+            auto ptr_type = i8ptrType(ctx);
+
+#ifdef USE_YYJSON_INSTEAD
+            // note: argument for key is not char* but instead a key, which must be created via yyjson_mut_str
+
+            // also note that str is not copied for yyjson_mut_str -> we can steal string b.c. in tuplex lifetime is per row
+            auto yy_doc = get_yyjson_doc(builder, cjson_obj);
+            auto yy_key = yy_key_string(builder, yy_doc, key);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_obj_put", ctypeToLLVM<bool>(ctx), i8ptrType(ctx),
+                                            i8ptrType(ctx), i8ptrType(ctx));
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+            auto yy_item = get_yyjson_mut_obj(builder, cjson_item);
+
+            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_setitem");
+
+            builder.CreateCall(func, {yy_obj, yy_key, yy_item});
+            return cjson_obj;
+#else
+            auto func = getOrInsertFunction(mod, "cJSON_AddItemToObject", ptr_type, ptr_type, ptr_type, ptr_type);
+            return builder.CreateCall(func, {cjson_obj, key, cjson_item});
+#endif
+        }
+
+
+        llvm::Value* call_cjson_isnumber(const IRBuilder& builder, llvm::Value* cjson_obj) {
             assert(cjson_obj);
             assert(builder.GetInsertBlock());
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_is_num", ctypeToLLVM<bool>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_isnumber");
+
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt1Ty(ctx));
+#else
+
             auto func = getOrInsertFunction(mod, "cJSON_IsNumber", ctypeToLLVM<cJSON_AS4CPP_bool>(ctx),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_obj}), llvm::Type::getInt1Ty(ctx));
+#endif
         }
 
-        llvm::Value* call_cjson_isnull(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj) {
+        llvm::Value* call_cjson_isnull(const IRBuilder& builder, llvm::Value* cjson_obj) {
             assert(cjson_obj);
             assert(builder.GetInsertBlock());
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_is_null", ctypeToLLVM<bool>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_isnull");
+
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt1Ty(ctx));
+#else
             auto func = getOrInsertFunction(mod, "cJSON_IsNull", ctypeToLLVM<cJSON_AS4CPP_bool>(ctx),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_obj}), llvm::Type::getInt1Ty(ctx));
+#endif
         }
 
-        llvm::Value* call_cjson_isobject(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj) {
+        llvm::Value* call_cjson_isobject(const IRBuilder& builder, llvm::Value* cjson_obj) {
             assert(cjson_obj);
             assert(builder.GetInsertBlock());
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_is_obj", ctypeToLLVM<bool>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_isobject");
+
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt1Ty(ctx));
+#else
             auto func = getOrInsertFunction(mod, "cJSON_IsObject", ctypeToLLVM<cJSON_AS4CPP_bool>(ctx),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_obj}), llvm::Type::getInt1Ty(ctx));
+#endif
         }
 
-        llvm::Value* call_cjson_isarray(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj) {
+        llvm::Value* call_cjson_isarray(const IRBuilder& builder, llvm::Value* cjson_obj) {
             assert(cjson_obj);
             assert(builder.GetInsertBlock());
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_is_arr", ctypeToLLVM<bool>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_isarray");
+
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt1Ty(ctx));
+#else
             auto func = getOrInsertFunction(mod, "cJSON_IsArray", ctypeToLLVM<cJSON_AS4CPP_bool>(ctx),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_obj}), llvm::Type::getInt1Ty(ctx));
+#endif
         }
 
-        llvm::Value* call_cjson_getarraysize(llvm::IRBuilder<>& builder, llvm::Value* cjson_array) {
+        llvm::Value* call_cjson_getarraysize(const IRBuilder& builder, llvm::Value* cjson_array) {
             assert(cjson_array);
             assert(builder.GetInsertBlock());
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_array);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_arr_size", ctypeToLLVM<size_t>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_getarraysize");
+
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt64Ty(ctx));
+#else
             auto func = getOrInsertFunction(mod, "cJSON_GetArraySize", ctypeToLLVM<int>(ctx),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_array}), llvm::Type::getInt64Ty(ctx));
+#endif
         }
 
-        SerializableValue get_cjson_array_item(llvm::IRBuilder<>& builder, llvm::Value* cjson_array, llvm::Value* idx) {
-
+        SerializableValue get_cjson_array_item(const IRBuilder& builder, llvm::Value* cjson_array, llvm::Value* idx) {
             assert(cjson_array);
             assert(builder.GetInsertBlock());
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_doc = get_yyjson_doc(builder, cjson_array);
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_array);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_arr_get", i8ptrType(ctx), i8ptrType(ctx), ctypeToLLVM<size_t>(ctx));
+
+            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_get_array_item");
+
+            auto yy_ret_item = builder.CreateCall(func, {yy_obj, idx});
+
+            // alloc new obj struct and fill with doc & returned object
+
+            auto ctor_builder = builder.firstBlockBuilder(false); // insert at beginning.
+            auto llvm_type = get_or_create_yyjson_shim_type(builder);
+            auto yy_ret_val = ctor_builder.CreateAlloca(llvm_type, 0, nullptr, "yy_retval");
+
+            set_yyjson_mut_doc(builder, yy_ret_val, yy_doc); // <-- this may lead to modificaitons if subdict is returned, this should be correct. dict.copy() creates deep copy of elements.
+            set_yyjson_mut_obj(builder, yy_ret_val, yy_ret_item);
+            return {builder.CreateLoad(llvm_type, yy_ret_val), nullptr, nullptr};
+#else
             auto func = getOrInsertFunction(mod, "cJSON_GetArrayItem", llvm::Type::getInt8PtrTy(ctx, 0),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0), ctypeToLLVM<int>(ctx));
 
             auto item = builder.CreateCall(func, {cjson_array, builder.CreateZExtOrTrunc(idx,
                                                                                                               ctypeToLLVM<int>(ctx))});
             return {item, nullptr, nullptr};
+#endif
         }
 
-        llvm::Value* call_cjson_isstring(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj) {
+        llvm::Value* call_cjson_isstring(const IRBuilder& builder, llvm::Value* cjson_obj) {
             assert(cjson_obj);
             assert(builder.GetInsertBlock());
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_is_str", ctypeToLLVM<bool>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_isstring");
+
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt1Ty(ctx));
+#else
             auto func = getOrInsertFunction(mod, "cJSON_IsString", ctypeToLLVM<cJSON_AS4CPP_bool>(ctx),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_obj}), llvm::Type::getInt1Ty(ctx));
+#endif
         }
 
-        [[maybe_unused]] llvm::Value* call_cjson_is_list_of_generic_dicts(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj) {
+        [[maybe_unused]] llvm::Value* call_cjson_is_list_of_generic_dicts(const IRBuilder& builder, llvm::Value* cjson_obj) {
             // this calls a runtime function (linked in JITCompiler)
             assert(cjson_obj);
             assert(builder.GetInsertBlock());
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            auto func = getOrInsertFunction(mod, "yyjson_is_array_of_objects", ctypeToLLVM<bool>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_is_list_of_generic_dicts");
+
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt1Ty(ctx));
+#else
             auto func = getOrInsertFunction(mod, "cJSON_IsArrayOfObjects", ctypeToLLVM<cJSON_AS4CPP_bool>(ctx),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_obj}), llvm::Type::getInt1Ty(ctx));
+#endif
         }
 
-        llvm::Value* get_cjson_as_integer(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj) {
-            auto float_val = get_cjson_as_float(builder, cjson_obj);
-            return builder.CreateFPToSI(float_val, llvm::Type::getInt64Ty(builder.getContext()));
-        }
-
-        llvm::Value* get_cjson_as_float(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj) {
+        llvm::Value* get_cjson_as_integer(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            // in yyjson, can directly return integer
             assert(cjson_obj);
             assert(builder.GetInsertBlock());
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_get_sint", ctypeToLLVM<int64_t>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_get_integer");
+
+            return builder.CreateCall(func, {yy_obj});
+#else
+            auto float_val = get_cjson_as_float(builder, cjson_obj);
+            return builder.CreateFPToSI(float_val, llvm::Type::getInt64Ty(builder.getContext()));
+#endif
+        }
+
+        llvm::Value* get_cjson_as_boolean(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            assert(cjson_obj);
+            assert(builder.GetInsertBlock());
+            assert(builder.GetInsertBlock()->getParent());
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+            auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_get_bool", ctypeToLLVM<bool>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_get_boolean");
+
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt64Ty(ctx));
+#else
+            auto func = getOrInsertFunction(mod, "cJSON_IsTrue", llvm::Type::getInt64Ty(ctx), llvm::Type::getInt8PtrTy(ctx, 0));
+
+            return builder.CreateCall(func, {cjson_obj});
+#endif
+        }
+
+        llvm::Value* get_cjson_as_float(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            assert(cjson_obj);
+            assert(builder.GetInsertBlock());
+            assert(builder.GetInsertBlock()->getParent());
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+            auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_get_real", ctypeToLLVM<double>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_get_float");
+
+            return builder.CreateCall(func, {yy_obj});
+#else
             auto func = getOrInsertFunction(mod, "cJSON_GetNumberValue", llvm::Type::getDoubleTy(ctx),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
             return builder.CreateCall(func, {cjson_obj});
+#endif
         }
 
-        SerializableValue get_cjson_as_string_value(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj) {
+        SerializableValue get_cjson_as_string_value(const IRBuilder& builder, llvm::Value* cjson_obj) {
             assert(cjson_obj);
             assert(builder.GetInsertBlock());
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_get_str", ctypeToLLVM<const char*>(ctx),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_get_string");
+
+            auto str_pointer = builder.CreateCall(func, {yy_obj});
+#else
             auto func = getOrInsertFunction(mod, "cJSON_GetStringValue", llvm::Type::getInt8PtrTy(ctx, 0),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
             auto str_pointer = builder.CreateCall(func, {cjson_obj});
-
+#endif
             auto str_len = builder.CreateCall(strlen_prototype(ctx, mod), {str_pointer});
             auto str_size = builder.CreateAdd(str_len, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, 1)));
             return {str_pointer, str_size};
         }
 
-        [[maybe_unused]] SerializableValue serialize_cjson_as_runtime_str(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj) {
+        [[maybe_unused]] SerializableValue serialize_cjson_as_runtime_str(const IRBuilder& builder, llvm::Value* cjson_obj) {
             assert(cjson_obj);
             assert(builder.GetInsertBlock());
             assert(builder.GetInsertBlock()->getParent());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
-
             auto& ctx = mod->getContext();
+#ifdef USE_YYJSON_INSTEAD
+
+            auto func = getOrInsertFunction(mod, "yyjson_print_to_runtime_str", llvm::Type::getInt8PtrTy(ctx, 0),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt64PtrTy(ctx, 0));
+
+            auto first_builder = builder.firstBlockBuilder(false);
+            auto str_size_var = first_builder.CreateAlloca(llvm::Type::getInt64Ty(ctx), 0, nullptr);
+
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_as_runtime_str");
+
+            auto str = builder.CreateCall(func, {yy_obj, str_size_var});
+            auto str_size = builder.CreateLoad(llvm::Type::getInt64Ty(ctx), str_size_var);
+            return {str, str_size};
+#else
+
             auto func = getOrInsertFunction(mod, "cJSON_PrintUnformatted", llvm::Type::getInt8PtrTy(ctx, 0),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
@@ -1075,37 +1613,271 @@ namespace tuplex {
             auto str_len = builder.CreateCall(strlen_prototype(ctx, mod), {str_pointer});
             auto str_size = builder.CreateAdd(str_len, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, 1)));
             return {str_pointer, str_size};
+#endif
         }
 
-        llvm::Value* call_cjson_create_empty(llvm::IRBuilder<>& builder) {
+        llvm::Value* call_cjson_create_empty(const IRBuilder& builder) {
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
 
             auto& ctx = mod->getContext();
+#ifdef USE_YYJSON_INSTEAD
+
+            // this is a custom function, which sets up also the runtime allocator to be used within yyjson.
+            auto func_doc_init = getOrInsertFunction(mod, "yyjson_init_doc", i8ptrType(ctx));
+            auto func_doc_get_root = getOrInsertFunction(mod, "yyjson_mut_doc_get_root", i8ptrType(ctx), i8ptrType(ctx));
+            auto yy_doc = builder.CreateCall(func_doc_init);
+            auto yy_root_item = builder.CreateCall(func_doc_get_root, {yy_doc});
+
+            auto llvm_type = get_or_create_yyjson_shim_type(builder);
+            auto ctor_builder = builder.firstBlockBuilder(false); // insert at beginning.
+            auto yy_ret_val = ctor_builder.CreateAlloca(llvm_type, 0, nullptr, "yy_retval");
+
+            // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_create_empty");
+
+            set_yyjson_mut_doc(builder, yy_ret_val, yy_doc); // <-- this may lead to modificaitons if subdict is returned, this should be correct. dict.copy() creates deep copy of elements.
+            set_yyjson_mut_obj(builder, yy_ret_val, yy_root_item);
+            return builder.CreateLoad(llvm_type, yy_ret_val);
+#else
             auto func = getOrInsertFunction(mod, "cJSON_CreateObject", llvm::Type::getInt8PtrTy(ctx, 0));
-
             return builder.CreateCall(func, {});
+#endif
         }
 
-        extern llvm::Value* call_simdjson_to_cjson_object(llvm::IRBuilder<>& builder, llvm::Value* json_item) {
+        extern llvm::Value* call_simdjson_to_cjson_object(const IRBuilder& builder, llvm::Value* json_item) {
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
 
             auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            auto func = getOrInsertFunction(mod, "JsonItem_to_yyjson_mut_doc", llvm::Type::getInt8PtrTy(ctx, 0),
+                                           (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+
+            auto func_doc_get_root = getOrInsertFunction(mod, "yyjson_mut_doc_get_root", i8ptrType(ctx), i8ptrType(ctx));
+            auto yy_doc = builder.CreateCall(func, {json_item});
+            auto yy_root_item = builder.CreateCall(func_doc_get_root, {yy_doc});
+
+            auto ctor_builder = builder.firstBlockBuilder(false); // insert at beginning.
+            auto llvm_type = get_or_create_yyjson_shim_type(builder);
+            auto yy_ret_val = ctor_builder.CreateAlloca(llvm_type, 0, nullptr, "yy_retval");
+
+            // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_simdjson_to_yyjson");
+
+            set_yyjson_mut_doc(builder, yy_ret_val, yy_doc); // <-- this may lead to modificaitons if subdict is returned, this should be correct. dict.copy() creates deep copy of elements.
+            set_yyjson_mut_obj(builder, yy_ret_val, yy_root_item);
+            return builder.CreateLoad(llvm_type, yy_ret_val);
+#else
             auto func = getOrInsertFunction(mod, "JsonItem_to_cJSON", llvm::Type::getInt8PtrTy(ctx, 0),
                                             (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
 
             return builder.CreateCall(func, {json_item});
+#endif
         }
 
-        extern llvm::Value* call_cjson_type_as_str(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj) {
+        extern llvm::Value* call_cjson_type_as_str(const IRBuilder& builder, llvm::Value* cjson_obj) {
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
 
             auto& ctx = mod->getContext();
+#ifdef USE_YYJSON_INSTEAD
+
+            auto func = getOrInsertFunction(mod, "yyjson_type_as_runtime_str", llvm::Type::getInt8PtrTy(ctx, 0),
+                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt64PtrTy(ctx, 0));
+
+            auto first_builder = builder.firstBlockBuilder(false);
+            auto str_size_var = first_builder.CreateAlloca(llvm::Type::getInt64Ty(ctx), 0, nullptr);
+
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            auto str = builder.CreateCall(func, {yy_obj, str_size_var});
+            // auto str_size = builder.CreateLoad(llvm::Type::getInt64Ty(ctx), str_size_var);
+            return str;
+#else
             auto func = getOrInsertFunction(mod, "cJSON_TypeAsString", llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt8PtrTy(ctx, 0));
 
             return builder.CreateCall(func, {cjson_obj});
+#endif
+        }
+
+        extern llvm::Value* call_cjson_parse(const IRBuilder& builder, llvm::Value* str_ptr) {
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+            auto& ctx = mod->getContext();
+#ifdef USE_YYJSON_INSTEAD
+
+            auto ctor_builder = builder.firstBlockBuilder(false); // insert at beginning.
+            auto llvm_type = get_or_create_yyjson_shim_type(builder);
+            auto yy_ret_val = ctor_builder.CreateAlloca(llvm_type, 0, nullptr, "yy_retval");
+
+            auto func_doc_get_root = getOrInsertFunction(mod, "yyjson_mut_doc_get_root", i8ptrType(ctx), i8ptrType(ctx));
+
+            auto func_parse = getOrInsertFunction(mod, "yyjson_mut_parse", i8ptrType(ctx), i8ptrType(ctx), llvm::Type::getInt64Ty(ctx));
+
+            auto func_strlen = strlen_prototype(ctx, mod);
+            // auto str_size = builder.CreateAdd(builder.CreateCall(func_strlen, {str_ptr}), llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, 1)));
+            auto str_len = builder.CreateCall(func_strlen, {str_ptr});
+            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_yyjson_parse");
+
+            // yy wants str len, not str size.
+            auto yy_doc = builder.CreateCall(func_parse, {str_ptr, str_len});
+            auto yy_root_object = builder.CreateCall(func_doc_get_root, {yy_doc});
+
+            set_yyjson_mut_doc(builder, yy_ret_val, yy_doc); // <-- this may lead to modificaitons if subdict is returned, this should be correct. dict.copy() creates deep copy of elements.
+            set_yyjson_mut_obj(builder, yy_ret_val, yy_root_object);
+            return builder.CreateLoad(llvm_type, yy_ret_val);
+#else
+
+            auto func = getOrInsertFunction(mod, "cJSON_Parse", llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt8PtrTy(ctx, 0));
+            return builder.CreateCall(func, {str_ptr});
+#endif
+        }
+
+        SerializableValue call_cjson_to_string(const IRBuilder& builder, llvm::Value* cjson_obj) {
+#ifdef USE_YYJSON_INSTEAD
+            return serialize_cjson_as_runtime_str(builder, cjson_obj);
+            //throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented in yyjson mode.");
+#endif
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+            auto& ctx = mod->getContext();
+            auto f_print = getOrInsertFunction(mod, "cJSON_PrintUnformatted", llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt8PtrTy(ctx, 0));
+            auto f_strlen = strlen_prototype(ctx, mod);
+
+            SerializableValue v;
+            v.val = builder.CreateCall(f_print, {cjson_obj});
+            v.size = builder.CreateAdd(llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, 1)), builder.CreateCall(f_strlen, {v.val}));
+            return v;
+        }
+
+        llvm::Value* calc_bitmap_size_in_64bit_blocks(const IRBuilder& builder, llvm::Value* num_elements) {
+            // implement here the same logic as
+            // calc_bitmap_size_in_64bit_blocks in Serializer.h provides
+
+            assert(num_elements && num_elements->getType()->isIntegerTy() && num_elements->getType()->getIntegerBitWidth() == 64);
+
+            auto& ctx = builder.getContext();
+
+            auto base = llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, 64));
+            // T k = x / base;
+            auto k = builder.CreateSDiv(num_elements, base);
+
+            //  if(k * base >= x)
+            //            return k * base;
+            //        else
+            //            return (k + 1) * base;
+            auto k_base = builder.CreateMul(k, base);
+            auto lgtx = builder.CreateICmpSGE(k_base, num_elements);
+
+            auto k_base_plus_one = builder.CreateAdd(k_base, base);
+            auto ceil_to_multiple_base = builder.CreateSelect(lgtx, k_base, k_base_plus_one);
+            llvm::Value* num_bitmap_fields = builder.CreateSDiv(ceil_to_multiple_base, base);
+
+            return builder.CreateMul(num_bitmap_fields, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, sizeof(uint64_t))));
+
+        }
+
+        llvm::Value* call_cjson_from_value(const IRBuilder& builder, const SerializableValue& value, const python::Type& type) {
+#ifdef USE_YYJSON_INSTEAD
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented in yyjson mode.");
+#endif
+            // converts value to cJSON value.
+            using namespace llvm;
+
+            assert(builder.GetInsertBlock());
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+            auto& ctx = mod->getContext();
+            auto i8ptrtype = llvm::Type::getInt8PtrTy(ctx, 0);
+
+            if(type.isOptionType()) {
+                // nested -> if null, convert to Json null
+                // else, recursively call.
+                auto func = builder.GetInsertBlock()->getParent();
+
+                auto bbIsNull = BasicBlock::Create(ctx, "cjson_encode_is_null", func);
+                auto bbIsNotNull = BasicBlock::Create(ctx, "cjson_encode_is_not_null", func);
+                auto bbDone = BasicBlock::Create(ctx, "cjson_encode_done", func);
+
+                builder.CreateCondBr(value.is_null, bbIsNull, bbIsNotNull);
+                builder.SetInsertPoint(bbIsNull);
+                auto null_value = call_cjson_from_value(builder, {}, python::Type::NULLVALUE);
+                builder.CreateBr(bbDone);
+
+                builder.SetInsertPoint(bbIsNotNull);
+                auto non_null_value = call_cjson_from_value(builder, value, type.withoutOption());
+                builder.CreateBr(bbDone);
+
+                auto phi = builder.CreatePHI(i8ptrtype, 2);
+                phi->addIncoming(null_value, bbIsNull);
+                phi->addIncoming(non_null_value, bbIsNotNull);
+                return phi;
+            }
+
+
+            // regular, primitive types.
+            if(python::Type::NULLVALUE == type) {
+                auto func = getOrInsertFunction(mod, "cJSON_CreateNull", i8ptrtype);
+                return builder.CreateCall(func);
+            }
+
+            if(python::Type::BOOLEAN == type) {
+                auto func = getOrInsertFunction(mod, "cJSON_CreateBool", i8ptrtype, ctypeToLLVM<cJSON_bool>(ctx));
+                auto v = builder.CreateZExtOrTrunc(value.val, ctypeToLLVM<cJSON_bool>(ctx));
+                return builder.CreateCall(func, {v});
+            }
+
+            if(python::Type::I64 == type) {
+                // this is bad in cJSON. bad API mixing double and integer.
+                auto func = getOrInsertFunction(mod, "cJSON_CreateNumber", i8ptrtype, ctypeToLLVM<double>(ctx));
+                auto v = builder.CreateSIToFP(value.val, ctypeToLLVM<double>(ctx));
+                return builder.CreateCall(func, {v});
+            }
+
+            if(python::Type::F64 == type) {
+                // this is bad in cJSON. bad API mixing double and integer.
+                auto func = getOrInsertFunction(mod, "cJSON_CreateNumber", i8ptrtype, ctypeToLLVM<double>(ctx));
+                return builder.CreateCall(func, {value.val});
+            }
+
+            if(python::Type::STRING == type) {
+                auto func = getOrInsertFunction(mod, "cJSON_CreateString", i8ptrtype, i8ptrtype);
+                return builder.CreateCall(func, {value.val});
+            }
+
+            std::stringstream ss;
+            ss<<__FILE__<<":"<<__LINE__<<" Unsupported value of type "<<type.desc()<<" can't get converted to cJSON value.";
+            throw std::runtime_error(ss.str());
+        }
+
+        SerializableValue get_value_from_cjson(const IRBuilder& builder, llvm::Value* cjson_obj, const python::Type& type) {
+            // use primitive conversion functions directly.
+
+            auto& ctx = builder.getContext();
+
+            // option: check if is null or not
+
+            auto i64_8bytes = llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, 8));
+
+            if(type == python::Type::NULLVALUE) {
+                return SerializableValue(nullptr, nullptr, llvm::ConstantInt::get(llvm::Type::getInt1Ty(ctx), llvm::APInt(1, 1)));
+            }
+
+            if(type == python::Type::BOOLEAN) {
+                return SerializableValue(get_cjson_as_boolean(builder, cjson_obj), i64_8bytes);
+            }
+
+            if(type == python::Type::I64) {
+                return SerializableValue(get_cjson_as_integer(builder, cjson_obj), i64_8bytes);
+            }
+
+            if(type == python::Type::STRING) {
+                return get_cjson_as_string_value(builder, cjson_obj);
+            }
+
+            std::stringstream ss;
+            ss<<__FILE__<<":"<<__LINE__<<" Unsupported value of type "<<type.desc()<<" can't retrieve value from cJSON value.";
+            throw std::runtime_error(ss.str());
         }
     }
 }

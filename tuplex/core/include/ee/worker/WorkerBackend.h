@@ -6,7 +6,8 @@
 #define TUPLEX_WORKERBACKEND_H
 
 
-#include "../IBackend.h"
+#include "../IRequestBackend.h"
+#include "../RequestInfo.h"
 #include <vector>
 #include <physical/execution/TransformStage.h>
 #include <physical/execution/HashJoinStage.h>
@@ -21,7 +22,6 @@
 #include <regex>
 
 namespace tuplex {
-
     class LogicalPlan;
     class PhysicalPlan;
     class PhysicalStage;
@@ -33,15 +33,18 @@ namespace tuplex {
      */
     extern std::string ensure_worker_path(const std::string& exe_path);
 
-    class WorkerBackend : public IBackend {
+    class WorkerBackend : public IRequestBackend {
     public:
         WorkerBackend() = delete;
         ~WorkerBackend() override;
 
-        WorkerBackend(const Context& context, const std::string& exe_path="");
+        WorkerBackend(Context& context, const std::string& exe_path="");
 
         Executor* driver() override { return _driver.get(); }
         void execute(PhysicalStage* stage) override;
+
+        void setNoOpMode(bool noop) { _useNoOpMode = noop; }
+
     protected:
         ContextOptions _options;
         std::unique_ptr<Executor> _driver;
@@ -75,6 +78,7 @@ namespace tuplex {
         URI _scratchDir;
         bool _deleteScratchDirOnShutdown;
         std::string _worker_exe_path;
+        bool _useNoOpMode;
 
         /*!
          * returns a scratch dir. If none is stored/found, abort
@@ -83,14 +87,23 @@ namespace tuplex {
          */
         URI scratchDir(const std::vector<URI>& hints=std::vector<URI>{});
 
-        void
-        processRequestsInline(const std::vector<messages::InvocationRequest> &requests, nlohmann::json *out_stats_array,
-                              nlohmann::json *out_req_array, size_t *out_total_input_rows, size_t *out_total_num_output_rows) const;
+        /*!
+         * Processes tasks within this process and returns task triplet collection.
+         * @param requests
+         * @return task triplets, to be dumped e.g. into a JSON file.
+         */
+        std::vector<TaskTriplet> processRequestsInline(const std::vector<messages::InvocationRequest> &requests) const;
 
-        void processRequestsWithProcessPool(std::vector<messages::InvocationRequest> requests,
-                                            nlohmann::json *out_stats_array,
-                                            nlohmann::json *out_req_array, size_t *out_total_input_rows,
-                                            size_t *out_total_output_rows, size_t num_processes_to_use) const;
+        /*! Process using pool of workers
+         * only single-threaded supported so far.
+         * @param requests
+         * @param num_processes_to_use
+         * @return
+         */
+        std::vector<TaskTriplet>  processRequestsWithProcessPool(std::vector<messages::InvocationRequest> requests, size_t num_processes_to_use) const;
+
+
+        void dumpAsJSON(const std::string& job_path, const std::vector<TaskTriplet>& tasks, uint64_t tsStageStart, uint64_t tsStageEnd);
     };
 
     extern void config_worker(messages::WorkerSettings *ws,
@@ -98,6 +111,8 @@ namespace tuplex {
                               size_t numThreads,
                               const URI &spillURI,
                               size_t buf_spill_size);
+
+    extern std::string find_worker(const std::string& path_hint);
 }
 
 #endif //TUPLEX_WORKERBACKEND_H

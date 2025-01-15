@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Github query for Viton paper
+# flights query for Viton paper
 # TODO: build with cmake -G "Unix Makefiles" -DBUILD_WITH_CEREAL=ON -DSKIP_AWS_TESTS=OFF -DBUILD_WITH_ORC=OFF -DBUILD_WITH_AWS=ON -DPython3_EXECUTABLE=/home/leonhards/.pyenv/shims/python3.9 -DAWS_S3_TEST_BUCKET='tuplex-test' -DLLVM_ROOT_DIR=/opt/llvm-9 ..
 
 # invoke python baseline via --mode python --input-pattern "/hot/data/flights_all/*.csv" --output-path "./local-exp/python-baseline/flights/output" --scratch-dir "./local-exp/scratch" --result-path "./local-exp/python-baseline/flights/results.ndjson"
@@ -26,9 +26,9 @@ import pandas as pd
 # - ??
 
 # default parameters to use for paths, scratch dirs
-S3_DEFAULT_INPUT_PATTERN='s3://tuplex-public/data/github_daily/*.json'
-S3_DEFAULT_OUTPUT_PATH='s3://tuplex-leonhard/experiments/github'
-S3_DEFAULT_SCRATCH_DIR="s3://tuplex-leonhard/scratch/github-exp"
+S3_DEFAULT_INPUT_PATTERN="s3://tuplex-public/data/flights_all/*.csv"
+S3_DEFAULT_OUTPUT_PATH='s3://tuplex-leonhard/experiments/flights'
+S3_DEFAULT_SCRATCH_DIR="s3://tuplex-leonhard/scratch/flights-exp"
 
 def human_readable_size(size, decimal_places=2):
     for unit in ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB']:
@@ -638,6 +638,173 @@ def run_with_tuplex(args, **kwargs):
     return stats
 
 
+def run_with_tuplex_on_lambda(args):
+    if not 'AWS_ACCESS_KEY_ID' in os.environ or 'AWS_SECRET_ACCESS_KEY' not in os.environ:
+        raise Exception('Did not find AWS credentials in environment, please set.')
+
+    lambda_parallelism = args.lambda_parallelism
+    logging.info(f"Using Lambda parallelism of {lambda_parallelism} max simultaneous active Lambdas.")
+
+    lambda_price_per_gb_s = 0.0000166667 # x86 price
+    lambda_size = max(128, min(args.lambda_size, 10240))
+    lambda_price_per_h = lambda_size / 1000.0 * lambda_price_per_gb_s * 3600.0
+    logging.info(f"Configuring Lambda to use {lambda_size} MB at most (${lambda_price_per_h:.2f}/h per lambda, max ${lambda_price_per_h * lambda_parallelism:.2f}/h for all configured lambdas).")
+
+    output_path = args.output_path
+    input_pattern = args.input_pattern
+    scratch_dir = args.scratch_dir
+
+    # use S3 paths (need to adjust later)
+    output_path = S3_DEFAULT_OUTPUT_PATH
+    input_pattern = S3_DEFAULT_INPUT_PATTERN
+    aws_scratch_dir = S3_DEFAULT_SCRATCH_DIR
+
+
+    # Check if s3 output path is given, if so use that one.
+    if args.output_path.startswith('s3://'):
+        output_path = args.output_path
+    logging.info(f"Storing results in S3 output path: {output_path}")
+
+    if not scratch_dir:
+        raise ValueError('No scratch directory specified')
+
+    use_hyper_specialization = not args.no_hyper
+    use_filter_promotion = not args.no_promo
+    use_constant_folding = not args.no_cf
+
+    use_sparse_structs = True # this won't matter.
+    use_generic_dicts = False # this won't matter. args.generic_dicts
+
+    strata_size = args.strata_size
+    samples_per_strata = args.samples_per_strata
+
+    # manipulate here to constrain granularity
+    input_split_size = "500GB" # as large as possible
+
+    import tuplex
+
+    # use following as debug pattern
+    sm_map = {'A': tuplex.dataset.SamplingMode.FIRST_FILE | tuplex.dataset.SamplingMode.FIRST_ROWS,
+              'B': tuplex.dataset.SamplingMode.FIRST_FILE | tuplex.dataset.SamplingMode.LAST_ROWS | tuplex.dataset.SamplingMode.FIRST_ROWS,
+              'C': tuplex.dataset.SamplingMode.FIRST_ROWS | tuplex.dataset.SamplingMode.FIRST_FILE | tuplex.dataset.SamplingMode.LAST_FILE,
+              'D': tuplex.dataset.SamplingMode.FIRST_ROWS | tuplex.dataset.SamplingMode.LAST_ROWS | tuplex.dataset.SamplingMode.FIRST_FILE | tuplex.dataset.SamplingMode.LAST_FILE,
+              'E': tuplex.dataset.SamplingMode.FIRST_ROWS | tuplex.dataset.SamplingMode.ALL_FILES,
+              'F': tuplex.dataset.SamplingMode.FIRST_ROWS | tuplex.dataset.SamplingMode.LAST_ROWS | tuplex.dataset.SamplingMode.ALL_FILES
+              }
+
+    sm = sm_map['D']  # ism_map.get(args.sampling_mode, None)
+    sm = sm_map['B']
+
+    if use_hyper_specialization:
+        sm = sm_map['D']
+    else:
+        sm = sm_map['D']
+
+    print('>>> running {} on {} -> {}'.format('tuplex', input_pattern, output_path))
+    print('    running in interpreter mode: {}'.format(args.python_mode))
+    print('    hyperspecialization: {}'.format(use_hyper_specialization))
+    print('    constant-folding: {}'.format(use_constant_folding))
+    print('    filter-promotion: {}'.format(use_filter_promotion))
+    print('    null-value optimization: {}'.format(not args.no_nvo))
+    print(f'    sparse-structs: {use_sparse_structs}')
+    print(f'    generic-dicts: {use_generic_dicts}')
+    print('    strata: {} per {}'.format(samples_per_strata, strata_size))
+    print(f'    worker: {args.tuplex_worker_path}')
+    # load data
+    tstart = time.time()
+
+    # configuration, make sure to give enough runtime memory to the executors!
+    # run on Lambda
+    conf = {"webui.enable": False,
+            "backend": "lambda",
+            "aws.lambdaTimeout": 900,  # maximum allowed is 900s!
+            "aws.httpThreadCount": lambda_parallelism,
+            "aws.maxConcurrency": lambda_parallelism,
+            "aws.requesterPay": True,
+            "aws.lambdaInvocationStrategy":"tree",
+            "experimental.minimumSizeToSpecialize":0,
+            "experimental.hyperspecialization": use_hyper_specialization,
+            'sample.maxDetectionMemory': '32MB',
+            'sample.strataSize': strata_size,
+            'sample.samplesPerStrata': samples_per_strata,
+            "aws.scratchDir": aws_scratch_dir,
+            "autoUpcast": True,
+            "executorCount": 0,
+            "executorMemory": "2G",
+            "driverMemory": "2G",
+            "partitionSize": "32MB",
+            "runTimeMemory": "128MB",
+            "useLLVMOptimizer": True,
+            "optimizer.generateParser": False,  # not supported on lambda yet
+            "optimizer.nullValueOptimization": True,
+            "tuplex.experimental.useGenericDicts":use_generic_dicts,
+            "tuplex.optimizer.sparsifyStructs":use_sparse_structs,
+            # "resolveWithInterpreterOnly": False,
+            "resolveWithInterpreterOnly": False, # use compiled slow path in addition.
+            "optimizer.constantFoldingOptimization": use_constant_folding,
+            "optimizer.filterPromotion": use_filter_promotion,
+            "optimizer.selectionPushdown": True,
+            "optimizer.simplifyLargeStructs": False,
+            "optimizer.simplifyLargeStructs.threshold": 20,
+            "useInterpreterOnly": args.python_mode,
+            "experimental.forceBadParseExceptFormat": not args.use_internal_fmt}
+
+
+    # Special case: mode == python:
+    if args.mode == "python":
+        logging.info(f"LAMBDAs using Python interpreter only (mode={args.mode}).")
+        conf["resolveWithInterpreterOnly"] = True
+        conf["useInterpreterOnly"] = True
+    else:
+        logging.info(f"LAMBDAs using compiled paths and interpreter (mode={args.mode}).")
+        conf["resolveWithInterpreterOnly"] = False
+        conf["useInterpreterOnly"] = False
+
+    # In hyper mode to avoid long LLVM IR optimization times, enable simplifyLargeStructs optimization. Deactivate it for global sparse structs,
+    # as this mode specifically needs to measure how badly global structs affect everything.
+    if use_hyper_specialization:
+        conf["optimizer.simplifyLargeStructs"] = True
+        # leave threshold as above.
+
+    conf['inputSplitSize'] = input_split_size
+    # disable for now.
+    conf["experimental.opportuneCompilation"] = False #True
+
+    if args.no_nvo:
+        conf["optimizer.nullValueOptimization"] = False
+    else:
+        conf["optimizer.nullValueOptimization"] = True
+
+    conf["inputSplitSize"] = input_split_size
+
+    # config for single-threaded processing to avoid spilling (requires machine with enough memory)
+    # co.set("tuplex.inputSplitSize", "20G");
+    # co.set("tuplex.experimental.worker.workerBufferSize", "12G");
+    conf["inputSplitSize"] = "20G"  # no splitting, process files as is with hyper & compare to single-threaded
+
+    tstart = time.time()
+
+    ctx = tuplex.Context(conf)
+    print('>>> Tuplex options: \n{}'.format(json.dumps(ctx.options())))
+
+    startup_time = time.time() - tstart
+    print('Tuplex startup time: {}'.format(startup_time))
+    tstart = time.time()
+    ### QUERY HERE ###
+
+    flights_pipeline(ctx, kwargs['year_lower'], kwargs['year_upper'], input_pattern, output_path, sm)
+
+    ### END QUERY ###
+    job_time = time.time() - tstart
+    print('Tuplex job time: {} s'.format(job_time))
+    m = ctx.metrics
+    print(ctx.options())
+    print(m.as_json())
+    # print stats as last line
+    stats = {"benchmark":"flights", "startup_time_in_s": startup_time, "job_time_in_s": job_time, 'mode': 'tuplex-on-lambda', 'output_path': output_path,
+             'input_path': input_pattern, 'scratch_path': scratch_dir, 'options': ctx.options(), 'metrics': json.loads(m.as_json())}
+    return stats
+
 def setup_logging(log_path:Optional[str]) -> None:
 
     LOG_FORMAT="[%(asctime)s] %(levelname)s [%(name)s.%(funcName)s:%(lineno)d] %(message)s"
@@ -657,10 +824,11 @@ def setup_logging(log_path:Optional[str]) -> None:
 
     # add file handler to root logger
     if log_path:
+        os.makedirs(pathlib.Path(log_path).parent, exist_ok=True)
         handler = logging.FileHandler(log_path)
         formatter = logging.Formatter(LOG_FORMAT)
         handler.setFormatter(formatter)
-        handlers.append*handler
+        handlers.append(handler)
 
         # set up logging to file - see previous section for more details
     logging.basicConfig(level=logging.INFO,
@@ -669,7 +837,7 @@ def setup_logging(log_path:Optional[str]) -> None:
                         handlers=handlers)
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Github hyper specialization query')
+    parser = argparse.ArgumentParser(description='Flights hyper specialization query')
     # tuplex parameters
     parser.add_argument('--no-hyper', dest='no_hyper', action="store_true",
                         help="deactivate hyperspecialization optimization explicitly.")
@@ -696,16 +864,21 @@ if __name__ == '__main__':
 
     # general args
     parser.add_argument('--m', '--mode', dest='mode', choices=AVAILABLE_MODES, default='tuplex', help='select whether to run benchmark using python baseline or tuplex')
-    parser.add_argument('--input-pattern', default=None, dest='input_pattern', help='input files to read into github pipeline')
+    parser.add_argument('--input-pattern', default=None, dest='input_pattern', help='input files to read into flights pipeline')
     parser.add_argument('--output-path', default=None, dest='output_path', help='where to store result of pipeline')
     parser.add_argument('--scratch-dir', default=None, dest='scratch_dir', help='where to store intermediate results')
     parser.add_argument('--log-path', default=None, dest='log_path', help='specify optional path where to store experiment log results.')
     parser.add_argument('--result-path', default='results.ndjson', help='new-line delimited JSON formatted result file')
+    parser.add_argument('--tuplex-worker-path', default=None, dest="tuplex_worker_path", help="specify worker path when executing in local mode.")
+    # AWS Lambda specific experiment settings.
+    parser.add_argument('--lambda', dest="with_lambda", action="store_true")
+    parser.add_argument('--lambda-parallelism', dest="lambda_parallelism", type=int, default=100)
+    parser.add_argument('--lambda-size', dest="lambda_size", type=int, default=1536)
     args = parser.parse_args()
 
     # set up logging, by default always render to console. If log path is present, store file as well
     setup_logging(args.log_path)
-    logging.info("Running Flights query benchmark for Tuplex/Viton")
+    logging.info("Running Flights query benchmark for Tuplex/Viton.")
     if args.log_path is not None:
         logging.info("Saving logs to {}".format(args.log_path))
 
@@ -722,7 +895,23 @@ if __name__ == '__main__':
     logging.info(f"-- filter: lambda x: {year_lower} <= x['year'] <= {year_upper}")
     kwargs = {'year_lower': year_lower, 'year_upper':year_upper}
 
-    if args.mode == 'tuplex':
+
+    # Run different modes.
+    if args.with_lambda:
+        logging.info("Running tuplex on AWS lambdas.")
+        ans = run_with_tuplex_on_lambda(args)
+
+        # Load .json file from job/ folder.
+        # The current one is the latest written one.
+        JOB_STATS_FILE = sorted(list(glob.glob("job/*.json")), key=os.path.getctime)[-1]
+        logging.info(f"Found existing job stats file {JOB_STATS_FILE}.")
+        if os.path.exists(JOB_STATS_FILE):
+            with open(JOB_STATS_FILE, 'r') as fp:
+                ans['detailed_job_stats'] = json.load(fp)
+        else:
+            logging.error(f"Could not find worker app stats ({JOB_STATS_FILE})")
+
+    elif args.mode == 'tuplex':
         ans = run_with_tuplex(args, **kwargs)
 
         # load worker_app_job.json and append to results
@@ -732,7 +921,6 @@ if __name__ == '__main__':
                 ans['detailed_job_stats'] = json.load(fp)
         else:
             logging.error(f"Could not find worker app stats ({JOB_STATS_FILE})")
-
     elif args.mode == 'python':
         ans = run_with_python_baseline(args, **kwargs)
     elif args.mode == 'lithops':
@@ -747,3 +935,4 @@ if __name__ == '__main__':
         json.dump(ans, f, sort_keys=True)
         f.write('\n')
     logging.info("Done.")
+    os._exit(0)

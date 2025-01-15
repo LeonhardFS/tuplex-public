@@ -112,6 +112,8 @@ namespace tuplex {
         // disable copying
         Context(const Context& other) = delete;
 
+        Context(Context&& other);
+
         int id() const { return _id; }
 
         // create from array
@@ -211,7 +213,8 @@ namespace tuplex {
         DataSet& json(const std::string& pattern,
                       bool unwrap_first_level=true,
                       bool treat_heterogenous_lists_as_tuples=true,
-                      const SamplingMode& sm=DEFAULT_SAMPLING_MODE);
+                      const SamplingMode& sm=DEFAULT_SAMPLING_MODE,
+                      const std::unordered_map<std::string, python::Type>& column_based_type_hints={});
 
         /*!
          * reads text files with into memory. Type will be always string or Option[string]. Parsing is done using line delimiters \n and \r

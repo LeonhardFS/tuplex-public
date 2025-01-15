@@ -39,10 +39,9 @@ namespace tuplex {
 
         // S3 files can only operate on read xor write mode
         if(_mode & VirtualFileMode::VFS_WRITE && _mode & VirtualFileMode::VFS_READ)
-            throw std::runtime_error("S3 files can't be read/write at the same time");
+            throw s3exception("S3 files can't be read/write at the same time", __LINE__, __FILE__);
 
         _fileUploaded = false;
-
 
 //#ifndef NDEBUG
         //debug:
@@ -92,11 +91,15 @@ namespace tuplex {
                 put_req.SetBucket(_uri.s3Bucket().c_str());
                 put_req.SetKey(_uri.s3Key().c_str());
                 put_req.SetContentLength(_bufferLength);
-                put_req.SetRequestPayer(_requestPayer);
 
-                auto content_type = _uri.s3GetMIMEType();
-                if(!content_type.empty()) {
-                    put_req.SetContentType(content_type.c_str());
+                // Amazon specific header.
+                if(_s3fs.isAmazon()) {
+                    put_req.SetRequestPayer(_requestPayer);
+
+                    auto content_type = _uri.s3GetMIMEType();
+                    if(!content_type.empty()) {
+                        put_req.SetContentType(content_type.c_str());
+                    }
                 }
 
                 // body
@@ -110,9 +113,10 @@ namespace tuplex {
                 _s3fs._putRequests++;
                 if(!outcome.IsSuccess()) {
                     MessageHandler& logger = Logger::instance().logger("s3fs");
-                    auto err_msg = outcome_error_message(outcome, _uri.toString());
+                    auto err_msg = outcome_error_message(outcome, _s3fs._config, _uri.toString());
+                    err_msg += "\nrequestPayer: " + boolToString(_requestPayer == Aws::S3::Model::RequestPayer::requester) + " isAmazon: " + boolToString(_s3fs.isAmazon()) + "\n";
                     logger.error(err_msg);
-                    throw std::runtime_error(err_msg);
+                    throw s3exception(err_msg, __LINE__, __FILE__);
                 }
                 _s3fs._bytesTransferred += _bufferLength;
             }
@@ -137,10 +141,14 @@ namespace tuplex {
         Aws::S3::Model::CreateMultipartUploadRequest req;
         req.SetBucket(_uri.s3Bucket().c_str());
         req.SetKey(_uri.s3Key().c_str());
-        req.SetRequestPayer(_requestPayer);
-        auto content_type = _uri.s3GetMIMEType();
-        if(!content_type.empty()) {
-            req.SetContentType(content_type.c_str());
+
+        // Amazon specific header.
+        if(_s3fs.isAmazon()) {
+            req.SetRequestPayer(_requestPayer);
+            auto content_type = _uri.s3GetMIMEType();
+            if (!content_type.empty()) {
+                req.SetContentType(content_type.c_str());
+            }
         }
 
         Timer timer;
@@ -150,9 +158,9 @@ namespace tuplex {
         // count as put request
 
         if(!outcome.IsSuccess()) {
-            auto err_msg = outcome_error_message(outcome, _uri.toString());
+            auto err_msg = outcome_error_message(outcome, _s3fs._config, _uri.toString());
             logger.error(err_msg);
-            throw std::runtime_error(err_msg);
+            throw s3exception(err_msg, __LINE__, __FILE__);
         }
 
         _uploadID = outcome.GetResult().GetUploadId();
@@ -190,7 +198,10 @@ namespace tuplex {
         req.SetUploadId(_uploadID);
         req.SetPartNumber(_partNumber);
         req.SetContentLength(_bufferLength);
-        req.SetRequestPayer(_requestPayer);
+        // Amazon specific header.
+        if(_s3fs.isAmazon()) {
+            req.SetRequestPayer(_requestPayer);
+        }
 
         auto stream = std::shared_ptr<Aws::IOStream>(new boost::interprocess::bufferstream((char*)_buffer, _bufferLength));
         req.SetBody(stream);
@@ -201,9 +212,9 @@ namespace tuplex {
         _s3fs._multiPartPutRequests++;
         _s3fs._bytesTransferred += _bufferLength;
         if(!outcome.IsSuccess()) {
-            auto err_msg = outcome_error_message(outcome, _uri.toString());
+            auto err_msg = outcome_error_message(outcome, _s3fs._config, _uri.toString());
             logger.error(err_msg);
-            throw std::runtime_error(err_msg);
+            throw s3exception(err_msg, __LINE__, __FILE__);
             return false;
         }
 
@@ -233,7 +244,10 @@ namespace tuplex {
         req.SetBucket(_uri.s3Bucket().c_str());
         req.SetKey(_uri.s3Key().c_str());
         req.SetUploadId(_uploadID);
-        req.SetRequestPayer(_requestPayer);
+        // Amazon specific header.
+        if(_s3fs.isAmazon()) {
+            req.SetRequestPayer(_requestPayer);
+        }
 
         Aws::S3::Model::CompletedMultipartUpload upld;
         for(auto part : _parts)
@@ -246,9 +260,9 @@ namespace tuplex {
         _requestTime += timer.time();
         _s3fs._closeMultiPartUploadRequests++;
         if(!outcome.IsSuccess()) {
-            auto err_msg = outcome_error_message(outcome, _uri.toString());
+            auto err_msg = outcome_error_message(outcome, _s3fs._config, _uri.toString());
             logger.error(err_msg);
-            throw std::runtime_error(err_msg);
+            throw s3exception(err_msg, __LINE__, __FILE__);
         }
     }
 
@@ -307,7 +321,7 @@ namespace tuplex {
 
         // make sure file is not yet uploaded
         if(_fileUploaded) {
-            throw std::runtime_error("file has been already uploaded. Did you call write after close?");
+            throw s3exception("file has been already uploaded. Did you call write after close?", __LINE__, __FILE__);
         }
 
         // skip write
@@ -452,7 +466,10 @@ namespace tuplex {
         req.SetKey(_uri.s3Key().c_str());
         // retrieve byte range according to http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.35
         req.SetRange(range.c_str());
-        req.SetRequestPayer(_requestPayer);
+        // Amazon specific header.
+        if(_s3fs.isAmazon()) {
+            req.SetRequestPayer(_requestPayer);
+        }
 
         // Get the object ==> Note: this s3 client is damn slow, need to make it faster in the future...
         Timer timer;
@@ -481,9 +498,9 @@ namespace tuplex {
             _s3fs._bytesReceived += retrievedBytes;
         } else {
             MessageHandler& logger = Logger::instance().logger("s3fs");
-            auto err_msg = outcome_error_message(get_object_outcome, _uri.toString());
+            auto err_msg = outcome_error_message(get_object_outcome, _s3fs._config, _uri.toString());
             logger.error(err_msg);
-            throw std::runtime_error(err_msg);
+            throw s3exception(err_msg, __LINE__, __FILE__);
         }
 
         if(bytesRead)
@@ -630,7 +647,10 @@ namespace tuplex {
         req.SetKey(_uri.s3Key().c_str());
         // retrieve byte range according to http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.35
         req.SetRange(range.c_str());
-        req.SetRequestPayer(_requestPayer);
+        // Amazon specific header.
+        if(_s3fs.isAmazon()) {
+            req.SetRequestPayer(_requestPayer);
+        }
 
         Timer timer;
         // Get the object
@@ -671,9 +691,9 @@ namespace tuplex {
             _s3fs._bytesReceived += retrievedBytes;
         } else {
             MessageHandler& logger = Logger::instance().logger("s3fs");
-            auto err_msg = outcome_error_message(get_object_outcome, _uri.toString());
+            auto err_msg = outcome_error_message(get_object_outcome, _s3fs._config, _uri.toString());
             logger.error(err_msg);
-            throw std::runtime_error(err_msg);
+            throw s3exception(err_msg, __LINE__, __FILE__);
         }
         return retrievedBytes;
     }
@@ -696,10 +716,12 @@ namespace tuplex {
             delete [] _buffer;
         _buffer = nullptr;
 
-         // print
-         std::stringstream ss;
-         ss<<"s3 request time spent on "<<_uri.toPath()<<": "<<_requestTime<<"s"<<std::endl;
-         Logger::instance().defaultLogger().info(ss.str());
+         // print if non-zero.
+         if(_requestTime > 0.00001) {
+             std::stringstream ss;
+             ss<<"s3 request time spent on "<<_uri.toPath()<<": "<<_requestTime<<"s"<<std::endl;
+             Logger::instance().defaultLogger().info(ss.str());
+         }
     }
 
     bool S3File::eof() const {

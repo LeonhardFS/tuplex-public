@@ -4,7 +4,7 @@ CMAKE_MINIMUM_REQUIRED(VERSION 3.12 FATAL_ERROR)
 
 # use pybind11 (header only library) to create python C-extension representing tuplex
 
-# enable c++14
+# enable c++17
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -12,13 +12,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 SET(MODULE_NAME tuplex)
 
 # deprecated
-include(FetchContent)
 #set(PYBIND11_NOPYTHON ON CACHE INTERNAL "") 
 message(STATUS "Pybind11 uses python version ${Python3_VERSION}")
 set(PYBIND11_FINDPYTHON OFF CACHE INTERNAL "") 
 set(PYBIND11_PYTHON_VERSION "${Python3_VERSION}" CACHE INTERNAL "")
 FetchContent_Declare(pybind11 GIT_REPOSITORY https://github.com/pybind/pybind11
-                             GIT_TAG        v2.9.1 )
+                             GIT_TAG        v2.11.1 )
 FetchContent_GetProperties(pybind11)
 if(NOT pybind11_POPULATED)
     FetchContent_Populate(pybind11)
@@ -32,7 +31,6 @@ file(GLOB_RECURSE SOURCES src/*.cc)
 #PYTHON_ADD_MODULE(${MODULE_NAME} ${SOURCES})
 message(STATUS "libs: ${Python3_LIBRARIES}")
 message(STATUS "includes: ${Python3_INCLUDE_DIRS}")
-
 
 ## use e.g. cpm https://github.com/cpm-cmake/CPM.cmake
 ## fetch pybind11 (external project)
@@ -63,7 +61,9 @@ add_dependencies(${MODULE_NAME} libcore libcodegen)
 target_include_directories(${MODULE_NAME} PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries(${MODULE_NAME} PRIVATE
+if(APPLE)
+target_link_libraries(${MODULE_NAME} PUBLIC Backward::Interface
+        PRIVATE
         libcodegen
         libcore
         libcpythonadapter
@@ -73,6 +73,19 @@ target_link_libraries(${MODULE_NAME} PRIVATE
         Boost::thread
         Boost::system
         Boost::filesystem)
+else()
+    target_link_libraries(${MODULE_NAME}
+            PRIVATE
+            libcodegen
+            libcore
+            libcpythonadapter
+            libutils
+            libio
+            Boost::iostreams
+            Boost::thread
+            Boost::system
+            Boost::filesystem)
+endif()
 
 #check if single generator or multiple
 # copy setup.py/MANIFEST.in files and the directory tuplex

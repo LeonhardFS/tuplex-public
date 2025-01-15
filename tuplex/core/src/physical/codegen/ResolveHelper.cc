@@ -9,7 +9,7 @@ namespace tuplex {
     namespace codegen {
 
 
-        void handlePythonParallelizeException(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* ecCode) {
+        void handlePythonParallelizeException(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* ecCode) {
             using namespace llvm;
 
             auto& ctx = builder.getContext();
@@ -28,7 +28,7 @@ namespace tuplex {
             builder.SetInsertPoint(bIsNot);
         }
 
-        FlattenedTuple decodeCSVCells(LLVMEnvironment& env, llvm::IRBuilder<>& builder,
+        FlattenedTuple decodeCSVCells(LLVMEnvironment& env, const IRBuilder& builder,
                                       const std::shared_ptr<FileInputOperator>& input_op,
                                       const python::Type& pip_input_row_type,
                                       const ExceptionCode& return_code_on_parse_error,
@@ -43,7 +43,7 @@ namespace tuplex {
             FlattenedTuple ft(&env);
             ft.init(pip_input_row_type);
 
-            auto num_cells = builder.CreateLoad(builder.CreatePointerCast(buf, env.i64ptrType()));
+            auto num_cells = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(buf, env.i64ptrType()));
             int64_t num_desired_cells = pip_input_row_type.parameters().size();
 
             // quick check on whether number of cells matches.
@@ -62,14 +62,14 @@ namespace tuplex {
             // continue, parse cells according to schema!
             builder.SetInsertPoint(bCellCountOK);
 
-            Value* ptr = builder.CreateGEP(buf, env.i64Const(sizeof(int64_t)));
+            Value* ptr = builder.MovePtrByBytes(buf, sizeof(int64_t));
             // need to parse all cells
             for(unsigned i = 0; i < num_desired_cells; ++i) {
                 // decode cell & size
-                auto info = builder.CreateLoad(builder.CreatePointerCast(ptr, env.i64ptrType()));
+                auto info = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(ptr, env.i64ptrType()));
                 llvm::Value* offset=nullptr, *cell_size = nullptr;
                 std::tie(offset, cell_size) = unpack_offset_and_size(builder, info);
-                auto cell_str = builder.CreateGEP(ptr, offset);
+                auto cell_str = builder.MovePtrByBytes(ptr, offset);
 
                 auto cell_type = pip_input_row_type.parameters()[i];
 
@@ -89,7 +89,7 @@ namespace tuplex {
                 // assign to tuple
                 ft.set(builder, {(int)i}, cell.val, cell.size, cell.is_null);
 
-                ptr = builder.CreateGEP(ptr, env.i64Const(sizeof(int64_t)));
+                ptr = builder.MovePtrByBytes(ptr, sizeof(int64_t));
             }
 
             // env.freeAll(builder); // <-- is this correct?
@@ -101,7 +101,7 @@ namespace tuplex {
         }
 
 
-        FlattenedTuple decodeBadParseStringInputException(LLVMEnvironment& env, llvm::IRBuilder<>& builder,
+        FlattenedTuple decodeBadParseStringInputException(LLVMEnvironment& env, const IRBuilder& builder,
                                                           const std::shared_ptr<FileInputOperator>& input_op,
                                                           const python::Type& pip_input_row_type,
                                                           const ExceptionCode& return_code_on_parse_error,
@@ -140,21 +140,22 @@ namespace tuplex {
                     auto normalized_output_row_type = input_op->getOutputSchema().getRowType();
                     if(normalized_output_row_type.isRowType())
                         normalized_output_row_type = normalized_output_row_type.get_columns_as_tuple_type();
+
                     assert(normalized_output_row_type == pip_input_row_type);
 
                     // extract string and length from data buffer
 
-                    auto num_cells = builder.CreateLoad(builder.CreatePointerCast(buf, env.i64ptrType()));
+                    auto num_cells = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(buf, env.i64ptrType()));
                     // env.printValue(builder, num_cells, "num cells: ");
 
                     // for JSON, single info and cell
-                    auto ptr = builder.CreateGEP(buf, env.i64Const(sizeof(int64_t)));
-                    auto info = builder.CreateLoad(builder.CreatePointerCast(ptr, env.i64ptrType()));
+                    auto ptr = builder.MovePtrByBytes(buf, sizeof(int64_t));
+                    auto info = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(ptr, env.i64ptrType()));
 
                     llvm::Value* offset=nullptr, *str_size = nullptr;
                     std::tie(offset, str_size) = unpack_offset_and_size(builder, info);
 
-                    auto str = builder.CreateGEP(ptr, offset);
+                    auto str = builder.MovePtrByBytes(ptr, offset);
 
                     // env.printValue(builder, offset, "offset (should be 8): ");
                     // env.printValue(builder, str, "data: ");
@@ -177,6 +178,12 @@ namespace tuplex {
 
                     builder.SetInsertPoint(bParseFailed);
                     env.freeAll(builder);
+
+                    // env.debugPrint(builder, "parsing badparsestringinput exception failed, returning error code " + std::to_string(
+                    //        ecToI64(return_code_on_parse_error)));
+                    // env.printValue(builder, str, "data: ");
+                    // env.printValue(builder, str_size, "data size: ");
+
                     builder.CreateRet(env.i64Const(ecToI64(return_code_on_parse_error)));
 
                     builder.SetInsertPoint(bParseOK);
@@ -199,7 +206,7 @@ namespace tuplex {
         }
 
         void handleBadParseStringInputException(LLVMEnvironment& env,
-                                                llvm::IRBuilder<>& builder, const python::Type& pip_input_row_type,
+                                                const IRBuilder& builder, const python::Type& pip_input_row_type,
                                                 llvm::Function* pipeline_func,
                                                 const std::shared_ptr<FileInputOperator>& input_op,
                                                 llvm::Value* ecCode,
@@ -218,6 +225,11 @@ namespace tuplex {
             BasicBlock* bIsNot = BasicBlock::Create(ctx, "is_not", builder.GetInsertBlock()->getParent());
 
             auto is_bad_parse_cond = builder.CreateICmpEQ(ecCode, env.i64Const(ecToI64(ExceptionCode::BADPARSE_STRING_INPUT)));
+
+#ifndef NDEBUG
+            env.printValue(builder, is_bad_parse_cond, "is it a bad-parse exception (ec=" + std::to_string(ecToI64(ExceptionCode::BADPARSE_STRING_INPUT)) + "): ");
+#endif
+
             builder.CreateCondBr(is_bad_parse_cond, bIsBadParseStringInput, bIsNot);
 
             builder.SetInsertPoint(bIsBadParseStringInput);
@@ -233,7 +245,9 @@ namespace tuplex {
             auto ft = decodeBadParseStringInputException(env, builder, input_op, pip_input_row_type,
                                                          ExceptionCode::GENERALCASEVIOLATION, buf, buf_size);
 
-
+#ifndef NDEBUG
+            env.printValue(builder, buf_size, "decoded exception into row from buffer with size: ");
+#endif
             // process using pipeline
             //PipelineBuilder::call(builder, pip.build(), ft, userData, )
             //env.printValue(builder, rowNumber, "got badparse string input exception for row=");
@@ -245,7 +259,9 @@ namespace tuplex {
             auto ecOpID = builder.CreateZExtOrTrunc(pip_res.exceptionOperatorID, env.i64Type());
             auto numRowsCreated = builder.CreateZExtOrTrunc(pip_res.numProducedRows, env.i64Type());
 
-            // env.printValue(builder, ecCode, "slow pip ec= ");
+#ifndef NDEBUG
+             env.printValue(builder, ecCode, "called pipeline for bad-parse row, return code for pipeline is ec= ");
+#endif
 
             // use provided return code.
             env.freeAll(builder);
@@ -253,11 +269,15 @@ namespace tuplex {
 
             // before exiting function, make sure to set builder to correct insert point.
             builder.SetInsertPoint(bIsNot);
+
+#ifndef NDEBUG
+            env.debugPrint(builder, "exception not considered bad parse input, continuing resolve paths...");
+#endif
         }
 
         // env, builder, pip_input_row_type, pipFunc, ecCode, rowNo, userData, dataPtr, dataSize
         void handleGeneralCaseExceptionsFromTuplexMemory(LLVMEnvironment& env,
-                                                llvm::IRBuilder<>& builder,
+                                                const IRBuilder& builder,
                                                 const python::Type& general_case_input_row_type,
                                                 llvm::Function* pipeline_func,
                                                 llvm::Value* ecCode,
@@ -271,7 +291,9 @@ namespace tuplex {
             assert(buf_size && buf_size->getType() == env.i64Type());
 
             auto& ctx = builder.getContext();
-
+#ifndef NDEBUG
+            env.debugPrint(builder, "handling general case exception from memory");
+#endif
             // make sure pipeline func and row type are compatible
             // @TODO
 
@@ -281,22 +303,26 @@ namespace tuplex {
             FlattenedTuple ft(&env);
             ft.init(general_case_input_row_type);
             ft.deserializationCode(builder, buf);
-
+#ifndef NDEBUG
+            env.printValue(builder, ecCode, "got in resolve path ec: ");
+#endif
             auto pip_res = PipelineBuilder::call(builder, pipeline_func, ft, userData, rowNumber); // no intermediate support right now.
 
             // create if based on resCode to go into exception block
             ecCode = builder.CreateZExtOrTrunc(pip_res.resultCode, env.i64Type());
             auto ecOpID = builder.CreateZExtOrTrunc(pip_res.exceptionOperatorID, env.i64Type());
             auto numRowsCreated = builder.CreateZExtOrTrunc(pip_res.numProducedRows, env.i64Type());
-
+#ifndef NDEBUG
+            env.printValue(builder, ecCode, "pipeline call in slow path resulted in ec code: ");
+#endif
             // if ecCode is not 0 (success), set to GENERALCASEVIOLATION so interpreter can decode correctly with general case schema
             auto success_code = env.i64Const(ecToI64(ExceptionCode::SUCCESS));
             ecCode = builder.CreateSelect(builder.CreateICmpEQ(ecCode, success_code),
                                           success_code, env.i64Const(ecToI64(ExceptionCode::GENERALCASEVIOLATION)));
 
-
-            // env.printValue(builder, ecCode, "slow pip ec= ");
-
+#ifndef NDEBUG
+            env.printValue(builder, ecCode, "promoted ec code is going to result in: slow pip ec= ");
+#endif
             // use provided return code.
             env.freeAll(builder);
             builder.CreateRet(ecCode);
@@ -373,13 +399,18 @@ namespace tuplex {
             auto args = mapLLVMFunctionArgs(func, {"userData",  "rowNumber", "exceptionCode", "rowBuf", "bufSize",});
 
             auto body = BasicBlock::Create(ctx, "body", func);
-            IRBuilder<> builder(body);
+            IRBuilder builder(body);
             // decode according to exception type => i.e. decode according to pipeline builder + nullvalue opt!
             auto ecCode = args["exceptionCode"];
             auto dataPtr = args["rowBuf"];
             auto dataSize = args["bufSize"];
             auto userData = args["userData"];
             auto rowNo = args["rowNumber"];
+
+#ifndef NDEBUG
+            env.printValue(builder, ecCode, "got exception to process with ec=");
+            env.printValue(builder, rowNo, "exception row number is: ");
+#endif
 
             // exceptions are stored in a variety of formats
             // 1. PYTHON_PARALLELIZE -> stored as pickled object, can't decode. Requires interpreter functor.
@@ -401,6 +432,9 @@ namespace tuplex {
 
             auto general_case_input_row_type = pip_input_row_type;
             logger.debug("Assuming exceptions are given as general case rows with schema=" + general_case_input_row_type.desc());
+#ifndef NDEBUG
+            env.printValue(builder, ecCode, "handling general case exceptions " + pip_input_row_type.desc() + " of ec=");
+#endif
             handleGeneralCaseExceptionsFromTuplexMemory(env, builder, pip_input_row_type, pipFunc, ecCode, rowNo, userData, dataPtr, dataSize);
 
             // check if current block is not terminated, if so end function with original ecCode and free all runtime memory before.

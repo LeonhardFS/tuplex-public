@@ -146,6 +146,14 @@ namespace tuplex {
 
     extern py::object registerPythonLoggingCallback(py::object callback_functor);
 
+    inline py::list pybind_list_from_obj(PyObject* listObj) {
+        assert(listObj);
+        assert(PyList_Check(listObj));
+        assert(listObj->ob_refcnt > 0);
+
+        return py::cast<py::list>(listObj);
+    }
+
     /*!
      * retrieve python version as X.Y.Z (hex) to check whether version of module matches up with interpreter version
      * being run.

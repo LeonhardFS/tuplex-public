@@ -671,7 +671,6 @@ namespace tuplex {
             return std::make_shared<ResultSet>(Schema::UNKNOWN, std::vector<Partition *>());
 
         auto rs = _stage->resultSet();
-        assert(rs);
         return rs;
     }
 

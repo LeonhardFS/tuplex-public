@@ -15,6 +15,7 @@
 #include <codegen/LambdaFunction.h>
 #include <codegen/LLVMEnvironment.h>
 #include <ast/ASTAnnotation.h>
+#include <codegen/CodegenHelper.h>
 
 namespace tuplex {
     namespace codegen{
@@ -37,7 +38,7 @@ namespace tuplex {
              * @return SerializableValue with val being a pointer to llvm struct representing the list/string/tuple iterator context
              */
             SerializableValue initIterContext(LambdaFunctionBuilder &lfb,
-                                              llvm::IRBuilder<> &builder,
+                                              const codegen::IRBuilder &builder,
                                               const python::Type &iterableType,
                                               const SerializableValue &iterable);
 
@@ -51,7 +52,7 @@ namespace tuplex {
              * @return SerializableValue with val being a pointer to llvm struct representing the list/string/tuple iterator context
              */
             SerializableValue initReversedContext(LambdaFunctionBuilder &lfb,
-                                              llvm::IRBuilder<> &builder,
+                                              const codegen::IRBuilder& builder,
                                               const python::Type &argType,
                                               const SerializableValue &arg);
 
@@ -64,7 +65,7 @@ namespace tuplex {
              * @return val: pointer to llvm struct representing the zip iterator context
              */
             SerializableValue initZipContext(LambdaFunctionBuilder& lfb,
-                                             llvm::IRBuilder<> &builder,
+                                             const codegen::IRBuilder& builder,
                                              const std::vector<SerializableValue> &iterables,
                                              const std::shared_ptr<IteratorInfo> &iteratorInfo);
 
@@ -78,7 +79,7 @@ namespace tuplex {
              * @return val: pointer to llvm struct representing the enumerate iterator context
              */
             SerializableValue initEnumerateContext(LambdaFunctionBuilder& lfb,
-                                                   llvm::IRBuilder<> &builder,
+                                                   const codegen::IRBuilder& builder,
                                                    const SerializableValue &iterable,
                                                    llvm::Value *startVal,
                                                    const std::shared_ptr<IteratorInfo> &iteratorInfo);
@@ -95,7 +96,7 @@ namespace tuplex {
              * @return next element generated from the iterator, or default value if iterator is exhausted and a default value is provided
              */
             SerializableValue createIteratorNextCall(LambdaFunctionBuilder &lfb,
-                                                     llvm::IRBuilder<> &builder,
+                                                     const codegen::IRBuilder& builder,
                                                      const python::Type &yieldType,
                                                      llvm::Value *iterator,
                                                      const SerializableValue &defaultArg,
@@ -108,7 +109,7 @@ namespace tuplex {
              * @param iteratorInfo
              * @return true if iterator is exhausted (getIteratorNextElement should not get called later), otherwise false
              */
-            llvm::Value *updateIteratorIndex(llvm::IRBuilder<> &builder,
+            llvm::Value *updateIteratorIndex(const codegen::IRBuilder& builder,
                                              llvm::Value *iterator,
                                              const std::shared_ptr<IteratorInfo> &iteratorInfo);
 
@@ -121,75 +122,156 @@ namespace tuplex {
              * @param iteratorInfo
              * @return element of yieldType
              */
-            SerializableValue getIteratorNextElement(llvm::IRBuilder<> &builder,
+            SerializableValue getIteratorNextElement(const codegen::IRBuilder& builder,
                                                      const python::Type &yieldType,
                                                      llvm::Value *iterator,
                                                      const std::shared_ptr<IteratorInfo> &iteratorInfo);
 
-            /*!
-             * Update index for a zip iterator in preparing for the getIteratorNextElement call by calling updateIteratorIndex on each argument.
-             * If any argument is exhausted, return true and stop calling updateIteratorIndex on rest of the arguments.
-             * Only return false if none of the argument iterators is exhausted.
-             * @param builder
-             * @param iterator
-             * @param iteratorInfo
-             * @return true if iterator is exhausted (getIteratorNextElement should not get called later), otherwise false
-             */
-            llvm::Value *updateZipIndex(llvm::IRBuilder<> &builder,
-                                        llvm::Value *iterator,
-                                        const std::shared_ptr<IteratorInfo> &iteratorInfo);
+        };
 
-            /*!
-             * Generate the next element of a zip iterator.
-             * Only to be called after calling updateIteratorIndex.
-             * @param builder
-             * @param yieldType
-             * @param iterator
-             * @param iteratorInfo
-             * @return tuple element of yieldType
-             */
-            SerializableValue getZipNextElement(llvm::IRBuilder<> &builder,
-                                                const python::Type &yieldType,
-                                                llvm::Value *iterator,
-                                                const std::shared_ptr<IteratorInfo> &iteratorInfo);
+        /*!
+         * create iteratorcontext info type depending on iteratorInfo.
+         * @param env
+         * @param iteratorInfo
+         * @return corresponding llvm::Type
+         */
+        extern llvm::Type* createIteratorContextTypeFromIteratorInfo(LLVMEnvironment& env, const IteratorInfo& iteratorInfo);
 
-            /*!
-             * Generate the next element of a enumerate iterator.
-             * Only to be called after calling updateIteratorIndex.
-             * @param builder
-             * @param iterator
-             * @param iteratorInfo
-             * @return true if iterator is exhausted (getIteratorNextElement should not get called later), otherwise false
-             */
-            llvm::Value *updateEnumerateIndex(llvm::IRBuilder<> &builder,
-                                              llvm::Value *iterator,
-                                              const std::shared_ptr<IteratorInfo> &iteratorInfo);
+        extern void increment_iterator_index(LLVMEnvironment& env, const codegen::IRBuilder& builder,
+                                             llvm::Value *iterator,
+                                             const std::shared_ptr<IteratorInfo> &iteratorInfo,
+                                             int32_t offset);
+    }
 
-            /*!
-             * Generate the next element of a enumerate iterator.
-             * Only to be called after calling updateIteratorIndex.
-             * @param builder
-             * @param yieldType
-             * @param iterator
-             * @param iteratorInfo
-             * @return tuple element of yieldType
-             */
-            SerializableValue getEnumerateNextElement(llvm::IRBuilder<> &builder,
-                                                      const python::Type &yieldType,
-                                                      llvm::Value *iterator,
-                                                      const std::shared_ptr<IteratorInfo> &iteratorInfo);
+    namespace codegen {
+        // interface to generate various iterators
+        class IIterator {
+        public:
+            IIterator(LLVMEnvironment& env) : _env(env) {}
 
-            /*!
-             * Increment index field of a list/string/tuple iterator by offset.
-             * Increment index field of a range iterator by step * offset.
-             * Decrement index field of any reverseiterator by offset.
-             * For zip and enumerate, will use recursive calls on their arguments until a list/string/tuple iterator or a reverseiterator is reached.
-             * @param builder
-             * @param iterator
-             * @param iteratorInfo
-             * @param offset can be negative
-             */
-            void incrementIteratorIndex(llvm::IRBuilder<> &builder, llvm::Value *iterator, const std::shared_ptr<IteratorInfo> &iteratorInfo, int offset);
+            virtual SerializableValue initContext(LambdaFunctionBuilder &lfb,
+                                                  const codegen::IRBuilder &builder,
+                                                  const SerializableValue& iterable,
+                                                  const python::Type &iterableType,
+                                                  const std::shared_ptr<IteratorInfo> &iteratorInfo);
+
+            // some iterators (e.g., zip) may have multiple arguments. Hence, allow for that as well using default single-arg function
+            virtual SerializableValue initContext(LambdaFunctionBuilder &lfb,
+                                                  const codegen::IRBuilder &builder,
+                                                  const std::vector<SerializableValue>& iterables,
+                                                  const python::Type &iterableType,
+                                                  const std::shared_ptr<IteratorInfo> &iteratorInfo);
+
+            virtual llvm::Value* updateIndex(const codegen::IRBuilder& builder,
+                                     llvm::Value *iterator,
+                                     const python::Type& iterableType,
+                                     const std::shared_ptr<IteratorInfo> &iteratorInfo) = 0;
+
+            virtual SerializableValue nextElement(const codegen::IRBuilder& builder,
+                                          const python::Type &yieldType,
+                                          llvm::Value *iterator,
+                                          const python::Type& iterableType,
+                                          const std::shared_ptr<IteratorInfo> &iteratorInfo) = 0;
+
+            virtual std::string name() const = 0;
+        protected:
+            LLVMEnvironment& _env;
+
+            virtual SerializableValue currentElement(const IRBuilder& builder,
+                                                     const python::Type& iterableType,
+                                                     const python::Type& yieldType,
+                                                     llvm::Value* iterator,
+                                                     const std::shared_ptr<IteratorInfo>& iteratorInfo);
+        };
+
+        // code generation for iter(...)
+        class SequenceIterator : public IIterator {
+        public:
+            SequenceIterator(LLVMEnvironment& env) : IIterator(env) {}
+
+            SerializableValue initContext(LambdaFunctionBuilder &lfb,
+                                          const codegen::IRBuilder &builder,
+                                          const SerializableValue& iterable,
+                                          const python::Type &iterableType,
+                                          const std::shared_ptr<IteratorInfo> &iteratorInfo) override;
+
+            virtual llvm::Value* updateIndex(const codegen::IRBuilder& builder,
+                                             llvm::Value *iterator,
+                                             const python::Type& iterableType,
+                                             const std::shared_ptr<IteratorInfo> &iteratorInfo) override;
+
+            virtual SerializableValue nextElement(const codegen::IRBuilder& builder,
+                                                  const python::Type &yieldType,
+                                                  llvm::Value *iterator,
+                                                  const python::Type& iterableType,
+                                                  const std::shared_ptr<IteratorInfo> &iteratorInfo) override;
+
+
+            std::string name() const override;
+
+        };
+
+        class EnumerateIterator : public SequenceIterator {
+        public:
+            EnumerateIterator(LLVMEnvironment& env) : SequenceIterator(env) {}
+
+            // same init as sequence iterator, only difference is in retrieving the next element (tuple)
+            SerializableValue initContext(tuplex::codegen::LambdaFunctionBuilder &lfb, const codegen::IRBuilder &builder, const std::vector<SerializableValue> &iterables, const python::Type &iterableType, const std::shared_ptr<IteratorInfo> &iteratorInfo) override;
+
+            llvm::Value* updateIndex(const codegen::IRBuilder &builder, llvm::Value *iterator, const python::Type &iterableType, const std::shared_ptr<IteratorInfo> &iteratorInfo) override;
+
+            SerializableValue nextElement(const codegen::IRBuilder &builder, const python::Type &yieldType, llvm::Value *iterator, const python::Type &iterableType, const std::shared_ptr<IteratorInfo> &iteratorInfo) override;
+        };
+
+
+        class ReversedIterator : public IIterator {
+        public:
+            ReversedIterator(LLVMEnvironment& env) : IIterator(env) {}
+
+            SerializableValue initContext(LambdaFunctionBuilder &lfb,
+                                          const codegen::IRBuilder &builder,
+                                          const SerializableValue& iterable,
+                                          const python::Type &iterableType,
+                                          const std::shared_ptr<IteratorInfo> &iteratorInfo) override;
+
+            virtual llvm::Value* updateIndex(const codegen::IRBuilder& builder,
+                                             llvm::Value *iterator,
+                                             const python::Type& iterableType,
+                                             const std::shared_ptr<IteratorInfo> &iteratorInfo) override;
+
+            virtual SerializableValue nextElement(const codegen::IRBuilder& builder,
+                                                  const python::Type &yieldType,
+                                                  llvm::Value *iterator,
+                                                  const python::Type& iterableType,
+                                                  const std::shared_ptr<IteratorInfo> &iteratorInfo) override;
+
+
+            std::string name() const override;
+        };
+
+        class ZipIterator : public IIterator {
+        public:
+            explicit ZipIterator(LLVMEnvironment& env) : IIterator(env) {}
+
+            SerializableValue initContext(LambdaFunctionBuilder &lfb,
+                                          const codegen::IRBuilder &builder,
+                                          const std::vector<SerializableValue>& iterables,
+                                          const python::Type &iterableType,
+                                          const std::shared_ptr<IteratorInfo> &iteratorInfo) override;
+
+            virtual llvm::Value* updateIndex(const codegen::IRBuilder& builder,
+                                             llvm::Value *iterator,
+                                             const python::Type& iterableType,
+                                             const std::shared_ptr<IteratorInfo> &iteratorInfo) override;
+
+            virtual SerializableValue nextElement(const codegen::IRBuilder& builder,
+                                                  const python::Type &yieldType,
+                                                  llvm::Value *iterator,
+                                                  const python::Type& iterableType,
+                                                  const std::shared_ptr<IteratorInfo> &iteratorInfo) override;
+
+
+            std::string name() const override;
         };
     }
 }

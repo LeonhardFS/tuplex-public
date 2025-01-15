@@ -17,16 +17,30 @@
 #include <string>
 #include <TypeSystem.h>
 #include <Field.h>
-
 #include <parameters.h>
+
+#if LLVM_VERSION_MAJOR > 9
+#include <llvm/AsmParser/Parser.h>
+#include <llvm/TargetParser/Host.h>
+
+#endif
+
+#if LLVM_VERSION_MAJOR >= 9
 
 //#if LLVM_VERSION_MAJOR == 9
 // LLVM9 fix
 #include <llvm/Target/TargetMachine.h>
-//#endif
+#endif
 
-// Note: would be great to use something like this to find bugs within LLVM IR generation
-// https://reviews.llvm.org/D40778#change-y6HwnUloCr6I
+
+#if LLVM_VERSION_MAJOR > 8
+// for parsing string to threadsafemodule (llvm9+ ORC APIs)
+#include <llvm/ExecutionEngine/Orc/ExecutionUtils.h>
+#include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
+#include <llvm/Support/SourceMgr.h>
+#include <llvm/IRReader/IRReader.h>
+#include <llvm/IR/Verifier.h>
+#endif
 
 
 // builder and codegen funcs
@@ -44,6 +58,728 @@
 
 namespace tuplex {
     namespace codegen {
+
+        inline void last_inst_no_branch_guard(llvm::BasicBlock* bb) {
+            // check that the last instruction in basic block is not a br (or condbr insturction)
+#ifndef NDEBUG
+            assert(bb);
+            if(!bb->empty()) {
+                if(llvm::isa<llvm::BranchInst>(bb->back()))
+                    throw std::runtime_error("Basic Block " + bb->getName().str() + " ends with br (or cond br) instruction.");
+            }
+#endif
+        }
+
+        /*!
+         * helper class to build LLVM IR. Added because IRBuilder was made non-copyable in llvm source base
+         */
+         class IRBuilder {
+         public:
+             IRBuilder() : _llvm_builder(nullptr) {}
+
+             IRBuilder(llvm::IRBuilder<>& llvm_builder);
+             IRBuilder(const llvm::IRBuilder<>& llvm_builder);
+             IRBuilder(llvm::BasicBlock* bb);
+
+             IRBuilder(llvm::LLVMContext& ctx);
+
+             // copy
+             IRBuilder(const IRBuilder& other);
+
+             ~IRBuilder();
+
+             llvm::LLVMContext& getContext() const {
+                 return get_or_throw().getContext();
+             }
+
+             /*!
+              * creates a new builder returning a builder for the first block.
+              * @param insertAtEnd if true, sets the IR builder insert point at the end of the first basic block in the function. If false, at start.
+              * @return
+              */
+            IRBuilder firstBlockBuilder(bool insertAtEnd=true) const;
+
+            // CreateAlloca (Type *Ty, unsigned AddrSpace, Value *ArraySize=nullptr, const Twine &Name=""
+            inline llvm::Value* CreateAlloca(llvm::Type *type, const std::string& name="") {
+                return get_or_throw().CreateAlloca(type, 0, nullptr, name);
+            }
+
+             inline llvm::Value* CreateAlloca(llvm::Type *type, unsigned AddrSpace, llvm::Value* ArraySize=nullptr, const std::string& name="") const {
+                 assert(type);
+                 return get_or_throw().CreateAlloca(type, AddrSpace, ArraySize, name);
+             }
+
+            inline llvm::Value* CreateAlloca(llvm::Type *type) const {
+                assert(type);
+                return get_or_throw().CreateAlloca(type);
+            }
+
+            // StoreInst * 	CreateStore (Value *Val, Value *Ptr, bool isVolatile=false)
+            inline llvm::Value* CreateStore(llvm::Value* Val, llvm::Value* Ptr, bool isVolatile=false) const {
+
+#ifndef NDEBUG
+                // pointer check
+                if(Val->getType()->getPointerTo() != Ptr->getType()) {
+                    throw std::runtime_error("attempting to store value of incompatible llvm type to llvm pointer");
+                }
+#endif
+
+                return get_or_throw().CreateStore(Val, Ptr, isVolatile);
+            }
+
+            inline llvm::Value* CreateAlignedStore(llvm::Value* Val, llvm::Value* Ptr, uint alignment=8) const {
+
+#if LLVM_VERSION_MAJOR < 10
+                return get_or_throw().CreateAlignedStore(Val, Ptr, alignment);
+#else
+                return get_or_throw().CreateAlignedStore(Val, Ptr, llvm::MaybeAlign(alignment));
+#endif
+            }
+
+            inline llvm::BasicBlock* GetInsertBlock() const {
+                return get_or_throw().GetInsertBlock();
+            }
+
+             inline llvm::Type* getInt1Ty() const {
+                 return get_or_throw().getInt1Ty();
+             }
+             inline llvm::Type* getInt8Ty() const {
+                 return get_or_throw().getInt8Ty();
+             }
+            inline llvm::Type* getInt32Ty() const {
+                return get_or_throw().getInt32Ty();
+            }
+             inline llvm::Type* getInt64Ty() const {
+                 return get_or_throw().getInt64Ty();
+             }
+
+            inline llvm::Value* CreateICmp(llvm::CmpInst::Predicate P, llvm::Value *LHS, llvm::Value *RHS,
+                                           const std::string& name="") const {
+                return get_or_throw().CreateICmp(P, LHS, RHS, name);
+            }
+
+            inline llvm::Value *CreateICmpEQ(llvm::Value *LHS, llvm::Value *RHS, const std::string &name = "") const {
+                return CreateICmp(llvm::ICmpInst::ICMP_EQ, LHS, RHS, name);
+            }
+
+             inline llvm::Value *CreateICmpNE(llvm::Value *LHS, llvm::Value *RHS, const std::string &name = "") const {
+                 return CreateICmp(llvm::ICmpInst::ICMP_NE, LHS, RHS, name);
+             }
+
+             inline llvm::Value *CreatePointerCast(llvm::Value *V, llvm::Type *DestTy,
+                                      const std::string &Name = "") const {
+                return get_or_throw().CreatePointerCast(V, DestTy, Name);
+            }
+
+            inline llvm::Value *CreateBitOrPointerCast(llvm::Value *V, llvm::Type *DestTy,
+                                          const std::string &Name = "") const {
+                 return get_or_throw().CreateBitOrPointerCast(V, DestTy, Name);
+             }
+
+            inline llvm::Value *CreateBitCast(llvm::Value *V, llvm::Type *DestTy,
+                                 const std::string &Name = "") const  {
+                return get_or_throw().CreateCast(llvm::Instruction::BitCast, V, DestTy, Name);
+            }
+
+            inline llvm::Value *CreateIntCast(llvm::Value *V, llvm::Type *DestTy, bool isSigned,
+                                 const std::string &Name = "") const {
+                 return get_or_throw().CreateIntCast(V, DestTy, isSigned, Name);
+             }
+
+            inline llvm::Value *CreateLShr(llvm::Value *LHS, llvm::Value *RHS, const std::string &Name = "",
+                              bool isExact = false) const {
+               return get_or_throw().CreateLShr(LHS, RHS, Name);
+            }
+
+            inline llvm::Value *CreateLShr(llvm::Value *LHS, const llvm::APInt &RHS, const std::string &Name = "",
+                              bool isExact = false) const {
+                return get_or_throw().CreateLShr(LHS, llvm::ConstantInt::get(LHS->getType(), RHS), Name, isExact);
+            }
+
+            inline llvm::Value *CreateLShr(llvm::Value *LHS, uint64_t RHS, const std::string &Name = "",
+                              bool isExact = false) const {
+                return get_or_throw().CreateLShr(LHS, llvm::ConstantInt::get(LHS->getType(), RHS), Name, isExact);
+            }
+
+            inline llvm::Value *CreateLifetimeStart(llvm::Value *Ptr, llvm::ConstantInt *Size = nullptr) const {
+                 return get_or_throw().CreateLifetimeStart(Ptr, Size);
+             }
+
+            inline llvm::Value *CreateLifetimeEnd(llvm::Value *Ptr, llvm::ConstantInt *Size = nullptr) const {
+                 return get_or_throw().CreateLifetimeEnd(Ptr, Size);
+             }
+
+            inline llvm::Value *CreateExtractValue(llvm::Value *Agg,
+                                       llvm::ArrayRef<unsigned> Idxs,
+                                       const std::string &Name = "") const {
+                return get_or_throw().CreateExtractValue(Agg, Idxs, Name);
+            }
+
+             inline llvm::Value *CreateExtractValue(llvm::Value *Agg,
+                                                    unsigned Idx,
+                                                    const std::string &Name = "") const {
+                std::vector<unsigned> Idxs{Idx};
+                 return get_or_throw().CreateExtractValue(Agg, Idxs, Name);
+             }
+
+            inline llvm::Value* CreateExtractElement(llvm::Value *VecOrStruct, unsigned Idx, const std::string& name) const {
+                return get_or_throw().CreateExtractElement(VecOrStruct, Idx);
+            }
+
+            inline llvm::Value *CreateSRem(llvm::Value *LHS, llvm::Value *RHS, const std::string &Name = "") const {
+                return get_or_throw().CreateSRem(LHS, RHS, Name);
+            }
+
+            inline llvm::Value *CreateFRem(llvm::Value *L, llvm::Value *R, const std::string &Name = "",
+                                           llvm::MDNode *FPMD = nullptr) const {
+                 return get_or_throw().CreateFRem(L, R, Name, FPMD);
+             }
+
+            inline llvm::Value *CreateInsertValue(llvm::Value *Agg, llvm::Value *Val,
+                                          llvm::ArrayRef<unsigned> Idxs,
+                                          const std::string &Name = "") const {
+                return get_or_throw().CreateInsertValue(Agg, Val, Idxs, Name);
+            }
+
+            inline llvm::Value *CreateInsertElement(llvm::Value *Vec, llvm::Value *NewElt, llvm::Value *Idx,
+                                       const std::string &Name = "") const {
+                return get_or_throw().CreateInsertElement(Vec, NewElt, Idx, Name);
+             }
+
+            inline llvm::Value *CreateInsertElement(llvm::Value *Vec, llvm::Value *NewElt, uint64_t Idx,
+                                                    const std::string &Name = "") const {
+                return get_or_throw().CreateInsertElement(Vec, NewElt, Idx, Name);
+            }
+
+            inline llvm::Value *CreateICmpUGT(llvm::Value *LHS, llvm::Value *RHS, const std::string &Name = "") const {
+                return get_or_throw().CreateICmp(llvm::ICmpInst::ICMP_UGT, LHS, RHS, Name);
+            }
+
+            inline llvm::Value *CreateICmpUGE(llvm::Value *LHS, llvm::Value *RHS, const std::string &Name = "") const {
+                return get_or_throw().CreateICmp(llvm::ICmpInst::ICMP_UGE, LHS, RHS, Name);
+            }
+
+            inline llvm::Value *CreateICmpULT(llvm::Value *LHS, llvm::Value *RHS, const std::string &Name = "") const {
+                return get_or_throw().CreateICmp(llvm::ICmpInst::ICMP_ULT, LHS, RHS, Name);
+            }
+
+            inline llvm::Value *CreateICmpULE(llvm::Value *LHS, llvm::Value *RHS, const std::string &Name = "") const {
+                return get_or_throw().CreateICmp(llvm::ICmpInst::ICMP_ULE, LHS, RHS, Name);
+            }
+
+
+             inline llvm::Value *CreateICmpSGT(llvm::Value *LHS, llvm::Value *RHS, const std::string& Name = "") const {
+                 return get_or_throw().CreateICmp(llvm::ICmpInst::ICMP_SGT, LHS, RHS, Name);
+             }
+             inline llvm::Value *CreateICmpSGE(llvm::Value *LHS, llvm::Value *RHS, const std::string& Name = "") const {
+                 return get_or_throw().CreateICmp(llvm::ICmpInst::ICMP_SGE, LHS, RHS, Name);
+             }
+
+            inline llvm::Value *CreateICmpSLT(llvm::Value *LHS, llvm::Value *RHS, const std::string& Name = "") const {
+                return get_or_throw().CreateICmp(llvm::ICmpInst::ICMP_SLT, LHS, RHS, Name);
+            }
+            inline llvm::Value *CreateICmpSLE(llvm::Value *LHS, llvm::Value *RHS, const std::string& Name = "") const {
+                return get_or_throw().CreateICmp(llvm::ICmpInst::ICMP_SLE, LHS, RHS, Name);
+            }
+
+             inline llvm::Value *CreateFNeg(llvm::Value *V, const std::string& Name = "",
+                                            llvm::MDNode *FPMathTag = nullptr) const {
+                 return get_or_throw().CreateFNeg(V, Name, FPMathTag);
+            }
+            inline llvm::Value *CreateNeg(llvm::Value *V, const std::string& Name = "",
+                                  bool HasNUW = false, bool HasNSW = false) const {
+                return get_or_throw().CreateNeg(V, Name, HasNUW, HasNSW);
+            }
+             inline llvm::Value *CreateXor(llvm::Value *LHS, llvm::Value *RHS, const std::string& Name = "") const {
+                 return get_or_throw().CreateXor(LHS, RHS, Name);
+             }
+
+             inline llvm::Value *CreateNot(llvm::Value *V, const std::string &Name = "") const {
+                 return get_or_throw().CreateNot(V, Name);
+            }
+
+            inline llvm::Value* CreateOr(llvm::Value *LHS, llvm::Value *RHS, const std::string &name = "") const {
+                return get_or_throw().CreateOr(LHS, RHS, name);
+            }
+
+            inline llvm::Value* CreateCondBr(llvm::Value *Cond,
+                                             llvm::BasicBlock *True,
+                                             llvm::BasicBlock *False,
+                                             llvm::MDNode *BranchWeights = nullptr,
+                                             llvm::MDNode *Unpredictable = nullptr) const {
+                return get_or_throw().CreateCondBr(Cond, True, False, BranchWeights, Unpredictable);
+            }
+
+            inline llvm::Value* CreateBr(llvm::BasicBlock *Dest) const {
+                return get_or_throw().CreateBr(Dest);
+            }
+
+            inline llvm::IndirectBrInst *CreateIndirectBr(llvm::Value *Addr, unsigned NumDests = 10) const {
+                 return get_or_throw().CreateIndirectBr(Addr, NumDests);
+             }
+
+            inline llvm::SwitchInst *CreateSwitch(llvm::Value *V, llvm::BasicBlock *Dest, unsigned NumCases = 10,
+                                                  llvm::MDNode *BranchWeights = nullptr,
+                                                  llvm::MDNode *Unpredictable = nullptr) {
+                return get_or_throw().CreateSwitch(V, Dest, NumCases, BranchWeights, Unpredictable);
+            }
+
+            inline void SetInsertPoint(llvm::BasicBlock *TheBB) const {
+                assert(TheBB);
+                get_or_throw().SetInsertPoint(TheBB);
+            }
+
+            inline void SetInsertPoint(llvm::Instruction* inst) const {
+                 assert(inst);
+                 get_or_throw().SetInsertPoint(inst);
+             }
+
+            llvm::BasicBlock::iterator GetInsertPoint() const {
+                 return get_or_throw().GetInsertPoint();
+             }
+
+            void SetInstDebugLocation(llvm::Instruction *I) const {
+                 return get_or_throw().SetInstDebugLocation(I);
+             }
+
+             inline llvm::Value* CreateAdd(llvm::Value *LHS, llvm::Value *RHS, const std::string &Name = "",
+                                           bool HasNUW = false, bool HasNSW = false) const {
+                 return get_or_throw().CreateAdd(LHS, RHS, Name, HasNUW, HasNSW);
+             }
+
+            inline llvm::Value *CreateNUWAdd(llvm::Value *LHS, llvm::Value *RHS, const std::string &Name = "") const {
+                 return get_or_throw().CreateNUWAdd(LHS, RHS, Name);
+             }
+
+            inline llvm::Value* CreateSub(llvm::Value *LHS, llvm::Value *RHS, const std::string &Name = "",
+                                          bool HasNUW = false, bool HasNSW = false) const {
+                return get_or_throw().CreateSub(LHS, RHS, Name, HasNUW, HasNSW);
+            }
+
+            inline llvm::Value *CreateMul(llvm::Value *LHS, llvm::Value *RHS, const std::string &Name = "",
+                              bool HasNUW = false, bool HasNSW = false) const {
+                return get_or_throw().CreateMul(LHS, RHS, Name, HasNUW, HasNSW);
+            }
+
+            // integer shift
+            inline llvm::Value *CreateShl(llvm::Value *LHS, llvm::Value *RHS, const std::string &Name = "",
+                                    bool HasNUW = false, bool HasNSW = false) const {
+                return get_or_throw().CreateShl(LHS, RHS, Name, HasNUW, HasNSW);
+            }
+
+            inline llvm::Value *CreateShl(llvm::Value *LHS, uint64_t RHS, const std::string &Name = "",
+                                          bool HasNUW = false, bool HasNSW = false) const {
+                return get_or_throw().CreateShl(LHS, RHS, Name, HasNUW, HasNSW);
+            }
+
+             inline llvm::Value *CreateAShr(llvm::Value *LHS, llvm::Value *RHS, const std::string &Name = "",
+                               bool isExact = false) const {
+                return get_or_throw().CreateAShr(LHS, RHS, Name, isExact);
+            }
+
+            // floating point operations
+            // FAdd, FSub, FDiv, FMul
+            inline llvm::Value *CreateFAdd(llvm::Value *L, llvm::Value *R, const std::string &Name = "",
+                              llvm::MDNode *FPMD = nullptr) const {
+                return get_or_throw().CreateFAdd(L, R, Name, FPMD);
+            }
+            inline llvm::Value *CreateFSub(llvm::Value *L, llvm::Value *R, const std::string &Name = "",
+                               llvm::MDNode *FPMD = nullptr) const {
+                return get_or_throw().CreateFSub(L, R, Name, FPMD);
+            }
+            inline llvm::Value *CreateFDiv(llvm::Value *L, llvm::Value *R, const std::string &Name = "",
+                               llvm::MDNode *FPMD = nullptr) const {
+                return get_or_throw().CreateFDiv(L, R, Name, FPMD);
+            }
+
+             inline llvm::Value *CreateFMul(llvm::Value *LHS, llvm::Value *RHS, const std::string &Name = "",
+                                            llvm::MDNode *FPMD = nullptr) const {
+                 return get_or_throw().CreateFMul(LHS, RHS, Name, FPMD);
+             }
+
+            inline llvm::Value *CreateSDiv(llvm::Value *LHS, llvm::Value *RHS, const std::string &Name = "",
+                              bool isExact = false) const {
+                 return get_or_throw().CreateSDiv(LHS, RHS, Name, isExact);
+             }
+
+            inline llvm::Value *CreateUDiv(llvm::Value *LHS, llvm::Value *RHS, const std::string &Name = "",
+                              bool isExact = false) const { return get_or_throw().CreateUDiv(LHS, RHS, Name, isExact); }
+
+            inline llvm::Value *CreateGEP(llvm::Type *Ty, llvm::Value *Ptr, llvm::ArrayRef<llvm::Value *> IdxList,
+                              const std::string &Name = "") const {
+                return get_or_throw().CreateGEP(Ty, Ptr, IdxList, Name);
+            }
+
+            // helper function to simulate GEP using bytes
+            inline llvm::Value *MovePtrByBytes(llvm::Value* Ptr, llvm::Value* num_bytes, const std::string &Name = "") const {
+                 assert(num_bytes->getType() == getInt64Ty() || num_bytes->getType() == getInt32Ty());
+                 assert(Ptr->getType()->isPointerTy());
+                 return get_or_throw().CreateGEP(getInt8Ty(), Ptr, {num_bytes}, Name);
+            }
+
+            inline llvm::Value *MovePtrByBytes(llvm::Value* Ptr, int64_t num_bytes, const std::string &Name = "") const {
+                 return MovePtrByBytes(Ptr, llvm::Constant::getIntegerValue(getInt64Ty(), llvm::APInt(64, num_bytes)), Name);
+           }
+
+
+            inline llvm::Value *CreateStructGEP(llvm::Value *Ptr, llvm::Type* pointee_type, unsigned Idx,
+                                                const std::string &Name = "") const {
+#if LLVM_VERSION_MAJOR < 9
+                // compatibility
+                return get_or_throw().CreateConstInBoundsGEP2_32(nullptr, ptr, 0, idx, Name);
+#else
+                assert(Ptr->getType()->isPointerTy());
+                assert(pointee_type);
+                return get_or_throw().CreateStructGEP(pointee_type, Ptr, Idx, Name);
+#endif
+            }
+
+            inline llvm::Value* CreateStructLoad(llvm::Type* struct_type, llvm::Value* Ptr, unsigned Idx) const {
+                assert(struct_type && struct_type->isStructTy());
+                assert(Ptr && Ptr->getType()->isPointerTy());
+
+                assert(Idx < struct_type->getStructNumElements());
+
+                auto item_ptr = CreateStructGEP(Ptr, struct_type, Idx);
+                return CreateLoad(struct_type->getStructElementType(Idx), item_ptr);
+            }
+
+            /*!
+             * extract element either from struct value or from struct pointer
+             * @param struct_type struct type
+             * @param PtrOrValue if pointer uses CreateStructLoad, if Value uses ExtractElement
+             * @param Idx index
+             * @return Value from struct at index
+             */
+            inline llvm::Value* CreateStructLoadOrExtract(llvm::Type* struct_type, llvm::Value* PtrOrValue, unsigned Idx) const {
+                assert(PtrOrValue);
+                if(PtrOrValue && PtrOrValue->getType()->isPointerTy()) {
+                    return CreateStructLoad(struct_type, PtrOrValue, Idx);
+                } else if(PtrOrValue && PtrOrValue->getType()->isStructTy()) {
+                    assert(Idx < PtrOrValue->getType()->getStructNumElements());
+                    auto item = CreateExtractValue(PtrOrValue, Idx);
+                    return item;
+                } else {
+                    throw std::runtime_error("PtrOrValue is not pointer nor struct.");
+                }
+            }
+
+            inline void CreateStructStore(llvm::Type* struct_type, llvm::Value* PtrOrValue, unsigned Idx, llvm::Value* V) const {
+                assert(PtrOrValue);
+                assert(V);
+                assert(Idx < struct_type->getStructNumElements());
+
+                if(PtrOrValue && PtrOrValue->getType()->isPointerTy()) {
+                    auto target = CreateStructGEP(PtrOrValue, struct_type, Idx);
+                    CreateStore(V, target);
+                } else if(PtrOrValue && PtrOrValue->getType()->isStructTy()) {
+                    assert(Idx < PtrOrValue->getType()->getStructNumElements());
+                    CreateInsertValue(PtrOrValue, V, std::vector<unsigned>(1, Idx));
+                } else {
+                    throw std::runtime_error("PtrOrValue is not pointer nor struct.");
+                }
+            }
+
+            inline llvm::Value *CreateFCmpONE(llvm::Value *LHS, llvm::Value *RHS, const std::string &Name = "",
+                                              llvm::MDNode *FPMathTag = nullptr) const {return get_or_throw().CreateFCmpONE(LHS, RHS, Name, FPMathTag); }
+
+            inline llvm::Value *CreateConstInBoundsGEP2_64(llvm::Value *Ptr, llvm::Type* Ty, uint64_t Idx0,
+                                                           uint64_t Idx1, const std::string &Name = "") const {
+                using namespace llvm;
+
+                assert(Ty); // can't be nullptr, will trigger an error else...
+                return get_or_throw().CreateConstGEP2_64(Ty, Ptr, Idx0, Idx1, Name);
+            }
+
+            inline llvm::Value *CreatePtrToInt(llvm::Value *V, llvm::Type *DestTy,
+                                  const std::string &Name = "") { return get_or_throw().CreatePtrToInt(V, DestTy, Name); }
+
+            inline llvm::Value *CreateIntToPtr(llvm::Value *V, llvm::Type *DestTy,
+                                  const std::string &Name = "") { return get_or_throw().CreateIntToPtr(V, DestTy, Name); }
+
+
+            inline llvm::CallInst *CreateCall(llvm::FunctionType *FTy, llvm::Value *Callee,
+
+#if (LLVM_VERSION_MAJOR >= 16)
+                                        llvm::ArrayRef<llvm::Value *> Args = std::nullopt,
+#else
+                    llvm::ArrayRef<llvm::Value *> Args = {},
+#endif
+                                        const std::string &Name = "",
+                                        llvm::MDNode *FPMathTag = nullptr) const {
+                 assert(FTy);
+                return get_or_throw().CreateCall(FTy, Callee, Args, Name, FPMathTag);
+            }
+
+            inline llvm::CallInst* CreateCall(llvm::Value* func_value,
+#if (LLVM_VERSION_MAJOR >= 16)
+                    llvm::ArrayRef<llvm::Value *> Args = std::nullopt,
+#else
+                                              llvm::ArrayRef<llvm::Value *> Args = {},
+#endif
+                                              const std::string &Name = "", llvm::MDNode *FPMathTag = nullptr) const {
+                 if(llvm::isa<llvm::Function>(func_value))
+                     throw std::runtime_error("trying to call a non-function llvm value");
+                 auto func = llvm::cast<llvm::Function>(func_value);
+                 return CreateCall(func->getFunctionType(), func, Args, Name,
+                                  FPMathTag);
+            }
+
+            inline llvm::CallInst* CreateCall(llvm::Function* func,
+#if (LLVM_VERSION_MAJOR >= 16)
+                    llvm::ArrayRef<llvm::Value *> Args = std::nullopt,
+#else
+                                              llvm::ArrayRef<llvm::Value *> Args = {},
+#endif
+                                              const std::string &Name = "", llvm::MDNode *FPMathTag = nullptr) const {
+                return CreateCall(func->getFunctionType(), func, Args, Name,
+                                  FPMathTag);
+            }
+
+            inline llvm::CallInst *CreateCall(llvm::FunctionCallee Callee,
+#if (LLVM_VERSION_MAJOR >= 16)
+                    llvm::ArrayRef<llvm::Value *> Args = std::nullopt,
+#else
+                                              llvm::ArrayRef<llvm::Value *> Args = {},
+#endif
+                                        const std::string &Name = "", llvm::MDNode *FPMathTag = nullptr) const {
+                return CreateCall(Callee.getFunctionType(), Callee.getCallee(), Args, Name,
+                                  FPMathTag);
+            }
+
+             inline llvm::LoadInst *CreateLoad(llvm::Type *Ty, llvm::Value *Ptr, const char *Name) const {
+
+                 last_inst_no_branch_guard(get_or_throw().GetInsertBlock());
+
+                 assert(Ty);
+#if LLVM_VERSION_MAJOR <= 9
+                 // check type compatibility
+                 assert(Ptr->getType() == Ty->getPointerTo());
+
+                 return get_or_throw().CreateLoad(Ty, Ptr, Name);
+#elif LLVM_VERSION_MAJOR > 9
+                 return get_or_throw().CreateAlignedLoad(Ty, Ptr, llvm::MaybeAlign(), Name);
+#else
+                return get_or_throw().CreateLoad(Ty, Ptr, Name);
+#endif
+             }
+
+             inline llvm::LoadInst *CreateLoad(llvm::Type *Ty, llvm::Value *Ptr, const std::string &Name = "") const {
+
+                 last_inst_no_branch_guard(get_or_throw().GetInsertBlock());
+
+                 assert(Ty);
+#if LLVM_VERSION_MAJOR <= 9
+                 // check type compatibility
+                 assert(Ptr->getType() == Ty->getPointerTo());
+
+                 return get_or_throw().CreateLoad(Ty, Ptr, Name);
+#elif LLVM_VERSION_MAJOR > 9
+                 return get_or_throw().CreateAlignedLoad(Ty, Ptr, llvm::MaybeAlign(), Name);
+#else
+                return get_or_throw().CreateLoad(Ty, Ptr, Name);
+#endif
+             }
+
+
+            inline llvm::Value* CreateInBoundsGEP(llvm::Value* Ptr, llvm::Type* pointee_type, llvm::Value* Idx) const {
+                 return get_or_throw().CreateInBoundsGEP(pointee_type, Ptr, {Idx});
+             }
+
+            inline llvm::Value *CreateUnaryIntrinsic(llvm::Intrinsic::ID ID, llvm::Value *V,
+                                                                         llvm::Instruction *FMFSource = nullptr,
+                                                                         const std::string &Name = "") const {
+                 return get_or_throw().CreateUnaryIntrinsic(ID, V, FMFSource, Name);
+             }
+
+            inline llvm::Value *CreateBinaryIntrinsic(llvm::Intrinsic::ID ID, llvm::Value *LHS,
+                                                     llvm::Value* RHS,
+                                                     llvm::Instruction *FMFSource = nullptr,
+                                                     const std::string &Name = "") const {
+                return get_or_throw().CreateBinaryIntrinsic(ID, LHS, RHS, FMFSource, Name);
+            }
+
+
+            inline llvm::Value* CreateFCmp(llvm::CmpInst::Predicate P, llvm::Value *LHS, llvm::Value *RHS,
+                               const std::string &Name = "", llvm::MDNode *FPMathTag = nullptr) const {
+                return get_or_throw().CreateFCmp(P, LHS, RHS, Name, FPMathTag);
+            }
+
+            inline llvm::Value* CreateFCmpOEQ(llvm::Value *LHS, llvm::Value *RHS,
+                                              const std::string &Name = "", llvm::MDNode *FPMathTag = nullptr) const {
+                return get_or_throw().CreateFCmpOEQ(LHS, RHS, Name, FPMathTag);
+            }
+
+            inline llvm::Value* CreateFCmpOLT(llvm::Value *LHS, llvm::Value *RHS,
+                                           const std::string &Name = "", llvm::MDNode *FPMathTag = nullptr) const {
+                return get_or_throw().CreateFCmpOLT(LHS, RHS, Name, FPMathTag);
+            }
+
+            inline llvm::Value* CreateFCmpOLE(llvm::Value *LHS, llvm::Value *RHS,
+                                              const std::string &Name = "", llvm::MDNode *FPMathTag = nullptr) const {
+                return get_or_throw().CreateFCmpOLE(LHS, RHS, Name, FPMathTag);
+            }
+
+            inline llvm::Value* CreateFCmpOGT(llvm::Value *LHS, llvm::Value *RHS,
+                                              const std::string &Name = "", llvm::MDNode *FPMathTag = nullptr) const {
+                return get_or_throw().CreateFCmpOGT(LHS, RHS, Name, FPMathTag);
+            }
+
+            inline llvm::Value* CreateFCmpOGE(llvm::Value *LHS, llvm::Value *RHS,
+                                              const std::string &Name = "", llvm::MDNode *FPMathTag = nullptr) const {
+                return get_or_throw().CreateFCmpOGE(LHS, RHS, Name, FPMathTag);
+            }
+
+             inline llvm::Value *CreateFPToSI(llvm::Value *V, llvm::Type *DestTy, const std::string &Name = "") const {
+                return get_or_throw().CreateFPToSI(V, DestTy, Name);
+            }
+             inline llvm::Value *CreateSIToFP(llvm::Value *V, llvm::Type *DestTy, const std::string &Name = "") const {
+                return get_or_throw().CreateSIToFP(V, DestTy, Name);
+            }
+
+            // casts
+            inline llvm::Value *CreateCast(llvm::Instruction::CastOps Op, llvm::Value *V, llvm::Type *DestTy,
+                              const std::string &Name = "") const {
+                return get_or_throw().CreateCast(Op, V, DestTy, Name);
+             }
+
+            //  Shl, AShr, ZExt
+            inline llvm::Value *CreateZExt(llvm::Value *V, llvm::Type *DestTy, const std::string &Name = "") const {
+                return get_or_throw().CreateZExt(V, DestTy, Name);
+            }
+
+            inline llvm::Value *CreateSExt(llvm::Value *V, llvm::Type *DestTy, const std::string &Name = "") const {
+                return get_or_throw().CreateSExt(V, DestTy, Name);
+            }
+
+            inline llvm::Value *CreateFPExt(llvm::Value *V, llvm::Type *DestTy, const std::string &Name = "") const { return get_or_throw().CreateFPExt(V, DestTy, Name); }
+
+             inline llvm::Value *CreateTrunc(llvm::Value *V, llvm::Type *DestTy, const std::string &Name = "") const {
+                 return get_or_throw().CreateTrunc(V, DestTy, Name);
+             }
+             inline llvm::Value *CreateZExtOrTrunc(llvm::Value *V, llvm::Type *DestTy,
+                                      const std::string &Name = "") const {
+                return get_or_throw().CreateZExtOrTrunc(V, DestTy, Name);
+            }
+             inline llvm::Value *CreateAnd(llvm::Value *LHS, llvm::Value *RHS, const std::string &Name = "") const {
+                return get_or_throw().CreateAnd(LHS, RHS, Name);
+            }
+
+             inline llvm::Value *CreateSelect(llvm::Value *C, llvm::Value *True, llvm::Value *False,
+                                 const std::string &Name = "", llvm::Instruction *MDFrom = nullptr) const {
+                return get_or_throw().CreateSelect(C, True, False, Name, MDFrom);
+            }
+
+            inline llvm::CallInst *CreateMemCpy(llvm::Value *Dst, unsigned DstAlign, llvm::Value *Src,
+                                            unsigned SrcAlign, llvm::Value *Size,
+                                            bool isVolatile = false, llvm::MDNode *TBAATag = nullptr,
+                                            llvm::MDNode *TBAAStructTag = nullptr,
+                                            llvm::MDNode *ScopeTag = nullptr,
+                                            llvm::MDNode *NoAliasTag = nullptr) const {
+#if LLVM_VERSION_MAJOR == 9
+                return get_or_throw().CreateMemCpy(Dst, DstAlign, Src, SrcAlign, Size, isVolatile, TBAATag, TBAAStructTag, ScopeTag, NoAliasTag);
+#elif LLVM_VERSION_MAJOR > 9
+                return get_or_throw().CreateMemCpy(Dst, llvm::MaybeAlign(DstAlign), Src, llvm::MaybeAlign(SrcAlign), Size, isVolatile, TBAATag, TBAAStructTag, ScopeTag, NoAliasTag);
+#else
+                return get_or_throw().CreateMemCpy(Dst, Src, Size, SrcAlign);
+#endif
+
+            }
+
+
+            inline llvm::CallInst* CreateMemSet(llvm::Value *Ptr, llvm::Value *Val, llvm::Value *Size, unsigned Align,
+                                    bool isVolatile = false, llvm::MDNode *TBAATag = nullptr,
+                                    llvm::MDNode *ScopeTag = nullptr,
+                                    llvm::MDNode *NoAliasTag = nullptr) const {
+#if LLVM_VERSION_MAJOR == 9
+                return get_or_throw().CreateMemSet(Ptr, Val, Size, Align, isVolatile, TBAATag, ScopeTag, NoAliasTag);
+#elif LLVM_VERSION_MAJOR > 9
+                return get_or_throw().CreateMemSet(Ptr, Val, Size, llvm::MaybeAlign(Align), isVolatile, TBAATag, ScopeTag, NoAliasTag);
+#endif
+            }
+
+             inline llvm::CallInst* CreateMemSet(llvm::Value *Ptr, llvm::Value *Val, uint64_t Size, unsigned Align,
+                                                 bool isVolatile = false, llvm::MDNode *TBAATag = nullptr,
+                                                 llvm::MDNode *ScopeTag = nullptr,
+                                                 llvm::MDNode *NoAliasTag = nullptr) const {
+                return CreateMemSet(Ptr, Val, llvm::ConstantInt::get(llvm::Type::getInt64Ty(getContext()), llvm::APInt(Size, 64)),
+                                    Align, isVolatile, TBAATag, ScopeTag, NoAliasTag);
+            }
+
+            inline llvm::PHINode* CreatePHI(llvm::Type* type, unsigned NumReservedValues, const std::string& twine="") const {
+                 assert(type);
+                 return get_or_throw().CreatePHI(type, NumReservedValues, twine);
+             }
+
+             // helpers
+             inline llvm::Value *CreateIsNull(llvm::Value *Arg, const std::string &Name = "") const { return get_or_throw().CreateIsNull(Arg, Name); }
+
+            inline llvm::Value *CreateIsNotNull(llvm::Value *Arg, const std::string &Name = "") const { return get_or_throw().CreateIsNotNull(Arg, Name); }
+
+            inline llvm::Value *CreatePtrDiff(llvm::Type *ElemTy, llvm::Value *LHS, llvm::Value *RHS,
+                                              const std::string &Name = "") const {
+                assert(LHS->getType() == RHS->getType() && LHS->getType()->isPointerTy());
+                assert(ElemTy);
+#if (LLVM_VERSION_MAJOR < 14)
+                return get_or_throw().CreatePtrDiff(LHS, RHS, Name);
+#else
+                return get_or_throw().CreatePtrDiff(ElemTy, LHS, RHS, Name);
+#endif
+            }
+
+            llvm::Value *CreateRetVoid() const {
+                return get_or_throw().CreateRetVoid();
+            }
+
+            llvm::Value *CreateRet(llvm::Value *V) const {
+                return get_or_throw().CreateRet(V);
+            }
+
+            /*!
+             * create runtime malloc (calling rtmalloc function)
+             * @param size
+             * @return allocated pointer
+             */
+            inline llvm::Value* malloc(llvm::Value *size) const {
+                 assert(size);
+
+                 auto& ctx = get_or_throw().getContext();
+                 auto mod = get_or_throw().GetInsertBlock()->getParent()->getParent();
+
+                 // make sure size_t is 64bit
+                 static_assert(sizeof(size_t) == sizeof(int64_t), "sizeof must be 64bit compliant");
+                 static_assert(sizeof(size_t) == 8, "sizeof must be 64bit wide");
+                 assert(size->getType() == llvm::Type::getInt64Ty(ctx));
+
+
+                 // create external call to rtmalloc function
+                 auto func = mod->getOrInsertFunction("rtmalloc", llvm::Type::getInt8PtrTy(ctx, 0),
+                                                                llvm::Type::getInt64Ty(ctx));
+                 return get_or_throw().CreateCall(func, size);
+             }
+
+         inline llvm::Value* malloc(size_t size) const {
+             auto& ctx = get_or_throw().getContext();
+                auto i64_size =  llvm::Constant::getIntegerValue(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, size));
+                return malloc(i64_size);
+            }
+
+            inline llvm::Value *CreateGlobalStringPtr(const std::string &basicString) const {
+                return get_or_throw().CreateGlobalStringPtr(basicString);
+            }
+
+        private:
+            // original LLVM builder
+            std::unique_ptr<llvm::IRBuilder<>> _llvm_builder;
+            llvm::IRBuilder<>& get_or_throw() const {
+                if(!_llvm_builder)
+                    throw std::runtime_error("no builder specified");
+                return *_llvm_builder;
+            }
+
+            IRBuilder(llvm::BasicBlock::iterator it);
+            void initFromIterator(llvm::BasicBlock::iterator it);
+        };
 
         // various switches to influence compiler behavior
         struct CompilePolicy {
@@ -94,6 +830,7 @@ namespace tuplex {
         struct NormalCaseCheck {
 
             std::vector<size_t> colNos; ///! multiple columns
+            std::vector<std::string> colNames; // column names (optional, might make things easier).
             CheckType type;
 
             ///! the column number to check for
@@ -111,11 +848,12 @@ namespace tuplex {
             _iMin(std::numeric_limits<int64_t>::min()),
             _iMax(std::numeric_limits<int64_t>::max()) {}
 
-            NormalCaseCheck(const NormalCaseCheck& other) : colNos(other.colNos), type(other.type),
+            NormalCaseCheck(const NormalCaseCheck& other) : colNos(other.colNos), colNames(other.colNames), type(other.type),
             _constantType(other._constantType), _iMin(other._iMin), _iMax(other._iMax), _serializedCheck(other._serializedCheck) {}
 
             NormalCaseCheck& operator = (const NormalCaseCheck& other) {
                 colNos = other.colNos;
+                colNames = other.colNames;
                 type = other.type;
                 // private members
                 _constantType = other._constantType;
@@ -157,6 +895,18 @@ namespace tuplex {
                 return c;
             }
 
+            inline void setColumns(const std::vector<std::string>& names) {
+                colNames.clear();
+                for(auto& idx : colNos) {
+                    if(idx >= names.size()) {
+                        std::stringstream ss;
+                        ss<<__FILE__<<":"<<__LINE__<<" invalid column index "<<idx<<", can not access columns "<<names;
+                        throw std::runtime_error(ss.str());
+                    }
+                    colNames.push_back(names[idx]);
+                }
+            }
+
             /*!
              * generates a condition yielding true if check was passed, false else
              * @param builder
@@ -193,7 +943,7 @@ namespace tuplex {
 
 #ifdef BUILD_WITH_CEREAL
             template<class Archive> void serialize(Archive & ar) {
-                    ar(colNos, type, _constantType, _iMin, _iMax, _serializedCheck);
+                    ar(colNos, colNames, type, _constantType, _iMin, _iMax, _serializedCheck);
             }
 #endif
 
@@ -201,6 +951,7 @@ namespace tuplex {
         nlohmann::json to_json() const {
             nlohmann::json j;
             j["colNos"] = colNos;
+            j["colNames"] = colNames;
             j["type"] = static_cast<int>(type);
             j["constantType"] = _constantType.desc();
             j["iMin"] = _iMin;
@@ -212,6 +963,7 @@ namespace tuplex {
         static NormalCaseCheck from_json(nlohmann::json j) {
             NormalCaseCheck c;
             c.colNos = j["colNo"].get<std::vector<size_t>>();
+            c.colNames = j["colNames"].get<std::vector<std::string>>();
             c.type = static_cast<CheckType>(j["colNo"].get<int>());
             c._constantType = python::decodeType(j["constantType"].get<std::string>());
             c._iMin = j["iMin"].get<int64_t>();
@@ -298,7 +1050,7 @@ namespace tuplex {
          * @param builder
          * @return
          */
-        inline llvm::IRBuilder<> getFirstBlockBuilder(llvm::IRBuilder<>& builder) {
+        inline llvm::IRBuilder<>&& getFirstBlockBuilder(llvm::IRBuilder<>& builder) {
             assert(builder.GetInsertBlock());
             assert(builder.GetInsertBlock()->getParent());
 
@@ -314,7 +1066,7 @@ namespace tuplex {
                 llvm::Instruction& inst = *firstBlock.getFirstInsertionPt();
                 ctorBuilder.SetInsertPoint(&inst);
             }
-            return ctorBuilder;
+            return std::move(ctorBuilder);
         }
 
         // in order to serialize/deserialize data properly and deal with
@@ -339,12 +1091,14 @@ namespace tuplex {
             }
             SerializableValue(llvm::Value *v, llvm::Value* s, llvm::Value* n) : val(v), size(s), is_null(n) {
 #ifndef NDEBUG
+#if LLVM_VERSION_MAJOR < 16
                 if(s) {
                     auto stype = s->getType();
                     if(stype->isPointerTy())
                         stype = stype->getPointerElementType();
                     assert(stype == llvm::Type::getInt64Ty(s->getContext()));
                 }
+#endif
 #endif
             }
 
@@ -364,7 +1118,7 @@ namespace tuplex {
              * @param builder
              * @return None
              */
-            static SerializableValue None(llvm::IRBuilder<>& builder) {
+            static SerializableValue None(const IRBuilder& builder) {
                 auto is_null = llvm::Constant::getIntegerValue(llvm::Type::getInt1Ty(builder.getContext()), llvm::APInt(1, true));
                 return SerializableValue(nullptr, nullptr, is_null);
             }
@@ -372,7 +1126,7 @@ namespace tuplex {
 
 
         // for variable length fields => offset and size packing!
-        inline llvm::Value* pack_offset_and_size(llvm::IRBuilder<>& builder, llvm::Value* offset, llvm::Value* size) {
+        inline llvm::Value* pack_offset_and_size(const codegen::IRBuilder& builder, llvm::Value* offset, llvm::Value* size) {
             auto& ctx = builder.GetInsertBlock()->getContext();
 
             // truncate or ext both offset and size to 32bit
@@ -383,7 +1137,7 @@ namespace tuplex {
             return info;
         }
 
-        inline std::tuple<llvm::Value*, llvm::Value*> unpack_offset_and_size(llvm::IRBuilder<>& builder, llvm::Value* info) {
+        inline std::tuple<llvm::Value*, llvm::Value*> unpack_offset_and_size(const codegen::IRBuilder& builder, llvm::Value* info) {
             using namespace llvm;
 
             // truncation yields lower 32 bit (= offset)
@@ -405,7 +1159,7 @@ namespace tuplex {
          * @param underlyingType pointer, if not null will output the deoptmizedType to that var. Same as if deoptimizedType was called on optType.
          * @return codegen value representing deoptimized value, i.e. having type underlyingType.
          */
-        extern SerializableValue deoptimizeValue(llvm::IRBuilder<>& builder,
+        extern SerializableValue deoptimizeValue(const IRBuilder& builder,
                                                  const SerializableValue& value,
                                                  const python::Type& optType,
                                                  python::Type* underlyingType=nullptr);
@@ -462,7 +1216,7 @@ namespace tuplex {
         /*!
          * get features of CPU as llvm feature string
          */
-        extern std::string getLLVMFeatureStr();
+        extern ATTRIBUTE_NO_SANITIZE_ADDRESS std::string getLLVMFeatureStr();
 
         /*!
          * helper function to initialize LLVM targets for this platform
@@ -474,6 +1228,8 @@ namespace tuplex {
          */
         extern void shutdownLLVM();
 
+        extern bool is_llvm_initialized();
+
         /*
          * cast val to destType (i.e. integer expansion or int to float conversion)
          * @param builder
@@ -481,16 +1237,15 @@ namespace tuplex {
          * @param destType
          * @return casted llvm Value
          */
-        extern llvm::Value* upCast(llvm::IRBuilder<> &builder, llvm::Value *val, llvm::Type *destType);
+        extern llvm::Value* upCast(const codegen::IRBuilder& builder, llvm::Value *val, llvm::Type *destType);
 
         extern llvm::Value *
-        dictionaryKey(llvm::LLVMContext &ctx, llvm::Module *mod, llvm::IRBuilder<> &builder, llvm::Value *val,
+        dictionaryKey(llvm::LLVMContext &ctx, llvm::Module *mod, const codegen::IRBuilder &builder, llvm::Value *val,
                       python::Type keyType, python::Type valType);
 
         extern SerializableValue
         dictionaryKeyCast(llvm::LLVMContext &ctx, llvm::Module* mod,
-                          llvm::IRBuilder<> &builder, llvm::Value *val, python::Type keyType);
-
+                          const codegen::IRBuilder &builder, llvm::Value *val, python::Type keyType);
         /*!
          * for debug purposes convert llvm type to string
          * @param type llvm type, if nullptr "null" is returned
@@ -598,8 +1353,18 @@ namespace tuplex {
             return llvm::Type::getInt64Ty(ctx);
         }
 
+        template<> inline llvm::Type* ctypeToLLVM<size_t>(llvm::LLVMContext& ctx) {
+            static_assert(sizeof(size_t) == 8, "size_t must be 8 bytes");
+            return llvm::Type::getInt64Ty(ctx);
+        }
+
         template<> inline llvm::Type* ctypeToLLVM<char*>(llvm::LLVMContext& ctx) {
             static_assert(sizeof(char*) == 8, "char* must be 8 byte");
+            return llvm::Type::getInt8Ty(ctx)->getPointerTo(0);
+        }
+
+        template<> inline llvm::Type* ctypeToLLVM<const char*>(llvm::LLVMContext& ctx) {
+            static_assert(sizeof(const char*) == 8, "const char* must be 8 byte");
             return llvm::Type::getInt8Ty(ctx)->getPointerTo(0);
         }
 
@@ -627,14 +1392,6 @@ namespace tuplex {
             return llvm::Type::getInt8Ty(ctx)->getPointerTo(0)->getPointerTo();
         }
 
-        /*!
-         * returns the underlying string of a global variable, created e.g. via env->strConst.
-         * May throw exception if value is not a constantexpr
-         * @param value
-         * @return string or empty string if extraction failed.
-         */
-        extern std::string globalVariableToString(llvm::Value* value);
-
 
         /*!
          * compare string stored in ptr to constant str
@@ -644,7 +1401,7 @@ namespace tuplex {
          * @param include_zero
          * @return i1 true if strings match, else i1 false
          */
-        extern llvm::Value* stringCompare(llvm::IRBuilder<> &builder, llvm::Value *ptr, const std::string &str,
+        extern llvm::Value* stringCompare(const IRBuilder& builder, llvm::Value *ptr, const std::string &str,
                                                    bool include_zero);
 
         /*!
@@ -692,12 +1449,6 @@ namespace tuplex {
             }
             return v;
         }
-
-        /*!
-         * helper function to annotate module such that each IR instruction is printed when executed. Helpful for debugging
-         * @param mod
-         */
-        extern void annotateModuleWithInstructionPrint(llvm::Module& mod);
 
         /*!
          * check whether row type of normal-case can be upcast to general case type
@@ -797,6 +1548,62 @@ namespace tuplex {
             return llvm::isa<llvm::ReturnInst>(bb->back());
         }
 
+#if LLVM_VERSION_MAJOR > 8
+        inline llvm::Expected<llvm::orc::ThreadSafeModule> parseToModule(const std::string& llvmIR) {
+            using namespace llvm;
+            using namespace llvm::orc;
+
+            // first parse IR. It would be also an alternative to directly the LLVM Module from the ModuleBuilder class,
+            // however if something went wrong there, memory errors would occur. Better is to first transform to a string
+            // and then parse it because LLVM will validate the IR on the way.
+
+            SMDiagnostic err; // create an SMDiagnostic instance
+            std::unique_ptr<MemoryBuffer> buff = MemoryBuffer::getMemBuffer(llvmIR);
+
+            auto ctx = std::make_unique<LLVMContext>();
+            assert(ctx);
+#if LLVM_VERSION_MAJOR >= 10
+          std::unique_ptr<Module> mod = llvm::parseAssemblyString(llvmIR, err, *ctx); // use err
+#else
+            std::unique_ptr<Module> mod = llvm::parseIR(buff->getMemBufferRef(), err, *ctx); // use err directly
+#endif
+            // check if any errors occured during module parsing
+            if(nullptr == mod) {
+                // print errors
+                std::stringstream errStream;
+                errStream<<"could not compile module:\n>>>>>>>>>>>>>>>>>\n"
+                         <<core::withLineNumbers(llvmIR)<<"\n<<<<<<<<<<<<<<<<<\n";
+                errStream<<"line " + std::to_string(err.getLineNo()) + ": " + err.getMessage().str();
+
+                return make_error<StringError>(errStream.str(), inconvertibleErrorCode());
+            }
+
+
+            // run verify pass on module and print out any errors, before attempting to compile it
+            std::string moduleErrors = "";
+            llvm::raw_string_ostream os(moduleErrors);
+            if(llvm::verifyModule(*mod, &os)) {
+                std::stringstream errStream;
+                os.flush();
+                errStream<<"could not verify module:\n>>>>>>>>>>>>>>>>>\n"<<core::withLineNumbers(llvmIR)<<"\n<<<<<<<<<<<<<<<<<\n";
+                errStream<<moduleErrors;
+
+                return make_error<StringError>(errStream.str(), inconvertibleErrorCode());
+            }
+            return ThreadSafeModule(std::move(mod), std::move(ctx));
+        }
+#endif
+
+        extern bool validateModule(const llvm::Module& mod);
+
+        /*!
+         * transform module by adding print statements to trace what is getting executed.
+         * @param mod the Module
+         * @param print_values whether to print values as well (or not)
+         */
+        extern void annotateModuleWithInstructionPrint(llvm::Module& mod, bool print_values=false);
+
+
         // for both condbr or br
         inline bool blockContainsBr(llvm::BasicBlock *bb) {
             assert(bb);
@@ -832,7 +1639,7 @@ namespace tuplex {
 
         // helper to enable llvm6 and llvm9 compatibility // --> force onto llvm9+ for now.
         inline llvm::CallInst *createCallHelper(llvm::Function *Callee, llvm::ArrayRef<llvm::Value*> Ops,
-                                          llvm::IRBuilder<>& builder,
+                                          const IRBuilder& builder,
                                           const llvm::Twine &Name = "",
                                                 llvm::Instruction *FMFSource = nullptr) {
             llvm::CallInst *CI = llvm::CallInst::Create(Callee, Ops, Name);
@@ -894,30 +1701,61 @@ namespace tuplex {
         }
 
         // cJSON helper functions (for easier access)
-        extern llvm::Value* call_cjson_getitem(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj, llvm::Value* key);
-        extern llvm::Value* call_cjson_isnumber(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj);
-        extern llvm::Value* call_cjson_isnull(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj);
-        extern llvm::Value* call_cjson_isstring(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj);
-        extern llvm::Value* call_cjson_isobject(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj);
-        extern llvm::Value* call_cjson_isarray(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj);
-        extern llvm::Value* get_cjson_as_integer(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj);
-        extern llvm::Value* get_cjson_as_float(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj);
-        extern SerializableValue get_cjson_as_string_value(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj);
+        extern llvm::Value* call_cjson_getitem(const IRBuilder& builder, llvm::Value* cjson_obj, llvm::Value* key, llvm::Value** out_item_found=nullptr);
 
-        extern llvm::Value* call_cjson_create_empty(llvm::IRBuilder<>& builder);
+        extern llvm::Value* call_cjson_object_set_item(const IRBuilder& builder, llvm::Value* cjson_obj, llvm::Value* key, llvm::Value* cjson_item);
+        extern llvm::Value* call_cjson_isnumber(const IRBuilder& builder, llvm::Value* cjson_obj);
+        extern llvm::Value* call_cjson_isnull(const IRBuilder& builder, llvm::Value* cjson_obj);
+        extern llvm::Value* call_cjson_isstring(const IRBuilder& builder, llvm::Value* cjson_obj);
+        extern llvm::Value* call_cjson_isobject(const IRBuilder& builder, llvm::Value* cjson_obj);
+        extern llvm::Value* call_cjson_isarray(const IRBuilder& builder, llvm::Value* cjson_obj);
+        extern llvm::Value* get_cjson_as_integer(const IRBuilder& builder, llvm::Value* cjson_obj);
+        extern llvm::Value* get_cjson_as_float(const IRBuilder& builder, llvm::Value* cjson_obj);
+        extern llvm::Value* get_cjson_as_boolean(const IRBuilder& builder, llvm::Value* cjson_obj);
+        extern SerializableValue get_cjson_as_string_value(const IRBuilder& builder, llvm::Value* cjson_obj);
 
-        extern llvm::Value* call_simdjson_to_cjson_object(llvm::IRBuilder<>& builder, llvm::Value* json_item);
+        extern llvm::Value* call_cjson_create_empty(const IRBuilder& builder);
 
-        [[maybe_unused]] extern SerializableValue serialize_cjson_as_runtime_str(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj);
+        extern llvm::Value* call_simdjson_to_cjson_object(const IRBuilder& builder, llvm::Value* json_item);
+
+        [[maybe_unused]] extern SerializableValue serialize_cjson_as_runtime_str(const IRBuilder& builder, llvm::Value* cjson_obj);
 
 
-        extern llvm::Value* call_cjson_getarraysize(llvm::IRBuilder<>& builder, llvm::Value* cjson_array);
-        extern SerializableValue get_cjson_array_item(llvm::IRBuilder<>& builder, llvm::Value* cjson_array, llvm::Value* idx);
+        extern llvm::Value* call_cjson_parse(const IRBuilder& builder, llvm::Value* str_ptr);
+        extern SerializableValue call_cjson_to_string(const IRBuilder& builder, llvm::Value* cjson_obj);
+
+        extern llvm::Value* call_cjson_getarraysize(const IRBuilder& builder, llvm::Value* cjson_array);
+        extern SerializableValue get_cjson_array_item(const IRBuilder& builder, llvm::Value* cjson_array, llvm::Value* idx);
+
+        /*!
+         * Converts a cJSON value into a LLVM object of type type. DOES NOT PERFORM TYPE CHECKING.
+         * @param builder
+         * @param cjson_obj
+         * @param type
+         * @return Serializable Value in LLVM IR.
+         */
+        extern SerializableValue get_value_from_cjson(const IRBuilder& builder, llvm::Value* cjson_obj, const python::Type& type);
+
+        extern llvm::Value* call_cjson_from_value(const IRBuilder& builder, const SerializableValue& value, const python::Type& type);
+
 
         // extended cjson function to check homogeneity of list
-        [[maybe_unused]] extern llvm::Value* call_cjson_is_list_of_generic_dicts(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj);
+        [[maybe_unused]] extern llvm::Value* call_cjson_is_list_of_generic_dicts(const IRBuilder& builder, llvm::Value* cjson_obj);
 
-        extern llvm::Value* call_cjson_type_as_str(llvm::IRBuilder<>& builder, llvm::Value* cjson_obj);
+        extern llvm::Value* call_cjson_type_as_str(const IRBuilder& builder, llvm::Value* cjson_obj);
+
+
+        /*!
+         * return number of 8 byte blocks required to deserialize bitmap
+         * @param builder
+         * @param num_elements
+         * @return number of 8 byte blocks
+         */
+        extern llvm::Value* calc_bitmap_size_in_64bit_blocks(const IRBuilder& builder, llvm::Value* num_elements);
+
+#ifdef USE_YYJSON_INSTEAD
+        extern llvm::Type* get_or_create_yyjson_shim_type(llvm::LLVMContext& ctx);
+#endif
     }
 }
 

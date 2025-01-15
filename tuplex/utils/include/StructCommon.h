@@ -11,6 +11,7 @@
 #include "TypeSystem.h"
 #include "Utils.h"
 #include "TypeHelper.h"
+#include "Field.h"
 
 // holds helper structures to decode struct dicts from memory e.g.
 namespace tuplex {
@@ -21,7 +22,7 @@ namespace tuplex {
     using access_path_t = std::vector<std::pair<std::string, python::Type>>;
 
     // flatten struct dict.
-    using flattened_struct_dict_entry_t = std::tuple<std::vector<std::pair<std::string, python::Type>>, python::Type, bool>;
+    using flattened_struct_dict_entry_t = std::tuple<std::vector<std::pair<std::string, python::Type>>, python::Type, python::StructPresence>;
     using flattened_struct_dict_entry_list_t = std::vector<flattened_struct_dict_entry_t>;
 
     inline bool noNeedToSerializeType(const python::Type &t) {
@@ -84,12 +85,65 @@ namespace tuplex {
      */
     extern python::Type struct_dict_type_get_element_type(const python::Type& dict_type, const access_path_t& path);
 
-    extern void retrieve_bitmap_counts(const flattened_struct_dict_entry_list_t& entries, size_t& bitmap_element_count, size_t& presence_map_element_count);
+    /*!
+     * extract presence along path. UNKNOWN if path not found.
+     * @param dict_type
+     * @param path
+     * @return
+     */
+    extern python::StructPresence struct_dict_type_get_presence(const python::Type& dict_type, const access_path_t& path);
+
+    extern void retrieve_bitmap_counts(const python::Type& dict_type, size_t& bitmap_element_count, size_t& presence_map_element_count);
+
+    /*!
+     * retrieves tuple of field_count, option_count, maybe_count from which number of elements required in bitmap or presence map can be inferred.
+     * @param dict_type
+     * @return tuple consisting of (field_count, option_count, maybe_count). option_count is number of entries for bitmap, maybe_count number of entries of presence map.
+     */
+    extern std::tuple<size_t, size_t, size_t> struct_dict_get_counts(const python::Type& dict_type);
 
     // decode
     extern std::string decodeListAsJSON(const python::Type& list_type, const uint8_t* buf, size_t buf_size);
 
     extern std::string decodeStructDictFromBinary(const python::Type& dict_type, const uint8_t* buf, size_t buf_size);
+
+    /*!
+     * determine size of field holding struct dict type (or option thereof).
+     * @param f
+     * @return size in bytes encoded this requires.
+     */
+    extern size_t struct_dict_get_size(const Field& f);
+    extern size_t struct_dict_get_size(const python::Type& dict_type, const char* json_data, size_t json_data_size);
+
+    extern size_t struct_dict_serialize_to(const Field& f, uint8_t* ptr);
+    extern size_t struct_dict_serialize_to(const python::Type& dict_type, const char* json_data, size_t json_data_size, uint8_t* ptr);
+
+    extern Field struct_dict_upcast_field(const Field& f, const python::Type& target_type);
+
+    extern std::vector<uint64_t> boolean_array_to_block_bitmap(const std::vector<bool>& bitmap, size_t n_blocks);
+
+    inline bool struct_dict_access_paths_equal(const access_path_t& lhs, const access_path_t& rhs) {
+        return json_access_path_to_string(lhs, python::Type::UNKNOWN, false).compare(json_access_path_to_string(lhs, python::Type::UNKNOWN, false)) == 0;
+    }
+
+    extern std::vector<access_path_t> struct_dict_get_optional_nesting_paths_along_path(const python::Type& dict_type, const access_path_t& path);
+
+    inline bool struct_dict_access_path_has_optional_nesting(const python::Type& dict_type, const access_path_t& path) {
+        return !struct_dict_get_optional_nesting_paths_along_path(dict_type, path).empty();
+    }
+
+    inline access_path_t key_to_access_path(const std::string& key, const python::Type& key_type) {
+        access_path_t path;
+        if(key_type == python::Type::STRING)
+            path.push_back(make_pair(escape_to_python_str(key), key_type));
+        else
+            path.push_back(make_pair(key, key_type));
+        return path;
+    }
+
+    extern bool is_field_present(const Field& f, const access_path_t& path);
+
+    extern Field get_struct_field_by_path(const Field& f, const access_path_t& path);
 }
 
 #endif //TUPLEX_STRUCTCOMMON_H

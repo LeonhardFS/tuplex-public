@@ -19,6 +19,11 @@
 
 namespace tuplex {
     namespace codegen {
+
+        // TODO: make this an option.
+        // could also use simdjson::SIMDJSON_MAXSIZE_BYTES. (4GB)
+        static const size_t simdjson_parser_max_document_size = simdjson::SIMDJSON_MAXSIZE_BYTES; // 64 * 1024 * 1024; // maximum of 64MB.
+
         inline std::string view_to_string(const std::string_view &v) {
             return std::string{v.begin(), v.end()};
         }
@@ -26,7 +31,7 @@ namespace tuplex {
         // helper C-struct holding simdjson parser
         struct JsonParser {
 
-            // this will have issues with out of order access (happening when arrays are present...) -> more complex to implement.
+            // this will have issues with out-of-order access (happening when arrays are present...) -> more complex to implement.
             //// use simdjson as parser b.c. cJSON has issues with integers/floats.
             //// https://simdjson.org/api/2.0.0/md_doc_iterate_many.html
             //simdjson::ondemand::parser parser;
@@ -40,6 +45,8 @@ namespace tuplex {
             simdjson::dom::document_stream::iterator it;
 
             std::string lastError;
+
+            JsonParser(): parser(simdjson_parser_max_document_size) {}
         };
 
         struct JsonItem {
@@ -73,6 +80,10 @@ namespace tuplex {
         // will optimize function signatures...!
 
         extern "C" uint64_t JsonItem_keySetMatch(JsonItem *item, uint8_t *always_keys_buf, uint8_t *maybe_keys_buf);
+
+        // negative keyset match
+        extern "C" uint64_t JsonItem_keySetNotMatch(JsonItem *item, uint8_t *not_keys_buf);
+
         extern "C" JsonParser *JsonParser_init();
         extern "C" void JsonParser_free(JsonParser *parser);
         extern "C" void JsonItem_Free(JsonItem *i);
@@ -87,6 +98,8 @@ namespace tuplex {
         extern "C" uint64_t JsonItem_getString(JsonItem *item, const char *key, char **out);
         extern "C" uint64_t JsonItem_getStringAndSize(JsonItem *item, const char *key, char **out, int64_t *size);
         extern "C" uint64_t JsonItem_getObject(JsonItem *item, const char *key, JsonItem **out);
+        // returns NULLERROR if null encountered, and sets out to nullptr.
+        extern "C" uint64_t JsonItem_getObjectOrNull(JsonItem *item, const char *key, JsonItem **out);
         extern "C" uint64_t JsonItem_getArray(JsonItem *item, const char *key, JsonArray **out);
         extern "C" void JsonArray_Free(JsonArray* arr);
         extern "C" uint64_t JsonArray_Size(JsonArray* arr);
@@ -117,6 +130,9 @@ namespace tuplex {
         extern std::string JsonMalloc_Report();
 
         extern "C" cJSON* JsonItem_to_cJSON(JsonItem* item);
+
+        extern "C" cJSON_bool cJSON_IsArrayOfObjects(cJSON* obj);
+        extern "C" char* cJSON_PrintUnformattedEx(cJSON* obj);
     }
 }
 
