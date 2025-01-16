@@ -140,7 +140,7 @@ std::string remainingMatchSuffix(const std::string& s, const std::string& w) {
 
 // S3 helper functions
 // returns numListRequests
-static size_t s3walk(const Aws::S3::S3Client& client, const std::string& bucket, const std::string& prefix, const std::string& suffix, std::vector<tuplex::URI>& files, const Aws::S3::Model::RequestPayer &requestPayer) {
+static size_t s3walk(const tuplex::AwsS3Client& client, const std::string& bucket, const std::string& prefix, const std::string& suffix, std::vector<tuplex::URI>& files, const Aws::S3::Model::RequestPayer &requestPayer) {
     using namespace std;
 
     size_t numRequests = 0;
@@ -566,7 +566,7 @@ namespace tuplex {
         if(lambdaMode) {
             config.caFile = "/etc/pki/tls/certs/ca-bundle.crt";
             this->_config = config;
-            _client = std::make_shared<S3::S3Client>(config);
+            _client = std::make_shared<AwsS3Client>(config);
             _requestPayer = Aws::S3::Model::RequestPayer::requester;
 
             std::stringstream ss;
@@ -598,8 +598,8 @@ namespace tuplex {
         _client = std::move(make_s3_client());
     }
 
-    std::unique_ptr<Aws::S3::S3Client> S3FileSystemImpl::make_s3_client() const {
-        return std::make_unique<Aws::S3::S3Client>(_aws_credentials, _config, _payload_signing_policy, _ns.useVirtualAddressing);
+    std::unique_ptr<AwsS3Client> S3FileSystemImpl::make_s3_client() const {
+        return std::make_unique<AwsS3Client>(_aws_credentials, _config, _payload_signing_policy, _ns.useVirtualAddressing);
     }
 
     void S3FileSystemImpl::activateReadCache(size_t max_cache_size) {
@@ -612,7 +612,7 @@ namespace tuplex {
 // S3 helper functions
 // returns numListRequests
 #warning "folders don't work here yet..."
-    static bool s3walkEx(const Aws::S3::S3Client& client,
+    static bool s3walkEx(const AwsS3Client& client,
                          const std::string& bucket,
                          const std::string& prefix,
                          const std::string& suffix,
@@ -1059,7 +1059,7 @@ namespace tuplex {
     }
 
 
-    std::string s3GetHeadObject(Aws::S3::S3Client const& client, const URI& uri, std::ostream *os_err) {
+    std::string s3GetHeadObject(AwsS3Client const& client, const URI& uri, std::ostream *os_err) {
         using namespace std;
         string meta_data;
 
@@ -1097,7 +1097,7 @@ namespace tuplex {
         return meta_data;
     }
 
-    size_t s3GetContentLength(Aws::S3::S3Client const& client, const URI& uri, std::ostream *os_err) {
+    size_t s3GetContentLength(AwsS3Client const& client, const URI& uri, std::ostream *os_err) {
         using namespace std;
         string meta_data;
 
@@ -1144,6 +1144,7 @@ namespace tuplex {
         ns.useVirtualAddressing = use_virtual_addressing;
         ns.verifySSL = payload_signing_policy == Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never;
         applyNetworkSettings(ns, config);
+        // ok to use non crt client here.
         auto client = std::make_shared<S3::S3Client>(aws_credentials, config, payload_signing_policy, use_virtual_addressing);
         if(!client)
             return false;
@@ -1165,7 +1166,7 @@ namespace tuplex {
         return false;
     }
 
-    bool s3RemoveObjects(Aws::S3::S3Client const& client, const std::vector<URI>& uris, std::ostream *os_err) {
+    bool s3RemoveObjects(AwsS3Client const& client, const std::vector<URI>& uris, std::ostream *os_err) {
         if(uris.empty())
             return true;
 

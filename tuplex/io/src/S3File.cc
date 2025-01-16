@@ -9,15 +9,13 @@
 //--------------------------------------------------------------------------------------------------------------------//
 
 #ifdef BUILD_WITH_AWS
+
 #include <S3File.h>
 #include <S3Cache.h>
-#include <aws/s3/model/GetObjectRequest.h>
-#include <aws/s3/model/PutObjectRequest.h>
+
 #include <boost/interprocess/streams/bufferstream.hpp>
 #include <stdexcept>
-#include <aws/s3/model/CreateMultipartUploadRequest.h>
-#include <aws/s3/model/CompleteMultipartUploadRequest.h>
-#include <aws/s3/model/UploadPartRequest.h>
+
 #include <StringUtils.h>
 
 
@@ -91,7 +89,7 @@ namespace tuplex {
 
                 // simple put request
                 // upload via simple putrequest
-                Aws::S3::Model::PutObjectRequest put_req;
+                AwsS3PutObjectRequest put_req;
                 put_req.SetBucket(_uri.s3Bucket().c_str());
                 put_req.SetKey(_uri.s3Key().c_str());
                 put_req.SetContentLength(_bufferLength);
@@ -118,7 +116,7 @@ namespace tuplex {
                 if(!outcome.IsSuccess()) {
                     MessageHandler& logger = Logger::instance().logger("s3fs");
                     auto err_msg = outcome_error_message(outcome, _s3fs._config, _uri.toString());
-                    err_msg += "\nrequestPayer: " + boolToString(_requestPayer == Aws::S3::Model::RequestPayer::requester) + " isAmazon: " + boolToString(_s3fs.isAmazon()) + "\n";
+                    err_msg += "\nrequestPayer: " + boolToString(_requestPayer == AwsS3RequestPayerRequester) + " isAmazon: " + boolToString(_s3fs.isAmazon()) + "\n";
                     logger.error(err_msg);
                     throw s3exception(err_msg, __LINE__, __FILE__);
                 }
@@ -141,8 +139,7 @@ namespace tuplex {
     void S3File::initMultiPartUpload() {
         MessageHandler& logger = Logger::instance().logger("s3fs");
 
-
-        Aws::S3::Model::CreateMultipartUploadRequest req;
+        AwsS3CreateMultipartUploadRequest req;
         req.SetBucket(_uri.s3Bucket().c_str());
         req.SetKey(_uri.s3Key().c_str());
 
@@ -195,7 +192,7 @@ namespace tuplex {
             return false;
         }
 
-        Aws::S3::Model::UploadPartRequest req;
+        AwsS3UploadPartRequest req;
         //@Todo: what about content MD5???
         req.SetBucket(_uri.s3Bucket().c_str());
         req.SetKey(_uri.s3Key().c_str());
@@ -223,7 +220,7 @@ namespace tuplex {
         }
 
         // record upload
-        Aws::S3::Model::CompletedPart completed_part;
+        AwsS3CompletedPart completed_part;
         completed_part.SetETag(outcome.GetResult().GetETag());
         completed_part.SetPartNumber(_partNumber);
         _parts.emplace_back(completed_part);
@@ -244,7 +241,7 @@ namespace tuplex {
         logger.info("Completing multi-part upload for " + pluralize(_partNumber, "part"));
 
         // issue complete upload request
-        Aws::S3::Model::CompleteMultipartUploadRequest req;
+        AwsS3CompleteMultipartUploadRequest req;
         req.SetBucket(_uri.s3Bucket().c_str());
         req.SetKey(_uri.s3Key().c_str());
         req.SetUploadId(_uploadID);
@@ -253,7 +250,7 @@ namespace tuplex {
             req.SetRequestPayer(_requestPayer);
         }
 
-        Aws::S3::Model::CompletedMultipartUpload upld;
+        AwsS3CompletedMultipartUpload upld;
         for(auto part : _parts)
             upld.AddParts(part);
 
@@ -465,7 +462,7 @@ namespace tuplex {
         std::string range = "bytes=" + std::to_string(_filePosition) + "-" + std::to_string(_filePosition + nbytes - 1);
         // make AWS S3 part request to uri
         // check how to retrieve object in poarts
-        Aws::S3::Model::GetObjectRequest req;
+        AwsS3GetObjectRequest req;
         req.SetBucket(_uri.s3Bucket().c_str());
         req.SetKey(_uri.s3Key().c_str());
         // retrieve byte range according to http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.35
@@ -646,7 +643,7 @@ namespace tuplex {
         std::string range = "bytes=" + std::to_string(_bufferedAbsoluteFilePosition) + "-" + std::to_string(range_end);
         // make AWS S3 part request to uri
         // check how to retrieve object in poarts
-        Aws::S3::Model::GetObjectRequest req;
+        AwsS3GetObjectRequest req;
         req.SetBucket(_uri.s3Bucket().c_str());
         req.SetKey(_uri.s3Key().c_str());
         // retrieve byte range according to http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.35

@@ -88,7 +88,7 @@ namespace tuplex {
     public:
         S3File() = delete;
 
-        S3File(S3FileSystemImpl &fs, const URI &uri, VirtualFileMode mode, Aws::S3::Model::RequestPayer requestPayer) : _s3fs(fs),
+        S3File(S3FileSystemImpl &fs, const URI &uri, VirtualFileMode mode, AwsS3RequestPayer requestPayer) : _s3fs(fs),
                                                                                                 VirtualFile::VirtualFile(uri, mode),
                                                                                                 _requestPayer(requestPayer) {
             // 1024 * 1024 * 5 + 100; ///! for debug reasons, set 5MB + 100B buffer
@@ -144,14 +144,14 @@ namespace tuplex {
         void init();
         S3FileSystemImpl& _s3fs;
 
-        std::unique_ptr<Aws::S3::S3Client> _client;
+        std::unique_ptr<AwsS3Client> _client;
 
         uint8_t *_buffer; ///! buffers
         size_t _bufferLength; ///! how many valid bytes are stored in buffer
         size_t _bufferSize;
 
 
-        Aws::S3::S3Client& get_s3_client() const {
+        AwsS3Client& get_s3_client() const {
             if(_client)
                 return *_client.get();
 
@@ -193,12 +193,12 @@ namespace tuplex {
 
         uint16_t _partNumber; // current part number (1 to 10,000 incl). If 0, no multipart upload
         Aws::String _uploadID; // multipart upload ID
-        std::vector<Aws::S3::Model::CompletedPart> _parts;
+        std::vector<AwsS3CompletedPart> _parts;
         void initMultiPartUpload();
         bool uploadPart(); // uploads current buffer & resets everything
         void completeMultiPartUpload(); // issues complete Upload request
 
-        Aws::S3::Model::RequestPayer _requestPayer;
+        AwsS3RequestPayer _requestPayer;
 
 //#ifndef NDEBUG
         // debug
