@@ -128,16 +128,18 @@ namespace tuplex {
 
         auto key = std::make_tuple(uri, perFileMode(mode));
         if(use_cache) {
-            std::lock_guard<std::mutex> lock(_sampleCacheMutex);
-
-            // check if in sample cache already
-            auto it = _sampleCache.find(key);
-            if(it != _sampleCache.end())
-                return it->second;
+            auto retrieved_sample = getSampleFromCache(key);
+            if(!retrieved_sample.empty())
+                return retrieved_sample;
         }
 
         auto vfs = VirtualFileSystem::fromURI(uri);
         auto read_mode = VirtualFileMode::VFS_READ;
+
+        // Ensure thread-safety if specified in sampling mode.
+        if(mode & SamplingMode::MULTITHREADED)
+            read_mode = read_mode | VirtualFileMode::VFS_THREADSAFE;
+
         auto vf = vfs.open_file(target_uri, read_mode);
         if (!vf) {
             logger.error("could not open file " + uri.toString());
@@ -202,15 +204,10 @@ namespace tuplex {
         assert(bytesRead + 16 < nbytes_sample);
         std::memset(ptr + bytesRead, 0, 16ul);
 
-        Logger::instance().defaultLogger().info(
-                "sampled " + uri.toString() + " on " + sizeToMemString(sampleSize));
+        logger.info("sampled " + uri.toString() + " on " + sizeToMemString(sampleSize));
 
-        if(use_cache) {
-            std::lock_guard<std::mutex> lock(_sampleCacheMutex);
-
-            // put into cache
-            _sampleCache[key] = sample;
-        }
+        if(use_cache)
+            addSampleToCache(key, sample);
 
         return sample;
     }
@@ -601,10 +598,14 @@ namespace tuplex {
         params.limit = sample_limit;
 
         _isRowSampleProjected = false; // no projection, store raw samples!
-        if(mode & SamplingMode::SINGLETHREADED)
-            _rowsSample = sample(mode, outNames, params);
-        else
-            _rowsSample = multithreadedSample(mode, outNames, params);
+//        if(mode & SamplingMode::SINGLETHREADED)
+//            _rowsSample = sample(mode, outNames, params);
+//        else
+//            _rowsSample = multithreadedSample(mode, outNames, params);
+
+        // Use single-threaded??
+        logger.warn("DISABLED PARALLEL multithreadedSample SAMPLING");
+        _rowsSample = sample(mode, outNames, params);
 
         logger.info("Extracting row sample took " + std::to_string(timer.time()) + "s (sampling mode=" + samplingModeToString(mode) + ")");
     }
@@ -630,10 +631,14 @@ namespace tuplex {
 
         Timer timer;
         _isRowSampleProjected = false; // raw, fill with unprojected samples.
-        if(mode & SamplingMode::SINGLETHREADED)
-            _rowsSample = sample(mode, outNames, params);
-        else
-            _rowsSample = multithreadedSample(mode, outNames, params);
+//        if(mode & SamplingMode::SINGLETHREADED)
+//            _rowsSample = sample(mode, outNames, params);
+//        else
+//            _rowsSample = multithreadedSample(mode, outNames, params);
+
+        logger.warn("DISABLED MULTITHREADED SAMPLING IN STRATIFIED");
+        _rowsSample = sample(mode, outNames, params);
+
         logger.info("Extracting stratified row sample took " + std::to_string(timer.time()) + "s (sampling mode=" + samplingModeToString(mode) + ")");
     }
 
@@ -643,11 +648,7 @@ namespace tuplex {
 
         // cache already populated?
         // drop!
-        if(_cachePopulated) {
-            std::lock_guard<std::mutex> lock(_sampleCacheMutex);
-            _sampleCache.clear();
-            _cachePopulated = false;
-        }
+        clearCache();
 
         // if neither single-threaded nor multi-threaded are specified, use multi-threaded mode per default.
         if(!(mode & SamplingMode::SINGLETHREADED) && !(mode & SamplingMode::MULTITHREADED)) {
@@ -658,7 +659,10 @@ namespace tuplex {
             // simply fill cache by drawing the proper samples & store rows.
             fillFileCacheSinglethreaded(_samplingMode);
         } else if(mode & SamplingMode::MULTITHREADED) {
-            fillFileCacheMultithreaded(_samplingMode);
+
+            logger.warn("DISABLED MULTITHREADED fillFileCache");
+            fillFileCacheSinglethreaded(_samplingMode);
+            //fillFileCacheMultithreaded(_samplingMode);
         } else {
             logger.debug("INTERNAL ERROR, invalid sampling mode.");
         }
@@ -721,8 +725,6 @@ namespace tuplex {
         auto &logger = Logger::instance().logger("fileinputoperator");
 
         // first, fill the internal cache
-        assert(_sampleCache.empty());
-
         // this works by loading/requesting files in parallel
         std::set<int> file_indices;
         if(mode & SamplingMode::FIRST_FILE && _fileURIs.size() >= 1)
@@ -760,11 +762,9 @@ namespace tuplex {
             auto uri = _fileURIs[idx];
             auto file_mode = perFileMode(mode);
             auto key = std::make_tuple(uri, file_mode);
-            {
-                std::lock_guard<std::mutex> lock(_sampleCacheMutex);
-                // place into cache
-                _sampleCache[key] = vf[i].get();
-            }
+
+            auto sample = vf[i].get();
+            addSampleToCache(key, sample);
         }
 
         logger.info("Parallel sample fetch done.");
@@ -779,6 +779,9 @@ namespace tuplex {
         // construct indices from cache
         if(!_cachePopulated)
             fillFileCache(mode);
+
+
+
         set<unsigned> file_indices;
         {
             std::lock_guard<std::mutex> lock(_sampleCacheMutex);
@@ -1465,14 +1468,10 @@ namespace tuplex {
     }
 
     void FileInputOperator::cloneCaches(const tuplex::FileInputOperator &other) {
-        std::lock_guard<std::mutex> lock(_sampleCacheMutex);
+        clearCache();
 
+        // copy caches
         _cachePopulated = other._cachePopulated;
-
-        // clear internal caches
-        _sampleCache.clear();
-        _rowsSample.clear();
-
         _sampleCache = other._sampleCache;
         _rowsSample = other._rowsSample;
         _isRowSampleProjected = other._isRowSampleProjected;

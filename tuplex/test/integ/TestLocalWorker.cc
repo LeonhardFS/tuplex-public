@@ -562,7 +562,7 @@ TEST_F(LocalWorkerFixture, GithubSparseStructHyperPushEventsWithS3Source) {
     }
 }
 
-TEST_F(LocalWorkerFixture, GithubGlobalStructsWithS3Source) {
+TEST_F(LocalWorkerFixture, GithubGlobalStructsPushEventsWithS3Source) {
     using namespace std;
     using namespace tuplex;
 
@@ -592,7 +592,7 @@ TEST_F(LocalWorkerFixture, GithubGlobalStructsWithS3Source) {
 
     cout<<"Running github pipeline."<<endl;
 
-    github_pipeline(ctx, input_pattern, output_path);
+    github_pipeline(ctx, input_pattern, output_path, DEFAULT_EXPERIMENT_SAMPLING_MODE, "PushEvent");
 
     cout<<"Pipeline done."<<endl;
 
@@ -613,6 +613,7 @@ TEST_F(LocalWorkerFixture, GithubGlobalStructsWithS3Source) {
             cout << "-- file " << path << ": " << pluralize(row_count, "row") << endl;
             total_row_count += row_count;
         }
-        EXPECT_EQ(total_row_count, 294195);
+        EXPECT_EQ(total_row_count, 5727942); // push events.
+//        EXPECT_EQ(total_row_count, 294195); // fork events.
     }
 }

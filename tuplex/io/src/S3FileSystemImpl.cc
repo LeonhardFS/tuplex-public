@@ -588,10 +588,18 @@ namespace tuplex {
 //            _client = std::make_shared<S3::S3Client>(aws_credentials, s3_endpoint_provider, config, payload_signing_policy, ns.useVirtualAddressing);
 //#endif
 
-        _client = std::make_shared<S3::S3Client>(aws_credentials, config, payload_signing_policy, ns.useVirtualAddressing);
-
+        _aws_credentials = aws_credentials;
+        _payload_signing_policy = payload_signing_policy;
+        _ns = ns;
         // save config, so parameters are easily accessible.
         _config = config;
+
+        //_client = std::make_shared<S3::S3Client>(aws_credentials, config, payload_signing_policy, ns.useVirtualAddressing);
+        _client = std::move(make_s3_client());
+    }
+
+    std::unique_ptr<Aws::S3::S3Client> S3FileSystemImpl::make_s3_client() const {
+        return std::make_unique<Aws::S3::S3Client>(_aws_credentials, _config, _payload_signing_policy, _ns.useVirtualAddressing);
     }
 
     void S3FileSystemImpl::activateReadCache(size_t max_cache_size) {

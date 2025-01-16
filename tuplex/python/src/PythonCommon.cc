@@ -21,7 +21,12 @@
 backward::SignalHandling sh;
 #endif
 
+#include <spdlog/sinks/callback_sink.h>
+
 namespace tuplex {
+
+    // Global sink objects (keep alive).
+    std::vector<spdlog::sink_ptr> g_python_log_sinks;
 
     py::object getPythonVersion() {
         std::stringstream ss;
@@ -31,6 +36,12 @@ namespace tuplex {
     }
 
     py::object registerPythonLoggingCallback(py::object callback_functor) {
+
+
+        // make this easier, i.e. via
+        // https://github.com/gabime/spdlog/pull/2610/files -> callback.
+
+        std::cout<<"Entering registerPythonLoggingCallback"<<std::endl;
         python::registerWithInterpreter();
 
         // get object
@@ -39,6 +50,7 @@ namespace tuplex {
 
         if(!functor_obj) {
             std::cerr<<"invalid functor obj passed?"<<std::endl;
+            return py::none();
         }
 
         // make sure it's callable etc.
@@ -51,7 +63,17 @@ namespace tuplex {
         try {
             Py_XINCREF(functor_obj);
             // this replaces current logging scheme with python only redirect...
-            Logger::instance().init({std::make_shared<no_gil_python3_sink_mt>(functor_obj)});
+            auto& log = Logger::instance();
+
+            // Save in global to avoid move issues.
+            // g_python_log_sinks.push_back(std::make_shared<no_gil_python3_sink_mt>(functor_obj));
+
+            // use callback
+            //g_python_log_sinks.push_back();
+
+            // g_python_log_sinks.push_back(std::make_shared<spdlog::sinks::ansicolor_stdout_sink_mt>());
+
+            //log.init(g_python_log_sinks);
         } catch(const std::exception& e) {
             // use C printing for the exception here
             std::cerr<<"while registering python callback logging mechanism, following error occurred: "<<e.what()<<std::endl;

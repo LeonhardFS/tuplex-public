@@ -20,8 +20,24 @@ Logger::Logger() : _initialized(false), _default_handler(nullptr) {
 void Logger::initDefault() {
     if(!_initialized) {
         try {
+            // Use this as custom intercept.
+            _sinks.push_back(std::make_shared<spdlog::sinks::callback_sink_mt>([](const spdlog::details::log_msg &msg) {
+                // for example you can be notified by sending an email to yourself
+                spdlog::memory_buf_t formatted;
+                spdlog::pattern_formatter formatter;
+                formatter.format(msg, formatted);
+                auto eol_len = strlen(spdlog::details::os::default_eol);
+                std::string line(formatted.begin(), formatted.end() - eol_len);
+
+                // print now out.
+                spdlog::details::console_mutex m;
+                m.mutex().lock();
+                std::cout<<"-- callback -- "<<line<<std::endl;
+                m.mutex().unlock();
+            }));
+
             // add later here also a stderr sink...
-            _sinks.push_back(std::make_shared<spdlog::sinks::ansicolor_stdout_sink_mt>());
+            // _sinks.push_back(std::make_shared<spdlog::sinks::ansicolor_stdout_sink_mt>());
 #ifndef NDEBUG
             // disable slow log in release mode
             _sinks.push_back(std::make_shared<spdlog::sinks::basic_file_sink_mt>("log.txt"));
@@ -63,8 +79,7 @@ void Logger::init(const std::vector<spdlog::sink_ptr> &sinks) {
         log.initDefault();
 
         assert(!log._sinks.empty());
-    }
-    catch(const spdlog::spdlog_ex& ex) {
+    } catch(const spdlog::spdlog_ex& ex) {
         std::cerr<<"[FATAL] Initialization of logging system failed: "<<ex.what()<<std::endl;
         exit(1);
     }
@@ -161,11 +176,13 @@ void Logger::flushToPython(bool acquireGIL) {
     // flush other sinks
     flushAll();
 
-    // check for each sink whether it's a python sink, then call method
-    for(auto& sink : _sinks) {
-        auto py_sink = std::dynamic_pointer_cast<python_sink<std::mutex>>(sink);
-        if(py_sink) {
-            py_sink->flushToPython(acquireGIL);
-        }
-    }
+    std::cout<<"Calling flushToPython with acquireGIL= "<<acquireGIL<<std::endl;
+
+//    // check for each sink whether it's a python sink, then call method
+//    for(auto& sink : _sinks) {
+//        auto py_sink = std::dynamic_pointer_cast<python_sink<std::mutex>>(sink);
+//        if(py_sink) {
+//            py_sink->flushToPython(acquireGIL);
+//        }
+//    }
 }

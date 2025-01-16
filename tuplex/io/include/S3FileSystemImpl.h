@@ -31,6 +31,7 @@ namespace tuplex {
                          const std::string& region, const NetworkSettings& ns, bool lambdaMode, bool requesterPay);
 
         Aws::S3::S3Client const& client() const { assert(_client); return *_client.get(); }
+        Aws::S3::S3Client& client() { assert(_client); return *_client.get(); }
 
         // fetch stats
         void resetCounters();
@@ -71,9 +72,18 @@ namespace tuplex {
             return _config.endpointOverride.empty();
         }
 
+        std::unique_ptr<Aws::S3::S3Client> make_s3_client() const;
+
     private:
+        // Shared S3 client for non-thread safe applications.
         std::shared_ptr<Aws::S3::S3Client> _client;
+
+        // info to crete clients on demand.
         Aws::Client::ClientConfiguration _config;
+        NetworkSettings _ns;
+        Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy _payload_signing_policy;
+        Aws::Auth::AWSCredentials _aws_credentials; // this looks dangerous...
+
         Aws::S3::Model::RequestPayer _requestPayer;
 
         // to compute pricing, use https://calculator.s3.amazonaws.com/index.html

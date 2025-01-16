@@ -72,6 +72,9 @@ namespace tuplex {
             }
         }
 
+        auto& logger = Logger::instance().logger("logical plan");
+        logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " has output type:" + getOutputSchema().getRowType().desc());
+
 #ifndef NDEBUG
         if(!_udf.empty())
             Logger::instance().defaultLogger().info(
@@ -223,9 +226,13 @@ namespace tuplex {
     bool MapOperator::retype(const RetypeConfiguration& conf) {
         // assert(good());
 
+        auto& logger = Logger::instance().logger("logical plan");
+        logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " retype.");
+
         // there are two options:
         // 1.) it's a rename operator -> special case
         if(_udf.empty()) {
+            logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " not supported with empty UDF yet.");
             throw std::runtime_error("rename not supported yet. Basically check if rename scheme works etc.");
         } else {
 

@@ -35,6 +35,9 @@ namespace tuplex {
         if(_options.empty() && _fmt == FileFormat::OUTFMT_ORC) {
             _options = defaultORCOutputOptions();
         }
+
+        auto& logger = Logger::instance().logger("logical plan");
+        logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + this->name() + " init.");
     }
 
     std::shared_ptr<LogicalOperator> FileOutputOperator::clone(bool cloneParents) const {

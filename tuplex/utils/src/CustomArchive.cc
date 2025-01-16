@@ -5,6 +5,8 @@
 #include <CustomArchive.h>
 #include <TypeSystem.h>
 
+#ifdef BUILD_WITH_CEREAL
+
 namespace tuplex {
     void BinaryOutputArchive::saveType(int hash) {
         // Track hashes and their string encoding.
@@ -117,3 +119,4 @@ namespace tuplex {
         return v;
     }
 }
+#endif

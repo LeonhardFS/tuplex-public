@@ -23,6 +23,7 @@
 #include <TTuple.h>
 #include <limits>
 #include <unordered_map>
+#include <sstream>
 
 #include <boost/any.hpp>
 

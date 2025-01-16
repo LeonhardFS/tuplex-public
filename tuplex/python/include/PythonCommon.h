@@ -48,80 +48,83 @@ namespace tuplex {
 
     template<typename Mutex> class nogil_python3_sink : public python_sink<Mutex> {
     public:
-        nogil_python3_sink() = delete;
+        nogil_python3_sink() : _pyFunctor(nullptr) {}
         explicit nogil_python3_sink(PyObject* pyFunctor) : _pyFunctor(pyFunctor) {}
 
         void flushToPython(bool acquireGIL=false) override {
+            std::cout<<"flushToPython"<<std::endl;
 
-            if(!_pyFunctor) {
-                std::cerr<<"no functor found, early abort"<<std::endl;
-                return;
-            }
-
-            if(acquireGIL)
-                python::lockGIL();
-            {
-                std::lock_guard<std::mutex> lock(_bufMutex);
-
-
-                // sort messages after time
-                std::sort(_messageBuffer.begin(), _messageBuffer.end(), [](const LogMessage& a, const LogMessage& b) {
-                    return a.timestamp < b.timestamp;
-                });
-
-                // now call for each message the python function!
-                // => basically give as arg the message... (later pass the other information as well...)
-                for (const auto &msg: _messageBuffer) {
-
-                    // callback gets 4 params:
-                    // 1. severity level (integer)
-                    // 2. time (iso8601 string)
-                    // 3. logger (string)
-                    // 4. message (string)
-
-                    // perform callback in python...
-                    auto args = PyTuple_New(4);
-                    auto py_lvl = PyLong_FromLong(spdlog_level_to_number(msg.level));
-                    auto py_time = python::PyString_FromString(chronoToISO8601(msg.timestamp).c_str());
-                    auto py_logger = python::PyString_FromString(msg.logger.c_str());
-                    auto py_msg = python::PyString_FromString(msg.message.c_str());
-                    PyTuple_SET_ITEM(args, 0, py_lvl);
-                    PyTuple_SET_ITEM(args, 1, py_time);
-                    PyTuple_SET_ITEM(args, 2, py_logger);
-                    PyTuple_SET_ITEM(args, 3, py_msg);
-
-                    Py_XINCREF(_pyFunctor);
-                    Py_XINCREF(args);
-                    Py_XINCREF(py_lvl);
-                    Py_XINCREF(py_logger);
-                    Py_XINCREF(py_msg);
-
-                    PyObject_Call(_pyFunctor, args, nullptr);
-                    if(PyErr_Occurred()) {
-                        PyErr_Print();
-                        std::cout<<std::endl;
-                        PyErr_Clear();
-                    }
-                }
-
-                _messageBuffer.clear();
-            }
-
-            if(acquireGIL)
-                python::unlockGIL();
+//            if(!_pyFunctor) {
+//                std::cerr<<"no functor found, early abort"<<std::endl;
+//                return;
+//            }
+//
+//            if(acquireGIL)
+//                python::lockGIL();
+//            {
+//                std::lock_guard<std::mutex> lock(_bufMutex);
+//
+//
+//                // sort messages after time
+//                std::sort(_messageBuffer.begin(), _messageBuffer.end(), [](const LogMessage& a, const LogMessage& b) {
+//                    return a.timestamp < b.timestamp;
+//                });
+//
+//                // now call for each message the python function!
+//                // => basically give as arg the message... (later pass the other information as well...)
+//                for (const auto &msg: _messageBuffer) {
+//
+//                    // callback gets 4 params:
+//                    // 1. severity level (integer)
+//                    // 2. time (iso8601 string)
+//                    // 3. logger (string)
+//                    // 4. message (string)
+//
+//                    // perform callback in python...
+//                    auto args = PyTuple_New(4);
+//                    auto py_lvl = PyLong_FromLong(spdlog_level_to_number(msg.level));
+//                    auto py_time = python::PyString_FromString(chronoToISO8601(msg.timestamp).c_str());
+//                    auto py_logger = python::PyString_FromString(msg.logger.c_str());
+//                    auto py_msg = python::PyString_FromString(msg.message.c_str());
+//                    PyTuple_SET_ITEM(args, 0, py_lvl);
+//                    PyTuple_SET_ITEM(args, 1, py_time);
+//                    PyTuple_SET_ITEM(args, 2, py_logger);
+//                    PyTuple_SET_ITEM(args, 3, py_msg);
+//
+//                    Py_XINCREF(_pyFunctor);
+//                    Py_XINCREF(args);
+//                    Py_XINCREF(py_lvl);
+//                    Py_XINCREF(py_logger);
+//                    Py_XINCREF(py_msg);
+//
+//                    PyObject_Call(_pyFunctor, args, nullptr);
+//                    if(PyErr_Occurred()) {
+//                        PyErr_Print();
+//                        std::cout<<std::endl;
+//                        PyErr_Clear();
+//                    }
+//                }
+//
+//                _messageBuffer.clear();
+//            }
+//
+//            if(acquireGIL)
+//                python::unlockGIL();
         }
     protected:
         virtual void sink_it_(const spdlog::details::log_msg& spdlog_msg) override {
-            // invoke mutex
-            std::lock_guard<std::mutex> lock(_bufMutex);
+//            // invoke mutex
+//            std::lock_guard<std::mutex> lock(_bufMutex);
+//
+//            // need to read&create copy of spdlog msg because at some point memory gets invalidated for the stringviews...
+//            LogMessage msg;
+//            msg.message = std::string(spdlog_msg.payload.data());
+//            msg.timestamp = spdlog_msg.time;
+//            msg.logger = std::string(spdlog_msg.logger_name.begin(), spdlog_msg.logger_name.end());
+//            msg.level = spdlog_msg.level;
+//            _messageBuffer.push_back(msg);
 
-            // need to read&create copy of spdlog msg because at some point memory gets invalidated for the stringviews...
-            LogMessage msg;
-            msg.message = std::string(spdlog_msg.payload.data());
-            msg.timestamp = spdlog_msg.time;
-            msg.logger = std::string(spdlog_msg.logger_name.begin(), spdlog_msg.logger_name.end());
-            msg.level = spdlog_msg.level;
-            _messageBuffer.push_back(msg);
+// Use https://gist.github.com/hensing/0db3f8e3a99590006368?
         }
 
         virtual void flush_() override {

@@ -144,9 +144,22 @@ namespace tuplex {
         void init();
         S3FileSystemImpl& _s3fs;
 
+        std::unique_ptr<Aws::S3::S3Client> _client;
+
         uint8_t *_buffer; ///! buffers
         size_t _bufferLength; ///! how many valid bytes are stored in buffer
         size_t _bufferSize;
+
+
+        Aws::S3::S3Client& get_s3_client() const {
+            if(_client)
+                return *_client.get();
+
+            assert(!(_mode & VirtualFileMode::VFS_THREADSAFE));
+
+            // Get client from file system.
+            return _s3fs.client();
+        }
 
         // buffer size should be more than 5MB!
         // this is because parts needs to be at least 5MB for multipart upload

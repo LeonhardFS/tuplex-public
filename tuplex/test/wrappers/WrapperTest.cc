@@ -3193,6 +3193,109 @@ TEST_F(WrapperTest, PythonGithubLocalWorkerProcessing) {
     }
 }
 
+
+
+namespace tuplex {
+
+    static const SamplingMode DEFAULT_EXPERIMENT_SAMPLING_MODE=SamplingMode::FIRST_FILE | SamplingMode::LAST_FILE | SamplingMode::FIRST_ROWS | SamplingMode::LAST_ROWS;
+
+    void github_pipeline(PythonContext& ctx,
+                         const std::string& input_pattern,
+                         const std::string& output_path,
+                         const SamplingMode& sm=DEFAULT_EXPERIMENT_SAMPLING_MODE,
+                         const std::string& event_type="ForkEvent") {
+
+    }
+}
+
+TEST_F(WrapperTest, GithubGlobalStructsWithS3Source) {
+    using namespace std;
+    using namespace tuplex;
+
+    // Config for test (useful for profiling)
+    bool use_noop_mode = false;
+
+    // Test over github daily with generic hyper dicts.
+    auto input_pattern = "s3://tuplex-public/data/github_daily/*.json";
+    auto output_path = "./local-exp-with-s3/" + testName + "/";
+    // remove output files if they exist
+    cout << "Removing files (if they exist) from " << output_path << endl;
+    boost::filesystem::remove_all(output_path.c_str());
+
+    std::unordered_map<std::string, std::string> conf;
+
+    // enable sparse structs, disable generic dicts
+    conf["tuplex.optimizer.sparsifyStructs"] = "false";
+    conf["tuplex.optimizer.simplifyLargeStructs"] = "false";
+    conf["tuplex.experimental.useGenericDicts"] = "false";
+    conf["tuplex.experimental.hyperspecialization"] = "false";
+
+    unsigned num_workers = 0; // 0 is within the process.
+    auto ctx_opts = "{\"tuplex.useLLVMOptimizer\": true, \"tuplex.autoUpcast\": true,"
+                    " \"tuplex.allowUndefinedBehavior\": false, \"tuplex.optimizer.codeStats\": true,"
+                    " \"tuplex.optimizer.generateParser\": false, \"tuplex.optimizer.nullValueOptimization\": true,"
+                    " \"tuplex.optimizer.filterPushdown\": true, \"tuplex.optimizer.sharedObjectPropagation\": true,"
+                    " \"tuplex.optimizer.mergeExceptionsInOrder\": false, \"tuplex.optimizer.operatorReordering\": false,"
+                    " \"tuplex.optimizer.filterPromotion\": true, \"tuplex.interleaveIO\": true, "
+                    " \"tuplex.optimizer.sparsifyStructs\":false, \"tuplex.optimizer.simplifyLargeStructs\":false,\"tuplex.experimental.useGenericDicts\":false,\"tuplex.experimental.hyperspecialization\":false "
+                    "\"tuplex.resolveWithInterpreterOnly\": false, \"tuplex.network.verifySSL\": false, "
+                    "\"tuplex.redirectToPythonLogging\": false, \"tuplex.useInterpreterOnly\": false, "
+                    "\"tuplex.aws.lambdaInvokeOthers\": true, \"tuplex.experimental.hyperspecialization\": true, "
+                    "\"tuplex.experimental.opportuneCompilation\": true, "
+                    "\"tuplex.experimental.forceBadParseExceptFormat\": true,"
+                    " \"tuplex.optimizer.selectionPushdown\": true, \"tuplex.webui.enable\": false, "
+                    "\"tuplex.executorCount\": 0, \"tuplex.sample.maxDetectionRows\": 10000, "
+                    "\"tuplex.webui.port\": 5000, \"tuplex.webui.mongodb.port\": 27017, "
+                    "\"tuplex.webui.exceptionDisplayLimit\": 5, \"tuplex.aws.requestTimeout\": 600, "
+                    "\"tuplex.aws.connectTimeout\": 1, \"tuplex.aws.maxConcurrency\": 410, "
+                    "\"tuplex.aws.httpThreadCount\": 410, \"tuplex.aws.lambdaMemory\": 1536,"
+                    " \"tuplex.aws.lambdaTimeout\": 900, \"tuplex.aws.requesterPay\": false, "
+                    "\"tuplex.normalcaseThreshold\": 0.9, \"tuplex.optionalThreshold\": 0.7, "
+                    "\"tuplex.aws.lambdaInvocationStrategy\": \"direct\", \"tuplex.aws.lambdaThreads\": \"auto\", "
+                    "\"tuplex.aws.region\": \"us-east-1\", \"tuplex.aws.scratchDir\": \"./local-exp/scratch\", "
+                    "\"tuplex.aws.verboseLogging\": \"true\", \"tuplex.backend\": \"worker\", "
+                    "\"tuplex.csv.comments\": [\"#\", \"~\"], \"tuplex.csv.quotechar\": \"\\\"\","
+                    " \"tuplex.csv.separators\": [\",\", \";\", \"|\", \"\\t\"], \"tuplex.driverMemory\": \"2G\", "
+                    "\"tuplex.env.hostname\": \"leonhards-System-Product-Name\", \"tuplex.env.mode\": \"file\", "
+                    "\"tuplex.env.user\": \"leonhards\", \"tuplex.executorMemory\": \"2G\","
+                    " \"tuplex.experimental.interchangeWithObjectFiles\": \"false\", "
+                    "\"tuplex.experimental.minimumSizeToSpecialize\": \"128MB\", "
+                    "\"tuplex.experimental.s3PreCacheSize\": \"0\", "
+                    "\"tuplex.experimental.specializationUnitSize\": \"0\", "
+                    "\"tuplex.experimental.worker.numWorkers\": \"" + std::to_string(num_workers) + "\", "
+                                                                                                    "\"tuplex.experimental.worker.workerPath\": \"/home/leonhards/projects/tuplex-public/tuplex/cmake-build-release-w-cereal/dist/bin/tuplex-worker\", \"tuplex.inputSplitSize\": \"2GB\", \"tuplex.lambda.sample.maxDetectionMemory\": \"auto\", \"tuplex.lambda.sample.maxDetectionRows\": \"auto\", \"tuplex.lambda.sample.samplesPerStrata\": \"auto\", \"tuplex.lambda.sample.strataSize\": \"auto\", \"tuplex.logDir\": \".\", \"tuplex.network.caFile\": \"\", \"tuplex.network.caPath\": \"\", \"tuplex.optimizer.constantFoldingOptimization\": \"false\", \"tuplex.partitionSize\": \"32MB\", \"tuplex.readBufferSize\": \"4KB\", \"tuplex.runTimeLibrary\": \"/home/leonhards/projects/tuplex-public/tuplex/build/dist/python/tuplex/libexec/tuplex_runtime.so\", \"tuplex.runTimeMemory\": \"128MB\", \"tuplex.runTimeMemoryBlockSize\": \"4MB\", \"tuplex.sample.maxDetectionMemory\": \"32MB\", \"tuplex.sample.samplesPerStrata\": \"10\", \"tuplex.sample.strataSize\": \"1024\", \"tuplex.scratchDir\": \"/tmp/tuplex-cache-leonhards\", \"tuplex.webui.mongodb.path\": \"/tmp/tuplex-cache-leonhards/mongodb\", \"tuplex.webui.mongodb.url\": \"localhost\", \"tuplex.webui.url\": \"localhost\"}";
+
+    PythonContext ctx("", "", ctx_opts);
+
+    {
+        cout<<"Running github pipeline."<<endl;
+
+        github_pipeline(ctx, input_pattern, output_path);
+
+        cout<<"Pipeline done."<<endl;
+
+        // Load stats result from json:
+        auto job_path = URI("worker_app_job.json");
+        auto job_data = fileToString(job_path);
+        ASSERT_FALSE(job_data.empty());
+
+
+        // check results (from python reference number, add up total line count)
+        if(!use_noop_mode) {
+            cout << "Analyzing result: " << endl;
+            auto output_uris = glob(output_path + "*.csv");
+            cout << "Found " << pluralize(output_uris.size(), "output file") << endl;
+            size_t total_row_count = 0;
+            for (auto path: output_uris) {
+                auto row_count = 0;//csv_row_count(path);
+                cout << "-- file " << path << ": " << pluralize(row_count, "row") << endl;
+                total_row_count += row_count;
+            }
+            EXPECT_EQ(total_row_count, 294195);
+        }
+    }
+}
+
 //// debug any python module...
 ///** Takes a path and adds it to sys.paths by calling PyRun_SimpleString.
 // * This does rather laborious C string concatenation so that it will work in

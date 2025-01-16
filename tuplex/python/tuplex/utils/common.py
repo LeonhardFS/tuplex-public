@@ -384,13 +384,14 @@ def registerLoggingCallback(callback):
     """
     from ..libexec.tuplex import registerLoggingCallback as ccRegister
 
-    # create a wrapper to capture exceptions properly and avoid crashing
+    # Create a wrapper to capture exceptions properly and avoid crashing.
     def wrapper(level, time_info, logger_name, msg):
         args = (level, time_info, logger_name, msg)
 
         try:
             callback(*args)
         except Exception as e:
+            print(f"Logging callback produced error: {e}")
             logging.error("logging callback produced following error: {}".format(e))
 
     ccRegister(wrapper)

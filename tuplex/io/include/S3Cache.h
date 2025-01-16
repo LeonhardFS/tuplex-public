@@ -85,7 +85,8 @@ namespace tuplex {
             CacheEntry() : buf(nullptr), range_start(0), range_end(0), timestamp(0), uri_size(0) {}
             CacheEntry(const CacheEntry& other) = delete;
             CacheEntry(CacheEntry&& other) {
-                buf = other.buf; other.buf = nullptr;
+                buf = other.buf;
+                other.buf = nullptr;
                 range_start = other.range_start;
                 range_end = other.range_end;
 
@@ -94,7 +95,27 @@ namespace tuplex {
                 timestamp = other.timestamp;
             }
 
-            CacheEntry& operator = (CacheEntry&& other) = default;
+            CacheEntry& operator = (CacheEntry&& other) {
+                // important to transfer buffer ownership.
+                buf = other.buf;
+                other.buf = nullptr;
+                range_start = other.range_start;
+                range_end = other.range_end;
+
+                uri = other.uri;
+                uri_size = other.uri_size;
+                timestamp = other.timestamp;
+
+                // reset for better debugging.
+                other.timestamp = 0;
+                other.uri_size = 0;
+                other.range_start = 0;
+                other.range_end = 0;
+                other.uri = URI::INVALID;
+
+                return *this;
+            }
+            CacheEntry& operator = (const CacheEntry& other) = delete;
 
             ~CacheEntry() {
                 if(buf)
