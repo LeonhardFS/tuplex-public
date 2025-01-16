@@ -642,7 +642,15 @@ namespace tuplex {
             _s3fs->_bytesReceived += retrievedBytes;
         } else {
             auto s3_details = format_s3_outcome_error_message(get_object_outcome, uri.toPath());
-            auto err_msg = s3_details;
+            auto err_msg = s3_details + " in S3Cache.";
+
+            // special case: Request Timeout Has Expired -> add additional information.
+            if(err_msg.find("Request Timeout Has Expired") != std::string::npos) {
+                std::stringstream ss;
+                ss<<"Requested "<<sizeToMemString(nbytes)<<", connect timeout="<<_s3fs->_config.connectTimeoutMs<<"ms, request timeout="<<_s3fs->_config.requestTimeoutMs<<"ms.";
+                err_msg += " " + ss.str();
+            }
+
             logger.error(err_msg);
             throw std::runtime_error(err_msg);
         }
