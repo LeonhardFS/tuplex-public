@@ -659,10 +659,7 @@ namespace tuplex {
             // simply fill cache by drawing the proper samples & store rows.
             fillFileCacheSinglethreaded(_samplingMode);
         } else if(mode & SamplingMode::MULTITHREADED) {
-
-            logger.warn("DISABLED MULTITHREADED fillFileCache");
-            fillFileCacheSinglethreaded(_samplingMode);
-            //fillFileCacheMultithreaded(_samplingMode);
+            fillFileCacheMultithreaded(_samplingMode);
         } else {
             logger.debug("INTERNAL ERROR, invalid sampling mode.");
         }
