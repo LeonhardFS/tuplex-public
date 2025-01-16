@@ -627,13 +627,10 @@ namespace tuplex {
 
         Timer timer;
         _isRowSampleProjected = false; // raw, fill with unprojected samples.
-//        if(mode & SamplingMode::SINGLETHREADED)
-//            _rowsSample = sample(mode, outNames, params);
-//        else
-//            _rowsSample = multithreadedSample(mode, outNames, params);
-
-        logger.warn("DISABLED MULTITHREADED SAMPLING IN STRATIFIED");
-        _rowsSample = sample(mode, outNames, params);
+        if(mode & SamplingMode::SINGLETHREADED)
+            _rowsSample = sample(mode, outNames, params);
+        else
+            _rowsSample = multithreadedSample(mode, outNames, params);
 
         logger.info("Extracting stratified row sample took " + std::to_string(timer.time()) + "s (sampling mode=" + samplingModeToString(mode) + ")");
     }
