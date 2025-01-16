@@ -598,14 +598,10 @@ namespace tuplex {
         params.limit = sample_limit;
 
         _isRowSampleProjected = false; // no projection, store raw samples!
-//        if(mode & SamplingMode::SINGLETHREADED)
-//            _rowsSample = sample(mode, outNames, params);
-//        else
-//            _rowsSample = multithreadedSample(mode, outNames, params);
-
-        // Use single-threaded??
-        logger.warn("DISABLED PARALLEL multithreadedSample SAMPLING");
-        _rowsSample = sample(mode, outNames, params);
+        if(mode & SamplingMode::SINGLETHREADED)
+            _rowsSample = sample(mode, outNames, params);
+        else
+            _rowsSample = multithreadedSample(mode, outNames, params);
 
         logger.info("Extracting row sample took " + std::to_string(timer.time()) + "s (sampling mode=" + samplingModeToString(mode) + ")");
     }
