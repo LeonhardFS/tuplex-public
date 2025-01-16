@@ -486,7 +486,7 @@ namespace tuplex {
 
                 std::stringstream ss;
                 ss<<"Cache hit for "<<uri.toString()<<" ("<<pos - range_start<<" B).";
-                Logger::instance().defaultLogger().info(ss.str());
+                Logger::instance().defaultLogger().debug(ss.str());
 
                 return true;
             }

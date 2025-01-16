@@ -108,15 +108,14 @@ namespace tuplex {
         else
             inParameters.emplace_back(retType);
 
-        logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " inferSchema done, returning output schema.");
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " inferSchema done, returning output schema.");
         return Schema(Schema::MemoryLayout::ROW, python::Type::makeTupleType(inParameters));
     }
 
     Schema
     WithColumnOperator::getOutputSchemaFromReturnAndInputRowType(const python::Type &retType, const python::Type &input_type) const {
-        auto& logger = Logger::instance().logger("logical plan");
-
-        logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " getOutputSchemaFromReturnAndInputRowType.");
+        // auto& logger = Logger::instance().logger("logical plan");
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " getOutputSchemaFromReturnAndInputRowType.");
 
         if(retType == python::Type::UNKNOWN) {
             return Schema::UNKNOWN;
@@ -201,8 +200,8 @@ namespace tuplex {
         // @TODO: refactor the whole sampling into SampleProcessor.
         using namespace std;
 
-        auto& logger = Logger::instance().defaultLogger();
-        logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " WithColumn operator getSample.");
+        // auto& logger = Logger::instance().defaultLogger();
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " WithColumn operator getSample.");
 
         auto vSamples = parent()->getSample(num);
         auto pickledCode = _udf.getPickledCode();
@@ -363,7 +362,7 @@ namespace tuplex {
 
         python::unlockGIL();
 
-        logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " WithColumn operator return " + pluralize(vRes.size(), "sample") + ".");
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " WithColumn operator return " + pluralize(vRes.size(), "sample") + ".");
 
         return vRes;
     }

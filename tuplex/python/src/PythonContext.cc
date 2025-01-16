@@ -576,7 +576,7 @@ namespace tuplex {
                                                 const std::vector<std::string> &columns, bool autoUpcast, const SamplingMode& sm) {
 
         auto& logger = Logger::instance().logger("python");
-        logger.info("using slow transfer to backend");
+        logger.info("Using slow transfer to backend.");
 
         // ref counting error has to occur somewhere here...
 
@@ -882,7 +882,7 @@ namespace tuplex {
             logger.error("unknown type detected as default type, can't process normal case");
 
         // else, transfer data under this type...
-        logger.info("inferred default type is " + majType.desc());
+        logger.info("Inferred default type is " + majType.desc() + ".");
 
 
         // success message only if dataset is not an error dataset

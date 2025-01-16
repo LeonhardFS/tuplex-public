@@ -104,17 +104,17 @@ namespace tuplex {
                 if(!rows_sample.empty()) {
                     logger.debug("Retrieving pythonic sample took: " + std::to_string(s_timer.time()) + "s");
                     _udf.removeTypes(true);
-                    logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " before hintSchemaWithSample.");
+                    // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " before hintSchemaWithSample.");
                     success = _udf.hintSchemaWithSample(rows_sample,
                                                         std::get<1>(t_rows_sample),
                                                         conf.row_type,
                                                         true);
-                    logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " after hintSchemaWithSample.");
+                    // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " after hintSchemaWithSample.");
                 } else {
-                    logger.info("could not retrieve sample, typing fails. Could do randomized typing.");
+                    logger.info("Could not retrieve sample, typing fails. Could do randomized typing.");
                 }
                 if(!success) {
-                    logger.debug("no success typing UDF - even with sample.");
+                    logger.debug("No success typing UDF - even with sample.");
                 }
             }
 
@@ -175,15 +175,15 @@ namespace tuplex {
 
             // check what the return type is. If it is of exception type, try to use a sample to get rid off branches that are off
             if(success && _udf.getOutputSchema().getRowType().isExceptionType()) {
-                logger.debug("static typing resulted in UDF producing always exceptions. Try hinting with sample...");
+                logger.debug("Static typing resulted in UDF producing always exceptions. Try hinting with sample...");
                 Timer s_timer;
                 auto rows_sample = parent()->getPythonicSample(MAX_TYPE_SAMPLING_ROWS);
-                logger.info("retrieving pythonic sample took: " + std::to_string(s_timer.time()) + "s");
+                logger.info("Retrieving pythonic sample took: " + std::to_string(s_timer.time()) + "s.");
                 _udf.removeTypes(false);
-                logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " before hintSchemaWithSample.");
+                //logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " before hintSchemaWithSample.");
                 success = _udf.hintSchemaWithSample(std::get<0>(rows_sample), std::get<1>(rows_sample),
                                                     parentSchema.getRowType(), true);
-                logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " after hintSchemaWithSample.");
+                // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " after hintSchemaWithSample.");
                 if(success) {
                     if(_udf.getCompileErrors().empty() || _udf.getReturnError() != CompileError::COMPILE_ERROR_NONE) {
                         // @TODO: add the constant folding for the other scenarios as well!
@@ -234,11 +234,11 @@ namespace tuplex {
                         return Schema::UNKNOWN;
                     }
                     _udf.removeTypes(false);
-                    logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " before hintSchemaWithSample.");
+                    // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " before hintSchemaWithSample.");
                     success = _udf.hintSchemaWithSample(std::get<0>(rows_sample),
                                         std::get<1>(rows_sample),
                                                         parentSchema.getRowType(), true);
-                    logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " after hintSchemaWithSample (success=" + std::to_string(success) + ").");
+                    // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " after hintSchemaWithSample (success=" + std::to_string(success) + ").");
 
                     // only exceptions?
                     // => report, abort compilation!
@@ -288,12 +288,12 @@ namespace tuplex {
             if(_udf.getCompileErrors().empty() || _udf.getReturnError() != CompileError::COMPILE_ERROR_NONE) {
                 // @TODO: add the constant folding for the other scenarios as well!
                 if(containsConstantType(parentSchema.getRowType())) {
-                    logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " found constants in parent schema, optimizing...");
+                    // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " found constants in parent schema, optimizing...");
                     _udf.optimizeConstants();
                 }
 
                 // if unsupported types presented, use sample to determine type and use fallback mode (except for list return type error, only print error messages for now)
-                logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " inferSchema done, returning output schema.");
+                // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " inferSchema done, returning output schema.");
                 return _udf.getOutputSchema();
             }
 

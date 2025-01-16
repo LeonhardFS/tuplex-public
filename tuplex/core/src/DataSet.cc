@@ -140,8 +140,8 @@ namespace tuplex {
         }
 
 
-        auto& logger = Logger::instance().logger("logical plan");
-        logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Adding file output operator: " + name);
+        // auto& logger = Logger::instance().logger("logical plan");
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Adding file output operator: " + name);
 
         auto op = _context->addOperator(
                 std::shared_ptr<LogicalOperator>(new FileOutputOperator(_operator, uri, udf.withCompilePolicy(_context->compilePolicy()), name, fmt, outputOptions,
@@ -191,8 +191,8 @@ namespace tuplex {
             return _context->makeError("job aborted (signal received)");
         }
 
-        auto& logger = Logger::instance().logger("logical plan");
-        logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " added map operator (name: " + op->name() + ")");
+        // auto& logger = Logger::instance().logger("logical plan");
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " added map operator (name: " + op->name() + ")");
 
         // !!! never return the pointer above
         return *op->getDataSet();
@@ -351,8 +351,8 @@ namespace tuplex {
         // now it is a simple map operator
         DataSet &ds = map(UDF(code).withCompilePolicy(_context->compilePolicy()));
 
-        auto& logger = Logger::instance().logger("logical plan");
-        logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " created map operator for selectColumns / integer indices");
+        // auto& logger = Logger::instance().logger("logical plan");
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " created map operator for selectColumns / integer indices");
 
         // check if cols exist & update them
         auto columns = _operator->columns();
@@ -379,7 +379,7 @@ namespace tuplex {
             return _context->makeError("job aborted (signal received)");
         }
 
-        logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " selectColumns done.");
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " selectColumns done.");
 
         return ds;
     }
@@ -547,7 +547,7 @@ namespace tuplex {
         DataSet &ds = map(UDF(code).withCompilePolicy(_context->compilePolicy()));
 
         auto& logger = Logger::instance().logger("logical plan");
-        logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " added selectColumns / string keys");
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " added selectColumns / string keys");
 
         // set columns to restricted cols
         ds.setColumns(columnNames);
@@ -564,7 +564,7 @@ namespace tuplex {
             return _context->makeError("job aborted (signal received)");
         }
 
-        logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " added map operator (name: " + ds._operator->name() + ")");
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " added map operator (name: " + ds._operator->name() + ")");
 
         return ds;
     }

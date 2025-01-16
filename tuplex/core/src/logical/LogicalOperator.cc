@@ -50,8 +50,7 @@ namespace tuplex {
     std::shared_ptr<ResultSet> LogicalOperator::compute(const Context& context) {
 
         auto& logger = Logger::instance().defaultLogger();
-
-        logger.info("Starting operator eval.");
+        //logger.info("Starting operator eval.");
 
         Timer planningTimer;
         // create LogicalPlan from this node
@@ -149,14 +148,14 @@ namespace tuplex {
         std::vector<PyObject*> v;
         auto rows = getSample(num);
 
-        auto& logger = Logger::instance().defaultLogger();
-        logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Acquiring GIL to return pythonic sample (" + name() + ")...");
+        // auto& logger = Logger::instance().defaultLogger();
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Acquiring GIL to return pythonic sample (" + name() + ")...");
         python::lockGIL();
         v.reserve(rows.size());
         for(const auto& r : rows)
             v.push_back(python::rowToPython(r, true));
         python::unlockGIL();
-        logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " GIL acquire done (" + name() + ").");
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " GIL acquire done (" + name() + ").");
         return std::make_pair(v, rows);
     }
 

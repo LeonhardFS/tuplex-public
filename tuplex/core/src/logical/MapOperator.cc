@@ -72,8 +72,8 @@ namespace tuplex {
             }
         }
 
-        auto& logger = Logger::instance().logger("logical plan");
-        logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " has output type:" + getOutputSchema().getRowType().desc());
+        // auto& logger = Logger::instance().logger("logical plan");
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " has output type:" + getOutputSchema().getRowType().desc());
 
 #ifndef NDEBUG
         if(!_udf.empty())
@@ -110,8 +110,8 @@ namespace tuplex {
         if(_udf.empty())
             return parent()->getSample(num);
 
-        auto& logger = Logger::instance().defaultLogger();
-        logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Map operator getSample.");
+        // auto& logger = Logger::instance().defaultLogger();
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Map operator getSample.");
 
         // first retrieve samples from parent
         // then, apply lambda (python version)
@@ -167,7 +167,7 @@ namespace tuplex {
 
         python::unlockGIL();
 
-        logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Map operator returns " + pluralize(vRes.size(), "sample") + ".");
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Map operator returns " + pluralize(vRes.size(), "sample") + ".");
 
         return vRes;
     }
@@ -227,7 +227,7 @@ namespace tuplex {
         // assert(good());
 
         auto& logger = Logger::instance().logger("logical plan");
-        logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " retype.");
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " retype.");
 
         // there are two options:
         // 1.) it's a rename operator -> special case
