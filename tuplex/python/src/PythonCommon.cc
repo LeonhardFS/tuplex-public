@@ -108,10 +108,11 @@ namespace tuplex {
                  auto eol_len = strlen(spdlog::details::os::default_eol);
                  std::string line(formatted.begin(), formatted.end() - eol_len);
 
+                 spdlog::details::console_mutex m;
+
                  // This is a fallback for debugging purposes, i.e. if code below fails.
                  // Note: logging should NOT be used between lockGIL()...unlockGIL().
                  // // print now out.
-                 // spdlog::details::console_mutex m;
                  // m.mutex().lock();
                  // std::cout<<"-- callback -- "<<line<<std::endl;
                  // m.mutex().unlock();
