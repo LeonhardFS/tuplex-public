@@ -719,8 +719,6 @@ namespace tuplex {
             }
         }
 
-        Logger::instance().defaultLogger().info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " selectColumns in python context.");
-
         PythonDataSet pds;
         // GIL release & reacquire
         assert(PyGILState_Check()); // make sure this thread holds the GIL!
@@ -758,9 +756,6 @@ namespace tuplex {
         // make sure a dataset is wrapped
         assert(this->_dataset);
         // ==> error handled below.
-
-        Logger::instance().defaultLogger().info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " enter tocsv in python context.");
-
 
         std::unordered_map<std::string, std::string> outputOptions = defaultCSVOutputOptions();
 

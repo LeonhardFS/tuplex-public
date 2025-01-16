@@ -95,7 +95,7 @@ namespace tuplex {
                 timestamp = other.timestamp;
             }
 
-            CacheEntry& operator = (CacheEntry&& other) {
+            CacheEntry& operator = (CacheEntry&& other) noexcept {
                 // important to transfer buffer ownership.
                 buf = other.buf;
                 other.buf = nullptr;
@@ -115,6 +115,7 @@ namespace tuplex {
 
                 return *this;
             }
+
             CacheEntry& operator = (const CacheEntry& other) = delete;
 
             ~CacheEntry() {
