@@ -91,17 +91,13 @@ namespace tuplex {
         S3File(S3FileSystemImpl &fs, const URI &uri, VirtualFileMode mode, AwsS3RequestPayer requestPayer) : _s3fs(fs),
                                                                                                 VirtualFile::VirtualFile(uri, mode),
                                                                                                 _requestPayer(requestPayer) {
-            // 1024 * 1024 * 5 + 100; ///! for debug reasons, set 5MB + 100B buffer
-
-            // in release mode use larger buffer
-#ifdef NDEBUG
-           _bufferSize = 1024 * 1024 * 64; ///! size of the buffer, set here to 64MB buffer
-#endif
-
+            // @TODO: allow setting _bufferSize via API, helpful for large files when more info is known.
+            // small files should use smaller buffers.
             init();
         }
 
         static size_t DEFAULT_INTERNAL_BUFFER_SIZE() {
+            // 5 MB buffer.
             return 5 * 1024 * 1024 + 100;
         }
 

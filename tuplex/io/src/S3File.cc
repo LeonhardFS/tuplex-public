@@ -30,6 +30,12 @@ namespace tuplex {
         _bufferPosition = 0;
         _bufferLength = 0;
         _bufferSize = DEFAULT_INTERNAL_BUFFER_SIZE();
+
+        // In release mode use larger buffer
+#ifdef NDEBUG
+        _bufferSize = 1024 * 1024 * 64; ///! size of the buffer, set here to 64MB buffer.
+#endif
+
         _fileSize = 0;
         _bufferedAbsoluteFilePosition = 0;
         _filePosition = 0;
