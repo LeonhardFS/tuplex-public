@@ -842,8 +842,34 @@ namespace tuplex {
         Timer timer;
         auto& cache = S3FileCache::instance();
         cache.reset(_settings.s3PreCacheSize);
+
+        // Check how large total size of parts compared to cache. If larger than cache-size, cache only first parts.
+        size_t total_cache_size_requested = 0;
+        for(const auto& part : parts)
+            total_cache_size_requested += part.part_size();
+
+        std::vector<FilePart> parts_to_cache = parts;
+        if(total_cache_size_requested >= cache.cacheSize()) {
+            // request only some parts, or a part thereof
+            int64_t bytes_remaining = cache.cacheSize();
+            parts_to_cache.clear();
+            unsigned part_idx = 0;
+            while(bytes_remaining > 0 && part_idx < parts.size()) {
+                auto part = parts[part_idx++];
+                if(part.part_size() <= bytes_remaining) {
+                    parts_to_cache.push_back(part);
+                    bytes_remaining -= part.part_size();
+                } else {
+                    // partial and end.
+                    part.rangeEnd = part.rangeEnd + bytes_remaining;
+                    parts_to_cache.push_back(part);
+                    bytes_remaining = 0;
+                }
+            }
+        }
+
         std::vector<std::future<size_t>> futures;
-        for(const auto& part : parts) {
+        for(const auto& part : parts_to_cache) {
             if(part.uri.prefix() == "s3://")
                 futures.emplace_back(cache.putAsync(part.uri, part.rangeStart, part.rangeEnd));
         }
