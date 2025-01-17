@@ -849,9 +849,9 @@ namespace tuplex {
             total_cache_size_requested += part.part_size();
 
         std::vector<FilePart> parts_to_cache = parts;
-        if(total_cache_size_requested >= cache.cacheSize()) {
+        if(total_cache_size_requested >= cache.maxCacheSize()) {
             // request only some parts, or a part thereof
-            int64_t bytes_remaining = cache.cacheSize();
+            int64_t bytes_remaining = cache.maxCacheSize();
             parts_to_cache.clear();
             unsigned part_idx = 0;
             while(bytes_remaining > 0 && part_idx < parts.size()) {
@@ -861,8 +861,14 @@ namespace tuplex {
                     bytes_remaining -= part.part_size();
                 } else {
                     // partial and end.
-                    part.rangeEnd = part.rangeEnd + bytes_remaining;
+                    part.rangeEnd = part.rangeStart + bytes_remaining;
                     parts_to_cache.push_back(part);
+
+                    std::stringstream ss;
+                    ss<<"S3 Cache capacity is "<<sizeToMemString(cache.cacheSize())<<" but total size requested for precaching is "
+                    <<sizeToMemString(total_cache_size_requested)<<". Caching only "<<parts_to_cache.size()<<"/"<<pluralize(parts.size(), "part")
+                    <<" with last part caching only first "<<sizeToMemString(part.part_size())<<".";
+                    logger().info(ss.str());
                     bytes_remaining = 0;
                 }
             }

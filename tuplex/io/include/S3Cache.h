@@ -59,6 +59,7 @@ namespace tuplex {
         void free(uint8_t* buf);
 
         inline size_t cacheSize() const { return _cacheSize; }
+        inline size_t maxCacheSize() const { return _maxSize; }
     private:
         std::mutex _mutex; // everything for this cache needs to be thread-safe.
 
