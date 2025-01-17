@@ -865,9 +865,9 @@ namespace tuplex {
                     parts_to_cache.push_back(part);
 
                     std::stringstream ss;
-                    ss<<"S3 Cache capacity is "<<sizeToMemString(cache.cacheSize())<<" but total size requested for precaching is "
+                    ss<<"S3 Cache capacity is "<<sizeToMemString(cache.maxCacheSize())<<" but total size requested for precaching is "
                     <<sizeToMemString(total_cache_size_requested)<<". Caching only "<<parts_to_cache.size()<<"/"<<pluralize(parts.size(), "part")
-                    <<" with last part caching only first "<<sizeToMemString(part.part_size())<<".";
+                    <<" with caching only first "<<sizeToMemString(part.part_size())<<" for the last part.";
                     logger().info(ss.str());
                     bytes_remaining = 0;
                 }
@@ -887,7 +887,7 @@ namespace tuplex {
         std::stringstream ss;
         auto cache_time = timer.time();
         double s3ReadSpeed = (total_cached / (1024.0 * 1024.0)) / cache_time;
-        ss<<"Cached "<<total_cached<<" bytes in "<<cache_time<<"s from S3 ( "<<s3ReadSpeed<<" MB/s)";
+        ss<<"Cached "<<total_cached<<" bytes in "<<cache_time<<"s from S3 ("<<s3ReadSpeed<<" MB/s)";
         logger().info(ss.str());
     }
 

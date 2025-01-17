@@ -505,9 +505,12 @@ namespace tuplex {
             // fetch
             auto chunk = s3Read(r_uri, r_start, r_end);
 
-            // copy over to buf
+            // copy over to buf.
             std::stringstream ss;
-            ss<<"URI: "<<r_uri<<" got chunk: "<<chunk.range_start<<" - "<<chunk.range_end<<" in "<<timer.time()<<"s.";
+            auto request_time = timer.time();
+            auto bytes_read = chunk.range_end - chunk.range_start;
+            double s3ReadSpeed = (bytes_read / (1024.0 * 1024.0)) / request_time;
+            ss<<"URI: "<<r_uri<<" got chunk: "<<chunk.range_start<<" - "<<chunk.range_end<<" in "<<request_time<<"s ("<<s3ReadSpeed<<"MB/s).";
             Logger::instance().defaultLogger().info(ss.str());
 
             auto buf_offset = chunk.range_start - range_start;
