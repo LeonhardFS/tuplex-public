@@ -30,9 +30,9 @@ namespace tuplex {
         inline void setFS(S3FileSystemImpl& fs, bool requesterPays=true) {
             _s3fs = &fs;
             if(requesterPays)
-                _requestPayer = Aws::S3::Model::RequestPayer::requester;
+                _requestPayer = AwsS3RequestPayerRequester;
             else
-                _requestPayer = Aws::S3::Model::RequestPayer::NOT_SET;
+                _requestPayer = AwsS3RequestPayerNotSet;
         }
         static S3FileCache& instance() {
             static S3FileCache the_one_and_only;
@@ -133,7 +133,7 @@ namespace tuplex {
         void putChunk(CacheEntry&& chunk);
 
         S3FileSystemImpl* _s3fs; // weak ptr.
-        Aws::S3::Model::RequestPayer _requestPayer;
+        AwsS3RequestPayer _requestPayer;
         CacheEntry s3Read(const URI& uri, size_t range_start, size_t range_end);
 
         /*!

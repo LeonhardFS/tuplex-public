@@ -195,7 +195,7 @@ namespace tuplex {
             throw std::runtime_error("Trying to use S3Cache without an initialized S3 Filesystem");
         // not found? issue request directly.
         // perform request
-        Aws::S3::Model::HeadObjectRequest request;
+        AwsS3HeadObjectRequest request;
         request.WithBucket(uri.s3Bucket().c_str());
         request.WithKey(uri.s3Key().c_str());
         auto head_outcome = _s3fs->client().HeadObject(request);
@@ -592,7 +592,7 @@ namespace tuplex {
         std::string range = "bytes=" + std::to_string(range_start) + "-" + std::to_string(range_start + nbytes - 1);
         // make AWS S3 part request to uri
         // check how to retrieve object in poarts
-        Aws::S3::Model::GetObjectRequest req;
+        AwsS3GetObjectRequest req;
         req.SetBucket(uri.s3Bucket().c_str());
         req.SetKey(uri.s3Key().c_str());
         // retrieve byte range according to http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.35

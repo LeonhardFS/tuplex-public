@@ -17,6 +17,7 @@
 #include <aws/s3/model/CreateMultipartUploadRequest.h>
 #include <aws/s3/model/CompleteMultipartUploadRequest.h>
 #include <aws/s3/model/UploadPartRequest.h>
+#include <aws/s3/model/HeadObjectRequest.h>
 
 #ifdef USE_AWS_S3_CRT_CLIENT
 #include <aws/s3-crt/S3CrtClient.h>
@@ -25,6 +26,11 @@
 #include <aws/s3-crt/model/CreateMultipartUploadRequest.h>
 #include <aws/s3-crt/model/CompleteMultipartUploadRequest.h>
 #include <aws/s3-crt/model/UploadPartRequest.h>
+#include <aws/s3-crt/model/HeadObjectRequest.h>
+#include <aws/s3-crt/model/ListObjectsV2Request.h>
+#include <aws/s3-crt/model/DeleteObjectsRequest.h>
+#include <aws/s3-crt/model/CopyObjectRequest.h>
+#include <aws/s3-crt/model/CreateBucketRequest.h>
 #endif
 
 // Alias types to flip between Crt and regular S3 client.
@@ -43,6 +49,22 @@ namespace tuplex {
     using AwsS3CompletedPart=Aws::S3Crt::Model::CompletedPart;
     using AwsS3RequestPayer=Aws::S3Crt::Model::RequestPayer;
     static const auto AwsS3RequestPayerRequester=Aws::S3Crt::Model::RequestPayer::requester;
+    static const auto AwsS3RequestPayerNotSet=Aws::S3Crt::Model::RequestPayer::NOT_SET;
+
+    using AwsS3HeadObjectRequest=Aws::S3Crt::Model::HeadObjectRequest;
+
+    using AwsS3ListObjectsV2Request=Aws::S3Crt::Model::ListObjectsV2Request;
+
+    using AwsS3DeleteObjectsRequest=Aws::S3Crt::Model::DeleteObjectsRequest;
+    using AwsS3Delete=Aws::S3Crt::Model::Delete;
+    using AwsS3ObjectIdentifier=Aws::S3Crt::Model::ObjectIdentifier;
+
+    using AwsS3CopyObjectRequest=Aws::S3Crt::Model::CopyObjectRequest;
+
+    using AwsS3CreateBucketRequest=Aws::S3Crt::Model::CreateBucketRequest;
+    // TODO: think for CrtClient of adding to config sensible defaults for target rates/part sizes.
+    // https://github.com/awsdocs/aws-doc-sdk-examples/blob/main/cpp/example_code/s3-crt/s3-crt-demo.cpp#L235
+
 #else
     using AwsS3Client=Aws::S3::S3Client;
     using AwsS3GetObjectRequest=Aws::S3::Model::GetObjectRequest;
@@ -55,6 +77,16 @@ namespace tuplex {
     using AwsS3CompletedPart=Aws::S3::Model::CompletedPart;
     using AwsS3RequestPayer=Aws::S3::Model::RequestPayer;
     static const auto AwsS3RequestPayerRequester=Aws::S3::Model::RequestPayer::requester;
+    static const auto AwsS3RequestPayerNotSet=Aws::S3::Model::RequestPayer::NOT_SET;
+
+    using AwsS3HeadObjectRequest=Aws::S3::Model::HeadObjectRequest;
+    using AwsS3ListObjectsV2Request=Aws::S3::Model::ListObjectsV2Request;
+
+    using AwsS3DeleteObjectsRequest=Aws::S3::Model::DeleteObjectsRequest;
+    using AwsS3Delete=Aws::S3::Model::Delete;
+    using AwsS3ObjectIdentifier=Aws::S3::Model::ObjectIdentifier;
+    using AwsS3CopyObjectRequest=Aws::S3::Model::CopyObjectRequest;
+    using AwsS3CreateBucketRequest=Aws::S3::Model::CreateBucketRequest;
 #endif
 }
 

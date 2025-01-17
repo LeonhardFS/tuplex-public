@@ -207,7 +207,7 @@ protected:
     static bool create_test_bucket(const std::string& name, bool exists_ok=true) {
         using namespace tuplex;
         using namespace std;
-        Aws::S3::Model::CreateBucketRequest request;
+        AwsS3CreateBucketRequest request;
         request.SetBucket(name);
 
         auto impl = VirtualFileSystem::getS3FileSystemImpl();
@@ -220,7 +220,13 @@ protected:
             return true;
         } else {
             // If bucket already exists, all good (given exists_ok flag is set).
-            if(exists_ok && outcome.GetError().GetErrorType() == Aws::S3::S3Errors::BUCKET_ALREADY_OWNED_BY_YOU || outcome.GetError().GetErrorType() == Aws::S3::S3Errors::BUCKET_ALREADY_EXISTS)
+#ifdef USE_AWS_S3_CRT_CLIENT
+            if(exists_ok && outcome.GetError().GetErrorType() == Aws::S3Crt::S3CrtErrors::BUCKET_ALREADY_OWNED_BY_YOU ||
+               outcome.GetError().GetErrorType() == Aws::S3Crt::S3CrtErrors::BUCKET_ALREADY_EXISTS)
+#else
+            if(exists_ok && outcome.GetError().GetErrorType() == Aws::S3::S3Errors::BUCKET_ALREADY_OWNED_BY_YOU ||
+            outcome.GetError().GetErrorType() == Aws::S3::S3Errors::BUCKET_ALREADY_EXISTS)
+#endif
                 return true;
             cerr<<"Failed creating bucket "<<name<<". Details: " + std::string(outcome.GetError().GetMessage().c_str())<<endl;
             return false;

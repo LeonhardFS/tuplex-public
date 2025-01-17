@@ -76,6 +76,8 @@ namespace tuplex {
 
         std::unique_ptr<AwsS3Client> make_s3_client() const;
 
+        // non s3crt client (used for transfer manager).
+        std::unique_ptr<Aws::S3::S3Client> make_pure_s3_client() const;
     private:
         // Shared S3 client for non-thread safe applications.
         std::shared_ptr<AwsS3Client> _client;
@@ -86,7 +88,7 @@ namespace tuplex {
         Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy _payload_signing_policy;
         Aws::Auth::AWSCredentials _aws_credentials; // this looks dangerous...
 
-        Aws::S3::Model::RequestPayer _requestPayer;
+        AwsS3RequestPayer _requestPayer;
 
         // to compute pricing, use https://calculator.s3.amazonaws.com/index.html
         // counters, practical for price estimation
