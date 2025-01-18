@@ -115,29 +115,6 @@ namespace tuplex {
         });
     }
 
-//    std::future<uint8_t *>
-//    S3FileCache::putAsync(const URI &uri, size_t range_start, size_t range_end, option<size_t> uri_size) {
-//        auto f = std::future<uint8_t*>();
-//        return f;
-//    }
-
-    // from https://codereview.stackexchange.com/questions/206686/removing-by-indices-several-elements-from-a-vector
-    template <typename Iter, typename Index_iter>
-    Iter removeIndicesStendhal(Iter first, Iter last, Index_iter ifirst, Index_iter ilast) {
-        if (ifirst == ilast || first == last) return last;
-
-        auto out = std::next(first, *ifirst);
-        auto in  = std::next(out);
-        while (++ifirst != ilast) {
-            if (*std::prev(ifirst) + 1 == *ifirst) {
-                ++in; continue;
-            }
-            out = std::move(in, std::next(first, *ifirst), out);
-            in  = std::next(first, *ifirst + 1);
-        }
-        return std::move(in, last, out);
-    }
-
     bool S3FileCache::pruneBy(size_t size) {
         if(size > _maxSize)
             return false;
@@ -161,18 +138,42 @@ namespace tuplex {
         });
 
         // go through and erase elements
-        std::vector<size_t> indices_to_remove;
+        std::set<size_t> indices_to_remove;
         size_t size_so_far = 0;
         for(auto t : indices_with_timestamps) {
             auto idx = std::get<0>(t);
-            indices_to_remove.push_back(idx);
+            indices_to_remove.insert(idx);
             size_so_far += _chunks[idx].size();
             if(size_so_far >= size)
                 break;
         }
 
-        removeIndicesStendhal(_chunks.begin(), _chunks.end(),
-                              indices_to_remove.begin(), indices_to_remove.end());
+
+        std::vector<CacheEntry> new_chunks;
+
+        for(unsigned i = 0; i < _chunks.size(); ++i) {
+            if(indices_to_remove.find(i) == indices_to_remove.end()) {
+                // keep.
+                // --> move over to new_chunks.
+                CacheEntry& old_entry = _chunks[i];
+
+                CacheEntry entry;
+                entry.range_start = old_entry.range_start;
+                entry.range_end = old_entry.range_end;
+                entry.buf = old_entry.buf;
+                entry.uri = old_entry.uri;
+                entry.uri_size = old_entry.uri_size;
+                entry.timestamp = old_entry.timestamp;
+
+                // remove buf, entry is now owner.
+                old_entry.buf = nullptr;
+
+                new_chunks.emplace_back(std::move(entry));
+            } else {
+                // remove, i.e. do not copy.
+            }
+        }
+        _chunks = std::move(new_chunks);
 
         return true;
     }
