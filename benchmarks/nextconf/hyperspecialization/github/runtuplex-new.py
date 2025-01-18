@@ -268,7 +268,7 @@ def github_pipeline(ctx, query, input_pattern, s3_output_path, sm):
 # local worker version
 def run_with_tuplex(args):
 
-    if not args.tuplex_worker_path or not os.path.isfile(args.tuplex_worker_path):
+    if (not args.tuplex_worker_path or not os.path.isfile(args.tuplex_worker_path)) and args.tuplex_worker_parallelism != 0:
         raise ValueError(f"Could not find worker under {args.tuplex_worker_path}.")
 
     output_path = args.output_path
@@ -346,7 +346,7 @@ def run_with_tuplex(args):
             "aws.scratchDir": scratch_dir,
             "autoUpcast": True,
             "experimental.hyperspecialization": use_hyper_specialization,
-            "executorCount": 0,
+            "executorCount": args.tuplex_worker_parallelism,
             "executorMemory": "2G",
             "driverMemory": "2G",
             "partitionSize": "32MB",
@@ -355,6 +355,7 @@ def run_with_tuplex(args):
             "optimizer.generateParser": False,  # not supported on lambda yet
             "optimizer.nullValueOptimization": True,
             "tuplex.experimental.useGenericDicts":use_generic_dicts,
+            "tuplex.experimental.s3PreCacheSize": "256M",
             "tuplex.optimizer.sparsifyStructs":use_sparse_structs,
             # "resolveWithInterpreterOnly": False,
             "resolveWithInterpreterOnly": False, # use compiled slow path in addition.
@@ -367,7 +368,7 @@ def run_with_tuplex(args):
             "experimental.forceBadParseExceptFormat": not args.use_internal_fmt}
 
     # Use Python logger to save whatever happens to file.
-    conf["redirectToPythonLogging"] = True
+    conf["redirectToPythonLogging"] = True # False #True
 
     # In hyper mode to avoid long LLVM IR optimization times, enable simplifyLargeStructs optimization. Deactivate it for global sparse structs,
     # as this mode specifically needs to measure how badly global structs affect everything.
@@ -530,7 +531,7 @@ def run_with_tuplex_on_lambda(args):
             "experimental.forceBadParseExceptFormat": not args.use_internal_fmt}
 
     # Use Python logger to save whatever happens to file.
-    conf["redirectToPythonLogging"] = True
+    conf["redirectToPythonLogging"] = True # False #True
 
     # Special case: mode == python:
     if args.mode == "python":
@@ -673,6 +674,7 @@ if __name__ == '__main__':
     parser.add_argument("--generic-dicts", action="store_true", help="use generic dicts when running tuplex mode.")
     parser.add_argument("--sparse-structs", action="store_true", help="use sparsified structs when running tuplex mode (should set generic dicts to false then).")
     parser.add_argument('--tuplex-worker-path', default=None, dest="tuplex_worker_path", help="specify worker path when executing in local mode.")
+    parser.add_argument('--tuplex-worker-parallelism', default=0, dest="tuplex_worker_parallelism", help="specify how many worker processes to use. If 0, worker is run within driver process.")
     parser.add_argument('--m', '--mode', dest='mode', choices=['tuplex', 'python'], default='tuplex', help='select whether to run benchmark using python baseline or tuplex')
     parser.add_argument('--input-pattern', default=None, dest='input_pattern', help='input files to read into github pipeline')
     parser.add_argument('--output-path', default=None, dest='output_path', help='where to store result of pipeline')

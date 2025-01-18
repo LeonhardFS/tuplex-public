@@ -18,6 +18,8 @@ ALT_BUILD_DIR=$BASE_DIR/alt-build
 PYTHON=python3
 DESIRED_PYTHON_VERSION=3.11
 
+# use true, false here.
+BUILD_FROM_SRC=false #true
 
 echo "-- Tuplex benchmarking (s3 source, push-events) -- "
 
@@ -35,57 +37,59 @@ fi
 PYTHON3_EXECUTABLE=$($PYTHON -c "import sys;print(sys.executable)")
 
 ## Build start
+if $BUILD_FROM_SRC; then
+  echo "-> Compiling Tuplex (w. yyjson) to $BUILD_DIR"
+  mkdir -p $BUILD_DIR
+  echo "-> Compiling Tuplex (w. cjson) to $ALT_BUILD_DIR"
+  mkdir -p $ALT_BUILD_DIR
+  TUPLEX_DIR=$BUILD_DIR/../../../../../tuplex
 
-echo "-> Compiling Tuplex (w. yyjson) to $BUILD_DIR"
-mkdir -p $BUILD_DIR
-echo "-> Compiling Tuplex (w. cjson) to $ALT_BUILD_DIR"
-mkdir -p $ALT_BUILD_DIR
-TUPLEX_DIR=$BUILD_DIR/../../../../../tuplex
+  # How many cores? Use all for build.
+  if [[ "$OSTYPE" =~ ^linux ]]; then
+      N_PROCESSORS=`nproc`
+  elif [[ "$OSTYPE" =~ ^darwin ]]; then
+      N_PROCESSORS=`sysctl -n hw.physicalcpu`
+  fi
 
-# How many cores? Use all for build.
-if [[ "$OSTYPE" =~ ^linux ]]; then
-    N_PROCESSORS=`nproc`
-elif [[ "$OSTYPE" =~ ^darwin ]]; then
-    N_PROCESSORS=`sysctl -n hw.physicalcpu`
+  echo "-- Using ${N_PROCESSORS} to build Tuplex."
+
+  BUILD_TYPE=Release
+  BUILD_TYPE=RelWithDebInfo
+
+  #BUILD_TYPE=tsan
+
+  # Unix
+  if [[ "$OSTYPE" =~ ^linux ]]; then
+      LLVM_DIR=/opt/llvm-16.0.6
+      echo ">>> Building w. yyjson"
+      cd $BUILD_DIR && cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DBUILD_WITH_CEREAL=ON -DPython3_EXECUTABLE=$PYTHON3_EXECUTABLE -DUSE_YYJSON_INSTEAD=ON -DSKIP_AWS_TESTS=ON -DBUILD_WITH_ORC=ON -DAWS_S3_TEST_BUCKET='tuplex-test' -DLLVM_ROOT_DIR=$LLVM_DIR $TUPLEX_DIR && make -j${N_PROCESSORS} tuplex && make -j${N_PROCESSORS} tuplex-worker && cd ..
+
+      #echo ">>> Building w. cjson"
+      #cd $ALT_BUILD_DIR && cmake -DCMAKE_BUILD_TYPE=Release -DUSE_YYJSON_INSTEAD=OFF -DSKIP_AWS_TESTS=ON -DBUILD_WITH_ORC=ON -DAWS_S3_TEST_BUCKET='tuplex-test' -DLLVM_ROOT_DIR=$LLVM_DIR $TUPLEX_DIR && make -j${N_PROCESSORS} tuplex_github && cd ..
+  fi
+
+  # mac os
+  if [[ "$OSTYPE" =~ ^darwin ]]; then
+      LLVM_DIR=/usr/local/Cellar/llvm/16.0.3
+      echo "ERROR: need to update cmake here."
+      exit 1
+      #cd $BUILD_DIR && cmake -DPYTHON3_VERSION=3.11 -DCMAKE_BUILD_TYPE=Release -DSKIP_AWS_TESTS=ON -DBUILD_WITH_ORC=ON -DAWS_S3_TEST_BUCKET='tuplex-test' -DLLVM_ROOT_DIR=$LLVM_DIR $TUPLEX_DIR && make -j$(nproc) tuplex tuplex-worker && cd ..
+  fi
+
+  echo "-- Built Tuplex."
+
+  # Create wheel from compiled tuplex version.
+  echo ">>> Creating whl file from compiled Tuplex python folder."
+  ${PYTHON} ${BUILD_DIR}/dist/python/setup.py bdist_wheel
+
+  WHL_FILE=$(ls ${BUILD_DIR}/dist/python/dist/*.whl)
+  echo ">>> Installing tuplex (force) from wheel ${WHL_FILE}"
+  ${PYTHON} -m pip install --upgrade --force-reinstall ${WHL_FILE}
+
+  # There's an issue with an old cloudpickle version, remove and install newer one
+  ${PYTHON} -m pip uninstall -y cloudpickle && ${PYTHON} -m pip install "cloudpickle>=3.0"
+  ## Build end
 fi
-
-echo "-- Using ${N_PROCESSORS} to build Tuplex."
-
-BUILD_TYPE=Release
-BUILD_TYPE=RelWithDebInfo
-
-# Unix
-if [[ "$OSTYPE" =~ ^linux ]]; then
-    LLVM_DIR=/opt/llvm-16.0.6
-    echo ">>> Building w. yyjson"
-    cd $BUILD_DIR && cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DBUILD_WITH_CEREAL=ON -DPython3_EXECUTABLE=$PYTHON3_EXECUTABLE -DUSE_YYJSON_INSTEAD=ON -DSKIP_AWS_TESTS=ON -DBUILD_WITH_ORC=ON -DAWS_S3_TEST_BUCKET='tuplex-test' -DLLVM_ROOT_DIR=$LLVM_DIR $TUPLEX_DIR && make -j${N_PROCESSORS} tuplex && make -j${N_PROCESSORS} tuplex-worker && cd ..
-
-    #echo ">>> Building w. cjson"
-    #cd $ALT_BUILD_DIR && cmake -DCMAKE_BUILD_TYPE=Release -DUSE_YYJSON_INSTEAD=OFF -DSKIP_AWS_TESTS=ON -DBUILD_WITH_ORC=ON -DAWS_S3_TEST_BUCKET='tuplex-test' -DLLVM_ROOT_DIR=$LLVM_DIR $TUPLEX_DIR && make -j${N_PROCESSORS} tuplex_github && cd ..
-fi
-
-# mac os
-if [[ "$OSTYPE" =~ ^darwin ]]; then
-    LLVM_DIR=/usr/local/Cellar/llvm/16.0.3
-    echo "ERROR: need to update cmake here."
-    exit 1
-    #cd $BUILD_DIR && cmake -DPYTHON3_VERSION=3.11 -DCMAKE_BUILD_TYPE=Release -DSKIP_AWS_TESTS=ON -DBUILD_WITH_ORC=ON -DAWS_S3_TEST_BUCKET='tuplex-test' -DLLVM_ROOT_DIR=$LLVM_DIR $TUPLEX_DIR && make -j$(nproc) tuplex tuplex-worker && cd ..
-fi
-
-echo "-- Built Tuplex."
-
-# Create wheel from compiled tuplex version.
-echo ">>> Creating whl file from compiled Tuplex python folder."
-${PYTHON} ${BUILD_DIR}/dist/python/setup.py bdist_wheel
-
-WHL_FILE=$(ls ${BUILD_DIR}/dist/python/dist/*.whl)
-echo ">>> Installing tuplex (force) from wheel ${WHL_FILE}"
-${PYTHON} -m pip install --upgrade --force-reinstall ${WHL_FILE}
-
-# There's an issue with an old cloudpickle version, remove and install newer one
-${PYTHON} -m pip uninstall -y cloudpickle && ${PYTHON} -m pip install "cloudpickle>=3.0"
-## Build end
-
 
 # start benchmarking, first single run + validate results.
 ${PYTHON} runtuplex-new.py --help
@@ -94,7 +98,6 @@ ${PYTHON} runtuplex-new.py --help
 INPUT_PATTERN='/hot/data/github_daily/*.json'
 # S3 path
 INPUT_PATTERN='s3://tuplex-public/data/github_daily/*.json'
-
 
 RESULT_DIR=./local-exp-from-s3/github-push-events/
 OUTPUT_PATH=${RESULT_DIR}/output
