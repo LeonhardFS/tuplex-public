@@ -73,7 +73,7 @@ def uri_size(uri):
     if uri.startswith('s3://'):
         return s3_path_size(uri)
     else:
-        os.path.getsize(uri)
+        return os.path.getsize(uri)
 
 def process_path_with_python_fork_query(input_path, dest_output_path):
 
