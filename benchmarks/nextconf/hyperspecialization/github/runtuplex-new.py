@@ -19,7 +19,7 @@ import logging
 import csv
 # used for validation
 import pandas as pd
-
+import smart_open
 
 # default parameters to use for paths, scratch dirs
 S3_DEFAULT_INPUT_PATTERN='s3://tuplex-public/data/github_daily/*.json'
@@ -55,7 +55,6 @@ def human_readable_size(size, decimal_places=2):
         size /= 1024.0
     return f"{size:.{decimal_places}f} {unit}"
 
-
 def process_path_with_python_fork_query(input_path, dest_output_path):
 
     # handwritten pipeline (optimized)
@@ -71,7 +70,7 @@ def process_path_with_python_fork_query(input_path, dest_output_path):
     tstart = time.time()
     rows = []
     num_input_rows = 0
-    with open(input_path, 'r') as fp:
+    with smart_open.open(input_path, 'r') as fp:
         for line in fp:
             row = json.loads(line.strip())
             num_input_rows += 1
@@ -102,7 +101,7 @@ def process_path_with_python_fork_query(input_path, dest_output_path):
         # create parent folder first
         pathlib.Path(dest_output_path).parent.mkdir(parents=True, exist_ok=True)
 
-        with open(dest_output_path, 'w', newline='') as csvfile:
+        with smart_open.open(dest_output_path, 'w', newline='') as csvfile:
             # use same order here as Tuplex does, alternative would be something like
             # sorted([str(key) for key in rows[0].keys()])
             fieldnames = ['type', 'repo_id', 'year', 'number_of_commits']
@@ -139,7 +138,7 @@ def process_path_with_python_push_query(input_path, dest_output_path):
     tstart = time.time()
     rows = []
     num_input_rows = 0
-    with open(input_path, 'r') as fp:
+    with smart_open.open(input_path, 'r') as fp:
         for line in fp:
             row = json.loads(line.strip())
             num_input_rows += 1
@@ -170,7 +169,7 @@ def process_path_with_python_push_query(input_path, dest_output_path):
         # create parent folder first
         pathlib.Path(dest_output_path).parent.mkdir(parents=True, exist_ok=True)
 
-        with open(dest_output_path, 'w', newline='') as csvfile:
+        with smart_open.open(dest_output_path, 'w', newline='') as csvfile:
             # use same order here as Tuplex does, alternative would be something like
             # sorted([str(key) for key in rows[0].keys()])
             fieldnames = ['type', 'repo_id', 'year', 'number_of_commits']
@@ -200,6 +199,38 @@ def process_path_with_python(query, input_path, dest_output_path):
     else:
         raise ValueError(f"Unknown query {query}")
 
+def python_get_paths_from_pattern(input_pattern):
+    if input_pattern.startswith('s3://'):
+
+        import boto3
+        import fnmatch
+        import os
+
+        def extract_bucket_name_prefix(uri):
+            uri = uri.replace('s3://', '')
+            idx = uri.find('/')
+            bucket_name = uri[:idx]
+            prefix = uri[idx+1:]
+            return bucket_name, prefix
+        def s3_glob(uri, session=None):
+            original_uri = uri
+            bucket_name, prefix = extract_bucket_name_prefix(uri)
+
+            session = boto3.Session() if session is None else session
+            s3 = session.resource('s3')
+            bucket = s3.Bucket('tuplex-public')
+
+            uris = []
+            for obj in bucket.objects.all():
+                obj_uri = 's3://' + os.path.join(bucket_name, obj.key)
+                if fnmatch.fnmatch(obj_uri, original_uri):
+                    uris.append(obj_uri)
+            return uris
+
+        return s3_glob(input_pattern)
+    else:
+        return list(glob.glob(input_pattern))
+
 def run_with_python_baseline(args):
     startup_time = 0
     job_time = 0
@@ -218,7 +249,7 @@ def run_with_python_baseline(args):
     tstart = time.time()
 
     # Step 1: glob files (python only supports local mode (?) )
-    input_paths = sorted(glob.glob(input_pattern))
+    input_paths = sorted(python_get_paths_from_pattern(input_pattern))
     total_input_size = sum(map(lambda path: os.path.getsize(path), input_paths))
     logging.info(f"Found {len(input_paths)} input paths, total size: {human_readable_size(total_input_size)}")
 

@@ -158,19 +158,19 @@ run_benchmarks 0
 
 # Validate results
 echo ">>> Validating python baseline vs. tuplex with no hyper, no sparse structs"
-python3 validate.py "${RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-global-structs"
+${PYTHON} validate.py "${RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-global-structs"
 
 echo ">>> Validating python baseline vs. tuplex with no hyper, generic dicts"
-python3 validate.py "${RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-global-generic-dicts"
+${PYTHON} validate.py "${RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-global-generic-dicts"
 
 echo ">>> Validating python baseline vs. tuplex with hyper, generic dicts"
-python3 validate.py "${RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-hyper-generic-dicts"
+${PYTHON} validate.py "${RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-hyper-generic-dicts"
 
 echo ">>> Validating python baseline vs. tuplex with no hyper, sparse structs"
-python3 validate.py "${RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-global-sparse-structs"
+${PYTHON} validate.py "${RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-global-sparse-structs"
 
 echo ">>> Validating python baseline vs. tuplex with hyper, sparse structs"
-python3 validate.py "${RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-hyper-sparse-structs"
+${PYTHON} validate.py "${RESULT_DIR}/output/python" "${RESULT_DIR}/output/tuplex-hyper-sparse-structs"
 
 # Actual benchmark now.
 
