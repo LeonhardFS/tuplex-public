@@ -55,6 +55,26 @@ def human_readable_size(size, decimal_places=2):
         size /= 1024.0
     return f"{size:.{decimal_places}f} {unit}"
 
+def extract_bucket_name_prefix(uri):
+    uri = uri.replace('s3://', '')
+    idx = uri.find('/')
+    bucket_name = uri[:idx]
+    prefix = uri[idx+1:]
+    return bucket_name, prefix
+def uri_size(uri):
+    def s3_path_size(uri):
+        bucket_name, prefix = extract_bucket_name_prefix(uri)
+
+        import boto3
+        s3 = boto3.resource('s3')
+        obj = s3.Object(bucket_name, prefix)
+        return obj.content_length
+
+    if uri.startswith('s3://'):
+        return s3_path_size(uri)
+    else:
+        os.path.getsize(uri)
+
 def process_path_with_python_fork_query(input_path, dest_output_path):
 
     # handwritten pipeline (optimized)
@@ -112,7 +132,7 @@ def process_path_with_python_fork_query(input_path, dest_output_path):
                 writer.writerow(row)
 
     if os.path.exists(dest_output_path):
-        output_result = human_readable_size(os.path.getsize(dest_output_path))
+        output_result = human_readable_size(uri_size(dest_output_path))
     else:
         output_result = "skipped"
 
@@ -180,7 +200,7 @@ def process_path_with_python_push_query(input_path, dest_output_path):
                 writer.writerow(row)
 
     if os.path.exists(dest_output_path):
-        output_result = human_readable_size(os.path.getsize(dest_output_path))
+        output_result = human_readable_size(uri_size(dest_output_path))
     else:
         output_result = "skipped"
 
@@ -206,12 +226,6 @@ def python_get_paths_from_pattern(input_pattern):
         import fnmatch
         import os
 
-        def extract_bucket_name_prefix(uri):
-            uri = uri.replace('s3://', '')
-            idx = uri.find('/')
-            bucket_name = uri[:idx]
-            prefix = uri[idx+1:]
-            return bucket_name, prefix
         def s3_glob(uri, session=None):
             original_uri = uri
             bucket_name, prefix = extract_bucket_name_prefix(uri)
@@ -250,7 +264,7 @@ def run_with_python_baseline(args):
 
     # Step 1: glob files (python only supports local mode (?) )
     input_paths = sorted(python_get_paths_from_pattern(input_pattern))
-    total_input_size = sum(map(lambda path: os.path.getsize(path), input_paths))
+    total_input_size = sum(map(lambda path: uri_size(path), input_paths))
     logging.info(f"Found {len(input_paths)} input paths, total size: {human_readable_size(total_input_size)}")
 
     # Process each file now using hand-written pipeline
@@ -258,7 +272,7 @@ def run_with_python_baseline(args):
     total_input_rows = 0
     path_stats = []
     for part_no, path in enumerate(input_paths):
-        logging.info(f"Processing path {part_no+1}/{len(input_paths)}: {path} ({human_readable_size(os.path.getsize(path))})")
+        logging.info(f"Processing path {part_no+1}/{len(input_paths)}: {path} ({human_readable_size(uri_size(path))})")
         ans = process_path_with_python(args.query, path, os.path.join(output_path, "part_{:04d}.csv".format(part_no)))
         ans['input_path'] = path
         path_stats.append(ans)
