@@ -90,6 +90,8 @@ namespace tuplex {
 
         AwsS3RequestPayer _requestPayer;
 
+        bool _runOnLambda;
+
         // to compute pricing, use https://calculator.s3.amazonaws.com/index.html
         // counters, practical for price estimation
         std::atomic<size_t> _putRequests;

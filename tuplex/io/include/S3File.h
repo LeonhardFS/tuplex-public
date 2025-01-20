@@ -88,7 +88,7 @@ namespace tuplex {
     public:
         S3File() = delete;
 
-        S3File(S3FileSystemImpl &fs, const URI &uri, VirtualFileMode mode, AwsS3RequestPayer requestPayer) : _s3fs(fs),
+        S3File(S3FileSystemImpl &fs, const URI &uri, VirtualFileMode mode, const AwsS3RequestPayer& requestPayer) : _s3fs(fs),
                                                                                                 VirtualFile::VirtualFile(uri, mode),
                                                                                                 _requestPayer(requestPayer) {
             // @TODO: allow setting _bufferSize via API, helpful for large files when more info is known.
@@ -213,7 +213,8 @@ namespace tuplex {
                <<"\tbuf size: "<<_bufferSize
                <<"\tbuf length: "<<_bufferLength
                <<"\tfile pos: "<<_filePosition
-               <<"\tpart no: "<<_partNumber;
+               <<"\tpart no: "<<_partNumber
+               <<"\trequest payer: "<<AwsS3RequestPayerToString(_requestPayer);
             if(_partNumber > 0)
                 ss<<"\tmultipart id: "<<_uploadID;
             ss<<"\ndetails: "<<s3_details;

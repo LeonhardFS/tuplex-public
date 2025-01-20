@@ -88,6 +88,14 @@ namespace tuplex {
     using AwsS3CopyObjectRequest=Aws::S3::Model::CopyObjectRequest;
     using AwsS3CreateBucketRequest=Aws::S3::Model::CreateBucketRequest;
 #endif
+
+    inline std::string AwsS3RequestPayerToString(const AwsS3RequestPayer& requester) {
+        if(requester == AwsS3RequestPayerRequester)
+            return "requester (" + std::to_string(static_cast<int>(requester)) + ")";
+        if(requester == AwsS3RequestPayerNotSet)
+            return "NOT_SET (" + std::to_string(static_cast<int>(requester)) + ")";
+        return "UNKNOWN VALUE (" + std::to_string(static_cast<int>(requester)) + ")";
+    }
 }
 
 #endif

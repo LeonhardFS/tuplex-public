@@ -501,7 +501,7 @@ namespace tuplex {
 
     S3FileSystemImpl::S3FileSystemImpl(const std::string& access_key, const std::string& secret_key,
                                        const std::string& session_token, const std::string& region,
-                                       const NetworkSettings& ns, bool lambdaMode, bool requesterPay) : _useS3ReadCache(false) {
+                                       const NetworkSettings& ns, bool lambdaMode, bool requesterPay) : _useS3ReadCache(false), _runOnLambda(lambdaMode) {
         // Note: If current region is different than other region, use S3 transfer acceleration
         // cf. Aws::S3::Model::GetBucketAccelerateConfigurationRequest
         // and https://s3-accelerate-speedtest.s3-accelerate.amazonaws.com/en/accelerate-speed-comparsion.html
@@ -574,6 +574,10 @@ namespace tuplex {
             std::stringstream ss;
             ss<<"Initialized S3 client (on LAMBDA).";
             Logger::instance().defaultLogger().info(ss.str());
+
+            // Save in variables to be able to recreate client.
+            _runOnLambda = lambdaMode;
+
             return;
         }
 
@@ -601,10 +605,16 @@ namespace tuplex {
     }
 
     std::unique_ptr<AwsS3Client> S3FileSystemImpl::make_s3_client() const {
+        if(_runOnLambda)
+            return std::make_unique<AwsS3Client>(_config);
+
         return std::make_unique<AwsS3Client>(_aws_credentials, _config, _payload_signing_policy, _ns.useVirtualAddressing);
     }
 
     std::unique_ptr<Aws::S3::S3Client> S3FileSystemImpl::make_pure_s3_client() const {
+        if(_runOnLambda)
+            return std::make_unique<Aws::S3::S3Client>(_config);
+
         return std::make_unique<Aws::S3::S3Client>(_aws_credentials, _config, _payload_signing_policy, _ns.useVirtualAddressing);
     }
 
