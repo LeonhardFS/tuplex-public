@@ -178,8 +178,8 @@ namespace tuplex {
 
         std::string json_buf;
         // Does req have id assigned? If not, add new ID.
-        if(req.body.id().empty())
-            req_copy.body.set_id(uuidToString(getUniqueID()));
+        if(req.body.id().empty() || req.body.id() != uuidToString(req.id))
+            req_copy.body.set_id(uuidToString(req.id));
         auto status = google::protobuf::util::MessageToJsonString(req_copy.body, &json_buf);
         if(!status.ok())
             return false;
