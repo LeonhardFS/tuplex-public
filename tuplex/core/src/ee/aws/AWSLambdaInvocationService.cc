@@ -174,14 +174,21 @@ namespace tuplex {
         // invoke_req.SetBody(stringToAWSStream(req.SerializeAsString()));
         // invoke_req.SetContentType("application/x-protobuf");
 
+        auto req_copy = req;
+
         std::string json_buf;
-        google::protobuf::util::MessageToJsonString(req.body, &json_buf);
+        // Does req have id assigned? If not, add new ID.
+        if(req.body.id().empty())
+            req_copy.body.set_id(uuidToString(getUniqueID()));
+        auto status = google::protobuf::util::MessageToJsonString(req_copy.body, &json_buf);
+        if(!status.ok())
+            return false;
         invoke_req.SetBody(stringToAWSStream(json_buf));
         invoke_req.SetContentType("application/javascript");
 
         // send to client
         _client->InvokeAsync(invoke_req, AwsLambdaInvocationService::asyncLambdaCallback,
-                             Aws::MakeShared<AwsLambdaBackendCallerContext>("LAMBDA", this, req, onSuccess, onFailure, onRetry));
+                             Aws::MakeShared<AwsLambdaBackendCallerContext>("LAMBDA", this, req_copy, onSuccess, onFailure, onRetry));
 
         return true;
     }
@@ -292,6 +299,15 @@ namespace tuplex {
             // extract info
             auto info = RequestInfo::parseFromLog(log);
             info.fillInFromResponse(response);
+
+            // Invalid id? fill in from request, this should not happen.
+            if(info.requestId.empty()) {
+#ifndef NDEBUG
+                std::cerr<<"Setting requestId explicitly from asyncLambdaCallback, better to stem from response. Error in WorkerBackend?"<<std::endl;
+#endif
+                info.requestId = req.body.id();
+            }
+
             // update with timestamp info
             info.tsRequestStart = tsStart;
             info.tsRequestEnd = tsEnd;

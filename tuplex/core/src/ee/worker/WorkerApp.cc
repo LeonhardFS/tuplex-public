@@ -229,6 +229,7 @@ namespace tuplex {
         }
 
         _currentMessage = req;
+        _response.set_originalrequestid(req.id());
 
         // shortcut for special messages
         if(req.type() == messages::MessageType::MT_ENVIRONMENTINFO)
@@ -644,6 +645,7 @@ namespace tuplex {
         // Reset response.
         _response.Clear();
         _response.set_type(req.type());
+        _response.set_originalrequestid(req.id());
 
         _messageCount++;
 

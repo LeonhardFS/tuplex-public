@@ -365,7 +365,8 @@ namespace tuplex {
         }
 
         inline messages::InvocationResponse response(bool consume=true) {
-            auto msg = _response;
+            messages::InvocationResponse msg;
+            msg.CopyFrom(_response);
             if(consume) {
                 // reset response.
                 _response.Clear();

@@ -142,43 +142,45 @@ message Resource {
 }
 
 message InvocationRequest {
+    string id = 1;
+
     // INPUT:
     // The individual input uris (may be range based)
-    repeated string inputURIS = 1;
+    repeated string inputURIS = 2;
     // The actual full input size of each uri (NOT the range size).
-    repeated uint64 inputSizes = 2;
+    repeated uint64 inputSizes = 3;
 
     // OUTPUT:
     // Final output uri or base URI to form parts
-    string baseOutputURI = 3;
+    string baseOutputURI = 4;
     // If true, then write everything to baseoutputuri. Do not generate baseOutputURI/part1.csv, ...
-    bool baseIsFinalOutput = 4;
+    bool baseIsFinalOutput = 5;
     // This is where to start the parts. important when recursive invocations are used.
-    optional uint32 partNoOffset = 5;
+    optional uint32 partNoOffset = 6;
 
-    MessageType type = 6;
-    WorkerSettings settings = 7;
+    MessageType type = 7;
+    WorkerSettings settings = 8;
 
     // Optional resources attached with this message.
-    repeated Resource resources = 8;
+    repeated Resource resources = 9;
 
-    optional TransformStage stage = 9;
-    optional WarmupMessage warmup = 10;
-    bool verboseLogging = 11;
+    optional TransformStage stage = 10;
+    optional WarmupMessage warmup = 11;
+    bool verboseLogging = 12;
 
     // How the request should be carried out (options etc.).
-    uint64 requestMode = 12;
+    uint64 requestMode = 13;
 
     // Environment overwrite.
-    map<string, string> env = 13;
+    map<string, string> env = 14;
 }
 
 
 // Info about a running container, cf. ContainerInfo struct.
 message ContainerInfo {
     bool reused = 1;
-    string requestId = 2;
-    string uuid = 3;
+    string requestId = 2; // AWS requestID.
+    string uuid = 3; // uuid for this container.
     uint32 msRemaining = 4;
     uint32 requestsServed = 5;
     uint64 start = 6;
@@ -197,16 +199,17 @@ message LambdaTimings {
 // Info about a single request , cf. Request Info struct.
 message RequestInfo {
     string requestId = 1;
-    string containerId = 2;
+    string awsRequestId = 2;
+    string containerId = 3;
 
-    LambdaTimings timings = 3;
+    LambdaTimings timings = 4;
 
-    uint64 tsRequestStart = 4; // UTC timestamp when request was invoked
-    uint64 tsRequestEnd = 5; // UTC timestamp when request returned
+    uint64 tsRequestStart = 5; // UTC timestamp when request was invoked
+    uint64 tsRequestEnd = 6; // UTC timestamp when request returned
 
     // in case of failure, these fields here are filled.
-    uint32 returnCode = 6;
-    string errorMessage = 7;
+    uint32 returnCode = 7;
+    string errorMessage = 8;
 }
 
 // Statistics about how input rows were processed.
@@ -241,19 +244,22 @@ message InvocationResponse {
     map<uint64, uint64> exceptionCounts = 9;
     CodePathStats rowStats = 10;
 
+    // request id of the original request for which this is a response.
+    string originalRequestId = 11;
+
     // Information about the container on which this response was generated on.
-    ContainerInfo container = 11;
+    ContainerInfo container = 12;
     // Responses from recursively invoked Lambdas (hold their container information)
-    repeated InvocationResponse invokedResponses = 12;
+    repeated InvocationResponse invokedResponses = 13;
     // Request information of recursively invoked Lambdas.
-    repeated RequestInfo invokedRequests = 13;
+    repeated RequestInfo invokedRequests = 14;
 
     // Messages may contain already result data, given in form of a list of resources.
-    repeated Resource resources = 14;
+    repeated Resource resources = 15;
 
     // stats
-    double awsInitTime = 15;
-    double taskExecutionTime = 16;
-    map<string, uint64> s3Stats = 17;
-    map<string, double> breakdownTimes = 18;
+    double awsInitTime = 16;
+    double taskExecutionTime = 17;
+    map<string, uint64> s3Stats = 18;
+    map<string, double> breakdownTimes = 19;
 }

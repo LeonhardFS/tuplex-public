@@ -463,6 +463,7 @@ namespace tuplex {
 
         // reset results
         resetResult();
+        _response.set_originalrequestid(req.id());
 
         _messageType = req.type();
 

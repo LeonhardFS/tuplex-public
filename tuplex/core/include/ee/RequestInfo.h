@@ -116,7 +116,8 @@ namespace tuplex {
      * Helper struct holding decoded information obtained from a log of a Lambda request.
      */
     struct RequestInfo {
-        std::string requestId;
+        std::string requestId; //! tuplex request ID (assigned by invoking backend).
+        std::string awsRequestId; //! AWS assigned Lambda request Id.
         std::string containerId; //! uuid of container
 
         // Lambda timings (measured from log)
@@ -149,14 +150,22 @@ namespace tuplex {
 
 
         RequestInfo(const messages::RequestInfo& info) : in_normal(0), in_general(0), in_fallback(0), in_unresolved(0), out_normal(0), out_unresolved(0),
-                                                         fast_path_time(0), general_and_interpreter_time(0), compile_time(0), hyper_time(0), requestId(info.requestid().c_str()),
-        containerId(info.containerid()),
-                                                         awsTimings(std::move(AWSLambdaTimings::from_proto(info.timings()))), returnCode(info.returncode()), errorMessage(info.errormessage().c_str()),
-        tsRequestStart(info.tsrequeststart()), tsRequestEnd(info.tsrequestend()) {}
+                                                         fast_path_time(0), general_and_interpreter_time(0), compile_time(0), hyper_time(0),
+                                                         requestId(info.requestid().c_str()),
+                                                         awsRequestId(info.awsrequestid().c_str()),
+                                                         containerId(info.containerid()),
+                                                         awsTimings(std::move(AWSLambdaTimings::from_proto(info.timings()))),
+                                                         returnCode(info.returncode()),
+                                                         errorMessage(info.errormessage().c_str()),
+                                                         tsRequestStart(info.tsrequeststart()),
+                                                         tsRequestEnd(info.tsrequestend()) {}
 
         static RequestInfo parseFromLog(const std::string& log);
 
         inline void fillInFromResponse(const messages::InvocationResponse& response) {
+
+            requestId = response.originalrequestid();
+
             in_normal = response.rowstats().normal();
             in_general = response.rowstats().general();
             in_fallback = response.rowstats().interpreter();
@@ -184,7 +193,8 @@ namespace tuplex {
         // protobuf representation
         inline std::string asJSON() const {
             std::stringstream ss;
-            ss<<"{\"requestId\":\""<<requestId<<"\"";
+            ss << "{\"requestId\":\"" << requestId << "\"";
+            ss<<",\"awsRequestId\":\"" << awsRequestId << "\"";
             ss<<",\"containerId\":\""<<containerId<<"\"";
             ss<<",\"initTimeInMs\":"<<awsTimings.initTimeInMs;
             ss<<",\"durationInMs\":"<<awsTimings.durationInMs;
@@ -227,6 +237,7 @@ namespace tuplex {
                 return;
 
             r->set_requestid(requestId.c_str());
+            r->set_awsrequestid(awsRequestId.c_str());
             r->set_containerid(containerId.c_str());
 
             awsTimings.fill_proto(r->mutable_timings());

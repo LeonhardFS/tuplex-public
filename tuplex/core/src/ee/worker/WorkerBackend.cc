@@ -204,6 +204,7 @@ namespace tuplex {
 
             RequestInfo info;
             info.requestId = uuidToString(getUniqueID());
+            info.awsRequestId.clear(); // no AWS id yet.
 
             std::string json_buf;
             google::protobuf::json::MessageToJsonString(req, &json_buf);
