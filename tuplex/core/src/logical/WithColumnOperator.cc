@@ -55,6 +55,8 @@ namespace tuplex {
 
     Schema WithColumnOperator::inferSchema(Schema parentSchema, bool is_projected_row_type) {
 
+        auto& logger = Logger::instance().logger("logical plan");
+
         // if(is_projected_row_type)
         //    throw std::runtime_error("nyimpl");
 
@@ -72,8 +74,7 @@ namespace tuplex {
 
         // unknown or ill-defined?
         if(retType == python::Type::UNKNOWN || retType.isIllDefined()) {
-            auto& logger = Logger::instance().logger("logical plan");
-            logger.error("failed to type withColumn operator");
+            logger.error("Failed to type withColumn operator.");
             return Schema::UNKNOWN;
         }
 
@@ -106,11 +107,15 @@ namespace tuplex {
             inParameters[_columnToMapIndex] = retType;
         else
             inParameters.emplace_back(retType);
+
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " inferSchema done, returning output schema.");
         return Schema(Schema::MemoryLayout::ROW, python::Type::makeTupleType(inParameters));
     }
 
     Schema
     WithColumnOperator::getOutputSchemaFromReturnAndInputRowType(const python::Type &retType, const python::Type &input_type) const {
+        // auto& logger = Logger::instance().logger("logical plan");
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " getOutputSchemaFromReturnAndInputRowType.");
 
         if(retType == python::Type::UNKNOWN) {
             return Schema::UNKNOWN;
@@ -194,6 +199,9 @@ namespace tuplex {
     std::vector<Row> WithColumnOperator::getSample(const size_t num) const {
         // @TODO: refactor the whole sampling into SampleProcessor.
         using namespace std;
+
+        // auto& logger = Logger::instance().defaultLogger();
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " WithColumn operator getSample.");
 
         auto vSamples = parent()->getSample(num);
         auto pickledCode = _udf.getPickledCode();
@@ -353,6 +361,8 @@ namespace tuplex {
             + std::to_string(numExceptions) + " exceptions");
 
         python::unlockGIL();
+
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " WithColumn operator return " + pluralize(vRes.size(), "sample") + ".");
 
         return vRes;
     }

@@ -2186,7 +2186,7 @@ namespace tuplex {
 
                 // find in map the info with requestid
                 for(auto& kv : uri_map) {
-                    if(kv.second.requestId == info.requestId) {
+                    if(kv.second.requestId == info.awsRequestId) {
                         // save now in normal etc.
                         kv.second.in_normal = info.in_normal;
                         kv.second.in_general = info.in_general;
@@ -2495,7 +2495,7 @@ namespace tuplex {
                         }
                     }
 
-                    ss<<"Task "<<task.info.requestId<<":\n";
+                    ss << "Task " << task.info.requestId << ":\n";
                     for(auto path : output_paths) {
                         ss<<"  -- "<<path<<std::endl;
                     }

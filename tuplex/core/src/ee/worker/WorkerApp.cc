@@ -105,16 +105,21 @@ namespace tuplex {
             // make sure s3 system is initialized
             auto s3impl = VirtualFileSystem::getS3FileSystemImpl();
             if(!s3impl) {
-                logger().error("required S3 cache, but S3 file system not initialized.");
+                logger().error("Required S3 cache, but S3 file system not initialized.");
                 return false;
             }
             s3impl->activateReadCache(_settings.s3PreCacheSize);
+            logger().info("Activated S3 read cache with " + sizeToMemString(_settings.s3PreCacheSize) + ".");
         } else {
             auto s3impl = VirtualFileSystem::getS3FileSystemImpl();
             if(!s3impl) {
-                logger().error("required S3 cache, but S3 file system not initialized.");
+                logger().error("Required S3 cache, but S3 file system not initialized.");
                 return false;
             }
+
+            if(s3impl->hasActiveReadCache())
+                logger().info("Disable previously active S3 cache.");
+
             s3impl->disableReadCache();
         }
 
@@ -224,6 +229,7 @@ namespace tuplex {
         }
 
         _currentMessage = req;
+        _response.set_originalrequestid(req.id());
 
         // shortcut for special messages
         if(req.type() == messages::MessageType::MT_ENVIRONMENTINFO)
@@ -639,6 +645,7 @@ namespace tuplex {
         // Reset response.
         _response.Clear();
         _response.set_type(req.type());
+        _response.set_originalrequestid(req.id());
 
         _messageCount++;
 
@@ -837,8 +844,40 @@ namespace tuplex {
         Timer timer;
         auto& cache = S3FileCache::instance();
         cache.reset(_settings.s3PreCacheSize);
+
+        // Check how large total size of parts compared to cache. If larger than cache-size, cache only first parts.
+        size_t total_cache_size_requested = 0;
+        for(const auto& part : parts)
+            total_cache_size_requested += part.part_size();
+
+        std::vector<FilePart> parts_to_cache = parts;
+        if(total_cache_size_requested >= cache.maxCacheSize()) {
+            // request only some parts, or a part thereof
+            int64_t bytes_remaining = cache.maxCacheSize();
+            parts_to_cache.clear();
+            unsigned part_idx = 0;
+            while(bytes_remaining > 0 && part_idx < parts.size()) {
+                auto part = parts[part_idx++];
+                if(part.part_size() <= bytes_remaining) {
+                    parts_to_cache.push_back(part);
+                    bytes_remaining -= part.part_size();
+                } else {
+                    // partial and end.
+                    part.rangeEnd = part.rangeStart + bytes_remaining;
+                    parts_to_cache.push_back(part);
+
+                    std::stringstream ss;
+                    ss<<"S3 Cache capacity is "<<sizeToMemString(cache.maxCacheSize())<<" but total size requested for precaching is "
+                    <<sizeToMemString(total_cache_size_requested)<<". Caching only "<<parts_to_cache.size()<<"/"<<pluralize(parts.size(), "part")
+                    <<" with caching only first "<<sizeToMemString(part.part_size())<<" for the last part.";
+                    logger().info(ss.str());
+                    bytes_remaining = 0;
+                }
+            }
+        }
+
         std::vector<std::future<size_t>> futures;
-        for(const auto& part : parts) {
+        for(const auto& part : parts_to_cache) {
             if(part.uri.prefix() == "s3://")
                 futures.emplace_back(cache.putAsync(part.uri, part.rangeStart, part.rangeEnd));
         }
@@ -850,7 +889,7 @@ namespace tuplex {
         std::stringstream ss;
         auto cache_time = timer.time();
         double s3ReadSpeed = (total_cached / (1024.0 * 1024.0)) / cache_time;
-        ss<<"Cached "<<total_cached<<" bytes in "<<cache_time<<"s from S3 ( "<<s3ReadSpeed<<" MB/s)";
+        ss<<"Cached "<<total_cached<<" bytes in "<<cache_time<<"s from S3 ("<<s3ReadSpeed<<" MB/s)";
         logger().info(ss.str());
     }
 

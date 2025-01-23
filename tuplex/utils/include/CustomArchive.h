@@ -4,6 +4,7 @@
 
 #ifndef TUPLEX_CUSTOMARCHIVE_H
 #define TUPLEX_CUSTOMARCHIVE_H
+
 // Inspired from cereal binary archive.
 #ifdef BUILD_WITH_CEREAL
 

@@ -48,7 +48,7 @@ namespace tuplex {
 
     template<typename Mutex> class nogil_python3_sink : public python_sink<Mutex> {
     public:
-        nogil_python3_sink() = delete;
+        nogil_python3_sink() : _pyFunctor(nullptr) {}
         explicit nogil_python3_sink(PyObject* pyFunctor) : _pyFunctor(pyFunctor) {}
 
         void flushToPython(bool acquireGIL=false) override {
@@ -60,6 +60,7 @@ namespace tuplex {
 
             if(acquireGIL)
                 python::lockGIL();
+
             {
                 std::lock_guard<std::mutex> lock(_bufMutex);
 
@@ -122,6 +123,8 @@ namespace tuplex {
             msg.logger = std::string(spdlog_msg.logger_name.begin(), spdlog_msg.logger_name.end());
             msg.level = spdlog_msg.level;
             _messageBuffer.push_back(msg);
+
+            // Use https://gist.github.com/hensing/0db3f8e3a99590006368? in case.
         }
 
         virtual void flush_() override {

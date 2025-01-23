@@ -16,6 +16,7 @@
 // tuplex files
 #include <UDF.h>
 #include <Context.h>
+#include "S3Types.h"
 
 using namespace tuplex;
 
@@ -43,7 +44,7 @@ protected:
     static bool create_test_bucket(const std::string& name) {
         using namespace tuplex;
         using namespace std;
-        Aws::S3::Model::CreateBucketRequest request;
+        AwsS3CreateBucketRequest request;
         request.SetBucket(name);
 
         auto impl =VirtualFileSystem::getS3FileSystemImpl();
@@ -154,7 +155,7 @@ TEST_F(S3LocalTests, BasicPut) {
 
     auto& s3_client = VirtualFileSystem::getS3FileSystemImpl()->client();
 
-    Aws::S3::Model::PutObjectRequest putObjectRequest;
+    AwsS3PutObjectRequest putObjectRequest;
     putObjectRequest.SetBucket(LOCAL_TEST_BUCKET_NAME);
     putObjectRequest.SetKey("test-file-123.txt");
 

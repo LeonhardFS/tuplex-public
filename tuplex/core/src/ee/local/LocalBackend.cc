@@ -792,8 +792,12 @@ namespace tuplex {
                 std::stringstream ss;
                 ss<<"Python version: "<<PY_MAJOR_VERSION<<"."<<PY_MINOR_VERSION<<"."<<PY_MICRO_VERSION;
                 ss<<" cloudpickle: "<<version_string;
+
+                // logging not supported within GIL, need lo leave quickly.
+                python::unlockGIL();
                 auto& logger = Logger::instance().logger("python");
                 logger.info(ss.str());
+                python::lockGIL();
             }
 
 
@@ -808,7 +812,7 @@ namespace tuplex {
 
             // check for errors
             if(PyErr_Occurred()) {
-                Logger::instance().defaultLogger().error("while interpreting python pipeline code, an error occurred.");
+                std::cerr<<"While interpreting python pipeline code, an error occurred:"<<std::endl;
                 PyErr_Print();
                 std::cerr<<std::endl;
                 std::cout.flush();

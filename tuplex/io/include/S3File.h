@@ -88,20 +88,16 @@ namespace tuplex {
     public:
         S3File() = delete;
 
-        S3File(S3FileSystemImpl &fs, const URI &uri, VirtualFileMode mode, Aws::S3::Model::RequestPayer requestPayer) : _s3fs(fs),
+        S3File(S3FileSystemImpl &fs, const URI &uri, VirtualFileMode mode, const AwsS3RequestPayer& requestPayer) : _s3fs(fs),
                                                                                                 VirtualFile::VirtualFile(uri, mode),
                                                                                                 _requestPayer(requestPayer) {
-            // 1024 * 1024 * 5 + 100; ///! for debug reasons, set 5MB + 100B buffer
-
-            // in release mode use larger buffer
-#ifdef NDEBUG
-           _bufferSize = 1024 * 1024 * 64; ///! size of the buffer, set here to 64MB buffer
-#endif
-
+            // @TODO: allow setting _bufferSize via API, helpful for large files when more info is known.
+            // small files should use smaller buffers.
             init();
         }
 
         static size_t DEFAULT_INTERNAL_BUFFER_SIZE() {
+            // 5 MB buffer.
             return 5 * 1024 * 1024 + 100;
         }
 
@@ -144,9 +140,22 @@ namespace tuplex {
         void init();
         S3FileSystemImpl& _s3fs;
 
+        std::unique_ptr<AwsS3Client> _client;
+
         uint8_t *_buffer; ///! buffers
         size_t _bufferLength; ///! how many valid bytes are stored in buffer
         size_t _bufferSize;
+
+
+        AwsS3Client& get_s3_client() const {
+            if(_client)
+                return *_client.get();
+
+            assert(!(_mode & VirtualFileMode::VFS_THREADSAFE));
+
+            // Get client from file system.
+            return _s3fs.client();
+        }
 
         // buffer size should be more than 5MB!
         // this is because parts needs to be at least 5MB for multipart upload
@@ -180,12 +189,12 @@ namespace tuplex {
 
         uint16_t _partNumber; // current part number (1 to 10,000 incl). If 0, no multipart upload
         Aws::String _uploadID; // multipart upload ID
-        std::vector<Aws::S3::Model::CompletedPart> _parts;
+        std::vector<AwsS3CompletedPart> _parts;
         void initMultiPartUpload();
         bool uploadPart(); // uploads current buffer & resets everything
         void completeMultiPartUpload(); // issues complete Upload request
 
-        Aws::S3::Model::RequestPayer _requestPayer;
+        AwsS3RequestPayer _requestPayer;
 
 //#ifndef NDEBUG
         // debug
@@ -204,7 +213,8 @@ namespace tuplex {
                <<"\tbuf size: "<<_bufferSize
                <<"\tbuf length: "<<_bufferLength
                <<"\tfile pos: "<<_filePosition
-               <<"\tpart no: "<<_partNumber;
+               <<"\tpart no: "<<_partNumber
+               <<"\trequest payer: "<<AwsS3RequestPayerToString(_requestPayer);
             if(_partNumber > 0)
                 ss<<"\tmultipart id: "<<_uploadID;
             ss<<"\ndetails: "<<s3_details;

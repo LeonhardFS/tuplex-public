@@ -49,6 +49,9 @@ namespace tuplex {
 
     std::shared_ptr<ResultSet> LogicalOperator::compute(const Context& context) {
 
+        auto& logger = Logger::instance().defaultLogger();
+        //logger.info("Starting operator eval.");
+
         Timer planningTimer;
         // create LogicalPlan from this node
         LogicalPlan* lp = new LogicalPlan(this);
@@ -66,7 +69,10 @@ namespace tuplex {
         if(pp->good()) {
             std::stringstream ss;
             ss<<"Query Execution took "<<executionTime + planningTime<<"s. (planning: "<<planningTime<<"s, execution: "<<executionTime<<"s)";
-            Logger::instance().defaultLogger().info(ss.str());
+            logger.info(ss.str());
+        } else {
+            logger.error("Physical plan is no good, returning empty result set.");
+            return rs;
         }
 
         // Free plan memory, print out time.
@@ -141,11 +147,15 @@ namespace tuplex {
     std::tuple<std::vector<PyObject*>, std::vector<Row>> LogicalOperator::getPythonicSample(size_t num) {
         std::vector<PyObject*> v;
         auto rows = getSample(num);
+
+        // auto& logger = Logger::instance().defaultLogger();
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Acquiring GIL to return pythonic sample (" + name() + ")...");
         python::lockGIL();
         v.reserve(rows.size());
         for(const auto& r : rows)
             v.push_back(python::rowToPython(r, true));
         python::unlockGIL();
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " GIL acquire done (" + name() + ").");
         return std::make_pair(v, rows);
     }
 

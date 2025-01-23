@@ -1442,6 +1442,8 @@ namespace tuplex {
             vector<shared_ptr<LogicalOperator>> optimized_operators = vec_prepend(_inputNode, _operators);
             auto& logger = Logger::instance().logger("specializing stage optimizer");
 
+            logger.info("StagePlanner optimizing stage of " + pluralize(_operators.size() + 1, "operator") + ".");
+
             // run validation on initial pipeline
             bool validation_rc = validatePipeline();
             logger.debug(std::string("initial pipeline validation: ") + (validation_rc ? "ok" : "failed"));
@@ -2058,7 +2060,7 @@ namespace tuplex {
             return false;
         }
 
-        logger.info("specializing code to file " + uri.toString());
+        logger.info("Specializing code to file " + uri.toString());
 
         // deserialize using Cereal
 

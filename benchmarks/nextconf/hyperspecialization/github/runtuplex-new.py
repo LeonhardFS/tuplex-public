@@ -19,7 +19,7 @@ import logging
 import csv
 # used for validation
 import pandas as pd
-
+import smart_open
 
 # default parameters to use for paths, scratch dirs
 S3_DEFAULT_INPUT_PATTERN='s3://tuplex-public/data/github_daily/*.json'
@@ -55,6 +55,25 @@ def human_readable_size(size, decimal_places=2):
         size /= 1024.0
     return f"{size:.{decimal_places}f} {unit}"
 
+def extract_bucket_name_prefix(uri):
+    uri = uri.replace('s3://', '')
+    idx = uri.find('/')
+    bucket_name = uri[:idx]
+    prefix = uri[idx+1:]
+    return bucket_name, prefix
+def uri_size(uri):
+    def s3_path_size(uri):
+        bucket_name, prefix = extract_bucket_name_prefix(uri)
+
+        import boto3
+        s3 = boto3.resource('s3')
+        obj = s3.Object(bucket_name, prefix)
+        return obj.content_length
+
+    if uri.startswith('s3://'):
+        return s3_path_size(uri)
+    else:
+        return os.path.getsize(uri)
 
 def process_path_with_python_fork_query(input_path, dest_output_path):
 
@@ -71,7 +90,7 @@ def process_path_with_python_fork_query(input_path, dest_output_path):
     tstart = time.time()
     rows = []
     num_input_rows = 0
-    with open(input_path, 'r') as fp:
+    with smart_open.open(input_path, 'r') as fp:
         for line in fp:
             row = json.loads(line.strip())
             num_input_rows += 1
@@ -102,7 +121,7 @@ def process_path_with_python_fork_query(input_path, dest_output_path):
         # create parent folder first
         pathlib.Path(dest_output_path).parent.mkdir(parents=True, exist_ok=True)
 
-        with open(dest_output_path, 'w', newline='') as csvfile:
+        with smart_open.open(dest_output_path, 'w', newline='') as csvfile:
             # use same order here as Tuplex does, alternative would be something like
             # sorted([str(key) for key in rows[0].keys()])
             fieldnames = ['type', 'repo_id', 'year', 'number_of_commits']
@@ -113,7 +132,7 @@ def process_path_with_python_fork_query(input_path, dest_output_path):
                 writer.writerow(row)
 
     if os.path.exists(dest_output_path):
-        output_result = human_readable_size(os.path.getsize(dest_output_path))
+        output_result = human_readable_size(uri_size(dest_output_path))
     else:
         output_result = "skipped"
 
@@ -139,7 +158,7 @@ def process_path_with_python_push_query(input_path, dest_output_path):
     tstart = time.time()
     rows = []
     num_input_rows = 0
-    with open(input_path, 'r') as fp:
+    with smart_open.open(input_path, 'r') as fp:
         for line in fp:
             row = json.loads(line.strip())
             num_input_rows += 1
@@ -170,7 +189,7 @@ def process_path_with_python_push_query(input_path, dest_output_path):
         # create parent folder first
         pathlib.Path(dest_output_path).parent.mkdir(parents=True, exist_ok=True)
 
-        with open(dest_output_path, 'w', newline='') as csvfile:
+        with smart_open.open(dest_output_path, 'w', newline='') as csvfile:
             # use same order here as Tuplex does, alternative would be something like
             # sorted([str(key) for key in rows[0].keys()])
             fieldnames = ['type', 'repo_id', 'year', 'number_of_commits']
@@ -181,7 +200,7 @@ def process_path_with_python_push_query(input_path, dest_output_path):
                 writer.writerow(row)
 
     if os.path.exists(dest_output_path):
-        output_result = human_readable_size(os.path.getsize(dest_output_path))
+        output_result = human_readable_size(uri_size(dest_output_path))
     else:
         output_result = "skipped"
 
@@ -199,6 +218,32 @@ def process_path_with_python(query, input_path, dest_output_path):
         return process_path_with_python_push_query(input_path, dest_output_path)
     else:
         raise ValueError(f"Unknown query {query}")
+
+def python_get_paths_from_pattern(input_pattern):
+    if input_pattern.startswith('s3://'):
+
+        import boto3
+        import fnmatch
+        import os
+
+        def s3_glob(uri, session=None):
+            original_uri = uri
+            bucket_name, prefix = extract_bucket_name_prefix(uri)
+
+            session = boto3.Session() if session is None else session
+            s3 = session.resource('s3')
+            bucket = s3.Bucket('tuplex-public')
+
+            uris = []
+            for obj in bucket.objects.all():
+                obj_uri = 's3://' + os.path.join(bucket_name, obj.key)
+                if fnmatch.fnmatch(obj_uri, original_uri):
+                    uris.append(obj_uri)
+            return uris
+
+        return s3_glob(input_pattern)
+    else:
+        return list(glob.glob(input_pattern))
 
 def run_with_python_baseline(args):
     startup_time = 0
@@ -218,8 +263,8 @@ def run_with_python_baseline(args):
     tstart = time.time()
 
     # Step 1: glob files (python only supports local mode (?) )
-    input_paths = sorted(glob.glob(input_pattern))
-    total_input_size = sum(map(lambda path: os.path.getsize(path), input_paths))
+    input_paths = sorted(python_get_paths_from_pattern(input_pattern))
+    total_input_size = sum(map(lambda path: uri_size(path), input_paths))
     logging.info(f"Found {len(input_paths)} input paths, total size: {human_readable_size(total_input_size)}")
 
     # Process each file now using hand-written pipeline
@@ -227,7 +272,7 @@ def run_with_python_baseline(args):
     total_input_rows = 0
     path_stats = []
     for part_no, path in enumerate(input_paths):
-        logging.info(f"Processing path {part_no+1}/{len(input_paths)}: {path} ({human_readable_size(os.path.getsize(path))})")
+        logging.info(f"Processing path {part_no+1}/{len(input_paths)}: {path} ({human_readable_size(uri_size(path))})")
         ans = process_path_with_python(args.query, path, os.path.join(output_path, "part_{:04d}.csv".format(part_no)))
         ans['input_path'] = path
         path_stats.append(ans)
@@ -268,7 +313,7 @@ def github_pipeline(ctx, query, input_pattern, s3_output_path, sm):
 # local worker version
 def run_with_tuplex(args):
 
-    if not args.tuplex_worker_path or not os.path.isfile(args.tuplex_worker_path):
+    if (not args.tuplex_worker_path or not os.path.isfile(args.tuplex_worker_path)) and args.tuplex_worker_parallelism != 0:
         raise ValueError(f"Could not find worker under {args.tuplex_worker_path}.")
 
     output_path = args.output_path
@@ -346,7 +391,7 @@ def run_with_tuplex(args):
             "aws.scratchDir": scratch_dir,
             "autoUpcast": True,
             "experimental.hyperspecialization": use_hyper_specialization,
-            "executorCount": 0,
+            "executorCount": args.tuplex_worker_parallelism,
             "executorMemory": "2G",
             "driverMemory": "2G",
             "partitionSize": "32MB",
@@ -355,6 +400,7 @@ def run_with_tuplex(args):
             "optimizer.generateParser": False,  # not supported on lambda yet
             "optimizer.nullValueOptimization": True,
             "tuplex.experimental.useGenericDicts":use_generic_dicts,
+            "tuplex.experimental.s3PreCacheSize": "256M",
             "tuplex.optimizer.sparsifyStructs":use_sparse_structs,
             # "resolveWithInterpreterOnly": False,
             "resolveWithInterpreterOnly": False, # use compiled slow path in addition.
@@ -367,7 +413,7 @@ def run_with_tuplex(args):
             "experimental.forceBadParseExceptFormat": not args.use_internal_fmt}
 
     # Use Python logger to save whatever happens to file.
-    conf["redirectToPythonLogging"] = True
+    conf["redirectToPythonLogging"] = True # False #True
 
     # In hyper mode to avoid long LLVM IR optimization times, enable simplifyLargeStructs optimization. Deactivate it for global sparse structs,
     # as this mode specifically needs to measure how badly global structs affect everything.
@@ -530,7 +576,7 @@ def run_with_tuplex_on_lambda(args):
             "experimental.forceBadParseExceptFormat": not args.use_internal_fmt}
 
     # Use Python logger to save whatever happens to file.
-    conf["redirectToPythonLogging"] = True
+    conf["redirectToPythonLogging"] = True # False #True
 
     # Special case: mode == python:
     if args.mode == "python":
@@ -673,6 +719,7 @@ if __name__ == '__main__':
     parser.add_argument("--generic-dicts", action="store_true", help="use generic dicts when running tuplex mode.")
     parser.add_argument("--sparse-structs", action="store_true", help="use sparsified structs when running tuplex mode (should set generic dicts to false then).")
     parser.add_argument('--tuplex-worker-path', default=None, dest="tuplex_worker_path", help="specify worker path when executing in local mode.")
+    parser.add_argument('--tuplex-worker-parallelism', default=0, dest="tuplex_worker_parallelism", help="specify how many worker processes to use. If 0, worker is run within driver process.")
     parser.add_argument('--m', '--mode', dest='mode', choices=['tuplex', 'python'], default='tuplex', help='select whether to run benchmark using python baseline or tuplex')
     parser.add_argument('--input-pattern', default=None, dest='input_pattern', help='input files to read into github pipeline')
     parser.add_argument('--output-path', default=None, dest='output_path', help='where to store result of pipeline')

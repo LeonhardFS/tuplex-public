@@ -312,6 +312,40 @@ namespace tuplex {
         std::vector<Row> sampleJsonFile(const URI& uri, size_t uri_size, const SamplingMode& mode,
                                         std::vector<std::vector<std::string>>* outNames, const SamplingParameters& sampling_params);
 
+
+        // sample cache functions (each with a lock)
+        inline aligned_string getSampleFromCache(const std::tuple<URI, SamplingMode>& key) {
+            std::lock_guard<std::mutex> lock(_sampleCacheMutex);
+
+            // check if in sample cache already
+            auto it = _sampleCache.find(key);
+            if(it != _sampleCache.end())
+                return it->second;
+            return "";
+        }
+
+        inline aligned_string getSampleFromCache(const URI& uri, const SamplingMode& mode) {
+            auto key = std::make_tuple(uri, perFileMode(mode));
+            return getSampleFromCache(key);
+        }
+
+        inline size_t addSampleToCache(const std::tuple<URI, SamplingMode>& key, const aligned_string& sample) {
+            std::lock_guard<std::mutex> lock(_sampleCacheMutex);
+
+            // put into cache
+            _sampleCache[key] = sample;
+
+            return _sampleCache.size();
+        }
+
+        inline void clearCache() {
+            std::lock_guard<std::mutex> lock(_sampleCacheMutex);
+            _cachePopulated = false;
+
+            // clear internal caches
+            _sampleCache.clear();
+        }
+
         /*!
          * samples a file according to internally stored file mode and a per-file sampling mode.
          * @param uri URI of file to sample

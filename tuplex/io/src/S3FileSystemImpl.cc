@@ -140,7 +140,9 @@ std::string remainingMatchSuffix(const std::string& s, const std::string& w) {
 
 // S3 helper functions
 // returns numListRequests
-static size_t s3walk(const Aws::S3::S3Client& client, const std::string& bucket, const std::string& prefix, const std::string& suffix, std::vector<tuplex::URI>& files, const Aws::S3::Model::RequestPayer &requestPayer) {
+static size_t s3walk(const tuplex::AwsS3Client& client, const std::string& bucket,
+                     const std::string& prefix, const std::string& suffix, std::vector<tuplex::URI>& files,
+                     const tuplex::AwsS3RequestPayer &requestPayer) {
     using namespace std;
 
     size_t numRequests = 0;
@@ -159,11 +161,11 @@ static size_t s3walk(const Aws::S3::S3Client& client, const std::string& bucket,
 
 
     // list one directory
-    Aws::S3::Model::ListObjectsV2Request objects_request;
+    tuplex::AwsS3ListObjectsV2Request objects_request;
     objects_request.WithBucket(Aws::String(bucket.c_str()));
     objects_request.WithPrefix(Aws::String(prefix.c_str()));
 
-    if(requestPayer != Aws::S3::Model::RequestPayer::NOT_SET)
+    if(requestPayer != tuplex::AwsS3RequestPayerNotSet)
         objects_request.SetRequestPayer(requestPayer);
 
     // use delimiter if suffix is not yet exhausted
@@ -286,7 +288,7 @@ namespace tuplex {
         std::string range = "bytes=" + std::to_string(0) + "-" + std::to_string(127);
         // make AWS S3 part request to uri
         // check how to retrieve object in poarts
-        Aws::S3::Model::GetObjectRequest req;
+        AwsS3GetObjectRequest req;
         req.SetBucket(uri.s3Bucket().c_str());
         req.SetKey(uri.s3Key().c_str());
         // retrieve byte range according to http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.35
@@ -355,7 +357,7 @@ namespace tuplex {
             }
         } else {
             // this is a listobjects query! => could have continuation token!
-            Aws::S3::Model::ListObjectsV2Request objects_request;
+            AwsS3ListObjectsV2Request objects_request;
 
             std::vector<URI> output_uris;
 
@@ -394,7 +396,7 @@ namespace tuplex {
                     }
                 }
                 // reset request
-                objects_request = Aws::S3::Model::ListObjectsV2Request();
+                objects_request = AwsS3ListObjectsV2Request();
 
                 s3_prefix = s3_prefix + "/";
             }
@@ -493,13 +495,13 @@ namespace tuplex {
             return std::vector<URI>();
         }
 
-        _lsRequests += s3walk(client(), uri.s3Bucket(), "", uri.s3Key(), files, isAmazon() ? _requestPayer : Aws::S3::Model::RequestPayer::NOT_SET);
+        _lsRequests += s3walk(client(), uri.s3Bucket(), "", uri.s3Key(), files, isAmazon() ? _requestPayer : AwsS3RequestPayerNotSet);
         return files;
     }
 
     S3FileSystemImpl::S3FileSystemImpl(const std::string& access_key, const std::string& secret_key,
                                        const std::string& session_token, const std::string& region,
-                                       const NetworkSettings& ns, bool lambdaMode, bool requesterPay) : _useS3ReadCache(false) {
+                                       const NetworkSettings& ns, bool lambdaMode, bool requesterPay) : _useS3ReadCache(false), _runOnLambda(lambdaMode) {
         // Note: If current region is different than other region, use S3 transfer acceleration
         // cf. Aws::S3::Model::GetBucketAccelerateConfigurationRequest
         // and https://s3-accelerate-speedtest.s3-accelerate.amazonaws.com/en/accelerate-speed-comparsion.html
@@ -554,9 +556,9 @@ namespace tuplex {
         }
 
         if(requesterPay)
-            _requestPayer = Aws::S3::Model::RequestPayer::requester;
+            _requestPayer = AwsS3RequestPayerRequester;
         else
-            _requestPayer = Aws::S3::Model::RequestPayer::NOT_SET;
+            _requestPayer = AwsS3RequestPayerNotSet;
 
         auto aws_credentials = Auth::AWSCredentials(credentials.access_key.c_str(),
                                                     credentials.secret_key.c_str(),
@@ -566,12 +568,16 @@ namespace tuplex {
         if(lambdaMode) {
             config.caFile = "/etc/pki/tls/certs/ca-bundle.crt";
             this->_config = config;
-            _client = std::make_shared<S3::S3Client>(config);
-            _requestPayer = Aws::S3::Model::RequestPayer::requester;
+            _client = std::make_shared<AwsS3Client>(config);
+            _requestPayer = AwsS3RequestPayerRequester;
 
             std::stringstream ss;
             ss<<"Initialized S3 client (on LAMBDA).";
             Logger::instance().defaultLogger().info(ss.str());
+
+            // Save in variables to be able to recreate client.
+            _runOnLambda = lambdaMode;
+
             return;
         }
 
@@ -588,30 +594,48 @@ namespace tuplex {
 //            _client = std::make_shared<S3::S3Client>(aws_credentials, s3_endpoint_provider, config, payload_signing_policy, ns.useVirtualAddressing);
 //#endif
 
-        _client = std::make_shared<S3::S3Client>(aws_credentials, config, payload_signing_policy, ns.useVirtualAddressing);
-
+        _aws_credentials = aws_credentials;
+        _payload_signing_policy = payload_signing_policy;
+        _ns = ns;
         // save config, so parameters are easily accessible.
         _config = config;
+
+        //_client = std::make_shared<S3::S3Client>(aws_credentials, config, payload_signing_policy, ns.useVirtualAddressing);
+        _client = std::move(make_s3_client());
+    }
+
+    std::unique_ptr<AwsS3Client> S3FileSystemImpl::make_s3_client() const {
+        if(_runOnLambda)
+            return std::make_unique<AwsS3Client>(_config);
+
+        return std::make_unique<AwsS3Client>(_aws_credentials, _config, _payload_signing_policy, _ns.useVirtualAddressing);
+    }
+
+    std::unique_ptr<Aws::S3::S3Client> S3FileSystemImpl::make_pure_s3_client() const {
+        if(_runOnLambda)
+            return std::make_unique<Aws::S3::S3Client>(_config);
+
+        return std::make_unique<Aws::S3::S3Client>(_aws_credentials, _config, _payload_signing_policy, _ns.useVirtualAddressing);
     }
 
     void S3FileSystemImpl::activateReadCache(size_t max_cache_size) {
         _useS3ReadCache = true;
         S3FileCache::instance().reset(max_cache_size);
-        S3FileCache::instance().setFS(*this, _requestPayer == Aws::S3::Model::RequestPayer::requester);
+        S3FileCache::instance().setFS(*this, _requestPayer == AwsS3RequestPayerRequester);
     }
 
 
 // S3 helper functions
 // returns numListRequests
 #warning "folders don't work here yet..."
-    static bool s3walkEx(const Aws::S3::S3Client& client,
+    static bool s3walkEx(const AwsS3Client& client,
                          const std::string& bucket,
                          const std::string& prefix,
                          const std::string& suffix,
                          size_t& numRequests,
                          std::function<bool(void *, const tuplex::URI &, size_t)> callback,
                          void *userData,
-                         const Aws::S3::Model::RequestPayer &requestPayer) {
+                         const AwsS3RequestPayer &requestPayer) {
         using namespace std;
 
         // @TODO: use longest prefix function to speed up querying!
@@ -628,11 +652,11 @@ namespace tuplex {
 
 
         // list one directory
-        Aws::S3::Model::ListObjectsV2Request objects_request;
+        AwsS3ListObjectsV2Request objects_request;
         objects_request.WithBucket(Aws::String(bucket.c_str()));
         objects_request.WithPrefix(Aws::String(prefix.c_str()));
 
-        if(requestPayer != Aws::S3::Model::RequestPayer::NOT_SET)
+        if(requestPayer != AwsS3RequestPayerNotSet)
             objects_request.SetRequestPayer(requestPayer);
 
         // use delimiter if suffix is not yet exhausted
@@ -758,7 +782,7 @@ namespace tuplex {
         // find longest non pattern prefix to speed up walking queries
         auto prefix = findLongestPrefix(uri.s3Key());
         auto suffix = uri.s3Key().substr(prefix.length());
-        auto res = s3walkEx(client(), uri.s3Bucket(), prefix, suffix, lsRequests, callback, userData, isAmazon() ? _requestPayer : Aws::S3::Model::RequestPayer::NOT_SET);
+        auto res = s3walkEx(client(), uri.s3Bucket(), prefix, suffix, lsRequests, callback, userData, isAmazon() ? _requestPayer : AwsS3RequestPayerNotSet);
         _lsRequests += lsRequests;
         return res;
     }
@@ -789,7 +813,7 @@ namespace tuplex {
 
         if(!_transfer_manager) {
             Aws::Transfer::TransferManagerConfiguration config(_thread_pool.get());
-            config.s3Client = _client;
+            config.s3Client = make_pure_s3_client();
 
             // @TODO: add callbacks for better upload etc.?
             // std::function<void(const TransferManager*, const std::shared_ptr<const TransferHandle>&, const Aws::Client::AWSError<Aws::S3::S3Errors>&)>
@@ -910,11 +934,11 @@ namespace tuplex {
 
         // now issue for each of the files an async delete request
         // use https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
-        Aws::S3::Model::DeleteObjectsRequest del_request;
-        Aws::S3::Model::Delete del_keys;
-        Aws::Vector<Aws::S3::Model::ObjectIdentifier> objects_to_delete;
+        AwsS3DeleteObjectsRequest del_request;
+        AwsS3Delete del_keys;
+        Aws::Vector<AwsS3ObjectIdentifier> objects_to_delete;
         for(auto p : paths) {
-            Aws::S3::Model::ObjectIdentifier id;
+            AwsS3ObjectIdentifier id;
             assert(p.s3Bucket() == bucket);
             id.WithKey(p.s3Key());
             objects_to_delete.emplace_back(id);
@@ -979,7 +1003,7 @@ namespace tuplex {
         auto r_prefix = std::regex(grep_pattern, std::regex_constants::grep);
 
         // list one directory
-        Aws::S3::Model::ListObjectsV2Request objects_request;
+        AwsS3ListObjectsV2Request objects_request;
         objects_request.WithBucket(Aws::String(prefix.s3Bucket().c_str()));
         objects_request.WithPrefix(Aws::String(_prefix.c_str()));
 
@@ -1032,7 +1056,7 @@ namespace tuplex {
         // check no wildcard pattern
         assert(findLongestPrefix(s3_src.toString()) == s3_src.toString());
 
-        Aws::S3::Model::CopyObjectRequest req;
+        AwsS3CopyObjectRequest req;
         req.WithCopySource(s3_src.s3Bucket() + "/" + s3_src.s3Key())
            .WithBucket(s3_dest.s3Bucket()).WithKey(s3_dest.s3Key());
 
@@ -1051,14 +1075,14 @@ namespace tuplex {
     }
 
 
-    std::string s3GetHeadObject(Aws::S3::S3Client const& client, const URI& uri, std::ostream *os_err) {
+    std::string s3GetHeadObject(AwsS3Client const& client, const URI& uri, std::ostream *os_err) {
         using namespace std;
         string meta_data;
 
         assert(uri.prefix() == "s3://");
 
         // perform request
-        Aws::S3::Model::HeadObjectRequest request;
+        AwsS3HeadObjectRequest request;
         request.WithBucket(uri.s3Bucket().c_str());
         request.WithKey(uri.s3Key().c_str());
         auto head_outcome = client.HeadObject(request);
@@ -1089,7 +1113,7 @@ namespace tuplex {
         return meta_data;
     }
 
-    size_t s3GetContentLength(Aws::S3::S3Client const& client, const URI& uri, std::ostream *os_err) {
+    size_t s3GetContentLength(AwsS3Client const& client, const URI& uri, std::ostream *os_err) {
         using namespace std;
         string meta_data;
 
@@ -1098,7 +1122,7 @@ namespace tuplex {
         size_t content_length = 0;
 
         // perform request
-        Aws::S3::Model::HeadObjectRequest request;
+        AwsS3HeadObjectRequest request;
         request.WithBucket(uri.s3Bucket().c_str());
         request.WithKey(uri.s3Key().c_str());
         auto head_outcome = client.HeadObject(request);
@@ -1136,6 +1160,7 @@ namespace tuplex {
         ns.useVirtualAddressing = use_virtual_addressing;
         ns.verifySSL = payload_signing_policy == Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never;
         applyNetworkSettings(ns, config);
+        // ok to use non crt client here.
         auto client = std::make_shared<S3::S3Client>(aws_credentials, config, payload_signing_policy, use_virtual_addressing);
         if(!client)
             return false;
@@ -1157,7 +1182,7 @@ namespace tuplex {
         return false;
     }
 
-    bool s3RemoveObjects(Aws::S3::S3Client const& client, const std::vector<URI>& uris, std::ostream *os_err) {
+    bool s3RemoveObjects(AwsS3Client const& client, const std::vector<URI>& uris, std::ostream *os_err) {
         if(uris.empty())
             return true;
 
@@ -1177,11 +1202,11 @@ namespace tuplex {
 
         // now issue for each of the files an async delete request
         // use https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
-        Aws::S3::Model::DeleteObjectsRequest del_request;
-        Aws::S3::Model::Delete del_keys;
-        Aws::Vector<Aws::S3::Model::ObjectIdentifier> objects_to_delete;
+        AwsS3DeleteObjectsRequest del_request;
+        AwsS3Delete del_keys;
+        Aws::Vector<AwsS3ObjectIdentifier> objects_to_delete;
         for(const auto& p: uris) {
-            Aws::S3::Model::ObjectIdentifier id;
+            AwsS3ObjectIdentifier id;
             assert(p.s3Bucket() == bucket);
             id.WithKey(p.s3Key());
             objects_to_delete.emplace_back(id);

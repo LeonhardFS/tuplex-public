@@ -36,9 +36,9 @@ namespace tuplex {
         for(auto col : tabCols) {
             trim(col);
 
-            if (info.requestId.empty() && strStartsWith(col, "RequestId: ")) {
+            if (info.awsRequestId.empty() && strStartsWith(col, "RequestId: ")) {
                 // extract ID and store it
-                info.requestId = col.substr(strlen("RequestId: "));
+                info.awsRequestId = col.substr(strlen("RequestId: "));
             }
 
             // error message is formatted using RequestId: .... Error: ...

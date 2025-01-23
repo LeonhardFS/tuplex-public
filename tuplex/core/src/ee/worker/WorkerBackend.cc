@@ -193,15 +193,18 @@ namespace tuplex {
             runtime::init(_options.RUNTIME_LIBRARY(true).toPath());
         }
 
+        logger().info("Initiating worker within same process as invoker.");
         auto app = std::make_unique<WorkerApp>(WorkerSettings());
         app->globalInit(true);
         unsigned request_counter = 1;
         Timer agg_timer;
+        logger().info("Start processing " + pluralize(requests.size(), "request") + ".");
         for (const auto &req: requests) {
             Timer timer;
 
             RequestInfo info;
             info.requestId = uuidToString(getUniqueID());
+            info.awsRequestId.clear(); // no AWS id yet.
 
             std::string json_buf;
             google::protobuf::json::MessageToJsonString(req, &json_buf);
