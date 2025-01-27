@@ -339,6 +339,11 @@ tuplex::messages::InvocationResponse lambda_main(aws::lambda_runtime::invocation
     if(rc != WORKER_OK)
         return make_exception("failed processing with code " + std::to_string(rc));
 
+    // Set timeout functor.
+    app->setTimeoutFunctor([]() {
+        return chrono::duration_cast<chrono::milliseconds, long>(g_lambda_req->get_time_remaining()).count() / 1000.0;
+    });
+
     // Process message.
     // Surround with try/catch to avoid crashes.
     try {

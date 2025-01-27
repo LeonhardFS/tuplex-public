@@ -33,6 +33,9 @@
 // safety time to allocate for creating proper response
 #define AWS_LAMBDA_SAFETY_DURATION_IN_MS 1000
 
+// timeout if less than 2s are left, this should leave enough time to return/create a partial result.
+#define AWS_LAMBDA_TIMEOUT_IN_S 2
+
 namespace tuplex {
 
     // externally link, i.e. in testing need dummy to make linking work!
@@ -48,7 +51,7 @@ namespace tuplex {
     public:
         LambdaWorkerApp() = default;
 
-        LambdaWorkerApp(const LambdaWorkerSettings& ws) : WorkerApp(ws), _outstandingRequests(0) {
+        LambdaWorkerApp(const LambdaWorkerSettings& ws) : WorkerApp(ws), _outstandingRequests(0), _timeoutFunctor(nullptr) {
             // for Lambda install sighandler for curl
             _aws_options.httpOptions.installSigPipeHandler = true;
             setLoggerName("Lambda worker");
@@ -59,6 +62,14 @@ namespace tuplex {
         ~LambdaWorkerApp() {}
 
         void setFunctionName(const std::string& name) { _functionName = name; }
+
+        /*!
+             * set function which returns how many seconds are left before timing out.
+             * @param f
+             */
+        inline void setTimeoutFunctor(std::function<double()> f=nullptr) {
+            _timeoutFunctor = f;
+        }
 
     protected:
         /// put here Lambda specific constants to easily update them
@@ -87,6 +98,7 @@ namespace tuplex {
         std::string _functionName;
         NetworkSettings _networkSettings;
         tuplex::AWSCredentials _credentials;
+
     protected:
         void fill_with_result(messages::InvocationResponse& response);
         int invokeRecursivelyAsync(int num_to_invoke,
@@ -95,6 +107,12 @@ namespace tuplex {
                                                             const std::vector<std::vector<FilePart>>& parts) override;
         int waitForInvoker() const override;
         void fill_response_with_self_invocation_state(messages::InvocationResponse& response) const override;
+
+
+        // timeout handling, i.e. query global environment periodically.
+        std::function<double()> _timeoutFunctor;
+        std::mutex _timeoutMutex;
+        bool aboutToTimeout() override;
     private:
 
         // Self-invoking AWS Lambda Invocation service.

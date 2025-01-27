@@ -315,6 +315,13 @@ namespace tuplex {
 
         void fill_with_stage(std::vector<AwsLambdaRequest> &requests, TransformStage *tstage, size_t numThreads,
                              size_t max_retries);
+
+        std::vector<AwsLambdaRequest>
+        create_specializing_requests_with_multiple_files(const TransformStage* tstage,
+                                                         int numThreads,
+                                                         const std::vector<std::tuple<std::string, size_t>>& uri_infos, MessageHandler& logger,
+                                                         std::function<std::string(int n, int n_digits)> generate_output_base_uri=[](int n, int n_digits) {
+                                                             return "part" + fixedLength(n, n_digits); });
     };
 
 

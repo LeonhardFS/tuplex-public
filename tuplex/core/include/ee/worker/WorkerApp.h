@@ -41,6 +41,10 @@
 #define WORKER_EXCEPTION_BUFFER_SIZE 8388608
 #define WORKER_HASH_BUFFER_SIZE 8388608
 
+// timeout / partial result related messages.
+#define WORKER_TIMEOUT_BEFORE_PROCESSING_START 120
+#define WORKER_PARTIAL_RESULT 200
+
 // protobuf
 #include <utils/Messages.h>
 #include <physical/execution/TransformStage.h>
@@ -382,6 +386,14 @@ namespace tuplex {
 
         tuplex::messages::InvocationRequest _currentMessage;
         virtual void storeInvokeRequest() {}
+
+        /*!
+         * abstract helper to check whether worker will time out or not. Useful for returning partial/error messages.
+         * @return
+         */
+        virtual bool aboutToTimeout() {
+            return false;
+        }
 
         void markTime(const std::string& label, double value) {
             _timeDict[label] = value;

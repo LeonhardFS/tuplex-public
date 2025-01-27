@@ -787,6 +787,15 @@ namespace tuplex {
             }
         }
 
+        // Check whether timeout is happening, if so - return timeout before processing starts.
+        if(aboutToTimeout()) {
+            std::stringstream ss;
+            ss<<"Worker timed out before starting processing.";
+           _response.set_status(messages::InvocationResponse_Status_ERROR);
+           _response.set_errormessage(ss.str());
+           return WORKER_TIMEOUT_BEFORE_PROCESSING_START;
+        }
+
         // The part number also works as Lambda ID.
         if(req.has_partnooffset())
             logger().info("Lambda " + std::to_string(req.partnooffset()) + " writing to " + outputURI.toString());
@@ -796,6 +805,11 @@ namespace tuplex {
             rc = processTransformStageInPythonMode(tstage.get(), parts, outputURI, req.requestmode() & REQUEST_MODE_NO_OPERATION);
         } else {
             rc = processTransformStage(tstage.get(), syms, parts, outputURI, req.requestmode() & REQUEST_MODE_NO_OPERATION);
+        }
+
+        // If timed out or partial result, directly return here. Do not wait for threads to finish.
+        if(rc == WORKER_PARTIAL_RESULT) {
+            return rc;
         }
 
         // If using self-invocation, wait for requests to finish.

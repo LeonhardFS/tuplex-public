@@ -944,76 +944,88 @@ namespace tuplex {
                 // Minimum AWS input size per-lambda.
                 // Needs to be smallest file for solver to work.
                 size_t minimum_chunk_size = _options.EXPERIMENTAL_AWS_MINIMUM_INPUT_SIZE_PER_LAMBDA();
-                for(const auto& s : sizes)
+                size_t maximum_chunk_size = 0;
+                for(const auto& s : sizes) {
                     minimum_chunk_size = std::min(s, minimum_chunk_size);
-
-                size_t chunk_size = find_max_chunk_size(sizes, minimum_chunk_size, max_lambda_parallelism);
-                {
-                    std::stringstream ss;
-                    auto n_requests = compute_total_requests(sizes, minimum_chunk_size, chunk_size);
-                    ss<<"Distributing "<<sizeToMemString(total_size)<<" over "<<pluralize(n_requests, "request")<<" (max lambda parallelism: "<<max_lambda_parallelism<<")";
-                    logger().info(ss.str());
+                    maximum_chunk_size = std::max(s, maximum_chunk_size);
                 }
 
-                // Create first number of requests by distributing data.
-                auto L = logger();
-                requests = create_specializing_recursive_requests(uri_infos, minimum_chunk_size, chunk_size, L);
-
-                // Fill in invocation details (code path etc.)
-                // This should also generate proper output/offset output uris.
-                size_t max_retries = 5;
-                logger().info("Generating requests with num threads=" + std::to_string(numThreads) + ", max retries=" + std::to_string(max_retries) + ".");
-                fill_with_stage(requests, tstage, numThreads, max_retries);
-
-                // Same true for specialization unit (should be each file).
-                // Because this here is tree invocation, fill in specialization unit as full files.
-                logger().info("Specializing on each file (" + pluralize(requests.size(), "request") + ").");
-                assert(requests.size() == uri_infos.size());
-
-                // compute total requests.
-                size_t n_requests = 0;
-                for (const auto &req: requests)
-                    n_requests += req.body.inputuris_size();
-                auto num_digits = ilog10c(n_requests) + 1;
-
-                uint32_t part_offset = 0;
-                for(unsigned i = 0; i < requests.size(); ++i) {
-                    auto& req = requests[i];
-                    auto sampling_mode = tstage->samplingMode();
-                    fill_specialization_unit(*requests[i].body.mutable_stage()->mutable_specializationunit(),
-                                             {uri_infos[i]}, sampling_mode);
-
-                    // add (self) invocation count.
-                    int num_self_invocations = (int)requests[i].body.inputuris_size() - 1;
-                    assert(num_self_invocations >= 0);
-                    req.body.mutable_stage()->add_invocationcount(num_self_invocations);
-
-
-                    req.body.set_partnooffset(part_offset);
-                    // for different parts need different spill folders.
-                    auto worker_spill_uri = this->spillURI() + "/lam" + fixedLength(part_offset, num_digits);
-                    fill_with_worker_config(req.body, worker_spill_uri, numThreads);
-
-                    // Output URI.
-                    auto lambda_output_uri = generate_output_base_uri(tstage, part_offset, num_digits, 0, 0);
-                    req.body.set_baseoutputuri(lambda_output_uri.toString());
-                    req.body.set_baseisfinaloutput(true); // <-- is final, the recursive will modify it.
-
-                    // print out info
+                size_t chunk_size = maximum_chunk_size; // per default, set chunk size to largest file (i.e., no split).
+                // if lambda_parallelism > #files, find suitable chunking size.
+                if(max_lambda_parallelism >= sizes.size()) {
+                    chunk_size = find_max_chunk_size(sizes, minimum_chunk_size, max_lambda_parallelism);
                     {
                         std::stringstream ss;
-                        ss<<"Request "<<i<<": part_offset="<<part_offset<<" self-invoke count: "<<recursive_invocation_count(req.body)<<" , producing parts from "<<lambda_output_uri;
-                        logger().debug(ss.str());
+                        auto n_requests = compute_total_requests(sizes, minimum_chunk_size, chunk_size);
+                        ss<<"Distributing "<<sizeToMemString(total_size)<<" over "<<pluralize(n_requests, "request")<<" (max lambda parallelism: "<<max_lambda_parallelism<<")";
+                        logger().info(ss.str());
                     }
 
-                    part_offset += 1 + recursive_invocation_count(req.body);
-                    logger().info("Specializing " + std::get<0>(uri_infos[i]) + " and performing " + pluralize(num_self_invocations, "self invocation") + " then.");
+                    // Create first number of requests by distributing data.
+                    auto L = logger();
+                    requests = create_specializing_recursive_requests(uri_infos, minimum_chunk_size, chunk_size, L);
+
+                    // Fill in invocation details (code path etc.)
+                    // This should also generate proper output/offset output uris.
+                    size_t max_retries = 5;
+                    logger().info("Generating requests with num threads=" + std::to_string(numThreads) + ", max retries=" + std::to_string(max_retries) + ".");
+                    fill_with_stage(requests, tstage, numThreads, max_retries);
+
+                    // Same true for specialization unit (should be each file).
+                    // Because this here is tree invocation, fill in specialization unit as full files.
+                    logger().info("Specializing on each file (" + pluralize(requests.size(), "request") + ").");
+                    assert(requests.size() == uri_infos.size());
+
+                    // compute total requests.
+                    size_t n_requests = 0;
+                    for (const auto &req: requests)
+                        n_requests += req.body.inputuris_size();
+                    auto num_digits = ilog10c(n_requests) + 1;
+
+                    uint32_t part_offset = 0;
+                    for(unsigned i = 0; i < requests.size(); ++i) {
+                        auto& req = requests[i];
+                        auto sampling_mode = tstage->samplingMode();
+                        fill_specialization_unit(*requests[i].body.mutable_stage()->mutable_specializationunit(),
+                                                 {uri_infos[i]}, sampling_mode);
+
+                        // add (self) invocation count.
+                        int num_self_invocations = (int)requests[i].body.inputuris_size() - 1;
+                        assert(num_self_invocations >= 0);
+                        req.body.mutable_stage()->add_invocationcount(num_self_invocations);
+
+
+                        req.body.set_partnooffset(part_offset);
+                        // for different parts need different spill folders.
+                        auto worker_spill_uri = this->spillURI() + "/lam" + fixedLength(part_offset, num_digits);
+                        fill_with_worker_config(req.body, worker_spill_uri, numThreads);
+
+                        // Output URI.
+                        auto lambda_output_uri = generate_output_base_uri(tstage, part_offset, num_digits, 0, 0);
+                        req.body.set_baseoutputuri(lambda_output_uri.toString());
+                        req.body.set_baseisfinaloutput(true); // <-- is final, the recursive will modify it.
+
+                        // print out info
+                        {
+                            std::stringstream ss;
+                            ss<<"Request "<<i<<": part_offset="<<part_offset<<" self-invoke count: "<<recursive_invocation_count(req.body)<<" , producing parts from "<<lambda_output_uri;
+                            logger().debug(ss.str());
+                        }
+
+                        part_offset += 1 + recursive_invocation_count(req.body);
+                        logger().info("Specializing " + std::get<0>(uri_infos[i]) + " and performing " + pluralize(num_self_invocations, "self invocation") + " then.");
+                    }
+
+                    // @TODO: if file too small, no need to hyperspecialize. If even smaller, no need to compile -> simply use python interpreter.
+
+                    // Check that max concurrency works with requests being processed. I.e., each request incl. all recursive invocations must be <= MAX_CONCURRENCY.
+                    validate_requests_can_be_served_with_concurrency_limit(requests, _options.AWS_MAX_CONCURRENCY());
+
+                } else {
+                    // Need to distribute files across few parallel workers (likely partial results with timeouts.
+                    auto L = logger();
+                    requests = create_specializing_requests_with_multiple_files(tstage, numThreads, uri_infos, L);
                 }
-
-                // @TODO: if file too small, no need to hyperspecialize. If even smaller, no need to compile -> simply use python interpreter.
-
-                // Check that max concurrency works with requests being processed. I.e., each request incl. all recursive invocations must be <= MAX_CONCURRENCY.
-                validate_requests_can_be_served_with_concurrency_limit(requests, _options.AWS_MAX_CONCURRENCY());
 
                 break;
             }
@@ -1675,7 +1687,7 @@ namespace tuplex {
             task_no += 1 + recursive_invocation_count(req.body);
         }
 
-        logger.info("Recursive Lambda invocation will produce " + pluralize(task_no, "output file") + ",");
+        logger.info("Recursive Lambda invocation will produce " + pluralize(task_no, "output file") + ".");
 
 
 
@@ -1817,7 +1829,7 @@ namespace tuplex {
             task_no += 1 + recursive_invocation_count(req.body);
         }
 
-        logger().info("Recursive Lambda invocation will produce " + pluralize(task_no, "output file") + ",");
+        logger().info("Recursive Lambda invocation will produce " + pluralize(task_no, "output file") + ".");
         return requests;
     }
 
@@ -2634,24 +2646,151 @@ namespace tuplex {
             throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Recursive requests need at least " + std::to_string(min_concurrency_needed) + " concurrency, but Lambda is configured with " + std::to_string(concurrency_limit) + " concurrency limit.");
     }
 
-//    void AwsLambdaBackend::abortRequestsAndFailWith(int returnCode, const std::string &errorMessage) {
-//        logger().error("LAMBDA execution failed due to exit code " + std::to_string(returnCode) +
-//                       " on one executor, details: " + errorMessage);
-//
-//        int numPending = std::max((int) _numPendingRequests, 0);
-//        if (numPending > 0)
-//            logger().info("Aborting " + pluralize(numPending, " pending request"));
-//        else
-//            logger().info("Aborting.");
-//
-//        _numPendingRequests = 0;
-//        _client->DisableRequestProcessing();
-//        logger().info("Shutdown remote execution.");
-//        _client->EnableRequestProcessing();
-//    }
+    AwsLambdaRequest& find_request_with_least_bytes_to_process(std::vector<AwsLambdaRequest>& requests) {
+        size_t minimum_total_size = std::numeric_limits<size_t>::max();
+        int smallest_element_idx = 0;
+
+        assert(!requests.empty());
+
+        int pos = 0;
+        for(const auto& req: requests) {
+
+            // compute size of request
+            size_t req_total_size = 0;
+            for(unsigned i = 0; i < req.body.inputuris_size(); ++i) {
+                // range URI?
+                std::string uri = req.body.inputuris(i);
+                URI baseURI;
+                size_t range_start=0, range_end=0;
+                decodeRangeURI(uri, baseURI, range_start, range_end);
+                if(uri != baseURI.toString() && !(range_start == 0 && range_end == 0)) {
+                    req_total_size += range_end - range_start;
+                } else
+                    req_total_size += req.body.inputsizes(i);
+            }
+
+            // recursive requests.
+            if(recursive_invocation_count(req.body) != 0)
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " need to implement");
+
+            if(req_total_size < minimum_total_size)
+                smallest_element_idx = pos;
+            minimum_total_size = std::min(req_total_size, minimum_total_size);
+            pos++;
+        }
+        assert(smallest_element_idx >= 0);
+        return requests[smallest_element_idx];
+    }
 
 
+    std::vector<AwsLambdaRequest> AwsLambdaBackend::create_specializing_requests_with_multiple_files(
+            const TransformStage* tstage,
+            int numThreads,
+            const std::vector<std::tuple<std::string, size_t>>& uri_infos, MessageHandler& logger,
+            std::function<std::string(int n, int n_digits)> generate_output_base_uri) {
 
+        // no self-invocation because too few parallelism.
+        // But issue directly requests, some may have multiple files. Still specialize PER file.
+        size_t total_size_in_bytes_to_process = 0;
+        for(const auto& info : uri_infos)
+            total_size_in_bytes_to_process += std::get<1>(info);
+
+        size_t avg_size_in_bytes_to_process = total_size_in_bytes_to_process / uri_infos.size();
+        {
+            std::stringstream ss;
+            ss<<pluralize(uri_infos.size(), "input file")<<" ("<<sizeToMemString(total_size_in_bytes_to_process)<<") to distribute (avg size per file: "<<sizeToMemString(avg_size_in_bytes_to_process)<<").";
+            logger.debug(ss.str());
+        }
+
+        auto sampling_mode = tstage->samplingMode();
+
+        // later: need to sort requests
+        std::vector<AwsLambdaRequest> requests;
+
+        // sort files after size (heuristic).
+        auto uri_infos_sorted_by_size = uri_infos;
+        std::sort(uri_infos_sorted_by_size.begin(), uri_infos_sorted_by_size.end(),
+                  [](const std::tuple<std::string, size_t>& lhs, const std::tuple<std::string, size_t>& rhs) {
+            return std::get<1>(lhs) >= std::get<1>(rhs);
+        });
+
+        // this approach ensures greedy file selection.
+        size_t max_parallelism =  _options.AWS_MAX_CONCURRENCY();
+
+        // Doesn't preserve order of input files.
+        for(const auto& info : uri_infos_sorted_by_size) {
+            URI uri = std::get<0>(info);
+            size_t uri_size = std::get<1>(info);
+
+            if(requests.size() < max_parallelism) {
+                AwsLambdaRequest req;
+
+                req.body.add_inputuris(uri.toString());
+                req.body.add_inputsizes(uri_size);
+
+                // no split up necessary, simply process full data.
+                req.body.mutable_stage()->add_invocationcount(0);
+                requests.emplace_back(req);
+            } else {
+                // add to file with smallest total bytes sum.
+                auto& req = find_request_with_least_bytes_to_process(requests);
+
+                // add this file to request. Note: could split up file as well in the future!
+                req.body.add_inputuris(uri.toString());
+                req.body.add_inputsizes(uri_size);
+            }
+        }
+
+        // Step 2: generate output uris (consecutive)
+        int n_output_parts = 0;
+        // Count how many output parts there will be.
+        for(const auto& req : requests) {
+            n_output_parts++; // +1 for the request itself.
+            // Are there self-invocations? For each invocation count +1.
+            // Only 1 level supported yet.
+            n_output_parts += recursive_invocation_count(req.body);
+        }
+        int n_digits = ilog10c(n_output_parts) + 1;
+        logger.info("Recursive tree invocation will invoke in total " + pluralize(n_output_parts, "lambda") + " producing " + pluralize(n_output_parts, "part") + ".");
+
+        // Go over requests again & set part offsets.
+        int task_no = 0;
+        auto num_digits = ilog10c(requests.size()) + 1;
+        for(auto& req : requests) {
+            req.body.set_partnooffset(task_no);
+            auto lambda_output_uri = generate_output_base_uri(task_no, n_digits);
+            req.body.set_baseoutputuri(lambda_output_uri);
+            req.body.set_baseisfinaloutput(true); // <-- is final, the recursive will modify it.
+            task_no += 1 + recursive_invocation_count(req.body);
+
+
+            // fill with trafo.
+            fill_with_transform_stage(req.body, tstage);
+            fill_env(req.body);
+
+            // for different parts need different spill folders.
+            auto worker_spill_uri = spillURI() + "/lam" + fixedLength(task_no, num_digits);
+            fill_with_worker_config(req.body, worker_spill_uri, numThreads);
+
+            // Check whether specialization should occur. If so, add specialization units for each file exceeding threshold.
+            if(_options.USE_EXPERIMENTAL_HYPERSPECIALIZATION()) {
+                req.body.mutable_stage()->mutable_specializationunit()->set_samplemode(static_cast<uint64_t>(sampling_mode));
+
+                for(unsigned i = 0; i < req.body.inputuris_size(); ++i) {
+                    auto su = req.body.mutable_stage()->mutable_specializationunit();
+                    // Other param re specialization unit size NOT YET SUPPORTED.
+                    if(req.body.inputsizes(i) > _options.EXPERIMENTAL_MINIMUM_SIZE_TO_SPECIALIZE()) {
+                        su->add_inputuris(req.body.inputuris(i));
+                        su->add_inputsizes(req.body.inputuris_size());
+                    }
+                }
+            }
+        }
+
+        logger.info("Recursive Lambda invocation will produce " + pluralize(task_no, "output file") + ".");
+
+        return requests;
+    }
 
 }
 #endif
