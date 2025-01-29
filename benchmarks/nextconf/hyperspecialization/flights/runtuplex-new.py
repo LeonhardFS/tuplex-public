@@ -30,6 +30,9 @@ S3_DEFAULT_INPUT_PATTERN="s3://tuplex-public/data/flights_all/*.csv"
 S3_DEFAULT_OUTPUT_PATH='s3://tuplex-leonhard/experiments/flights'
 S3_DEFAULT_SCRATCH_DIR="s3://tuplex-leonhard/scratch/flights-exp"
 
+# Whether to have Tuplex emit via python's logging system.
+REDIRECT_TO_PYTHON_LOGGING=True
+
 def human_readable_size(size, decimal_places=2):
     for unit in ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB']:
         if size < 1024.0 or unit == 'PiB':
@@ -592,10 +595,8 @@ def run_with_tuplex(args, **kwargs):
             "useInterpreterOnly": args.python_mode,
             "experimental.forceBadParseExceptFormat": not args.use_internal_fmt}
 
-
-    # if os.path.exists('tuplex_config.json'):
-    #     with open('tuplex_config.json') as fp:
-    #         conf = json.load(fp)
+    # Use Python logger to save whatever happens to file.
+    conf["redirectToPythonLogging"] = REDIRECT_TO_PYTHON_LOGGING
 
     conf['inputSplitSize'] = input_split_size
     # disable for now.
@@ -749,6 +750,8 @@ def run_with_tuplex_on_lambda(args):
             "useInterpreterOnly": args.python_mode,
             "experimental.forceBadParseExceptFormat": not args.use_internal_fmt}
 
+    # Use Python logger to save whatever happens to file.
+    conf["redirectToPythonLogging"] = REDIRECT_TO_PYTHON_LOGGING
 
     # Special case: mode == python:
     if args.mode == "python":
