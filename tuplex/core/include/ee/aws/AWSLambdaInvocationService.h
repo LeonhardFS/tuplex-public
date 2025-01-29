@@ -98,6 +98,15 @@ namespace tuplex {
         RequestInfo info;
     };
 
+    inline int recursive_invocation_count(const messages::InvocationRequest& req) {
+        if(req.stage().invocationcount_size() != 0) {
+            assert(req.stage().invocationcount_size() == 1);
+            auto n_recursive = req.stage().invocationcount(0);
+            return n_recursive;
+        }
+        return 0;
+    }
+
     class AwsLambdaInvocationService {
     private:
         std::mutex _mutex;
@@ -105,6 +114,8 @@ namespace tuplex {
         std::string _functionName;
         std::atomic_int32_t _numPendingRequests; // how many tasks are open (atomic used for multi threaded execution)
         std::atomic_int32_t _numRequests;
+
+        std::atomic_int32_t _activeConcurrency; // how many Lambdas including self-invocation may be active.
 
         // cost tracking (do it here!)
         std::atomic_uint64_t _mbms; // megabyte milliseconds.
@@ -123,7 +134,7 @@ namespace tuplex {
         AwsLambdaInvocationService(const std::shared_ptr<Aws::Lambda::LambdaClient>& client,
                                    const std::string& function_name) : _client(client),
                                    _functionName(function_name),
-                                   _numPendingRequests(0), _numRequests(0), _mbms(0) { assert(client); }
+                                   _numPendingRequests(0), _numRequests(0), _mbms(0), _activeConcurrency(0) { assert(client); }
 
         void reset();
 
@@ -144,6 +155,8 @@ namespace tuplex {
             _mbms += billedDurationInMs * memorySizeInMb;
         }
 
+        size_t pendingActiveRequests() const { return _numPendingRequests.load(); }
+        size_t activeMaximumConcurrency() const { return _activeConcurrency.load(); }
 
         void waitForRequests(std::chrono::duration<double, std::milli> sleep_interval=std::chrono::duration<double, std::milli>(100.0));
 

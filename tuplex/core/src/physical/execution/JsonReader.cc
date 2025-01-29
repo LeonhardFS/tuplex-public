@@ -91,7 +91,7 @@ namespace tuplex {
         _originalRangeEnd = end;
     }
 
-    void JsonReader::read(const tuplex::URI &inputFilePath) {
+    void JsonReader::read(const tuplex::URI &inputFilePath, const std::function<bool()>& blockFunctor) {
         using namespace std;
 
         if(!_functor)
@@ -204,6 +204,18 @@ namespace tuplex {
                     // important to cut off here!
                     memset(_inputBuffer + _inBufferLength, 0, 16); // important for parsing! // with +1 or not?
                     rangeBytesRead += consume(true);
+
+                    // if blockFunctor is given, check result && abort early (with storing partial result progress).
+                    if(blockFunctor != nullptr && blockFunctor()) {
+                        // TODO: store partial result.
+                        PartialReadInfo pri;
+                        pri.uri = inputFilePath;
+                        pri.offset = _total_bytes_parsed;
+                        pri.row_count = inputRowCount();
+                        // Logger::instance().defaultLogger().info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " blockFuncto returned true, stopping JsonReader.");
+                        setPartialReadInformation(pri);
+                        return;
+                    }
                     break;
                 }
             }
@@ -213,6 +225,17 @@ namespace tuplex {
             // consume buffer (by function)
             // get eof file to consume function...
             size_t bytesConsumed = consume(fp->eof());
+
+            // if blockFunctor is given, check result && abort early (with storing partial result progress).
+            if(blockFunctor != nullptr && blockFunctor()) {
+                // TODO: store partial result.
+                PartialReadInfo p;
+                p.uri = inputFilePath;
+                p.offset = _total_bytes_parsed;
+                p.row_count = inputRowCount();
+                setPartialReadInformation(p);
+                return;
+            }
 
             assert(bytesConsumed <= _bufferSize);
 

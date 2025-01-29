@@ -714,6 +714,7 @@ namespace tuplex {
             return false;
 
         auto time_left_in_s = _timeoutFunctor();
+        logger().info("Only " + std::to_string(time_left_in_s) + "s left.");
         return time_left_in_s < AWS_LAMBDA_TIMEOUT_IN_S;
     }
 

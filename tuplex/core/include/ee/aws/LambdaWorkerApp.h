@@ -34,7 +34,7 @@
 #define AWS_LAMBDA_SAFETY_DURATION_IN_MS 1000
 
 // timeout if less than 2s are left, this should leave enough time to return/create a partial result.
-#define AWS_LAMBDA_TIMEOUT_IN_S 2
+#define AWS_LAMBDA_TIMEOUT_IN_S (2.0)
 
 namespace tuplex {
 

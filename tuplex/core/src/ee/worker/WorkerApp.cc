@@ -1042,7 +1042,13 @@ namespace tuplex {
                         const auto& fp = input_parts[i];
                         size_t inputRowCount = 0;
                         processCodes[0] = processSource(0, tstage->fileInputOperatorID(), fp, tstage, syms, &inputRowCount);
-                        logger().info("processed file " + std::to_string(i + 1) + "/" + std::to_string(input_parts.size()));
+                        logger().info("Processed file " + std::to_string(i + 1) + "/" + std::to_string(input_parts.size()) + " -- " + fp.uri.toString());
+
+                        // ???? code ????
+//                        if(aboutToTimeout() && i != input_parts.size()) {
+//                            logger().info("Not enough time left to process next file, returning partial result.");
+//                            processCodes[0] = WORKER_PARTIAL_RESULT;
+//                        }
 
                         if(processCodes[0] != WORKER_OK)
                             break;
@@ -2141,7 +2147,7 @@ namespace tuplex {
 
                 // read assigned file...
                 if(reader)
-                    reader->read(inputURI);
+                    reader->read(inputURI, [this](){ return aboutToTimeout(); });
 
                 // fetch row count
                 if(inputRowCount)
@@ -2150,6 +2156,17 @@ namespace tuplex {
                 // more detailed stats
 
                 runtime::rtfree_all();
+
+                // Check if partial result, if so return with that code.
+                if(reader->isOnlyPartiallyRead()) {
+                    // TODO: set partial result.
+                    auto p = reader->getPartialReadInformation();
+                    std::stringstream ss;
+                    ss<<"Processed uri "<<inputURI.toString()<<" partially: "<<pluralize(p.row_count, "row")<<" offset="<<p.offset;
+                    logger().info(ss.str());
+                    return WORKER_PARTIAL_RESULT;
+                }
+
                 break;
             }
             case EndPointMode::MEMORY: {

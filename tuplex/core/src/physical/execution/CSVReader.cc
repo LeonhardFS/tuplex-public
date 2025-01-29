@@ -370,7 +370,7 @@ namespace tuplex {
         return buf_ptr;
     }
 
-    void CSVReader::read(const URI& inputFilePath) {
+    void CSVReader::read(const URI& inputFilePath, const std::function<bool()>& blockFunctor) {
         using namespace std;
 
         _numRowsRead = 0;
@@ -646,6 +646,19 @@ namespace tuplex {
             // when ranges are used
             if(_rangeEnd != 0 && cursor.curFilePos() >= _rangeEnd)
                 break;
+
+
+            // if blockFunctor is given, check result && abort early (with storing partial result progress).
+            if(blockFunctor && blockFunctor()) {
+                // TODO: store partial result.
+                PartialReadInfo p;
+                p.uri = inputFilePath;
+                p.offset = cursor.curFilePos();
+                p.row_count = inputRowCount();
+                setPartialReadInformation(p);
+                return;
+            }
+
         }
 
         delete [] cells;

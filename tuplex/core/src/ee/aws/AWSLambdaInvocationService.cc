@@ -106,6 +106,7 @@ namespace tuplex {
 
         _numPendingRequests = 0;
         _numRequests = 0;
+        _activeConcurrency = 0;
 
         // reset cost counters as well!
         _mbms = 0;
@@ -122,6 +123,7 @@ namespace tuplex {
         }
 
         _numPendingRequests = 0;
+        _activeConcurrency = 0;
         _client->DisableRequestProcessing();
         if(print)
             logger().info("Shutdown remote execution.");
@@ -145,6 +147,9 @@ namespace tuplex {
             std::lock_guard<std::mutex> lock(_mutex);
             _numPendingRequests++;
             _numRequests++;
+
+            // add recursive counts.
+            _activeConcurrency += recursive_invocation_count(req.body) + 1;
 
             // TOOD: change this.
             // _pendingRequests.push_back(req);
@@ -256,6 +261,8 @@ namespace tuplex {
 //        AwsLambdaRequest req;
          auto  req = lctx->original_request();
 
+         int32_t req_concurrency = 1 + recursive_invocation_count(req.body);
+
         int statusCode = 0;
         std::string log;
         if (!aws_outcome.IsSuccess()) {
@@ -275,6 +282,7 @@ namespace tuplex {
                 // invoke again, do not change retry count - as this was a rate limit.
                 service->invokeAsync(req);
                 service->_numPendingRequests.fetch_add(-1, std::memory_order_release);
+                service->_activeConcurrency.fetch_add(-req_concurrency, std::memory_order_release);
                 return;
             } else {
 
@@ -284,6 +292,7 @@ namespace tuplex {
                    << aws_outcome.GetError().GetMessage().c_str();
                 lctx->fail(LambdaStatusCode::ERROR_UNKNOWN, ss.str());
                 service->_numPendingRequests.fetch_add(-1);
+                service->_activeConcurrency.fetch_add(-req_concurrency);
                 return;
             }
         } else {
@@ -336,6 +345,7 @@ namespace tuplex {
 
                             service->invokeAsync(req);
                             service->_numPendingRequests.fetch_add(-1, std::memory_order_release);
+                            service->_activeConcurrency.fetch_add(-req_concurrency);
                             return;
                         } else {
                             // no retry left? -> done.
@@ -348,6 +358,7 @@ namespace tuplex {
 
                         service->invokeAsync(req);
                         service->_numPendingRequests.fetch_add(-1, std::memory_order_release);
+                        service->_activeConcurrency.fetch_add(-req_concurrency);
                         return;
                     }
                 } else {
@@ -356,6 +367,7 @@ namespace tuplex {
                     if (info.returnCode != 0) {
                         // stop execution
                         service->_numPendingRequests.fetch_add(-1, std::memory_order_release);
+                        service->_activeConcurrency.fetch_add(-req_concurrency);
 
                         // in dev mode, print out details which file caused the failure!
                         std::stringstream err_stream;
@@ -394,6 +406,7 @@ namespace tuplex {
                 lctx->fail(LambdaStatusCode::ERROR_UNKNOWN, ss.str());
                 // decrease wait counter
                 service->_numPendingRequests.fetch_add(-1);
+                service->_activeConcurrency.fetch_add(-req_concurrency);
                 return;
             }
         }
@@ -406,6 +419,7 @@ namespace tuplex {
 
         // decrease wait counter
         service->_numPendingRequests.fetch_add(-1);
+        service->_activeConcurrency.fetch_add(-req_concurrency);
     }
 
     void AwsLambdaInvocationService::waitForRequests(std::chrono::duration<double, std::milli> sleep_interval) {
@@ -424,11 +438,12 @@ namespace tuplex {
             logger().debug("Checking for python signals, interpreter active: " + boolToString(python::isInterpreterRunning()));
             python::lockGIL();
             if (PyErr_CheckSignals() != 0) {
-                logger().info("Recevied python signal, setting pending requests to 0.");
+                logger().info("Received python signal, setting pending requests to 0.");
                 // stop requests & cleanup @TODO: cleanup on S3 with requests...
                 if (_client)
                     _client->DisableRequestProcessing();
                 _numPendingRequests.store(0); //, std::memory_order_acq_rel);
+                _activeConcurrency.store(0);
             }
 
             python::unlockGIL();

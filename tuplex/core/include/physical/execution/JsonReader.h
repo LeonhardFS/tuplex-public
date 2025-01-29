@@ -24,7 +24,7 @@ namespace tuplex {
 
         // use here VirtualFileSystem when reading files...
         //@March: for testing, just don't call the rowFunctor yet, but rather construct a Row object and then print row.desc();
-        void read(const URI& inputFilePath) override;
+        void read(const URI& inputFilePath, const std::function<bool()>& blockFunctor) override;
 
         size_t inputRowCount() const override;
 

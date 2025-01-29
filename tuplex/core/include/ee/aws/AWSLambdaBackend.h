@@ -274,6 +274,8 @@ namespace tuplex {
             return URI(_options.AWS_SCRATCH_DIR() + "/temporary_stage_output/" + "stage_" + std::to_string(stageNo));
         }
 
+        void fill_output_uris(std::vector<AwsLambdaRequest> &requests, const TransformStage* tstage, int num_digits, int numThreads);
+
         inline void fill_with_transform_stage(messages::InvocationRequest& req, const TransformStage* tstage) const;
         inline void fill_with_worker_config(messages::InvocationRequest& req,
                     const std::string& worker_spill_uri,

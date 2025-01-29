@@ -86,7 +86,7 @@ namespace tuplex {
     class CSVReader : public FileInputReader {
     public:
         CSVReader() = delete;
-        void read(const URI& inputFilePath) override;
+        void read(const URI& inputFilePath, const std::function<bool()>& blockFunctor) override;
         size_t inputRowCount() const override { return _numRowsRead;}
         virtual ~CSVReader()   {}
 

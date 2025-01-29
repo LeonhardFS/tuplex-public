@@ -137,7 +137,7 @@ namespace tuplex {
         const char * const getBuffer() { return _buf; }
     };
 
-    void TextReader::read(const URI &inputFilePath) {
+    void TextReader::read(const URI& inputFilePath, const std::function<bool()>& blockFunctor) {
         using namespace std;
 
         _numRowsRead = 0;
