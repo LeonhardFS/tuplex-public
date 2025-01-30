@@ -678,9 +678,13 @@ TEST_F(LambdaTest, LambdaWithLowTimeout) {
     //conf["tuplex.aws.lambdaTimeout"] = "15"; // 15s. // need to fix this.
     conf["tuplex.aws.lambdaTimeout"] = "600"; // 600s.
 
-    conf["tuplex.aws.maxConcurrency"] = "1"; // a single Lambda.
+    // works!
+//    conf["tuplex.aws.maxConcurrency"] = "1"; // a single Lambda.
 
+    // now test with 2 max concurrency
+    conf["tuplex.aws.maxConcurrency"] = "2"; // two Lambdas.
 
+    // Settings (1):
     // the object code interchange fails with segfaults when using the libc preloader...
     conf["tuplex.experimental.interchangeWithObjectFiles"] = "false";
 
@@ -692,6 +696,11 @@ TEST_F(LambdaTest, LambdaWithLowTimeout) {
     conf["tuplex.optimizer.simplifyLargeStructs"] = "true";
     conf["tuplex.optimizer.simplifyLargeStructs.threshold"] = "20";
 
+
+    // Settings (2):
+    // use only interpreter. no hyper
+    conf["tuplex.useInterpreterOnly"] = "true";
+    conf["tuplex.experimental.hyperspecialization"] = "true";
 
     auto ctx = create_lambda_context(conf);
 
