@@ -38,9 +38,9 @@ namespace tuplex {
         // schema is then combined!
         assert(_columnToMapIndex >= 0);
 
-        assert(parentSchema.getRowType().isTupleType());
+        assert(parentSchema.getRowType().isTupleType() || parentSchema.getRowType().isRowType());
 
-        auto colTypes = parentSchema.getRowType().parameters();
+        auto colTypes = parentSchema.getRowType().isRowType() ? parentSchema.getRowType().get_columns_as_tuple_type().parameters() : parentSchema.getRowType().parameters();
         assert(_columnToMapIndex < colTypes.size());
 
         // exchange at columnToMapIndex type
