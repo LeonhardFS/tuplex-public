@@ -89,10 +89,10 @@ namespace tuplex {
                                              ) : BlockBasedTaskBuilder::BlockBasedTaskBuilder(env,
                                                                                             restrictRowType(
                                                                                                     columnsToSerialize,
-                                                                                                    fileInputRowType),
+                                                                                                    fileInputRowType.isRowType() ? fileInputRowType.get_columns_as_tuple_type() : fileInputRowType),
                                                                                             restrictRowType(
                                                                                                     columnsToSerialize,
-                                                                                                    fileGeneralCaseInputRowType),
+                                                                                                    fileGeneralCaseInputRowType.isRowType() ? fileGeneralCaseInputRowType.get_columns_as_tuple_type() : fileGeneralCaseInputRowType),
                                                                                             normalToGeneralMapping,
                                                                                             name,
                                                                                             except_mode),

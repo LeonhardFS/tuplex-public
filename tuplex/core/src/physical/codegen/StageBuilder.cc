@@ -942,15 +942,17 @@ namespace tuplex {
                         if(!pathContext.operators.empty())
                             leaveNormalCase = pathContext.operators.back()->type() == LogicalOperatorType::CACHE;
 
-                        // force output type to be always general case (=> so merging works easily!)
-                        if(!leaveNormalCase) {
-                            if (!pip->addTypeUpgrade(generalCaseOutputRowType))
-                                throw std::runtime_error(
-                                        "type upgrade from " + pathContext.outputSchema.getRowType().desc() + " to " +
-                                        generalCaseOutputRowType.desc() + " failed.");
-                            // set normal case output type to general case
-                            // _normalCaseOutputSchema = _generalCaseOutputSchema;
-                        }
+//#error "make this part of takeoperator/planning. I.e., if the last operator is take -> give it general case info and type upgrade if need be."
+                        // Don't do this.
+                        // // force output type to be always general case (=> so merging works easily!)
+                        // if(!leaveNormalCase) {
+                        //     if (!pip->addTypeUpgrade(generalCaseOutputRowType))
+                        //         throw std::runtime_error(
+                        //                 "type upgrade from " + pathContext.outputSchema.getRowType().desc() + " to " +
+                        //                 generalCaseOutputRowType.desc() + " failed.");
+                        //     // set normal case output type to general case
+                        //     // _normalCaseOutputSchema = _generalCaseOutputSchema;
+                        // }
 
                         pip->buildWithTuplexWriter(ret.writeMemoryCallbackName,
                                                    ctx.outputNodeID,
