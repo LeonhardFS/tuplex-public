@@ -79,23 +79,7 @@ namespace tuplex {
             std::exit(1);
         }
 
-        // input with columns? use row type. Much easier.
-        python::Type retType;
-        if(input_row_type.isRowType()) {
-            // additional column or not?
-            if(_columnToMapIndex < colTypes.size()) {
-                // overwrite
-                retType = python::Type::makeRowType(colTypes, input_row_type.get_column_names());
-            } else {
-                auto columns = input_row_type.get_column_names();
-                columns.push_back(_columnToMap);
-                retType = python::Type::makeRowType(colTypes, columns);
-            }
-        } else {
-            retType = python::Type::makeTupleType(colTypes);
-        }
-
-        return Schema(parentSchema.getMemoryLayout(), retType);
+        return Schema(parentSchema.getMemoryLayout(), create_ret_type(colTypes, input_row_type));
     }
 
     void MapColumnOperator::setDataSet(tuplex::DataSet *dsptr) {
@@ -179,7 +163,8 @@ namespace tuplex {
                                           UDFOperator::columns(), _udf, UDFOperator::rewriteMap());
         copy->setDataSet(getDataSet());
         copy->copyMembers(this);
-        assert(checkBasicEqualityOfOperators(*copy, *this));
+        if(cloneParents) // when no parents, input schema which is derived from parent will be uninitialized making the check error out.
+            assert(checkBasicEqualityOfOperators(*copy, *this));
         return std::shared_ptr<LogicalOperator>(copy);
     }
 
@@ -193,18 +178,18 @@ namespace tuplex {
         auto oldOut = getOutputSchema();
 
         // infer new schema using one row type
-        assert(input_row_type.isTupleType());
-        auto colTypes = input_row_type.parameters();
+        assert(input_row_type.isTupleType() || input_row_type.isRowType());
+        auto colTypes = input_row_type.isRowType() ? input_row_type.get_column_types() : input_row_type.parameters();
+
+        auto old_in_col_types = oldIn.getRowType().isRowType() ? oldIn.getRowType().get_column_types() : oldIn.getRowType().parameters();
 
         // check that number of parameters are identical, else can't rewrite (need to project first!)
-        auto old_input_type = oldIn.getRowType().parameters().at(_columnToMapIndex);
-        size_t num_params_before_retype = oldIn.getRowType().parameters().size();
+        auto old_input_type = old_in_col_types.at(_columnToMapIndex);
+        size_t num_params_before_retype = old_in_col_types.size();
         size_t num_params_after_retype = colTypes.size();
         if(num_params_before_retype != num_params_after_retype) {
             throw std::runtime_error("attempting to retype " + name() + " operator, but number of parameters does not match.");
         }
-
-        throw std::runtime_error("redesign");
 
         python::Type udfResType = python::Type::UNKNOWN;
         auto memLayout = oldOut.getMemoryLayout();
@@ -222,8 +207,8 @@ namespace tuplex {
 
             assert(udfResType.isTupleType());
             // single element? or multiple?
-            if(udfResType.parameters().size() == 1)
-                colTypes[_columnToMapIndex] = udfResType.parameters().front();
+            if(extract_columns_from_type(udfResType) == 1)
+                colTypes[_columnToMapIndex] = udfResType.isRowType() ? udfResType.get_column_type(0) : udfResType.parameters().front();
             else
                 colTypes[_columnToMapIndex] = udfResType;
 
@@ -235,8 +220,10 @@ namespace tuplex {
 
         // success?
         if(udfResType != python::Type::UNKNOWN) {
+            python::Type ret_type = create_ret_type(colTypes, input_row_type);
+
             // set schema
-            setOutputSchema(Schema(memLayout, python::Type::makeTupleType(colTypes)));
+            setOutputSchema(Schema(memLayout, ret_type));
             return true;
         } else {
             setOutputSchema(oldOut);
