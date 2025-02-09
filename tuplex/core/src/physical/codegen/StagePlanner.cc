@@ -2766,6 +2766,10 @@ namespace tuplex {
                     return false;
                 node = node->parent();
             }
+            // If check for the case filter -> [non-filter op] -> [data source op].
+            if(node->type() != LogicalOperatorType::FILTER)
+                return false;
+
             return true;
         }
 
