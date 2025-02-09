@@ -86,7 +86,7 @@ TEST(JsonReader, Ranges) {
     {
         auto partitionSize = 128 * 1024 * 1024;
         JsonReader reader(nullptr, dummy_read_functor, partitionSize);
-        reader.read(path);
+        reader.read(path, nullptr);
         auto row_count = reader.inputRowCount();
         EXPECT_EQ(row_count, 1200);
     }
@@ -95,7 +95,7 @@ TEST(JsonReader, Ranges) {
     {
         auto partitionSize = 512 * 1024; // 512KB buffer
         JsonReader reader(nullptr, dummy_read_functor, partitionSize);
-        reader.read(path);
+        reader.read(path, nullptr);
         auto row_count = reader.inputRowCount();
         EXPECT_EQ(row_count, 1200);
     }
@@ -115,7 +115,7 @@ TEST(JsonReader, Ranges) {
             JsonReader reader(nullptr, dummy_read_functor, partitionSize);
             std::cout<<"reading range: "<<pos<<" - "<<pos + delta<<std::endl;
             reader.setRange(pos, pos + delta);
-            reader.read(path);
+            reader.read(path, nullptr);
             auto row_count = reader.inputRowCount();
             pos += delta;
             total_row_count += row_count;
@@ -138,7 +138,7 @@ TEST(JsonReader, Ranges) {
             JsonReader reader(nullptr, dummy_read_functor, partitionSize);
             std::cout<<"reading range: "<<pos<<" - "<<pos + delta<<std::endl;
             reader.setRange(pos, pos + delta);
-            reader.read(path);
+            reader.read(path, nullptr);
             auto row_count = reader.inputRowCount();
             pos += delta;
             total_row_count += row_count;
@@ -161,7 +161,7 @@ TEST(JsonReader, Ranges) {
             JsonReader reader(nullptr, dummy_read_functor, partitionSize);
             std::cout<<"reading range: "<<pos<<" - "<<pos + delta<<std::endl;
             reader.setRange(pos, pos + delta);
-            reader.read(path);
+            reader.read(path, nullptr);
             auto row_count = reader.inputRowCount();
             pos += delta;
             total_row_count += row_count;

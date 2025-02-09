@@ -81,7 +81,12 @@ namespace std {
 #include <sys/resource.h>
 
 #if defined(__APPLE__) && defined(__MACH__)
-#include <mach/mach.h>
+// Do not include <mach/mach.h> as this clashes with <llvm/Object/MachO.h>
+// include only what is needed.
+#include <mach/task_info.h>
+#include <mach/mach_init.h>
+#include <mach/task.h>
+
 #undef FALSE
 #undef TRUE
 #elif (defined(_AIX) || defined(__TOS__AIX__)) || (defined(__sun__) || defined(__sun) || defined(sun) && (defined(__SVR4) || defined(__svr4__)))

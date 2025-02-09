@@ -20,7 +20,7 @@ namespace tuplex {
     class TextReader : public FileInputReader {
     public:
         TextReader() = delete;
-        void read(const URI& inputFilePath) override;
+        void read(const URI& inputFilePath, const std::function<bool()>& blockFunctor) override;
 
         size_t inputRowCount() const override { return _numRowsRead; }
 

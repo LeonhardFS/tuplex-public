@@ -58,7 +58,7 @@ namespace tuplex {
         }
 
         BasicBlock *bbEntry = BasicBlock::Create(context, "entry", func);
-        IRBuilder<> builder(bbEntry);
+        codegen::IRBuilder builder(bbEntry);
 
         Value *curPtrVar = builder.CreateAlloca(env->i8ptrType(), 0, nullptr);
         builder.CreateStore(argMap["inputPtr"], curPtrVar);
@@ -69,10 +69,10 @@ namespace tuplex {
         builder.CreateStore(env->i8nullptr(), hashed_value);
 
         // read num rows
-        Value *numRows = builder.CreateLoad(builder.CreatePointerCast(builder.CreateLoad(curPtrVar), env->i64ptrType()),
+        Value *numRows = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(builder.CreateLoad(env->i8ptrType(), curPtrVar), env->i64ptrType()),
                                             "numInputRows");
         // move ptr by int64_t
-        builder.CreateStore(builder.CreateGEP(builder.CreateLoad(curPtrVar), env->i64Const(sizeof(int64_t))),
+        builder.CreateStore(builder.MovePtrByBytes(builder.CreateLoad(env->i8ptrType(), curPtrVar), sizeof(int64_t)),
                             curPtrVar);
 
         // set up
@@ -84,7 +84,7 @@ namespace tuplex {
 
         // loop cond counter < numRows
         builder.SetInsertPoint(bbLoopCondition);
-        auto cond = builder.CreateICmpSLT(builder.CreateLoad(rowCounterVar), numRows);
+        auto cond = builder.CreateICmpSLT(builder.CreateLoad(builder.getInt64Ty(), rowCounterVar), numRows);
         builder.CreateCondBr(cond, bbLoopBody, bbLoopExit);
 
 
@@ -94,9 +94,9 @@ namespace tuplex {
         generateProbingCode(env, builder, argMap["userData"], argMap["hmap"], curPtrVar, hashed_value, rightType(),
                             rightKeyIndex(), leftType(), leftKeyIndex(), _joinType);
 
-        auto row_number = builder.CreateLoad(rowCounterVar);
+        auto row_number = builder.CreateLoad(builder.getInt64Ty(), rowCounterVar);
         //env->debugPrint(builder, "row number: ", row_number);
-        builder.CreateStore(builder.CreateAdd(env->i64Const(1), builder.CreateLoad(rowCounterVar)), rowCounterVar);
+        builder.CreateStore(builder.CreateAdd(env->i64Const(1), builder.CreateLoad(builder.getInt64Ty(), rowCounterVar)), rowCounterVar);
         builder.CreateBr(bbLoopCondition);
         // loop body done
 
@@ -104,14 +104,13 @@ namespace tuplex {
 
         // rtfree all
         env->freeAll(builder);
-
         builder.CreateRetVoid();
 
         return env->getIR();
     }
 
 
-    void HashJoinStage::generateProbingCode(std::shared_ptr<codegen::LLVMEnvironment> &env, llvm::IRBuilder<> &builder,
+    void HashJoinStage::generateProbingCode(std::shared_ptr<codegen::LLVMEnvironment> &env, codegen::IRBuilder &builder,
                                             llvm::Value *userData, llvm::Value *hashMap, llvm::Value *ptrVar,
                                             llvm::Value *hashedValueVar, const python::Type &buildType,
                                             int buildKeyIndex, const python::Type &probeType, int probeKeyIndex,
@@ -137,7 +136,7 @@ namespace tuplex {
         // deserialize tuple
         codegen::FlattenedTuple ftIn(env.get());
         ftIn.init(probeType);
-        auto curPtr = builder.CreateLoad(ptrVar);
+        auto curPtr = builder.CreateLoad(env->i8ptrType(), ptrVar);
 
         ftIn.deserializationCode(builder, curPtr);
 
@@ -198,7 +197,7 @@ namespace tuplex {
         builder.SetInsertPoint(bbMatchFound);
 
         // call join code
-        writeJoinResult(env, builder, userData, builder.CreateLoad(hashedValueVar), buildType, buildKeyIndex, ftIn,
+        writeJoinResult(env, builder, userData, builder.CreateLoad(env->i8ptrType(), hashedValueVar), buildType, buildKeyIndex, ftIn,
                         probeKeyIndex);
 
         builder.CreateBr(bbNext);
@@ -209,10 +208,10 @@ namespace tuplex {
         auto serializedSize = ftIn.getSize(builder); // should be 341 for the first row!
 
         //env->debugPrint(builder, "serialized size:", serializedSize);
-        builder.CreateStore(builder.CreateGEP(curPtr, serializedSize), ptrVar);
+        builder.CreateStore(builder.MovePtrByBytes(curPtr, serializedSize), ptrVar);
     }
 
-    llvm::Value *HashJoinStage::makeKey(std::shared_ptr<codegen::LLVMEnvironment> &env, llvm::IRBuilder<> &builder,
+    llvm::Value *HashJoinStage::makeKey(std::shared_ptr<codegen::LLVMEnvironment> &env, codegen::IRBuilder &builder,
                                         const python::Type &type, const tuplex::codegen::SerializableValue &key) {
         using namespace llvm;
         // create key for different types...
@@ -245,11 +244,7 @@ namespace tuplex {
 
             builder.SetInsertPoint(bbNotNull);
             builder.CreateStore(env->i8Const('_'), skey_ptr);
-#if LLVM_VERSION_MAJOR < 9
-            builder.CreateMemCpy(builder.CreateGEP(skey_ptr, env->i64Const(1)), key.val, key.size, 0);
-#else
-            builder.CreateMemCpy(builder.CreateGEP(skey_ptr, env->i64Const(1)), 0, key.val, 0, key.size);
-#endif
+            builder.CreateMemCpy(builder.MovePtrByBytes(skey_ptr, 1), 0, key.val, 0, key.size);
             builder.CreateBr(bbNext);
 
             builder.SetInsertPoint(bbNext); // update builder var!
@@ -262,7 +257,7 @@ namespace tuplex {
     }
 
     void HashJoinStage::writeJoinResult(std::shared_ptr<codegen::LLVMEnvironment> &env,
-                                        llvm::IRBuilder<> &builder, llvm::Value *userData, llvm::Value *bucketPtr,
+                                        codegen::IRBuilder &builder, llvm::Value *userData, llvm::Value *bucketPtr,
                                         const python::Type &buildType, int buildKeyIndex,
                                         const codegen::FlattenedTuple &ftProbe, int probeKeyIndex) {
         using namespace llvm;
@@ -272,7 +267,7 @@ namespace tuplex {
         auto func = builder.GetInsertBlock()->getParent();
         //env->debugPrint(builder, "joining records with all from bucket :P");
 
-        auto numRows = builder.CreateLoad(builder.CreatePointerCast(bucketPtr, env->i64ptrType()));
+        auto numRows = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(bucketPtr, env->i64ptrType()));
 
         // env->debugPrint(builder, "bucket contains #rows: ", numRows);
 
@@ -280,7 +275,7 @@ namespace tuplex {
         //                        uint8_t* row_data = rightPtr + sizeof(int64_t);
         //                        rightPtr += sizeof(int64_t) + row_length;
 
-        bucketPtr = builder.CreateGEP(bucketPtr, env->i64Const(sizeof(int64_t)));
+        bucketPtr = builder.MovePtrByBytes(bucketPtr, sizeof(int64_t));
 
         // TODO: put bucketPtr Var in constructor
         auto bucketPtrVar = env->CreateFirstBlockAlloca(builder,
@@ -300,14 +295,14 @@ namespace tuplex {
         builder.CreateBr(bbLoopCond);
 
         builder.SetInsertPoint(bbLoopCond);
-        auto cond = builder.CreateICmpSLT(builder.CreateLoad(loopVar), numRows);
+        auto cond = builder.CreateICmpSLT(builder.CreateLoad(builder.getInt64Ty(), loopVar), numRows);
         builder.CreateCondBr(cond, bbLoopBody, bbLoopDone);
 
         builder.SetInsertPoint(bbLoopBody);
 
-        bucketPtr = builder.CreateLoad(bucketPtrVar);
-        auto rowLength = builder.CreateLoad(builder.CreatePointerCast(bucketPtr, env->i64ptrType()));
-        bucketPtr = builder.CreateGEP(bucketPtr, env->i64Const(sizeof(int64_t)));
+        bucketPtr = builder.CreateLoad(env->i8ptrType(), bucketPtrVar);
+        auto rowLength = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(bucketPtr, env->i64ptrType()));
+        bucketPtr = builder.MovePtrByBytes(bucketPtr, sizeof(int64_t));
 
         // actual data is now in bucketPtr
         // ==> deserialize!
@@ -376,12 +371,12 @@ namespace tuplex {
 
         // logic here
         // move bucketPtr
-        builder.CreateStore(builder.CreateGEP(builder.CreateLoad(bucketPtrVar),
+        builder.CreateStore(builder.MovePtrByBytes(builder.CreateLoad(env->i8ptrType(), bucketPtrVar),
                                               builder.CreateAdd(env->i64Const(sizeof(int64_t)), rowLength)),
                             bucketPtrVar);
 
 
-        builder.CreateStore(builder.CreateAdd(builder.CreateLoad(loopVar), env->i64Const(1)), loopVar);
+        builder.CreateStore(builder.CreateAdd(builder.CreateLoad(builder.getInt64Ty(), loopVar), env->i64Const(1)), loopVar);
         builder.CreateBr(bbLoopCond);
 
         builder.SetInsertPoint(bbLoopDone);
@@ -427,7 +422,7 @@ namespace tuplex {
 
     }
 
-    void HashJoinStage::writeBuildNullResult(std::shared_ptr<codegen::LLVMEnvironment> &env, llvm::IRBuilder<> &builder,
+    void HashJoinStage::writeBuildNullResult(std::shared_ptr<codegen::LLVMEnvironment> &env, codegen::IRBuilder &builder,
                                              llvm::Value *userData, const python::Type &buildType, int buildKeyIndex,
                                              const tuplex::codegen::FlattenedTuple &ftProbe, int probeKeyIndex) {
         // Write NULL values for the build row

@@ -10,6 +10,9 @@
 
 #include "Row.h"
 #include "JSONUtils.h"
+#include "Row.h"
+#include "JSONUtils.h"
+#include "StructCommon.h"
 
 namespace tuplex {
 
@@ -84,6 +87,9 @@ namespace tuplex {
     }
 
     python::Type Row::getType(const int col) const {
+        if(_schema.getRowType().isRowType())
+            return _schema.getRowType().get_column_type(col);
+        assert(_schema.getRowType().isTupleType());
         return _schema.getRowType().parameters()[col];
     }
 
@@ -91,7 +97,6 @@ namespace tuplex {
         std::string s = "(";
         for(int i = 0; i < getNumColumns(); ++i) {
             s += _values[i].toPythonString();
-
             if(i != getNumColumns() - 1)
                 s += ",";
         }
@@ -108,38 +113,54 @@ namespace tuplex {
 
     std::string Row::toJsonString(const std::vector<std::string> &columns) const {
         std::stringstream ss;
-        if(columns.empty()) {
-            // use {}
-            ss<<"{}";
-        } else {
-            if(columns.size() != getNumColumns())
-                throw std::runtime_error("can not convert row to Json string, number of columns given ("
-                + std::to_string(columns.size()) + ") is different than stored number of fields ("
-                + std::to_string(getNumColumns()) + ")");
+        if(getRowType().isTupleType()) {
+            if(columns.empty()) {
+                // use {}
+                ss<<"{}";
+            } else {
+                if(columns.size() != getNumColumns())
+                    throw std::runtime_error("can not convert row to Json string, number of columns given ("
+                                             + std::to_string(columns.size()) + ") is different than stored number of fields ("
+                                             + std::to_string(getNumColumns()) + ")");
+
+                // use dictionary syntax
+                ss<<"{";
+                for(unsigned i = 0; i < getNumColumns(); ++i) {
+                    ss<<escape_for_json(columns[i])<<":"<<_values[i].toJsonString();
+                    if(i != getNumColumns() - 1)
+                        ss<<",";
+                }
+                ss<<"}";
+            }
+        } else if(getRowType().isRowType()) {
+            // check if columns exist
+            auto row_columns = getRowType().get_column_names();
+            if(row_columns.empty())
+                row_columns = columns;
+            if(row_columns.empty())
+                return "{}";
+            if(row_columns.size() != getNumColumns())
+                throw std::runtime_error("can not convert row of type " + getRowType().desc() + " to Json string, number of columns given ("
+                                         + std::to_string(row_columns.size()) + ") is different than stored number of fields ("
+                                         + std::to_string(getNumColumns()) + ")");
 
             // use dictionary syntax
             ss<<"{";
             for(unsigned i = 0; i < getNumColumns(); ++i) {
-                ss<<escape_for_json(columns[i])<<":"<<_values[i].toJsonString();
+                ss<<escape_for_json(row_columns[i])<<":"<<_values[i].toJsonString();
                 if(i != getNumColumns() - 1)
                     ss<<",";
             }
             ss<<"}";
+        } else {
+            throw std::runtime_error("Unsupported schema type " + getRowType().desc() + ", can not convert to Json string.");
         }
+
         return ss.str();
     }
 
     python::Type Row::getRowType() const {
-        if(_values.empty())
-            return python::Type::EMPTYTUPLE; // bad case!
-
-        // get types of rows & return then tuple type
-        std::vector<python::Type> types;
-        types.reserve(_values.size());
-        for(const auto& el: _values)
-            types.push_back(el.getType());
-
-        return python::Type::makeTupleType(types);
+        return _schema.getRowType();
     }
 
     size_t Row::serializeToMemory(uint8_t *buffer, const size_t capacity) const {
@@ -147,7 +168,52 @@ namespace tuplex {
     }
 
     size_t Row::getSerializedLength() const {
-        return getSerializer().length();
+        // Direct computation is faster than creating a serializer always.
+        // There is a lot of direct optimization here, because this routine gets called quite frequently.
+        size_t size = 0;
+        size_t n_options = 0;
+        size_t added_var_field = 0;
+
+        for(const auto& el : _values) {
+            // option type means, add to count and remove option.
+            auto type = el.getType();
+            if(type.isOptionType()) {
+                n_options++;
+                type = type.withoutOption();
+            }
+            auto hash = type.hash();
+
+            // Check if in precomputed map. If so, already done. The test here is against -1.
+            size_t cached_type_size = 0;
+            if(hash >= 0 && hash < 16 && (cached_type_size = python::Type::PRECOMPUTED_SIZE_TABLE[hash]) != -1) {
+                size += cached_type_size;
+            } else {
+                // Need to check type directly.
+                if(hash == python::Type::STRING.hash() || hash == python::Type::PYOBJECT.hash()) {
+                    // Append size
+                    added_var_field = 8;
+                    size += 8 + el.getPtrSize();
+                } else if(type.isStructuredDictionaryType()) {
+                    size += 8 + struct_dict_get_size(el); // regarded as var-length field.
+                } else if(type.isListType()) {
+                    size += 8 + el.serialized_list_size();
+                } else {
+                    // not supported, default back. -> this is also true for nested tuples...
+                    return getSerializer().length();
+                }
+            }
+        }
+
+        if(n_options != 0)
+            size += calc_bitmap_size_in_64bit_blocks(n_options);
+        size += added_var_field;
+
+#ifndef NDEBUG
+        auto reference_length = getSerializer().length();
+        assert(reference_length == size);
+#endif
+
+        return size;
     }
 
     Serializer Row::getSerializer() const {
@@ -170,7 +236,7 @@ namespace tuplex {
                 serializer.append(std::string((char*)el.getPtr()));
             else if(python::Type::GENERICDICT == el.getType())
                 serializer.append(std::string((char*)el.getPtr()), python::Type::GENERICDICT);
-            else if(el.getType().isDictionaryType())
+            else if(el.getType().isDictionaryType() && !el.getType().isStructuredDictionaryType())
                 serializer.append(std::string((char*)el.getPtr()), el.getType());
             else if(el.getType() == python::Type::NULLVALUE) {
                 serializer.appendNull();
@@ -198,7 +264,7 @@ namespace tuplex {
                     }
                     else if(python::Type::GENERICDICT == rt)
                         serializer.append(el.isNull() ? option<std::string>::none : option<std::string>(std::string((const char*)el.getPtr())), python::Type::GENERICDICT);
-                    else if(rt.isDictionaryType())
+                    else if(rt.isDictionaryType() && !rt.isStructuredDictionaryType())
                         serializer.append(el.isNull() ? option<std::string>::none : option<std::string>(std::string((const char*)el.getPtr())), el.getType());
                     else if(rt.isListType())
                         serializer.append(el.isNull() ? option<List>::none : option<List>(*(List*)el.getPtr()), el.getType());
@@ -210,6 +276,8 @@ namespace tuplex {
                             assert(ptrToTuple);
                             serializer.append(option<Tuple>(*ptrToTuple), el.getType());
                         }
+                    } else if(rt.isStructuredDictionaryType()) {
+                        serializer.appendStructDict(el.getType(), static_cast<const uint8_t *>(el.getPtr()), el.getPtrSize(), el.isNull());
                     } else {
                         throw std::runtime_error("option underlying type " + rt.desc() + " not known");
                     }
@@ -217,6 +285,8 @@ namespace tuplex {
                     serializer.append(NullType());
                 } else if(el.getType() == python::Type::PYOBJECT) {
                     serializer.appendObject(static_cast<const uint8_t *>(el.getPtr()), el.getPtrSize());
+                } else if(el.getType().isStructuredDictionaryType()) {
+                    serializer.appendStructDict(el.getType(), static_cast<const uint8_t *>(el.getPtr()), el.getPtrSize(), el.isNull());
                 } else {
                     throw std::runtime_error("unsupported type " + el.getType().desc() + " found");
                 }
@@ -379,12 +449,12 @@ namespace tuplex {
         os.flush();
     }
 
-    python::Type detectMajorityRowType(const std::vector<Row>& rows,
+    python::Type detectMajorityRowType(const std::vector<python::Type>& row_types,
                                        double threshold,
                                        bool independent_columns,
                                        bool use_nvo,
                                        const TypeUnificationPolicy& t_policy) {
-        if(rows.empty())
+        if(row_types.empty())
             return python::Type::UNKNOWN;
 
         assert(0.0 <= threshold <= 1.0);
@@ -393,10 +463,18 @@ namespace tuplex {
             // count each column independently
             // hashmap is type, col -> count
             std::unordered_map<std::tuple<unsigned, unsigned>, unsigned> counts;
-            for(const auto& row : rows) {
-                auto t = row.getRowType();
-                for(unsigned i = 0; i < t.parameters().size(); ++i) {
-                    counts[std::make_tuple(t.parameters()[i].hash(), i)]++;
+            for(const auto& t : row_types) {
+                if(t.isTupleType()) {
+                    for(unsigned i = 0; i < t.parameters().size(); ++i) {
+                        counts[std::make_tuple(t.parameters()[i].hash(), i)]++;
+                    }
+                } else {
+                    assert(t.isRowType());
+
+                    // TOOD: assume names are always in the same order...if not bug ahead!
+                    for(unsigned i = 0; i < t.get_column_count(); ++i) {
+                        counts[std::make_tuple(t.get_column_type(i).hash(), i)]++;
+                    }
                 }
             }
 
@@ -421,58 +499,62 @@ namespace tuplex {
             // compute majority, account for null-value prevalence!
             std::vector<python::Type> col_types(col_counts.size());
             for(unsigned i = 0; i < col_counts.size(); ++i) {
-               // single type? -> trivial.
-               // empty? pyobject
-               if(col_counts[i].empty()) {
-                   col_types[i] = python::Type::PYOBJECT;
-               } else if(col_counts[i].size() == 1) {
-                   col_types[i] = python::Type::fromHash(col_counts[i].begin()->second);
-               } else {
-                   // more than one count. Now it's getting tricky...
-                   // is the first null and something else present? => use threshold to determine whether option type or not!
-                   auto most_common_type = python::Type::fromHash(col_counts[i].begin()->second);
-                   auto most_freq = col_counts[i].begin()->first;
-                   unsigned total_freq = 0;
-                   for(auto kv : col_counts[i])
-                       total_freq += kv.first;
-                   if(python::Type::NULLVALUE == most_common_type) {
-                       // second one present?
-                       auto it = std::next(col_counts[i].begin());
-                       auto second_freq = it->first;
-                       auto second_type = python::Type::fromHash(it->second);
+                // single type? -> trivial.
+                // empty? pyobject
+                if(col_counts[i].empty()) {
+                    col_types[i] = python::Type::PYOBJECT;
+                } else if(col_counts[i].size() == 1) {
+                    col_types[i] = python::Type::fromHash(col_counts[i].begin()->second);
+                } else {
 
-                       // threshold?
-                       if(most_freq >= threshold * total_freq && use_nvo) {
-                           // null value
-                           col_types[i] = python::Type::NULLVALUE;
-                       } else {
-                           // create opt type to cover other cases...
-                           col_types[i] = python::Type::makeOptionType(second_type);
-                       }
-                   } else {
-                       // is there null value somewhere so Opt covers most of the cases?
+                    assert(col_counts[i].size() > 0);
 
-                       auto it = col_counts[i].begin();
-                       while(it->second != python::Type::NULLVALUE.hash() && it != col_counts[i].end())
-                           ++it;
+                    // more than one count. Now it's getting tricky...
+                    // is the first null and something else present? => use threshold to determine whether option type or not!
+                    auto most_common_type = python::Type::fromHash(col_counts[i].begin()->second);
+                    auto most_freq = col_counts[i].begin()->first;
+                    unsigned total_freq = 0;
+                    for(auto kv : col_counts[i])
+                        total_freq += kv.first;
+                    if(python::Type::NULLVALUE == most_common_type) {
+                        // second one present?
+                        auto it = std::next(col_counts[i].begin());
+                        if(it != col_counts[i].end()) {
+                            auto second_freq = it->first;
+                            auto second_type = python::Type::fromHash(it->second);
 
-                       // take original value
-                       col_types[i] = most_common_type;
+                            // threshold?
+                            if(most_freq >= threshold * total_freq && use_nvo) {
+                                // null value
+                                col_types[i] = python::Type::NULLVALUE;
+                            } else {
+                                // create opt type to cover other cases...
+                                col_types[i] = python::Type::makeOptionType(second_type);
+                            }
+                        }
+                    } else {
+                        // is there null value somewhere so Opt covers most of the cases?
+                        auto it = col_counts[i].begin();
+                        while(it != col_counts[i].end() && it->second != python::Type::NULLVALUE.hash())
+                            ++it;
 
-                       // null value found? --> form option type!
-                       if(it != col_counts[i].end()) {
-                           assert(it->second == python::Type::NULLVALUE.hash());
-                           // check counts, in case of non-nvo always use Option type
-                           auto nv_count = it->first;
-                           // when most freq count >= threshold, use that. else use option type.
-                           if(most_freq >= threshold * total_freq && use_nvo) {
-                               // nothing
-                           } else {
-                               col_types[i] = python::Type::makeOptionType(most_common_type);
-                           }
-                       }
-                   }
-               }
+                        // take original value
+                        col_types[i] = most_common_type;
+
+                        // null value found? --> form option type!
+                        if(it != col_counts[i].end()) {
+                            assert(it->second == python::Type::NULLVALUE.hash());
+                            // check counts, in case of non-nvo always use Option type
+                            auto nv_count = it->first;
+                            // when most freq count >= threshold, use that. else use option type.
+                            if(most_freq >= threshold * total_freq && use_nvo) {
+                                // nothing
+                            } else {
+                                col_types[i] = python::Type::makeOptionType(most_common_type);
+                            }
+                        }
+                    }
+                }
             }
 
             // // debug print:
@@ -490,12 +572,70 @@ namespace tuplex {
             return python::Type::makeTupleType(col_types);
         } else {
 
-            std::cerr<<"not yet implemented"<<std::endl;
+            std::cerr<<std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented"<<std::endl;
 
             // joint aggregate
             return python::Type::UNKNOWN;
         }
 
         return python::Type::UNKNOWN;
+    }
+
+    python::Type detectMajorityRowType(const std::vector<Row>& rows,
+                                       double threshold,
+                                       bool independent_columns,
+                                       bool use_nvo,
+                                       const TypeUnificationPolicy& t_policy) {
+        if(rows.empty())
+            return python::Type::UNKNOWN;
+
+        std::vector<python::Type> row_types(rows.size());
+        for(unsigned i = 0; i < rows.size(); ++i)
+            row_types[i] = rows[i].getRowType();
+        return detectMajorityRowType(row_types, threshold, independent_columns, use_nvo, t_policy);
+    }
+
+    Row Row::with_columns(const std::vector<std::string>& column_names) const {
+        assert(PARAM_USE_ROW_TYPE);
+
+        auto current_row_type = _schema.getRowType();
+        if(current_row_type.isTupleType()) {
+            if(column_names.size() != current_row_type.parameters().size()) {
+                std::stringstream ss;
+                ss<<"Can't create row type from tuple type, because tuple type has "<<pluralize(current_row_type.parameters().size(), "element")<<" but given are "<<pluralize(column_names.size(), "column name");
+                throw std::runtime_error(ss.str());
+            }
+
+            Row r(*this);
+            r._schema = Schema(_schema.getMemoryLayout(), python::Type::makeRowType(current_row_type.parameters(), column_names));
+            return r;
+        }
+
+        if(current_row_type.isRowType()) {
+            if(column_names.size() != current_row_type.get_column_count()) {
+                std::stringstream ss;
+                ss<<"Can't create row type from tuple type, because tuple type has "<<pluralize(current_row_type.get_column_count(), "element")<<" but given are "<<pluralize(column_names.size(), "column name");
+                throw std::runtime_error(ss.str());
+            }
+
+            Row r(*this);
+            r._schema = Schema(_schema.getMemoryLayout(), python::Type::makeRowType(current_row_type.get_columns_as_tuple_type().parameters(), column_names));
+            return r;
+        }
+
+        throw std::runtime_error("Error, internal row type is " + _schema.getRowType().desc() + " but must be tuple type or row type");
+    }
+
+    python::Type Row::row_type_from_values() const {
+        if(_values.empty())
+            return python::Type::EMPTYTUPLE; // bad case!
+
+        // get types of rows & return then tuple type
+        std::vector<python::Type> types;
+        types.reserve(_values.size());
+        for(const auto& el: _values)
+            types.push_back(el.getType());
+
+        return python::Type::makeTupleType(types);
     }
 }

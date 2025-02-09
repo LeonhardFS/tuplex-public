@@ -1,0 +1,10 @@
+pandas>=2.0
+wheel
+numpy
+cloudpickle
+smart_open[s3]
+s3fs
+pandas
+seaborn
+matplotlib
+boto3

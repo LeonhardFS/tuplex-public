@@ -576,7 +576,7 @@ namespace tuplex {
                                                 const std::vector<std::string> &columns, bool autoUpcast, const SamplingMode& sm) {
 
         auto& logger = Logger::instance().logger("python");
-        logger.info("using slow transfer to backend");
+        logger.info("Using slow transfer to backend.");
 
         // ref counting error has to occur somewhere here...
 
@@ -882,7 +882,7 @@ namespace tuplex {
             logger.error("unknown type detected as default type, can't process normal case");
 
         // else, transfer data under this type...
-        logger.info("inferred default type is " + majType.desc());
+        logger.info("Inferred default type is " + majType.desc() + ".");
 
 
         // success message only if dataset is not an error dataset
@@ -1560,6 +1560,15 @@ namespace tuplex {
             PyDict_SetItem(dictObject,
                            python::PyString_FromString("tuplex.resolveWithInterpreterOnly"),
                            python::boolToPython(co.RESOLVE_WITH_INTERPRETER_ONLY()));
+            PyDict_SetItem(dictObject,
+                           python::PyString_FromString("tuplex.experimental.interchangeWithObjectFiles"),
+                           python::boolToPython(co.EXPERIMENTAL_INTERCHANGE_CODE_VIA_OBJECT_FILES()));
+            PyDict_SetItem(dictObject,
+                           python::PyString_FromString("tuplex.optimizer.sparsifyStructs"),
+                           python::boolToPython(co.OPT_SPARSIFY_STRUCTS()));
+            PyDict_SetItem(dictObject,
+                           python::PyString_FromString("tuplex.experimental.useGenericDicts"),
+                           python::boolToPython(co.EXPERIMENTAL_USE_GENERIC_DICTS()));
 
             PyDict_SetItem(dictObject,
                            python::PyString_FromString("tuplex.network.verifySSL"),
@@ -1592,6 +1601,9 @@ namespace tuplex {
                            python::PyString_FromString("tuplex.optimizer.selectionPushdown"),
                            python::boolToPython(co.OPT_SELECTION_PUSHDOWN()));
 
+            PyDict_SetItem(dictObject,
+                           python::PyString_FromString("tuplex.optimizer.simplifyLargeStructs"),
+                           python::boolToPython(co.OPT_SIMPLIFY_LARGE_STRUCTS()));
 
             PyDict_SetItem(dictObject,
                            python::PyString_FromString("tuplex.webui.enable"),
@@ -1613,6 +1625,10 @@ namespace tuplex {
             PyDict_SetItem(dictObject,
                            python::PyString_FromString("tuplex.webui.exceptionDisplayLimit"),
                            PyLong_FromLongLong(co.WEBUI_EXCEPTION_DISPLAY_LIMIT()));
+
+            PyDict_SetItem(dictObject,
+                           python::PyString_FromString("tuplex.optimizer.simplifyLargeStructs.threshold"),
+                           PyLong_FromLongLong(co.OPT_SIMPLIFY_LARGE_STRUCTS_THRESHOLD()));
 
             // aws options
 #ifdef BUILD_WITH_AWS

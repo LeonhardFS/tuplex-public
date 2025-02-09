@@ -11,6 +11,7 @@
 #include <UDF.h>
 #include "../../adapters/cpython/include/PythonHelpers.h"
 #include "visitors/ReplaceConstantTypesVisitor.h"
+#include "tracing/LambdaAccessedColumnVisitor.h"
 
 
 #include <graphviz/GraphVizGraph.h>
@@ -384,7 +385,7 @@ namespace tuplex {
         } else if(1 == params.size()) {
 
             // simpler hinting using row type, for a single param - assume it's the full row
-            if(PARAM_USE_ROW_TYPE) {
+            if(PARAM_USE_ROW_TYPE && hintType.isRowType()) {
                 if(!hintParams({hintType}, params, true, removeBranches)) {
                     logTypingErrors(printErrors);
                     return false;
@@ -486,7 +487,7 @@ namespace tuplex {
            _ast.setUnpacking(true);
 
 #warning "TODO, revisit this function. Could be better refactored."
-           if(PARAM_USE_ROW_TYPE) {
+           if(PARAM_USE_ROW_TYPE && hintType.isRowType()) {
                if(!hintParams(hintType.get_column_types(), params, true, removeBranches))
                    return false;
                _inputSchema = Schema(Schema::MemoryLayout::ROW, hintType);
@@ -637,6 +638,20 @@ namespace tuplex {
 
             // pickle code
             auto pickled_code = python::serializeFunction(mod, _code);
+
+#ifndef NDEBUG
+            // test here using cloudpickle to make sure it works
+            {
+                auto pyfunc = python::deserializePickledFunction(python::getMainModule(), pickled_code.c_str(), pickled_code.size());
+                if(PyErr_Occurred()) {
+                    PyErr_Print();
+                    PyErr_Clear();
+                } else {
+
+                }
+            }
+#endif
+
             // release GIL here
             python::unlockGIL();
 
@@ -694,7 +709,7 @@ namespace tuplex {
             }
 
             auto body = BasicBlock::Create(env.getContext(), "body", func);
-            IRBuilder<> builder(body);
+            IRBuilder builder(body);
             builder.CreateRet(env.i64Const(ecToI64(ec))); // <-- always returns ec code.
 
             return func->getName().str();
@@ -933,266 +948,6 @@ namespace tuplex {
 
         return cf;
 
-    }
-
-    // @TODO: put in separate file
-    class LambdaAccessedColumnVisitor : public IPrePostVisitor {
-    protected:
-        virtual void postOrder(ASTNode *node) override {}
-        virtual void preOrder(ASTNode *node) override;
-
-        /// whether function has multiple arguments or not. If multiple args, use different map.
-        option<bool> _multiArgs;
-        size_t _numColumns;
-        bool _singleLambda;
-        std::vector<std::string> _argNames;
-        std::unordered_map<std::string, bool> _argFullyUsed;
-        std::unordered_map<std::string, std::vector<size_t>> _argSubscriptIndices;
-
-    public:
-        LambdaAccessedColumnVisitor() : _multiArgs(option<bool>::none),
-        _numColumns(0), _singleLambda(false) {}
-
-        // override subscript to handle special cases, i.e. stop traversal on (nested) dictionaries/lists.
-        virtual void visit(NSubscription* n) override;
-
-
-        std::vector<size_t> getAccessedIndices() const;
-    };
-
-    void LambdaAccessedColumnVisitor::visit(tuplex::NSubscription *n) {
-        if(!n)
-            return;
-
-        preOrder(n);
-        ApatheticVisitor::visit(n);
-        postOrder(n);
-    }
-
-    std::vector<size_t> LambdaAccessedColumnVisitor::getAccessedIndices() const {
-
-        std::set<size_t> idxs;
-        assert(_multiArgs.has_value());
-
-        if(0 == _numColumns)
-            return {};
-
-        // first check what type it is
-        if(!_multiArgs.value()) {
-            assert(_argNames.size() == 1);
-            std::string argName = _argNames.front();
-            if(_argFullyUsed.at(argName)) {
-                for(unsigned i = 0; i < _numColumns; ++i)
-                    idxs.insert(i);
-            } else {
-                auto v_idxs = _argSubscriptIndices.at(argName);
-                idxs = std::set<size_t>(v_idxs.begin(), v_idxs.end());
-            }
-        } else {
-            // simple, see which params are fully used.
-            for(unsigned i = 0; i < _argNames.size(); ++i) {
-                if(_argFullyUsed.at(_argNames[i]))
-                    idxs.insert(i);
-            }
-        }
-
-        return std::vector<size_t>(idxs.begin(), idxs.end());
-    }
-
-    void LambdaAccessedColumnVisitor::preOrder(ASTNode *node) {
-        switch(node->type()) {
-            case ASTNodeType::Lambda: {
-                assert(!_singleLambda);
-                _singleLambda = true;
-
-                NLambda* lambda = (NLambda*)node;
-                auto itype = lambda->_arguments->getInferredType();
-                assert(itype.isTupleType());
-
-                // are multiple arguments used or not?
-                _multiArgs = lambda->_arguments->_args.size() > 1;
-                if(_multiArgs.value()) {
-                   _numColumns = lambda->_arguments->_args.size();
-                } else {
-
-                    // normalize tuple type argument
-                    auto normalized_input_row_type = itype.isTupleType() && itype.parameters().size() == 1 &&
-                        itype.parameters().front().isTupleType() &&
-                        itype.parameters().front() != python::Type::EMPTYTUPLE ? itype.parameters().front() : itype;
-                    if(itype.isTupleType() && itype.parameters().size() == 1 && itype.parameters().front().isRowType())
-                        normalized_input_row_type = itype.parameters().front();
-
-                    if(normalized_input_row_type.isTupleType())
-                        _numColumns = normalized_input_row_type.parameters().size();
-                    else if(normalized_input_row_type.isRowType())
-                        _numColumns = normalized_input_row_type.get_column_count();
-                    else
-                        _numColumns = 1;
-                }
-
-                // fetch identifiers for args
-                for(const auto &argNode : lambda->_arguments->_args) {
-                    assert(argNode->type() == ASTNodeType::Parameter);
-                    NIdentifier* id = ((NParameter*)argNode.get())->_identifier.get();
-                    _argNames.push_back(id->_name);
-                    _argFullyUsed[id->_name] = false;
-                    _argSubscriptIndices[id->_name] = std::vector<size_t>();
-                }
-
-                break;
-            }
-
-            case ASTNodeType::Function: {
-                assert(!_singleLambda);
-                _singleLambda = true;
-
-                NFunction* func = (NFunction*)node;
-                auto itype = func->_parameters->getInferredType();
-                assert(itype.isTupleType());
-
-                // are multiple arguments used or not?
-                _multiArgs = func->_parameters->_args.size() > 1;
-                if(_multiArgs.value()) {
-                    _numColumns = func->_parameters->_args.size();
-                } else {
-                    // normalize tuple type argument
-                    auto normalized_input_row_type = itype.isTupleType() && itype.parameters().size() == 1 &&
-                                                     itype.parameters().front().isTupleType() &&
-                                                     itype.parameters().front() != python::Type::EMPTYTUPLE ? itype.parameters().front() : itype;
-                    if(itype.isTupleType() && itype.parameters().size() == 1 && itype.parameters().front().isRowType())
-                        normalized_input_row_type = itype.parameters().front();
-
-                    if(normalized_input_row_type.isTupleType())
-                        _numColumns = normalized_input_row_type.parameters().size();
-                    else if(normalized_input_row_type.isRowType())
-                        _numColumns = normalized_input_row_type.get_column_count();
-                    else
-                        _numColumns = 1;
-                }
-
-
-                // fetch identifiers for args
-                for(const auto &argNode : func->_parameters->_args) {
-                    assert(argNode->type() == ASTNodeType::Parameter);
-                    NIdentifier* id = ((NParameter*)argNode.get())->_identifier.get();
-                    _argNames.push_back(id->_name);
-                    _argFullyUsed[id->_name] = false;
-                    _argSubscriptIndices[id->_name] = std::vector<size_t>();
-                }
-
-                break;
-            }
-
-            case ASTNodeType::Identifier: {
-                NIdentifier* id = (NIdentifier*)node;
-                if(parent()->type() != ASTNodeType::Parameter &&
-                parent()->type() != ASTNodeType::Subscription) {
-                    // the actual identifier is fully used, mark as such!
-                    _argFullyUsed[id->_name] = true;
-                }
-
-                break;
-            }
-
-            // check whether function with single parameter which is a tuple is accessed.
-            case ASTNodeType::Subscription: {
-                NSubscription* sub = (NSubscription*)node;
-
-                // ignore subs that are typed as KeyError or unknown
-                if(sub->getInferredType() == python::Type::UNKNOWN || sub->getInferredType().isExceptionType())
-                    return;
-
-                assert(sub->_value->getInferredType() != python::Type::UNKNOWN); // type annotation/tracing must have run for this...
-
-                auto val_type = sub->_value->getInferredType();
-
-                // special treatment, row type
-                if(PARAM_USE_ROW_TYPE && val_type.isRowType() && sub->_value->type() == ASTNodeType::Identifier) {
-                    NIdentifier* id = (NIdentifier*)sub->_value.get();
-                    if(std::find(_argNames.begin(), _argNames.end(), id->_name) != _argNames.end()) {
-                        if(sub->_expression->type() == ASTNodeType::Number) {
-                            NNumber* num = (NNumber*)sub->_expression.get();
-                            // can save this one!
-                            auto idx = num->getI64();
-
-                            // negative indices should be converted to positive ones
-                            if(idx < 0)
-                                idx += _numColumns;
-                            assert(idx >= 0 && idx < _numColumns);
-
-                            _argSubscriptIndices[id->_name].push_back(idx);
-                        } else if(sub->_expression->type() == ASTNodeType::String) {
-                            NString* str = (NString*)sub->_expression.get();
-                            auto columns = val_type.get_column_names();
-                            auto it = std::find(columns.begin(), columns.end(), str->value());
-                            if(it != columns.end())
-                                _argSubscriptIndices[id->_name].push_back(it - columns.begin());
-
-                        } else if(sub->_expression->getInferredType().isConstantValued() && sub->_expression->getInferredType().underlying() == python::Type::I64) {
-                            // can save this one!
-                            auto idx = std::stoi(sub->_expression->getInferredType().constant());
-
-                            // negative indices should be converted to positive ones
-                            if(idx < 0)
-                                idx += _numColumns;
-                            assert(idx >= 0 && idx < _numColumns);
-
-                            _argSubscriptIndices[id->_name].push_back(idx);
-                        } else if(sub->_expression->getInferredType().isConstantValued() && sub->_expression->getInferredType().underlying() == python::Type::STRING) {
-                            auto columns = val_type.get_column_names();
-                            auto it = std::find(columns.begin(), columns.end(), sub->_expression->getInferredType().constant());
-                            if(it != columns.end())
-                                _argSubscriptIndices[id->_name].push_back(it - columns.begin());
-                        } else {
-                            // dynamic access into identifier, so need to push completely back.
-                            _argFullyUsed[id->_name] = true;
-                        }
-                        return;
-                    }
-                }
-
-                // access/rewrite makes only sense for dict/tuple types!
-                // just simple stuff yet.
-                if (sub->_value->type() == ASTNodeType::Identifier &&
-                    (val_type.isTupleType() || val_type.isDictionaryType())) {
-                    NIdentifier* id = (NIdentifier*)sub->_value.get();
-
-                    // first check whether this identifier is in args,
-                    // if not ignore.
-                    if(std::find(_argNames.begin(), _argNames.end(), id->_name) != _argNames.end()) {
-                        // no nested paths yet, i.e. x[0][2]
-                        if(sub->_expression->type() == ASTNodeType::Number) {
-                            NNumber* num = (NNumber*)sub->_expression.get();
-#ifndef NDEBUG
-                            // should be I64 or bool
-                            auto deopt_num_type = deoptimizedType(num->getInferredType());
-                            assert(deopt_num_type == python::Type::BOOLEAN ||
-                                   deopt_num_type == python::Type::I64);
-#endif
-
-                            // can save this one!
-                            auto idx = num->getI64();
-
-                            // negative indices should be converted to positive ones
-                            if(idx < 0)
-                                idx += _numColumns;
-                            assert(idx >= 0 && idx < _numColumns);
-
-                            _argSubscriptIndices[id->_name].push_back(idx);
-                        } else {
-                            // dynamic access into identifier, so need to push completely back.
-                            _argFullyUsed[id->_name] = true;
-                        }
-                    }
-
-                }
-
-                break;
-            }
-            default:
-                // other nodes not supported.
-                break;
-        }
     }
 
     std::vector<size_t> UDF::getAccessedColumns(bool ignoreConstantTypedColumns) {
@@ -1555,7 +1310,7 @@ namespace tuplex {
 
         if(!_tupleArgument) {
             // debug:
-            std::cout<<"Rewrite visitor not using tuple argument=true, because given function row type is: "<<function_row_type.desc()<<std::endl;
+            // std::cout<<"Rewrite visitor not using tuple argument=true, because given function row type is: "<<function_row_type.desc()<<std::endl;
         }
     }
 
@@ -1668,7 +1423,7 @@ namespace tuplex {
         if(PARAM_USE_ROW_TYPE && getInputSchema().getRowType().isRowType()) {
 
             // debug:
-            std::cout<<"using row type for UDF rewrite"<<std::endl;
+            // std::cout<<"using row type for UDF rewrite"<<std::endl;
 
             auto in_type = getInputSchema().getRowType();
             auto col_types = in_type.get_column_types();
@@ -1692,7 +1447,7 @@ namespace tuplex {
             // the string ones are fine.
             if(extract_columns_from_type(new_row_type) != extract_columns_from_type(in_type)) {
                 // debug:
-                std::cout<<"rewriting row types from "<<in_type.desc()<<" to "<<new_row_type.desc()<<std::endl;
+                // std::cout<<"rewriting row types from "<<in_type.desc()<<" to "<<new_row_type.desc()<<std::endl;
                 RewriteVisitor rv(rewriteMap); // <-- rewrite integers only.
                 root->accept(rv);
             }
@@ -1705,7 +1460,7 @@ namespace tuplex {
             if(hints.size() == 1)
                 hints[0] = std::make_pair(std::get<0>(hints[0]), new_row_type);
             else
-                throw std::runtime_error("not yet implemented");
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented");
             for(const auto &el : hints)
                 getAnnotatedAST().addTypeHint(std::get<0>(el), std::get<1>(el));
 
@@ -1958,12 +1713,14 @@ namespace tuplex {
 
 
 
-    bool UDF::hintSchemaWithSample(const std::vector<PyObject *>& sample, const python::Type& inputRowType, bool acquireGIL) {
+    bool UDF::hintSchemaWithSample(const std::vector<PyObject *>& sample, const std::vector<Row>& original_sample_rows, const python::Type& inputRowType, bool acquireGIL) {
         auto& logger = Logger::instance().logger("type inference");
 
         TraceVisitor tv(inputRowType, _policy);
 
         auto funcNode = _ast.getFunctionAST();
+
+        assert(sample.size() == original_sample_rows.size());
 
         // trace all samples through AST and annotate
         // Note: it's the responsibility of the caller to only trace with an appropriate input schema...
@@ -1975,8 +1732,17 @@ namespace tuplex {
         // add closure environment to tracer
         tv.setClosure(_ast.globals(), false);
 
-        for(auto args : sample)
-            tv.recordTrace(funcNode, args, _columnNames); // <-- note: column names here are fixed, with new RowType can also trace differing column names.
+        for(unsigned i = 0; i < sample.size(); ++i) {
+            if(original_sample_rows[i].getRowType().isRowType()) {
+                auto column_names = original_sample_rows[i].getRowType().get_column_names();
+                if(column_names.empty())
+                    column_names = _columnNames;
+                tv.recordTrace(funcNode, sample[i], column_names);
+            } else {
+                tv.recordTrace(funcNode, sample[i], _columnNames); // <-- note: column names here are fixed, with new RowType can also trace differing column names.
+            }
+        }
+
         // record the total number of samples (used to check in TypeAnnotatorVisitor if every sample corresponds to a normal case violation)
         funcNode->annotation().numTimesVisited = sample.size();
         addCompileErrors(tv.getCompileErrors());
@@ -2010,6 +1776,10 @@ namespace tuplex {
 
         auto row_type = tv.majorityOutputType().isExceptionType() ? tv.majorityOutputType() : python::Type::propagateToTupleType(tv.majorityOutputType());
         _outputSchema = Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(row_type));
+
+        if(row_type.isExceptionType()) {
+            logger.info("Majority output type (after tracing) is exception type: " + row_type.desc());
+        }
 
         // run type annotator on top of tree which has been equipped with annotations now
         auto res = hintInputSchema(Schema(Schema::MemoryLayout::ROW, inputSchema.getRowType()), false, false); // TODO: could do this directly in tracevisitor as well, but let's separate concerns here...

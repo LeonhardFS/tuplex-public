@@ -11,6 +11,8 @@
 
 #include <ee/aws/LambdaWorkerApp.h>
 
+#include <StringUtils.h>
+
 // HACK
 #include <physical/codegen/StagePlanner.h>
 // planning
@@ -36,6 +38,8 @@
 
 #include <AWSCommon.h>
 #include <aws/lambda/LambdaClient.h>
+
+#include <cassert>
 
 namespace tuplex {
 
@@ -213,10 +217,10 @@ namespace tuplex {
                     std::unique_lock<std::mutex> lock(self_ctx->mutex);
                     // add the container info of the invoker itself!
                     const_cast<SelfInvocationContext*>(self_ctx)->containers.emplace_back(response.container());
-                    // and all IDs that that container invoked
-                    for(auto info : response.invokedcontainers()) {
-                        self_ctx->containers.emplace_back(info);
-                    }
+//                    // and all IDs that that container invoked
+//                    for(auto info : response.invokedcontainers()) {
+//                        self_ctx->containers.emplace_back(info);
+//                    }
                     self_ctx->numPendingRequests.fetch_add(-1, std::memory_order_release);
                 }
             } else {
@@ -367,6 +371,17 @@ namespace tuplex {
         auto region = Aws::Environment::GetEnv("AWS_REGION");
         auto functionName = Aws::Environment::GetEnv("AWS_LAMBDA_FUNCTION_NAME");
 
+        // Print AWS variables cf. https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html
+        {
+
+            auto size_in_mb = Aws::Environment::GetEnv("AWS_LAMBDA_FUNCTION_MEMORY_SIZE");
+            auto version = Aws::Environment::GetEnv("AWS_LAMBDA_FUNCTION_VERSION");
+            auto init_type = Aws::Environment::GetEnv("AWS_LAMBDA_INITIALIZATION_TYPE");
+            std::stringstream ss;
+            ss<<"START Lambda (name: "<<functionName<<", region: "<<region<<", version: "<<version<<", "<<size_in_mb<<"MB, type: "<<init_type<<")";
+            logger().info(ss.str());
+        }
+
         _functionName = functionName.c_str();
 
         _credentials.access_key = access_key;
@@ -374,8 +389,7 @@ namespace tuplex {
         _credentials.session_token = session_token;
         _credentials.default_region = region;
 
-        _networkSettings.verifySSL = verifySSL;
-        _networkSettings.caFile = caFile;
+        update_network_settings();
 
         VirtualFileSystem::addS3FileSystem(access_key, secret_key, session_token, region.c_str(), _networkSettings,
                                            true, true);
@@ -388,7 +402,7 @@ namespace tuplex {
         // do this by initializing a dummy symbol table
         auto sym_table = SymbolTable::createFromEnvironment(nullptr);
         if(sym_table) {
-           logger().info("initialized type system with builtin types.");
+           logger().info("Initialized type system with builtin types.");
         }
 
         // init python & set explicitly python home for Lambda
@@ -411,12 +425,37 @@ namespace tuplex {
         _globallyInitialized = true;
 
 #ifdef BUILD_WITH_CEREAL
-        logger().info("Lambda is using Cereal AST serialization");
+        logger().info("Lambda is using Cereal AST serialization.");
 #else
-        logger().info("Lambda is using JSON AST serializastion");
+        logger().info("Lambda is using JSON AST serialization.");
 #endif
 
         return WORKER_OK;
+    }
+
+    void LambdaWorkerApp::update_network_settings(const std::unordered_map<std::string, std::string> &env) {
+        _networkSettings = NetworkSettings();
+        _networkSettings.verifySSL = verifySSL;
+        _networkSettings.caFile = caFile;
+
+        if(env.find(AWS_LAMBDA_ENDPOINT_KEY) != env.end()) {
+
+            // Overwrite lambda endpoint.
+            auto endpoint = env.at(AWS_LAMBDA_ENDPOINT_KEY);
+
+            // Amazon endpoints end with .amazonaws.com.
+            // For a list of available endpoints, cf. https://docs.aws.amazon.com/general/latest/gr/lambda.html
+            // For non-Aws endpoints (i.e., local rest) disable SSL.
+            if(endpoint.find(".amazonaws.com") == std::string::npos) {
+                NetworkSettings ns;
+                ns.verifySSL = false;
+                ns.useVirtualAddressing = false;
+                ns.signPayloads = false;
+                _networkSettings = ns;
+            }
+            _networkSettings.endpointOverride = endpoint;
+            logger().info("Updated Lambda endpoint to " + endpoint + ".");
+        }
     }
 
     int LambdaWorkerApp::processMessage(const tuplex::messages::InvocationRequest& req) {
@@ -424,6 +463,7 @@ namespace tuplex {
 
         // reset results
         resetResult();
+        _response.set_originalrequestid(req.id());
 
         _messageType = req.type();
 
@@ -497,281 +537,6 @@ namespace tuplex {
             return WORKER_ERROR_INVALID_URI;
 #endif
 
-// self invoke code...
-//            // check whether self-invocation is used
-//            if(req.has_stage() && req.stage().invocationcount_size() > 0) {
-//
-//                std::stringstream ss;
-//                ss<<"Invoking ";
-//                for(auto count : req.stage().invocationcount())
-//                    ss<<count<<", ";
-//                ss<<"Lambdas recursively.";
-//                logger().info(ss.str());
-//
-//                // split into parts for all Lambdas to invoke!
-//                size_t total_parts = 1;
-//                size_t prod = 1;
-//                size_t num_lambdas_to_invoke = 0;
-//                std::vector<size_t> remaining_invocation_counts;
-//                for(unsigned i = 0; i < req.stage().invocationcount_size(); ++i) {
-//                    auto count = req.stage().invocationcount(i);
-//                    if(count != 0) {
-//                        total_parts += count * prod; // this is recursive, so try splitting into that many parts!
-//                        prod *= count;
-//
-//                        if(i > 0)
-//                            remaining_invocation_counts.push_back(count);
-//
-//                        // set how many lambdas to invoke
-//                        if(num_lambdas_to_invoke == 0)
-//                            num_lambdas_to_invoke = count;
-//                    }
-//                }
-//
-//                if(0 == num_lambdas_to_invoke) {
-//                    logger().error("invalid invocation count, 0 lambdas to invoke here?");
-//                    return WORKER_ERROR_INVALID_JSON_MESSAGE;
-//                }
-//
-//                logger().info("Splitting submitted " + pluralize(req.inputsizes().size(), "file") + " into " + pluralize(total_parts, "part") + ".");
-//
-//                // min part size should be 1MB
-//                auto num_files = req.inputuris_size();
-//                if(req.inputsizes_size() != num_files) {
-//                    logger().error("#input files does not equal submitted sizes");
-//                    return WORKER_ERROR_INVALID_JSON_MESSAGE;
-//                }
-//
-//                auto input_parts = partsFromMessage(req);
-//
-//                size_t minimumPartSize = 1024 * 1024; // 1MB.
-//                auto parts = splitIntoEqualParts(total_parts, input_parts, minimumPartSize);
-//
-//                // issue requests & wait for them
-//
-//                // invoke other lambdas here...
-//                // -----
-//                // perform task on this Lambda...
-//                auto parts_to_execute = parts[0];
-//
-//                std::vector<FilePart> other_lambda_parts;
-//                for(unsigned i = 1; i < parts.size(); ++i)
-//                    std::copy(parts[i].begin(), parts[i].end(), std::back_inserter(other_lambda_parts));
-//                auto before_merge_count = other_lambda_parts.size();
-//                other_lambda_parts = mergeParts(other_lambda_parts);
-//                logger().info("Merged " + pluralize(before_merge_count, "part") + " to " + pluralize(other_lambda_parts.size(), "part"));
-//                logger().info("Redistributing " + pluralize(other_lambda_parts.size(), "part")
-//                + " to " + pluralize(num_lambdas_to_invoke, "other lambda") + ", executing "
-//                + pluralize(parts_to_execute.size(), "part") + " on this lambda." );
-//
-//                // redistribute according to how many lambdas should be invoked now
-//                auto lambda_parts = splitIntoEqualParts(num_lambdas_to_invoke, other_lambda_parts, minimumPartSize);
-//
-//                // get output uri for THIS lambda
-//                std::string base_output_uri = req.baseoutputuri();
-//                URI output_uri;
-//                FileFormat out_format = proto_toFileFormat(req.stage().outputformat());
-//                auto file_ext = defaultFileExtension(out_format);
-//                uint32_t partno = 0;
-//                if(req.has_partnooffset()) {
-//                    partno = req.partnooffset();
-//                    output_uri = URI(base_output_uri).join("part" + std::to_string(partno) + "." + file_ext);
-//                } else {
-//                    output_uri = base_output_uri + "." + file_ext;
-//                }
-//
-//                logger().info("Output URI of this Lambda is: " + output_uri.toString());
-//
-//                // invoke
-//                double timeout = 25.0; // timeout in seconds
-//                auto max_retries = 3;
-//
-//                logger().info("creating Lambda client on LAMBDA");
-//                _lambdaClient = createClient(timeout, lambda_parts.size());
-//                logger().info("Invoking " + pluralize(lambda_parts.size(), "other LAMBDA"));
-//
-//                uint32_t defaultPartRange = std::max(1ul, lambdaCount(remaining_invocation_counts)); // at least one!
-//                uint32_t numInvoked = 0;
-//                // inc here because this lambda produces the part at partNo.
-//                partno++;
-//                for(auto lambda_part : lambda_parts) {
-//                    // construct partURI out of partNo!
-//                    URI part_uri = URI(base_output_uri).join("part" + std::to_string(partno) + "." + file_ext);
-//                     // !!! important to inc before (skip the current part basically!)
-//                    // this is not completely correct, need to perform better part naming!
-//
-//                    // logger().info("Invoking LAMBDA with base=" + base_output_uri + " partNoOffset=" + std::to_string(partno));
-//
-//                    invokeLambda(timeout, lambda_part, base_output_uri, partno,
-//                                 req, max_retries, remaining_invocation_counts);
-//                    // logger().info(std::to_string(_outstandingRequests) + " outstanding requests...");
-//                    numInvoked++;
-//                    partno += defaultPartRange; // inc using range...
-//
-//                    // invoke 45 requests per 100ms, i.e. sleep a bit to avoid 429 errors...
-//                    if(numInvoked % 45 == 0)
-//                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-//                }
-//
-//                logger().info("Requests to " + std::to_string(numInvoked) + " other LAMBDAs created.");
-//
-//                // ------
-//                // prep local execution
-//                logger().info("Executing " + pluralize(parts_to_execute.size(), "part") + " on this Lambda, spawning others");
-//
-//                // optimize which parts to execute
-//                auto before_this_parts = parts_to_execute.size();
-//                parts_to_execute = mergeParts(parts_to_execute);
-//                if(parts_to_execute.size() != before_this_parts)
-//                    logger().info("Optimized parts from " + std::to_string(before_this_parts) + " to " + pluralize(parts_to_execute.size(), "part"));
-//
-//                // print out parts (remove)
-//                for(auto part : parts_to_execute) {
-//                    logger().info("Processing on this Lambda " + encodeRangeURI(part.uri, part.rangeStart, part.rangeEnd));
-//                }
-//
-//                // only transform stage yet supported, in the future support other stages as well!
-//                auto tstage = TransformStage::from_protobuf(req.stage());
-//
-//                // HACK! Hyper-specialization
-//                if(req.stage().has_serializedstage() && !req.stage().serializedstage().empty() && req.inputuris_size() > 0) {
-//                    logger().info("HYPERSPECIALIZATION ACTIVE");
-//                    Timer timer;
-//                    // use first input file
-//                    std::string uri = req.inputuris(0);
-//                    size_t file_size = req.inputsizes(0);
-//                    hyperspecialize(tstage, uri, file_size);
-//                    logger().info("HYPERSPECIALIZATION TOOK " + std::to_string(timer.time()));
-//                    Timer opt_timer;
-//                    // compile & optimize!
-//                    logger().info("HYPERSPECIALIAITON LLVM OPT TOOK" + std::to_string(opt_timer.time()));
-//                } else {
-//                    logger().info("no HYPERSPECIALIZATION, old invoke model");
-//                }
-//
-//                // pure Python Mode? ==> process in python only!
-//                int64_t rc = WORKER_OK;
-//                if(purePythonMode) {
-//                    rc = processTransformStageInPythonMode(tstage, parts_to_execute, output_uri);
-//                } else {
-//                    // check what type of message it is & then start processing it.
-//                    auto syms = compileTransformStage(*tstage);
-//                    if(!syms)
-//                        return WORKER_ERROR_COMPILATION_FAILED;
-//
-//                    // should parts get merged or not??
-//                    // i.e. initiate multi-upload requests??
-//                    rc = processTransformStage(tstage, syms, parts_to_execute, output_uri);
-//                }
-//
-//                if(rc != WORKER_OK) {
-//                    // this part didn't work, yet when lambdas are invoked they might have succeeded!
-//                    logger().error("Parent LAMBDA did not succeed processing with code " + std::to_string(rc));
-//                } else {
-//                    // ok, add output_uri and parts to request success output
-//                    for(const auto& part : parts_to_execute)
-//                        _input_uris.push_back(encodeRangeURI(part.uri, part.rangeStart, part.rangeEnd));
-//                    _output_uris.push_back(output_uri.toString());
-//                }
-//                logger().info("This Lambda done executing, waiting for requests...");
-//
-//                // wait for requests to finish unless this Lambda expires...
-//
-//                // wait for requests to finish
-//                // check how much time is remaining
-//                double timeRemainingOnLambda = getThisContainerInfo().msRemaining / 1000.0;
-//                if(timeRemainingOnLambda < AWS_LAMBDA_SAFETY_DURATION_IN_MS / 1000.0) // add some safety time... 1s
-//                    timeRemainingOnLambda = 0.0;
-//                Timer timer;
-//                double time_elapsed = timer.time();
-//                int next_sec = 1;
-//
-//                // debug: make waiting < 10s
-//                timeRemainingOnLambda = std::min(timeRemainingOnLambda, 30.0);
-//
-//                logger().info("time remaining on Lambda: " + std::to_string(timeRemainingOnLambda) + "s");
-//                while(_outstandingRequests > 0 && time_elapsed < timeRemainingOnLambda) {
-//                   std::this_thread::sleep_for(std::chrono::milliseconds(25));
-//                   time_elapsed = timer.time();
-//                   if(time_elapsed > next_sec) {
-//                       logger().info("still waiting for " + std::to_string(_outstandingRequests)
-//                       + " to finish (since " + std::to_string(time_elapsed) + "s).");
-//                       next_sec++;
-//                   }
-//                }
-//
-//                // timeout occured?
-//                if(_outstandingRequests > 0)
-//                    logger().info("Timeout occurred, still " + std::to_string(_outstandingRequests) + " requests open...");
-//
-//                // disable processing for client
-//                logger().info("disabling Lambda client processing...");
-//                _lambdaClient->DisableRequestProcessing();
-//                logger().info("lambda processing disabled");
-//
-//                // create answer
-//                prepareResponseFromSelfInvocations();
-//
-//                // form message to return...
-//                // i.e. which parts succeeded? which are missing?
-//
-//                return WORKER_OK;
-//            }
-//
-////            // @TODO: what about remaining time? Partial completion?
-////            cout<<"fallback would be called here, is there hyper specialization?"<<endl;
-////            // HACK! Hyper-specialization
-////            if(req.stage().has_serializedstage() && req.inputuris_size() > 0) {
-////                logger().info("HYPERSPECIALIZATION ACTIVE");
-////
-////                // only transform stage yet supported, in the future support other stages as well!
-////                auto tstage = TransformStage::from_protobuf(req.stage());
-////
-////                Timer timer;
-////                // use first input file
-////                std::string uri = req.inputuris(0);
-////                size_t file_size = req.inputsizes(0);
-////                logger().info("Specializing on input " + uri + " (" + sizeToMemString(file_size) + ")");
-////                hyperspecialize(tstage, uri, file_size);
-////                logger().info("HYPERSPECIALIZATION TOOK " + std::to_string(timer.time()) + "s");
-////                Timer opt_timer;
-////                // compile & optimize!
-////                // i.e. invoke LLVM optimizers here...
-////                logger().info("HYPERSPECIALIAITON LLVM OPT TOOK " + std::to_string(opt_timer.time()) + "s");
-////
-////                URI outputURI = outputURIFromReq(req);
-////                auto parts = partsFromMessage(req);
-////
-////                // check settings, pure python mode?
-////                if(req.settings().has_useinterpreteronly() && req.settings().useinterpreteronly()) {
-////                    logger().info("WorkerApp is processing everything in single-threaded python/fallback mode.");
-////                    return processTransformStageInPythonMode(tstage, parts, outputURI);
-////                }
-////                // if not, compile given code & process using both compile code & fallback
-////                // compile ONLY fast code path!
-////                if(tstage->fastPathCode().empty())
-////                    logger().warn("Weird, no fastPathCode??");
-////                logger().info("compiling fast path only (" + sizeToMemString(tstage->fastPathCode().size()) + ")");
-////
-////                // Note: this requires to register symbols!
-////                // JIT session error: Symbols not found: { fast_memOut_Stage_0, fast_except_Stage_0 }
-////                // tstage->compileFastPath(*_compiler, nullptr, false);
-////                // auto syms = tstage->jitsyms();
-////
-////                auto syms = compileTransformStage(*tstage);
-////                logger().info("fast path compiled");
-////
-////                tstage->setInitData();
-////
-////                if(!syms)
-////                    return WORKER_ERROR_COMPILATION_FAILED;
-////                return processTransformStage(tstage, syms, parts, outputURI);
-////            } else {
-////                logger().info("no HYPERSPECIALIZATION, old invoke model");
-////            }
-//
-//            // OLD::::::
-//            // @TODO
             logger().info("Invoking WorkerApp fallback");
             // can reuse here infrastructure from WorkerApp!
             auto rc = WorkerApp::processMessage(req);
@@ -783,6 +548,13 @@ namespace tuplex {
                 // output uris from worker app
                 for(const auto& uri : output_uris())
                     _output_uris.push_back(uri.toString());
+
+                // @TODO: return small results as part of the request.
+
+                // _response should already hold information about counts etc.
+                // --> i.e. fill_response_with_state fills response with data about this invocation.
+                // --> fill_response_with_self_invocation_state with data about self-invocation state.
+                fill_with_result(_response);
             }
 
             return rc;
@@ -799,122 +571,151 @@ namespace tuplex {
         return WORKER_OK;
     }
 
-    void LambdaWorkerApp::prepareResponseFromSelfInvocations() {
+    void LambdaWorkerApp::fill_with_result(messages::InvocationResponse& response) {
 
-        std::vector<ContainerInfo> successful_containers;
-        std::vector<RequestInfo> requests; // which requests to send along message
-        std::vector<std::string> output_uris;
-        std::vector<std::string> input_uris;
+        // Reset fields (if modified before)
+        response.clear_inputuris();
+        response.clear_outputuris();
+        response.clear_invokedrequests();
 
-        // go over all invocations
-        {
-            std::unique_lock<std::mutex> lock(_invokeRequestMutex);
-            unsigned n = _invokeRequests.size();
-
-            for(unsigned i = 0; i < n; ++i) {
-                auto& req = _invokeRequests[i];
-                if(req.response.success()) {
-                    successful_containers.push_back(req.response.container);
-
-                    // all other invoked containers
-                    std::copy(req.response.invoked_containers.begin(), req.response.invoked_containers.end(), std::back_inserter(successful_containers));
-
-                    std::copy(req.response.output_uris.begin(), req.response.output_uris.end(), std::back_inserter(output_uris));
-                    std::copy(req.response.input_uris.begin(), req.response.input_uris.end(), std::back_inserter(input_uris));
-                }
-            }
-
-            // copy ALL requests to output message for proper debugging/cost metrics.
-            for(unsigned i = 0; i < n; ++i) {
-                auto& req = _invokeRequests[i];
-                requests.push_back(req.response.invoke_desc);
-                std::copy(req.response.invoked_requests.begin(), req.response.invoked_requests.end(), std::back_inserter(requests));
-            }
+        for(const auto& r_info : _requests) {
+            auto element = response.add_invokedrequests();
+            r_info.fill(element);
         }
 
-        std::sort(output_uris.begin(), output_uris.end());
-        std::sort(input_uris.begin(), input_uris.end());
-
-        // TODO: merge input uris?
-
-        // fetch invoked containers etc.
-        _invokedContainers = normalizeInvokedContainers(successful_containers);
-        _requests = requests;
-        _output_uris = output_uris;
-        _input_uris = input_uris;
+        // add which outputs from which inputs this query produced
+        for(const auto& uri : _input_uris)
+            response.add_inputuris(uri);
+        for(const auto& uri : _output_uris)
+            response.add_outputuris(uri);
     }
 
-    void LambdaWorkerApp::invokeLambda(double timeout, const std::vector<FilePart>& parts,
-                                  const URI& base_output_uri,
-                                  uint32_t partNoOffset,
-                                  const tuplex::messages::InvocationRequest& original_message,
-                                  size_t max_retries,
-                                  const std::vector<size_t>& invocation_counts) {
+//    void LambdaWorkerApp::prepareResponseFromSelfInvocations() {
+//
+//        std::vector<ContainerInfo> successful_containers;
+//        std::vector<RequestInfo> requests; // which requests to send along message
+//        std::vector<std::string> output_uris;
+//        std::vector<std::string> input_uris;
+//
+//        // go over all invocations
+//        {
+//            std::unique_lock<std::mutex> lock(_invokeRequestMutex);
+//            unsigned n = _invokeRequests.size();
+//
+//            for(unsigned i = 0; i < n; ++i) {
+//                auto& req = _invokeRequests[i];
+//                if(req.response.success()) {
+//                    successful_containers.push_back(req.response.container);
+//
+//                    // all other invoked containers
+//                    std::copy(req.response.invoked_containers.begin(), req.response.invoked_containers.end(), std::back_inserter(successful_containers));
+//
+//                    std::copy(req.response.output_uris.begin(), req.response.output_uris.end(), std::back_inserter(output_uris));
+//                    std::copy(req.response.input_uris.begin(), req.response.input_uris.end(), std::back_inserter(input_uris));
+//                }
+//            }
+//
+//            // copy ALL requests to output message for proper debugging/cost metrics.
+//            for(unsigned i = 0; i < n; ++i) {
+//                auto& req = _invokeRequests[i];
+//                requests.push_back(req.response.invoke_desc);
+//                std::copy(req.response.invoked_requests.begin(), req.response.invoked_requests.end(), std::back_inserter(requests));
+//            }
+//        }
+//
+//        std::sort(output_uris.begin(), output_uris.end());
+//        std::sort(input_uris.begin(), input_uris.end());
+//
+//        // TODO: merge input uris?
+//
+//        // fetch invoked containers etc.
+//        _invokedContainers = normalizeInvokedContainers(successful_containers);
+//        _requests = requests;
+//        _output_uris = output_uris;
+//        _input_uris = input_uris;
+//    }
 
-        std::string tag = "tuplex-lambda";
+//    void LambdaWorkerApp::invokeLambda(double timeout, const std::vector<FilePart>& parts,
+//                                  const URI& base_output_uri,
+//                                  uint32_t partNoOffset,
+//                                  const tuplex::messages::InvocationRequest& original_message,
+//                                  size_t max_retries,
+//                                  const std::vector<size_t>& invocation_counts) {
+//
+//        std::string tag = "tuplex-lambda";
+//
+//        // skip if empty
+//        if(parts.empty())
+//            return;
+//
+//        // create protobuf message
+//        tuplex::messages::InvocationRequest req = original_message;
+//        req.mutable_inputsizes()->Clear();
+//        req.mutable_inputuris()->Clear();
+//
+//        for(const auto& part : parts) {
+//            req.add_inputuris(encodeRangeURI(part.uri, part.rangeStart, part.rangeEnd));
+//            assert(part.size != 0);
+//            req.add_inputsizes(part.size);
+//        }
+//
+//        req.set_baseoutputuri(base_output_uri.toString());
+//        req.set_partnooffset(partNoOffset);
+//
+//        auto transform_message = req.mutable_stage();
+//        transform_message->mutable_invocationcount()->Clear();
+//        for(auto count : invocation_counts)
+//            transform_message->add_invocationcount(count);
+//
+//        // changed protobuf message
+//        // init client
+//        if(!_lambdaClient) {
+//            logger().error("internal error, need to initialize client first before invoking lambdas");
+//            return;
+//        }
+//
+//        std::string json_buf;
+//        google::protobuf::util::MessageToJsonString(req, &json_buf);
+//
+//        // now create request (thread-safe)
+//        SelfInvokeRequest invoke_req;
+//        invoke_req.max_retries = max_retries;
+//        invoke_req.retries = 0;
+//        invoke_req.payload = json_buf;
+//        auto requestNo = addRequest(invoke_req);
+//
+//        // invoke lambda
+//        // construct invocation request
+//        Aws::Lambda::Model::InvokeRequest lambda_req;
+//        lambda_req.SetFunctionName(_functionName.c_str());
+//        // note: may redesign lambda backend to work async, however then response only yields status code
+//        // i.e., everything regarding state needs to be managed explicitly...
+//        lambda_req.SetInvocationType(Aws::Lambda::Model::InvocationType::RequestResponse);
+//        // logtype to extract log data??
+//        //req.SetLogtype(Aws::Lambda::Model::LogType::None);
+//        lambda_req.SetLogType(Aws::Lambda::Model::LogType::Tail);
+//        lambda_req.SetBody(stringToAWSStream(invoke_req.payload));
+//        lambda_req.SetContentType("application/javascript");
+//
+//        // invoke if time left permits
+//        if(timeLeftOnLambda()) {
+//            // update req start timestamp
+//            auto& req = _invokeRequests[requestNo];
+//            req.tsStart = current_utc_timestamp();
+//            _lambdaClient->InvokeAsync(lambda_req,
+//                                       lambdaCallback,
+//                                       Aws::MakeShared<LambdaRequestContext>(tag.c_str(), this, requestNo));
+//        }
+//    }
 
-        // skip if empty
-        if(parts.empty())
-            return;
+    bool LambdaWorkerApp::aboutToTimeout() {
+        std::lock_guard<std::mutex> lock(_timeoutMutex);
+        if(!_timeoutFunctor)
+            return false;
 
-        // create protobuf message
-        tuplex::messages::InvocationRequest req = original_message;
-        req.mutable_inputsizes()->Clear();
-        req.mutable_inputuris()->Clear();
-
-        for(const auto& part : parts) {
-            req.add_inputuris(encodeRangeURI(part.uri, part.rangeStart, part.rangeEnd));
-            assert(part.size != 0);
-            req.add_inputsizes(part.size);
-        }
-
-        req.set_baseoutputuri(base_output_uri.toString());
-        req.set_partnooffset(partNoOffset);
-
-        auto transform_message = req.mutable_stage();
-        transform_message->mutable_invocationcount()->Clear();
-        for(auto count : invocation_counts)
-            transform_message->add_invocationcount(count);
-
-        // changed protobuf message
-        // init client
-        if(!_lambdaClient) {
-            logger().error("internal error, need to initialize client first before invoking lambdas");
-            return;
-        }
-
-        std::string json_buf;
-        google::protobuf::util::MessageToJsonString(req, &json_buf);
-
-        // now create request (thread-safe)
-        SelfInvokeRequest invoke_req;
-        invoke_req.max_retries = max_retries;
-        invoke_req.retries = 0;
-        invoke_req.payload = json_buf;
-        auto requestNo = addRequest(invoke_req);
-
-        // invoke lambda
-        // construct invocation request
-        Aws::Lambda::Model::InvokeRequest lambda_req;
-        lambda_req.SetFunctionName(_functionName.c_str());
-        // note: may redesign lambda backend to work async, however then response only yields status code
-        // i.e., everything regarding state needs to be managed explicitly...
-        lambda_req.SetInvocationType(Aws::Lambda::Model::InvocationType::RequestResponse);
-        // logtype to extract log data??
-        //req.SetLogtype(Aws::Lambda::Model::LogType::None);
-        lambda_req.SetLogType(Aws::Lambda::Model::LogType::Tail);
-        lambda_req.SetBody(stringToAWSStream(invoke_req.payload));
-        lambda_req.SetContentType("application/javascript");
-
-        // invoke if time left permits
-        if(timeLeftOnLambda()) {
-            // update req start timestamp
-            auto& req = _invokeRequests[requestNo];
-            req.tsStart = current_utc_timestamp();
-            _lambdaClient->InvokeAsync(lambda_req,
-                                       lambdaCallback,
-                                       Aws::MakeShared<LambdaRequestContext>(tag.c_str(), this, requestNo));
-        }
+        auto time_left_in_s = _timeoutFunctor();
+        logger().info("Only " + std::to_string(time_left_in_s) + "s left.");
+        return time_left_in_s < AWS_LAMBDA_TIMEOUT_IN_S;
     }
 
     void LambdaWorkerApp::lambdaOnSuccess(SelfInvokeRequest &request, const messages::InvocationResponse &response,
@@ -926,7 +727,7 @@ namespace tuplex {
         if(!desc.errorMessage.empty()) {
             ss<<"LAMBDA ["<<(int)response.status()<<"] Error: "<<desc.returnCode<<" "<<desc.errorMessage;
         } else {
-            ss<<"LAMBDA ["<<(int)response.status()<<"] succeeded, took "<<desc.durationInMs<<"ms, billed: "<<desc.billedDurationInMs<<"ms";
+            ss<<"LAMBDA ["<<(int)response.status()<<"] succeeded, took "<<desc.awsTimings.durationInMs<<"ms, billed: "<<desc.awsTimings.billedDurationInMs<<"ms";
         }
 
         logger().info(ss.str());
@@ -935,8 +736,8 @@ namespace tuplex {
         request.response.returnCode = (int)response.status();
         request.response.container = response.container();
         request.response.invoke_desc = desc;
-        for(auto c : response.invokedcontainers())
-            request.response.invoked_containers.push_back(c);
+//        for(auto c : response.invokedcontainers())
+//            request.response.invoked_containers.push_back(c);
         for(auto r : response.invokedrequests())
             request.response.invoked_requests.push_back(r);
         for(auto out_uri : response.outputuris())
@@ -1007,76 +808,142 @@ namespace tuplex {
         callback_ctx->app->decRequests();
     }
 
-    tuplex::messages::InvocationResponse LambdaWorkerApp::generateResponse() {
-        tuplex::messages::InvocationResponse result;
+    bool is_failed_s3_access_request(int status_code, const std::string& error_message) {
+        // find two needles, if both are contained in the message it's an s3 failure.
 
-        result.set_status(tuplex::messages::InvocationResponse_Status_SUCCESS);
-        result.set_type(_messageType);
+        // status code should be 1 (or error_unknown)
+        if(status_code != static_cast<int>(LambdaStatusCode::ERROR_UNKNOWN))
+            return false;
 
-        if(!_statistics.empty()) {
-            auto& last = _statistics.back();
-            // set metrics (num rows etc.)
-            result.set_taskexecutiontime(last.totalTime);
-            result.set_numrowswritten(last.numNormalOutputRows);
-            result.set_numexceptions(last.numExceptionOutputRows);
+        auto needleI = "The AWS Access Key Id you provided does not exist in our records.";
+        auto needleI_found = error_message.find(needleI) != std::string::npos;
+        auto needleII = "S3 Filesystem error";
+        auto needleII_found = error_message.find(needleII) != std::string::npos;
 
-            // set input row statistics
-            auto path_stats = new tuplex::messages::CodePathStats();
-            path_stats->set_normal(last.codePathStats.rowsOnNormalPathCount);
-            path_stats->set_general(last.codePathStats.rowsOnGeneralPathCount);
-            path_stats->set_interpreter(last.codePathStats.rowsOnInterpreterPathCount);
-            path_stats->set_unresolved(last.codePathStats.unresolvedRowsCount);
-            path_stats->set_normal_input_schema(normalCaseInputType().encode());
-            path_stats->set_normal_output_schema(normalCaseOutputType().encode());
-            path_stats->set_general_input_schema(generalCaseInputType().encode());
-            path_stats->set_general_output_schema(generalCaseOutputType().encode());
-            result.set_allocated_rowstats(path_stats);
+        return needleI_found & needleII_found;
 
-        }
 
-        // message specific results
-        //if(_messageType == tuplex::messages::MessageType::MT_WARMUP) {
-        for(const auto& c_info : _invokedContainers) {
-            auto element = result.add_invokedcontainers();
-            c_info.fill(element);
-        }
-
-        for(const auto& r_info : _requests) {
-            auto element = result.add_invokedrequests();
-            r_info.fill(element);
-        }
-       // }
-
-       // add which outputs from which inputs this query produced
-        for(const auto& uri : _input_uris)
-            result.add_inputuris(uri);
-        for(const auto& uri : _output_uris)
-            result.add_outputuris(uri);
-
-        // set exception counts
-        for(const auto& keyval : exception_counts()) {
-            // compress keys
-            assert(std::get<0>(keyval.first) < std::numeric_limits<int32_t>::max() && std::get<1>(keyval.first) < std::numeric_limits<int32_t>::max());
-            auto key = std::get<0>(keyval.first) << 32 | std::get<1>(keyval.first);
-            (*result.mutable_exceptioncounts())[key] = keyval.second;
-        }
-
-        // TODO: other stuff...
-//        for(const auto& uri : inputURIs) {
-//            result.add_inputuris(uri.toPath());
-//        }
-//        result.add_outputuris(outputURI.toPath());
-//        result.set_taskexecutiontime(taskTime);
-//        for(const auto& keyval : timer.timings) {
-//            (*result.mutable_breakdowntimes())[keyval.first] = keyval.second;
-//        }
-
-        // save whichever metrics are interesting.
-        for(const auto& keyval : _timeDict) {
-            (*result.mutable_breakdowntimes())[keyval.first] = keyval.second;
-        }
-
-        return result;
+        // a failure message looks like this:
+        // ------------------------------------
+        // [1]: Lambda task failed (s3://tuplex-public/data/github_daily/2020-10-15.json:12354199453-12445448390) [200], details: Got signal 6, traceback:
+        //Stack trace (most recent call last):
+        //#24   Object "", at 0xffffffffffffffff, in
+        //#23   Object "", at 0xe92006, in
+        //#22   Object "/usr/lib64/libc-2.26.so", at 0x7fbfcc60d139, in __libc_start_main
+        //#21   Object "", at 0xcf7586, in
+        //#20   Object "", at 0xfda47d, in
+        //#19   Object "", at 0xe9b9d0, in
+        //#18   Object "", at 0xe9b6ee, in
+        //#17   Object "", at 0xe9b238, in
+        //#16   Object "", at 0xf8ba9f, in
+        //#15   Object "", at 0x141e95c, in
+        //#14   Object "", at 0xfa1913, in
+        //#13   Object "", at 0x14216dd, in
+        //#12   Object "", at 0x141aa36, in
+        //#11   Object "", at 0xfaa107, in
+        //#10   Object "", at 0x1227cf8, in
+        //#9    Object "", at 0x1227537, in
+        //#8    Object "", at 0xa28606, in
+        //#7    Object "/usr/lib64/libgcc_s-7-20180712.so.1", at 0x7fbfcc9a8bbd, in _Unwind_Resume
+        //#6    Object "/usr/lib64/libgcc_s-7-20180712.so.1", at 0x7fbfcc9a839c, in
+        //#5    Object "/usr/lib64/libstdc++.so.6.0.24", at 0x7fbfccf7e7a3, in __gxx_personality_v0
+        //#4    Object "/usr/lib64/libstdc++.so.6.0.24", at 0x7fbfccf7de7e, in
+        //#3    Object "/usr/lib64/libstdc++.so.6.0.24", at 0x7fbfccf7ee85, in
+        //#2    Object "/usr/lib64/libstdc++.so.6.0.24", at 0x7fbfccf810ee, in __gnu_cxx::__verbose_terminate_handler()
+        //#1    Object "/usr/lib64/libc-2.26.so", at 0x7fbfcc621147, in abort
+        //#0    Object "/usr/lib64/libc-2.26.so", at 0x7fbfcc61fca0, in raise
+        // RequestId: 22ae7c3d-d2ef-43d4-9535-3507088b912e
+        //Log:
+        //_folder/lam090/original_request.json':
+        //buf pos: 1495937	buf size: 5242980	buf length: 1495937	file pos: 0	part no: 0
+        //details: The AWS Access Key Id you provided does not exist in our records. - this may be the result of accessing a public bucket with requester pay mode. Set tuplex.aws.requesterPay to true when initializing the context. Also make sure the object in the public repo has a proper ACL set. I.e., to make it publicly available use `aws s3api put-object-acl --bucket <bucket> --key <path> --acl public-read --request-payer requester`{
+        //"caFile": "/etc/pki/tls/certs/ca-bundle.crt",
+        //"caPath": "",
+        //"connectTimeoutMs": 10000,
+        //"enableTcpKeepAlive": true,
+        //"endpointOverride": "",
+        //"httpRequestTimeoutMs": 0,
+        //"lowSpeedLimit": 1,
+        //"maxConnections": 25,
+        //"proxyHost": "",
+        //"proxyPassword": "",
+        //"proxyPort": 0,
+        //"proxySSLCertPath": "",
+        //"proxySSLCertType": "",
+        //"proxySSLKeyPassword": "",
+        //"proxySSLKeyPath": "",
+        //"proxySSLKeyType": "",
+        //"proxyScheme": "http",
+        //"proxyUserName": "",
+        //"requestTimeoutMs": 60000,
+        //"retryStrategy": "<unknown>",
+        //"scheme": "https",
+        //"tcpKeepAliveIntervalMs": 30000,
+        //"useDualStack": false,
+        //"userAgent": "",
+        //"verifySSL": true
+        //}
+        //requestPayer: true isAmazon: true
+        //terminate called after throwing an instance of 'tuplex::s3exception'
+        //what():  /code/tuplex/io/src/S3File.cc:119 S3 Filesystem error for uri='s3://tuplex-leonhard/scratch/github-exp/spill_folder/lam090/original_request.json':
+        //buf pos: 1495937	buf size: 5242980	buf length: 1495937	file pos: 0	part no: 0
+        //details: The AWS Access Key Id you provided does not exist in our records. - this may be the result of accessing a public bucket with requester pay mode. Set tuplex.aws.requesterPay to true when initializing the context. Also make sure the object in the public repo has a proper ACL set. I.e., to make it publicly available use `aws s3api put-object-acl --bucket <bucket> --key <path> --acl public-read --request-payer requester`{
+        //"caFile": "/etc/pki/tls/certs/ca-bundle.crt",
+        //"caPath": "",
+        //"connectTimeoutMs": 10000,
+        //"enableTcpKeepAlive": true,
+        //"endpointOverride": "",
+        //"httpRequestTimeoutMs": 0,
+        //"lowSpeedLimit": 1,
+        //"maxConnections": 25,
+        //"proxyHost": "",
+        //"proxyPassword": "",
+        //"proxyPort": 0,
+        //"proxySSLCertPath": "",
+        //"proxySSLCertType": "",
+        //"proxySSLKeyPassword": "",
+        //"proxySSLKeyPath": "",
+        //"proxySSLKeyType": "",
+        //"proxyScheme": "http",
+        //"proxyUserName": "",
+        //"requestTimeoutMs": 60000,
+        //"retryStrategy": "<unknown>",
+        //"scheme": "https",
+        //"tcpKeepAliveIntervalMs": 30000,
+        //"useDualStack": false,
+        //"userAgent": "",
+        //"verifySSL": true
+        //}
+        //requestPayer: true isAmazon: true
+        //Stack trace (most recent call last):
+        //#24   Object "", at 0xffffffffffffffff, in
+        //#23   Object "", at 0xe92006, in
+        //#22   Object "/usr/lib64/libc-2.26.so", at 0x7fbfcc60d139, in __libc_start_main
+        //#21   Object "", at 0xcf7586, in
+        //#20   Object "", at 0xfda47d, in
+        //#19   Object "", at 0xe9b9d0, in
+        //#18   Object "", at 0xe9b6ee, in
+        //#17   Object "", at 0xe9b238, in
+        //#16   Object "", at 0xf8ba9f, in
+        //#15   Object "", at 0x141e95c, in
+        //#14   Object "", at 0xfa1913, in
+        //#13   Object "", at 0x14216dd, in
+        //#12   Object "", at 0x141aa36, in
+        //#11   Object "", at 0xfaa107, in
+        //#10   Object "", at 0x1227cf8, in
+        //#9    Object "", at 0x1227537, in
+        //#8    Object "", at 0xa28606, in
+        //#7    Object "/usr/lib64/libgcc_s-7-20180712.so.1", at 0x7fbfcc9a8bbd, in _Unwind_Resume
+        //#6    Object "/usr/lib64/libgcc_s-7-20180712.so.1", at 0x7fbfcc9a839c, in
+        //#5    Object "/usr/lib64/libstdc++.so.6.0.24", at 0x7fbfccf7e7a3, in __gxx_personality_v0
+        //#4    Object "/usr/lib64/libstdc++.so.6.0.24", at 0x7fbfccf7de7e, in
+        //#3    Object "/usr/lib64/libstdc++.so.6.0.24", at 0x7fbfccf7ee85, in
+        //#2    Object "/usr/lib64/libstdc++.so.6.0.24", at 0x7fbfccf810ee, in __gnu_cxx::__verbose_terminate_handler()
+        //#1    Object "/usr/lib64/libc-2.26.so", at 0x7fbfcc621147, in abort
+        //#0    Object "/usr/lib64/libc-2.26.so", at 0x7fbfcc61fca0, in raise
+        //Aborted (Signal sent by tkill() 8 993)
+        //END RequestId: 22ae7c3d-d2ef-43d4-9535-3507088b912e
+        //REPORT RequestId: 22ae7c3d-d2ef-43d4-9535-3507088b912e	Duration: 1273.24 ms	Billed Duration: 1274 ms	Memory Size: 1536 MB	Max Memory Used: 207 MB
     }
 
     void LambdaWorkerApp::lambdaOnFailure(SelfInvokeRequest &request, int statusCode, const std::string &errorName,
@@ -1084,10 +951,32 @@ namespace tuplex {
 
         static const std::string tag = "TUPLEX_LAMBDA";
 
+        // On AWS Lambda, S3 happen because of session token refresh (I assume, not 100% sure).
+        // Retry them.
+        if(is_failed_s3_access_request(statusCode, errorMessage)) {
+
+            // Log should be contained, extract time.
+            auto lines = splitToLines(errorMessage);
+            lines.back();
+
+            // emit shorter message (simply stating the S3 access error).
+            std::stringstream ss;
+            ss<<"LAMBDA request failed with S3 filesystem access key error, retrying.";
+            logger().info(ss.str());
+        } else {
+            // emit full log.
+            // Log failure:
+            std::stringstream ss;
+            ss<<"LAMBDA request failed with code ["<<statusCode<<"]: "<<errorName<<": "<<errorMessage;
+            logger().info(ss.str());
+        }
+
         // rate limit? => reissue request
         if(statusCode == static_cast<int>(Aws::Http::HttpResponseCode::TOO_MANY_REQUESTS) || // i.e. 429
            statusCode == static_cast<int>(Aws::Http::HttpResponseCode::INTERNAL_SERVER_ERROR) ||
-           statusCode == static_cast<int>(Aws::Http::HttpResponseCode::SERVICE_UNAVAILABLE)) { // 503
+           statusCode == static_cast<int>(Aws::Http::HttpResponseCode::SERVICE_UNAVAILABLE) || // 503
+           is_failed_s3_access_request(statusCode, errorMessage) // S3 credentials not ok, expired etc.
+           ) {
 
             // (silent retry)
             if(request.retries < request.max_retries) {
@@ -1143,11 +1032,19 @@ namespace tuplex {
                                                Aws::MakeShared<LambdaRequestContext>(tag.c_str(), this, request.requestIdx));
                 }
             } else {
-                std::stringstream ss;
-                ss<<"Self-invoke request "<<request.requestIdx<<" failed with HTTP="<<statusCode;
-                ss<<"exceeded "<<request.retries<<" retries.";
-                request.response.returnCode = statusCode; // indicate failure.
-                logger().warn(ss.str());
+
+                if(is_failed_s3_access_request(statusCode, errorMessage)) {
+                    std::stringstream ss;
+                    ss<<"Lambda request with S3 problems failed, exceeded "<<request.retries<<" retries.";
+                    request.response.returnCode = statusCode; // indicate failure.
+                    logger().warn(ss.str());
+                } else {
+                    std::stringstream ss;
+                    ss<<"Self-invoke request "<<request.requestIdx<<" failed with HTTP="<<statusCode;
+                    ss<<"exceeded "<<request.retries<<" retries.";
+                    request.response.returnCode = statusCode; // indicate failure.
+                    logger().warn(ss.str());
+                }
             }
         } else {
             std::stringstream ss;
@@ -1160,43 +1057,354 @@ namespace tuplex {
         }
     }
 
-    std::shared_ptr<Aws::Lambda::LambdaClient> LambdaWorkerApp::createClient(double timeout, size_t max_connections) {
-        // init Lambda client
-        Aws::Client::ClientConfiguration clientConfig;
-
-        logger().info("Modifying lambda");
+    std::shared_ptr<Aws::Lambda::LambdaClient> LambdaWorkerApp::createLambdaClient(Aws::Client::ClientConfiguration config,
+                                                                                   double timeout,
+                                                                                   size_t max_connections) const {
+        logger().info("Creating Lambda client (for self-invocation).");
 
         size_t lambdaToLambdaTimeOutInMs = 800; // 200 should be sufficient, yet sometimes lambdas break with broken pipe
         std::string tag = "tuplex-lambda";
 
-        clientConfig.requestTimeoutMs = static_cast<int>(timeout * 1000.0); // conv seconds to ms
-        clientConfig.connectTimeoutMs = lambdaToLambdaTimeOutInMs; // connection timeout
-
-        clientConfig.tcpKeepAliveIntervalMs = 15; // lower this
+        config.requestTimeoutMs = static_cast<int>(timeout * 1000.0); // conv seconds to ms
+        config.connectTimeoutMs = lambdaToLambdaTimeOutInMs; // connection timeout
+        config.tcpKeepAliveIntervalMs = 15; // lower this
 
         // tune client, according to https://docs.aws.amazon.com/sdk-for-cpp/v1/developer-guide/client-config.html
         // note: max connections should not exceed max concurrency if it is below 100, else aws lambda
         // will return toomanyrequestsexception
-        clientConfig.maxConnections = max_connections;
+        config.maxConnections = max_connections;
 
-        logger().info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Creating thread executor Pool");
+        logger().info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Creating thread executor Pool for Lambda client.");
 
         // to avoid thread exhaust of system, use pool thread executor with 8 threads
-        clientConfig.executor = Aws::MakeShared<Aws::Utils::Threading::PooledThreadExecutor>(tag.c_str(), max_connections);
-        clientConfig.region = _credentials.default_region.c_str();
+        config.executor = Aws::MakeShared<Aws::Utils::Threading::PooledThreadExecutor>(tag.c_str(), max_connections);
+        config.region = _credentials.default_region.c_str();
+
+        // Can't have empty region, set to us-east-1 else.
+        if(config.region.empty()) {
+            logger().warn("Given region is " + escape_to_python_str(config.region.c_str()) + ", setting to us-east-1.");
+            config.region = "us-east-1";
+        }
 
         //clientConfig.userAgent = "tuplex"; // should be perhaps set as well.
-        applyNetworkSettings(_networkSettings, clientConfig);
+        applyNetworkSettings(_networkSettings, config);
 
         // change aws settings here
         Aws::Auth::AWSCredentials cred(_credentials.access_key.c_str(),
                                        _credentials.secret_key.c_str(),
                                        _credentials.session_token.c_str());
 
-        _outstandingRequests = 0;
+        logger().info("Lambda config done, now creating object.");
 
-        logger().info("config done, now creating object");
-        return Aws::MakeShared<Aws::Lambda::LambdaClient>(tag.c_str(), cred, clientConfig);
+        // std::stringstream ss;
+        // ss<<"AWS client config:\n"<<config<<std::endl;
+        // logger().info(ss.str());
+
+        return Aws::MakeShared<Aws::Lambda::LambdaClient>(tag.c_str(), cred, config);
+    }
+
+    std::vector<std::string> list_functions(const std::shared_ptr<Aws::Lambda::LambdaClient>& client,
+                                            std::ostream* os=nullptr) {
+        Aws::Lambda::Model::ListFunctionsRequest list_req;
+        auto outcome = client->ListFunctions(list_req);
+        if (!outcome.IsSuccess()) {
+            std::stringstream ss;
+            ss << outcome.GetError().GetExceptionName().c_str() << ", "
+            << outcome.GetError().GetMessage().c_str();
+            if(os)
+                *os << ss.str();
+            return {};
+        } else {
+            // check whether function is contained
+            auto funcs = outcome.GetResult().GetFunctions();
+            // search for the function of interest
+            std::vector<std::string> v;
+            for (const auto &f: funcs) {
+                v.push_back(f.GetFunctionName().c_str());
+            }
+            return v;
+        }
+    }
+
+//    URI get_lambda_output_uri(const messages::InvocationRequest& req) {
+//        static
+//        // get output uri for THIS lambda
+//        std::string base_output_uri = req.baseoutputuri();
+//        URI output_uri;
+//        FileFormat out_format = proto_toFileFormat(req.stage().outputformat());
+//        auto file_ext = defaultFileExtension(out_format);
+//        uint32_t partno = 0;
+//        if(req.has_partnooffset()) {
+//            partno = req.partnooffset();
+//            output_uri = URI(base_output_uri).join("part" + std::to_string(partno));
+//        } else {
+//            output_uri = URI(base_output_uri).join(part_counter++);
+//        }
+//
+//        return output_uri;
+//    }
+
+
+    URI create_output_uri_from_first_part_uri(const URI& first_part_uri, int first_part_offset, int offset) {
+        // first_part_uri is an uri expected to have been created through generate_output_base_uri in AWSLambdaBackend.
+        // this means URIs will have the form s3://.../....part<first_part_offset>.<ext>
+        // Extract via regex the stored part number, if this fails -> create manually!
+
+        // regex: /s3:\/\/.*\/.*part(\d+)\..*/gm
+        std::regex r_exp("s3:\\/\\/.*\\/.*part(\\d+)\\..*");
+        std::smatch matches;
+        std::string str = first_part_uri.toString();
+        std::string str_part_no;
+        if(std::regex_search(str, matches, r_exp) && matches.size() == 2) {
+                std::ssub_match sub_match = matches[1];
+                str_part_no = sub_match.str();
+        } else
+          throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " could not extract part number from " + first_part_uri.toString());
+
+        auto extracted_part_no = std::stoi(str_part_no);
+        if(extracted_part_no != first_part_offset)
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " extracted part no does not match expected part no");
+        auto str_part = "part" + str_part_no;
+
+        auto n_digits = str_part_no.size();
+
+        // Replace now part with new part
+        return strReplaceAll(first_part_uri.toString(), str_part, "part" + fixedLength(first_part_offset + offset, n_digits));
+    }
+
+    URI create_spill_uri_from_first_part_uri(const URI& first_part_uri, int first_part_offset, int offset) {
+        // first_part_uri is an uri expected to have been created through generate_output_base_uri in AWSLambdaBackend.
+        // this means URIs will have the form s3://.../lam{number}
+        // Extract via regex the stored part number, if this fails -> create manually!
+
+        std::regex r_exp("s3:\\/\\/.*\\/lam(\\d+)");
+        std::smatch matches;
+        std::string str = first_part_uri.toString();
+        std::string str_part_no;
+        if(std::regex_search(str, matches, r_exp) && matches.size() == 2) {
+            std::ssub_match sub_match = matches[1];
+            str_part_no = sub_match.str();
+        } else
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " could not extract spill number from " + first_part_uri.toString());
+
+        auto extracted_part_no = std::stoi(str_part_no);
+        if(extracted_part_no != first_part_offset)
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " extracted part no does not match expected part no");
+        auto n_digits = str_part_no.size();
+
+        // find from right last one
+        auto s = first_part_uri.toString();
+        s = s.substr(0, s.rfind(str_part_no));
+        return s + fixedLength(first_part_offset + offset, n_digits);
+    }
+
+    int LambdaWorkerApp::invokeRecursivelyAsync(int num_to_invoke,
+                                                   const std::string& lambda_endpoint,
+                                                   const messages::InvocationRequest& req_template,
+                                                   const std::vector<std::vector<FilePart>>& parts) {
+        if(parts.empty()) {
+            logger().info("No parts given, skip.");
+            return WORKER_OK;
+        }
+
+        // quick check, else need to redistribute.
+        if(parts.size() != num_to_invoke) {
+            logger().error("number of parts does not match number of workers to invoke. TODO: redistribute.");
+            return WORKER_ERROR_EXCEPTION;
+        }
+
+        logger().info("For now recursively invoking " + pluralize(num_to_invoke, "request") + ".");
+
+        // adjust settings based on request
+        if(!lambda_endpoint.empty()) {
+            logger().info("Updating network settings.");
+            update_network_settings({std::make_pair(AWS_LAMBDA_ENDPOINT_KEY, lambda_endpoint)});
+        }
+
+        logger().info("Creating Lambda invoker for recursive requests.");
+
+        // std::shared_ptr<Aws::Lambda::LambdaClient> client = std::make_shared<Aws::Lambda::LambdaClient>(credentials, config);
+        double timeout = 180.0;
+        auto client = createLambdaClient(timeout, num_to_invoke);
+
+        // Make sure functionName is not empty.
+        if(_functionName.empty()) {
+            std::string err_msg = "FunctionName not set for Lambda worker, can't start invocation service.";
+            _response.set_status(messages::InvocationResponse_Status::InvocationResponse_Status_ERROR);
+            _response.set_errormessage(err_msg);
+            logger().error(err_msg);
+            return WORKER_ERROR_LAMBDA_CLIENT;
+        }
+
+        reset_lambda_invocation_service(client);
+        logger().info("Lambda client created.");
+        // Default Lambda role created by deploy script does not have lambda:ListFunctions policy enabled.
+        // Therefore, this code will result in an AccessDeniedException. Commented out for now, not really
+        // a purpose to list functions again here.
+        // logger().info("Lambda client created, listing functions:");
+        // {
+        //     std::stringstream ss;
+        //     auto v = list_functions(client, &ss);
+        //     ss<<"\nFound functions: "<<v<<std::endl;
+        //     logger().info(ss.str());
+        // }
+
+        // For each part, invoke new message.
+        if(req_template.type() != messages::MessageType::MT_TRANSFORM) {
+            logger().error("Unknown message type of template, can't self-invoke.");
+            return WORKER_ERROR_EXCEPTION;
+        }
+
+        // Template must have a part offset assigned (i.e., client controls where to invoke what).
+        if(!req_template.has_partnooffset()) {
+            throw std::runtime_error("Template request in invokeRecursivelyAsync must have a partnooffset assigned.");
+        }
+
+        // Check that there are no further recursive invocations.
+        if(req_template.stage().invocationcount_size() != 0)
+            throw std::runtime_error("Recursive invocations found, for now only single-level supported.");
+
+        // For each file part, create new message & invoke recursively.
+        for(unsigned i = 0; i < parts.size(); ++i) {
+
+            auto part = parts[i];
+
+            AwsLambdaRequest aws_req;
+            aws_req.body = req_template;
+            aws_req.body.clear_inputuris();
+            aws_req.body.clear_inputsizes();
+            aws_req.body.clear_baseoutputuri();
+            aws_req.body.clear_partnooffset();
+
+            for(const auto& p : part) {
+                aws_req.body.add_inputuris(encodeRangeURI(p.uri, p.rangeStart, p.rangeEnd));
+                aws_req.body.add_inputsizes(p.size);
+            }
+
+            auto output_uri = create_output_uri_from_first_part_uri(req_template.baseoutputuri(), req_template.partnooffset(), i + 1);
+            aws_req.body.set_baseoutputuri(output_uri.toString());
+            aws_req.body.set_baseisfinaloutput(true);
+            {
+                std::stringstream ss;
+                ss<<"Created request "<<(i + 1)<<"/"<<parts.size()<<" with base output uri: "<<output_uri.toString();
+                logger().info(ss.str());
+            }
+
+            // Reset also spill uri (no conflicts allowed there as well).
+            auto spill_root_uri = create_spill_uri_from_first_part_uri(req_template.settings().spillrooturi(), req_template.partnooffset(), i + 1);
+            logger().info("Request using in case spill uri: " + spill_root_uri.toString());
+            aws_req.body.mutable_settings()->set_spillrooturi(spill_root_uri.toString());
+
+            // Add to invoker (this will immediately start the request).
+            _lambdaInvoker->invokeAsync(aws_req, [this](const AwsLambdaRequest &req, const AwsLambdaResponse &resp) { thread_safe_lambda_success_handler(req, resp); },
+                                        [this](const AwsLambdaRequest& request, LambdaStatusCode error_code, const std::string& error_message) {
+                                            thread_safe_lambda_failure_handler(request, error_code, error_message);
+            },
+            [this](const AwsLambdaRequest& request, LambdaStatusCode retry_code, const std::string& retry_reason, bool will_decrease_retry_count) {
+                std::stringstream ss;
+                ss << "LAMBDA request failed, retrying with [" << (int)retry_code << "]: " << retry_reason<<" will decrease count: "<<will_decrease_retry_count;
+                logger().info(ss.str());
+            }
+            );
+        }
+
+        // requests are now queued up. Now wait for them using waitForInvoker() function.
+
+        return WORKER_OK;
+    }
+
+    void LambdaWorkerApp::thread_safe_lambda_failure_handler(const tuplex::AwsLambdaRequest &request,
+                                                             tuplex::LambdaStatusCode error_code,
+                                                             const std::string &error_message) {
+        std::stringstream ss;
+        ss << "LAMBDA request failed [" << (int)error_code << "]: " << error_message;
+        logger().info(ss.str());
+
+        // add as failure to response (so client can decide what to do, i.e. debug or reissue).
+        // Extract RequestInfo and Container Info.
+        messages::RequestInfo request_info; // dummy.
+
+        // fill response as error message.
+        messages::InvocationResponse response;
+        response.set_status(messages::InvocationResponse_Status::InvocationResponse_Status_ERROR);
+        response.set_errormessage(ss.str());
+
+        // Add (mutex protected) to _response.
+        {
+            std::lock_guard<std::mutex> lock(_thread_safe_response_mutex);
+            _thread_safe_response.add_invokedrequests()->CopyFrom(request_info);
+            _thread_safe_response.add_invokedresponses()->CopyFrom(response);
+
+            // Add request as resource for better debugging.
+            // Could remove this code in the future.
+            auto resource_msg = _thread_safe_response.add_resources();
+            assert(resource_msg);
+            resource_msg->set_type((uint32_t)ResourceType::BAD_REQUEST);
+            nlohmann::json j;
+            j["id"] = request.id;
+            j["retriesLeft"] = request.retriesLeft;
+            j["base64Request"] = encodeAWSBase64(request.body.SerializeAsString());
+            j["errorCode"] = error_code;
+            j["errorMessage"] = error_message;
+            resource_msg->set_payload(j.dump());
+        }
+    }
+
+    void LambdaWorkerApp::thread_safe_lambda_success_handler(const tuplex::AwsLambdaRequest &request,
+                                                             const tuplex::AwsLambdaResponse &response) {
+        {
+            std::stringstream ss;
+            ss << "LAMBDA request done (rc=" << response.info.returnCode << ", duration=" << response.info.awsTimings.durationInMs
+               << "ms" << ").";
+
+            // Additional debug info.
+            std::vector<std::string> output_uris;
+            std::copy(response.response.outputuris().begin(), response.response.outputuris().end(), std::back_inserter(output_uris));
+            if(request.body.inputsizes_size() > 0)
+                ss<<"\n-- input uri: "<<request.body.inputuris(0);
+            ss<<"\n-- output uris: "<<output_uris;
+
+            logger().info(ss.str());
+        }
+
+        // Extract RequestInfo and Container Info.
+        messages::RequestInfo request_info;
+        response.info.fill(&request_info);
+
+        // Add (mutex protected) to _response.
+        {
+            std::lock_guard<std::mutex> lock(_thread_safe_response_mutex);
+            _thread_safe_response.add_invokedrequests()->CopyFrom(request_info);
+            _thread_safe_response.add_invokedresponses()->CopyFrom(response.response);
+        }
+    }
+
+    int LambdaWorkerApp::waitForInvoker() const {
+        if(!_lambdaInvoker) {
+            std::string err_msg = "No valid lambda invoker, can not wait for <nullptr>.";
+            const_cast<LambdaWorkerApp*>(this)->_response.set_errormessage(err_msg);
+            logger().error(err_msg);
+            return WORKER_ERROR_LAMBDA_CLIENT;
+        }
+
+        logger().info("Waiting for requests to finish...");
+        _lambdaInvoker->waitForRequests();
+        logger().info(""
+                      "Recursive invoke done, GBs: " + std::to_string(_lambdaInvoker->usedGBSeconds())
+        + " n_requests: " + std::to_string(_lambdaInvoker->numRequests()));
+
+        // check results now.
+
+        return WORKER_OK;
+    }
+
+    void LambdaWorkerApp::fill_response_with_self_invocation_state(messages::InvocationResponse& response) const {
+        {
+            // Get from thread (bad hack with constness)
+            std::lock_guard<std::mutex> lock(const_cast<LambdaWorkerApp*>(this)->_thread_safe_response_mutex);
+            response.mutable_invokedrequests()->CopyFrom(_thread_safe_response.invokedrequests());
+            response.mutable_invokedresponses()->CopyFrom(_thread_safe_response.invokedresponses());
+        }
     }
 
     std::vector<ContainerInfo> normalizeInvokedContainers(const std::vector<ContainerInfo>& containers) {

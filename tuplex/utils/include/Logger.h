@@ -17,6 +17,7 @@
 #include <memory>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/base_sink.h>
+#include <spdlog/sinks/callback_sink.h>
 #include <spdlog/formatter.h>
 #include <spdlog/details/null_mutex.h>
 
@@ -81,7 +82,18 @@ public:
     void flushToPython(bool acquireGIL=false);
 
     // add here later functions to filter out certain messages etc.
-    static void init(const std::vector<spdlog::sink_ptr >& sinks={std::make_shared<spdlog::sinks::ansicolor_stdout_sink_mt>()});
+    static void init(const std::vector<spdlog::sink_ptr >& sinks={std::make_shared<spdlog::sinks::ansicolor_stdout_sink_mt>(),
+                                                                  std::make_shared<spdlog::sinks::callback_sink_mt>([](const spdlog::details::log_msg &msg) {
+                                                                      // for example you can be notified by sending an email to yourself
+                                                                      spdlog::memory_buf_t formatted;
+                                                                      spdlog::pattern_formatter formatter;
+                                                                      formatter.format(msg, formatted);
+                                                                      auto eol_len = strlen(spdlog::details::os::default_eol);
+                                                                      std::string line(formatted.begin(), formatted.end() - eol_len);
+
+                                                                      // print now out.
+                                                                      std::cout<<"DEFAULT CALLBACK LOG SINK: "<<line<<std::endl;
+                                                                  })});
 
     /*!
      * reset all internal + spdlog structures, i.e. init can be called afterwards.
@@ -90,11 +102,14 @@ public:
         std::unique_lock<std::mutex> lock(_mutex);
 
         // remove all sinks
+        spdlog::drop_all();
         spdlog::shutdown();
 
         _handlers.clear();
         _sinks.clear();
         _initialized = false;
+        _default_handler.reset();
+        _default_handler = nullptr;
     }
 };
 

@@ -68,6 +68,10 @@ namespace tuplex {
         bool OPT_OPERATOR_REORDERING() const { return stringToBool(_store.at("tuplex.optimizer.operatorReordering")); }
         bool OPT_MERGE_EXCEPTIONS_INORDER() const { return stringToBool(_store.at("tuplex.optimizer.mergeExceptionsInOrder")); }
         bool OPT_SELECTION_PUSHDOWN() const; //! whether to use selection pushdown when reading files. If false, then full data will be always read and thus serialized within memory.
+        bool OPT_SPARSIFY_STRUCTS() const { return stringToBool(_store.at("tuplex.optimizer.sparsifyStructs")); }
+        bool OPT_SIMPLIFY_LARGE_STRUCTS() const { return stringToBool(_store.at("tuplex.optimizer.simplifyLargeStructs")); }
+        size_t OPT_SIMPLIFY_LARGE_STRUCTS_THRESHOLD() const { return std::stoi(_store.at("tuplex.optimizer.simplifyLargeStructs.threshold")); }
+
         bool INTERLEAVE_IO() const { return stringToBool(_store.at("tuplex.interleaveIO")); } //! whether to first load, compute, then write or use IO thread to interleave IO work with compute work for faster speeds.
         bool RESOLVE_WITH_INTERPRETER_ONLY() const { return stringToBool(_store.at("tuplex.resolveWithInterpreterOnly")); }
 
@@ -90,6 +94,13 @@ namespace tuplex {
         bool AWS_LAMBDA_SELF_INVOCATION() const { return stringToBool(_store.at("tuplex.aws.lambdaInvokeOthers")); } // whether Lambdas should perform self-invocation to scale faster...
         bool AWS_REQUESTER_PAY() const { return stringToBool(_store.at("tuplex.aws.requesterPay")); }
         bool AWS_VERBOSE_LOGGING() const { return stringToBool(_store.at("tuplex.aws.verboseLogging")); }
+
+        // Alternative AWS endpoint (overwrite). If empty, use AWS Lambda endpoint. Useful for local testing.
+        std::string AWS_LAMBDA_ENDPOINT() const { return _store.at("tuplex.aws.endpoint"); }
+
+        // The name of the function.
+        std::string AWS_LAMBDA_NAME() const { return _store.at("tuplex.aws.name"); }
+
         bool PURE_PYTHON_MODE() const { return stringToBool(_store.at("tuplex.useInterpreterOnly")); } // if set to true, then everything will be processed using the generated py-code only!
 
         bool USE_EXPERIMENTAL_HYPERSPECIALIZATION() const { return stringToBool(_store.at("tuplex.experimental.hyperspecialization")); }
@@ -105,8 +116,16 @@ namespace tuplex {
         bool EXPERIMENTAL_FORCE_BAD_PARSE_EXCEPT_FORMAT() const { return stringToBool(_store.at("tuplex.experimental.forceBadParseExceptFormat")); }
         size_t EXPERIMENTAL_WORKER_BUFFER_SIZE() const { return memStringToSize(_store.at( "tuplex.experimental.worker.workerBufferSize")); }
 
+        bool EXPERIMENTAL_USE_GENERIC_DICTS() const { return stringToBool(_store.at("tuplex.experimental.useGenericDicts"));}
+
+        bool EXPERIMENTAL_TRACE_EXECUTION() const { return stringToBool(_store.at("tuplex.experimental.traceExecution")); }
+
         size_t EXPERIMENTAL_WORKER_BACKEND_NUM_WORKERS() const {return std::stoi(_store.at("tuplex.experimental.worker.numWorkers")); }
         std::string EXPERIMENTAL_WORKER_PATH() const {return _store.at("tuplex.experimental.worker.workerPath"); }
+
+        // When splitting input data, controls how much data each Lambda should receive (single-files won't meet this, i.e. there is no multiple file clamping to a LAMBDA yet).
+        size_t EXPERIMENTAL_AWS_MINIMUM_INPUT_SIZE_PER_LAMBDA() const { return memStringToSize(_store.at("tuplex.experimental.aws.minimumInputSizePerLambda")); }
+
         std::string AWS_LAMBDA_INVOCATION_STRATEGY() const { return _store.at("tuplex.aws.lambdaInvocationStrategy"); }
 
         // access parameters via their getter functions

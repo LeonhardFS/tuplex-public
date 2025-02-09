@@ -10,52 +10,65 @@
 
 #include <jit/LLVMOptimizer.h>
 
-#include "llvm/ADT/Triple.h"
-#include "llvm/Analysis/CallGraph.h"
-#include "llvm/Analysis/CallGraphSCCPass.h"
-#include "llvm/Analysis/LoopPass.h"
-#include "llvm/Analysis/RegionPass.h"
-#include "llvm/Analysis/TargetLibraryInfo.h"
-#include "llvm/Analysis/TargetTransformInfo.h"
-#include "llvm/Bitcode/BitcodeWriterPass.h"
-#include "llvm/CodeGen/TargetPassConfig.h"
-#include "llvm/IR/DataLayout.h"
-#include "llvm/IR/DebugInfo.h"
-#include "llvm/IR/IRPrintingPasses.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/LegacyPassManager.h"
-#include "llvm/IR/LegacyPassNameParser.h"
-#include "llvm/IR/Module.h"
-#include "llvm/IR/Verifier.h"
-#include "llvm/IRReader/IRReader.h"
-#include "llvm/InitializePasses.h"
-#include "llvm/LinkAllIR.h"
-#include "llvm/LinkAllPasses.h"
-#include "llvm/MC/SubtargetFeature.h"
-#include "llvm/Support/Debug.h"
-#include "llvm/Support/FileSystem.h"
-#include "llvm/Support/Host.h"
-#include "llvm/Support/ManagedStatic.h"
-#include "llvm/Support/PluginLoader.h"
-#include "llvm/Support/PrettyStackTrace.h"
-#include "llvm/Support/Signals.h"
-#include "llvm/Support/SourceMgr.h"
-#include "llvm/Support/SystemUtils.h"
-#include "llvm/Support/TargetRegistry.h"
-#include "llvm/Support/TargetSelect.h"
-#include "llvm/Support/ToolOutputFile.h"
-#include "llvm/Support/YAMLTraits.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/Transforms/Coroutines.h"
-#include "llvm/Transforms/IPO/AlwaysInliner.h"
-#include "llvm/Transforms/IPO/PassManagerBuilder.h"
-#include "llvm/Transforms/Utils/Cloning.h"
-#include "codegen/CodegenHelper.h"
+#include <llvm/Analysis/CallGraph.h>
+#include <llvm/Analysis/CallGraphSCCPass.h>
+#include <llvm/Analysis/LoopPass.h>
+#include <llvm/Analysis/RegionPass.h>
+#include <llvm/Analysis/TargetLibraryInfo.h>
+#include <llvm/Analysis/TargetTransformInfo.h>
+#include <llvm/Bitcode/BitcodeWriterPass.h>
+#include <llvm/CodeGen/TargetPassConfig.h>
+#include <llvm/IR/DataLayout.h>
+#include <llvm/IR/DebugInfo.h>
+#include <llvm/IR/IRPrintingPasses.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/LegacyPassManager.h>
+#include <llvm/IR/LegacyPassNameParser.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Verifier.h>
+#include <llvm/IRReader/IRReader.h>
+#include <llvm/InitializePasses.h>
+#include <llvm/LinkAllIR.h>
+#include <llvm/LinkAllPasses.h>
+#include <llvm/Support/Debug.h>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Support/Host.h>
+#include <llvm/Support/ManagedStatic.h>
+#include <llvm/Support/PluginLoader.h>
+#include <llvm/Support/PrettyStackTrace.h>
+#include <llvm/Support/Signals.h>
+#include <llvm/Support/SourceMgr.h>
+#include <llvm/Support/SystemUtils.h>
+
+#if (LLVM_VERSION_MAJOR < 17)
+#include <llvm/ADT/Triple.h>
+#include <llvm/MC/SubtargetFeature.h>
+#include <llvm/Transforms/IPO/PassManagerBuilder.h>
+#else
+#include <llvm/TargetParser/Triple.h>
+#include <llvm/TargetParser/SubtargetFeature.h>
+#endif
+
+#if (LLVM_VERSION_MAJOR < 14)
+#include <llvm/Support/TargetRegistry.h>
+#else
+#include <llvm/MC/TargetRegistry.h>
+#endif
+
+#include <llvm/Support/TargetSelect.h>
+#include <llvm/Support/ToolOutputFile.h>
+#include <llvm/Support/YAMLTraits.h>
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/Transforms/IPO/AlwaysInliner.h>
+#include <llvm/Transforms/Utils/Cloning.h>
 #include <algorithm>
 #include <memory>
 #include <Logger.h>
 #include <Utils.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <llvm/Analysis/LoopAnalysisManager.h>
+#include <llvm/Passes/PassBuilder.h>
+#include "codegen/CodegenHelper.h"
 
 using namespace llvm;
 
@@ -70,124 +83,7 @@ namespace tuplex {
         return TM;
     }
 
-    // these are the default passes used
-    void generateFunctionPassesI(llvm::legacy::FunctionPassManager& fpm) {
-
-#ifndef NDEBUG
-        // add lint pass in debug mode to identify problems quickly!
-        fpm.add(createLintPass());
-#endif
-
-        // perform first some dead code elimination to ease pressure on following passes
-        fpm.add(createDeadCodeEliminationPass());
-        fpm.add(createDeadStoreEliminationPass());
-
-
-//        // function-wise passes
-        fpm.add(createSROAPass()); // break up aggregates
-        //fpm.add(createInstructionCombiningPass()); // <-- this pass here fails. It has all the powerful patterns though...
-        fpm.add(createReassociatePass());
-//        fpm.add(createGVNPass()); // <-- this here is also buggy, don't use
-        fpm.add(createCFGSimplificationPass());
-        fpm.add(createAggressiveDCEPass());
-        fpm.add(createCFGSimplificationPass());
-
-        // added passes...
-        fpm.add(createPromoteMemoryToRegisterPass()); // mem2reg pass
-        fpm.add(createAggressiveDCEPass());
-
-        fpm.add(createSinkingPass());
-        fpm.add(createCFGSimplificationPass());
-        fpm.add(createAggressiveInstCombinerPass());
-
-        fpm.add(createAggressiveDCEPass());
-
-        // // try here instruction combining pass...
-        // buggy...
-        // fpm.add(createInstructionCombiningPass(true));
-
-        // custom added passes
-        // ==> Tuplex is memcpy heavy, i.e. optimize!
-        fpm.add(createMemCpyOptPass()); // !!! use this pass for sure !!! It's quite expensive first, but it pays off big time.
-
-        // create sel prep pass
-        fpm.add(createCodeGenPreparePass());
-    }
-
-    void optimizePipelineI(llvm::Module& mod) {
-        // mod.setDataLayout(DataLayout::)
-
-        // Step 1: optimize functions
-        auto fpm = llvm::make_unique<legacy::FunctionPassManager>(&mod);
-        assert(fpm.get());
-
-        generateFunctionPassesI(*fpm.get());
-        fpm->doInitialization();
-
-        // run function passes over each function in the module
-        for(Function& f: mod.getFunctionList())
-            fpm->run(f);
-
-//        // on current master, module optimizations are deactivated. Inlining seems to worsen things!
-//         // Step 2: optimize over whole module
-//         // Module passes (function inlining)
-//         legacy::PassManager pm;
-//         // inline functions now
-//         pm.add(createGlobalDCEPass()); // remove dead globals
-//         pm.add(createConstantMergePass()); // merge global constants
-//         pm.add(createFunctionInliningPass(200)); // 250 is O3 threshold.
-//         pm.add(createDeadArgEliminationPass());
-//         pm.run(mod);
-//
-//         // run per function pass again
-//        // run function passes over each function in the module
-//        for(Function& f: mod.getFunctionList())
-//            fpm->run(f);
-    }
-
-    // // these are the default passes used
-    //    void generateFunctionPassesI(llvm::legacy::FunctionPassManager& fpm) {
-    //        // function-wise passes
-    //        fpm.add(createSROAPass()); // break up aggregates
-    //        fpm.add(createInstructionCombiningPass());
-    //        fpm.add(createReassociatePass());
-    //        fpm.add(createGVNPass());
-    //        fpm.add(createCFGSimplificationPass());
-    //        fpm.add(createAggressiveDCEPass());
-    //        fpm.add(createCFGSimplificationPass());
-    //
-    //        // added passes...
-    //        fpm.add(createPromoteMemoryToRegisterPass()); // mem2reg pass
-    //        fpm.add(createAggressiveDCEPass());
-    //
-    //        // custom added passes
-    //        // ==> Tuplex is memcpy heavy, i.e. optimize!
-    //        fpm.add(createMemCpyOptPass()); // !!! use this pass for sure !!! It's quite expensive first, but it pays off big time.
-    //    }
-    //
-    //    void optimizePipelineI(llvm::Module& mod) {
-    //        // Step 1: optimize functions
-    //        auto fpm = llvm::make_unique<legacy::FunctionPassManager>(&mod);
-    //        assert(fpm.get());
-    //
-    //        generateFunctionPassesI(*fpm.get());
-    //        fpm->doInitialization();
-    //
-    //        // run function passes over each function in the module
-    //        for(Function& f: mod.getFunctionList())
-    //            fpm->run(f);
-    //
-    //        // on current master, module optimizations are deactivated. Inlining seems to worsen things!
-    //        // // Step 2: optimize over whole module
-    //        // // Module passes (function inlining)
-    //        // legacy::PassManager pm;
-    //        // // inline functions now
-    //        // pm.add(createFunctionInliningPass());
-    //        // pm.add(createDeadArgEliminationPass());
-    //        // pm.run(mod);
-    //    }
-
-    void optimizePipelineII(llvm::legacy::FunctionPassManager& fpm) {
+    void optimizePipelineII(llvm::legacy::FunctionPassManager &fpm) {
         // inspired from https://courses.engr.illinois.edu/cs426/fa2015/Project/mp4.pdf
         // i.e.
         // simplify-cfg
@@ -210,40 +106,53 @@ namespace tuplex {
         // also, constant propagation might be a good idea...
         // because attributes are used not always, a good idea might be to run functionattrs as well
 
-        fpm.add(createCFGSimplificationPass());
-        fpm.add(createInstructionCombiningPass(true));
-        fpm.add(createAggressiveInstCombinerPass()); // run this as last one b.c. it's way more complex than the others...
+        //fpm.add(createCFGSimplificationPass());
+        //fpm.add(createInstructionCombiningPass(true));
+        //fpm.add(createAggressiveInstCombinerPass()); // run this as last one b.c. it's way more complex than the others...
         // inline?
-        fpm.add(createGlobalDCEPass());
+        //fpm.add(createGlobalDCEPass());
     }
 
 
-     static void Optimize(llvm::Module& M, unsigned OptLevel, unsigned OptSize) {
+    static void Optimize(llvm::Module &M, unsigned OptLevel, unsigned OptSize) {
+        using namespace llvm;
 
-      llvm::Triple Triple{llvm::sys::getProcessTriple()};
+        // this is based on the new PassBuilder
+        // https://llvm.org/docs/NewPassManager.html
+        // and https://blog.llvm.org/posts/2021-03-26-the-new-pass-manager/
 
-      llvm::PassManagerBuilder Builder;
-      Builder.OptLevel = OptLevel;
-      Builder.SizeLevel = OptSize;
-      Builder.LibraryInfo = new llvm::TargetLibraryInfoImpl(Triple);
-      Builder.Inliner = llvm::createFunctionInliningPass(OptLevel, OptSize, false);
-         Builder.SLPVectorize = false; // true; // enable vectorization! --> not suitable for large parse functions. I.e., deactivate for parse function, but potentially apply to individual, small UDF functions (?)
+        llvm::Triple Triple{llvm::sys::getProcessTriple()};
 
-      std::unique_ptr<llvm::TargetMachine> TM = GetHostTargetMachine();
-      assert(TM);
-      TM->adjustPassManager(Builder);
+        // Create the analysis managers.
+        LoopAnalysisManager LAM;
+        FunctionAnalysisManager FAM;
+        CGSCCAnalysisManager CGAM;
+        ModuleAnalysisManager MAM;
 
-      llvm::legacy::PassManager MPM;
-      MPM.add(llvm::createTargetTransformInfoWrapperPass(TM->getTargetIRAnalysis()));
-      Builder.populateModulePassManager(MPM);
+        // Create the new pass manager builder.
+        // Take a look at the PassBuilder constructor parameters for more
+        // customization, e.g. specifying a TargetMachine or various debugging
+        // options.
+        PassBuilder PB;
 
-    #ifndef NDEBUG
-      MPM.add(llvm::createVerifierPass());
-    #endif
+        // Register all the basic analyses with the managers.
+        PB.registerModuleAnalyses(MAM);
+        PB.registerCGSCCAnalyses(CGAM);
+        PB.registerFunctionAnalyses(FAM);
+        PB.registerLoopAnalyses(LAM);
+        PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
-      Builder.populateModulePassManager(MPM);
+        // Create the pass manager.
+        // This one corresponds to a typical -O2 optimization pipeline.
+#if (LLVM_VERSION_MAJOR < 14)
+        auto opt_level = llvm::PassBuilder::OptimizationLevel::O2;
+#else
+        auto opt_level = OptimizationLevel::O2;
+#endif
+        ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(opt_level);
 
-      MPM.run(M);
+        // Optimize the IR!
+        MPM.run(M, MAM);
     }
 
     __attribute__((no_sanitize_address)) std::string LLVMOptimizer::optimizeIR(const std::string &llvmIR) {
@@ -259,12 +168,13 @@ namespace tuplex {
         std::unique_ptr<Module> mod = parseIR(buff->getMemBufferRef(), err, context); // use err directly
 
         // check if any errors occured during module parsing
-        if(nullptr == mod.get()) {
+        if (nullptr == mod.get()) {
             // print errors
             Logger::instance().logger("LLVM Optimizer").error("could not compile module:\n>>>>>>>>>>>>>>>>>\n"
-                                                            + core::withLineNumbers(llvmIR)
-                                                            + "\n<<<<<<<<<<<<<<<<<");
-            Logger::instance().logger("LLVM Optimizer").error("line " + std::to_string(err.getLineNo()) + ": " + err.getMessage().str());
+                                                              + core::withLineNumbers(llvmIR)
+                                                              + "\n<<<<<<<<<<<<<<<<<");
+            Logger::instance().logger("LLVM Optimizer").error(
+                    "line " + std::to_string(err.getLineNo()) + ": " + err.getMessage().str());
             return llvmIR;
         }
 
@@ -288,13 +198,10 @@ namespace tuplex {
         // sometimes the codegen & passes won't work together!
         // ==> checkout https://blog.regehr.org/archives/1603 super helpful
 
-        optimizePipelineI(*mod);
+        Optimize(*mod, 2, 0);
 
         // use level 2 because it's faster than 3 and produces pretty much the same result anyways...
         // Optimize(*mod, 2, 0);
-
-        // check out https://github.com/apache/impala/blob/master/be/src/codegen/llvm-codegen.cc
-
 
         // @TODO: this is slow, better exchange with llvm bitcode
         std::string ir = "";
@@ -305,13 +212,27 @@ namespace tuplex {
     }
 
     void LLVMOptimizer::attachHostMachineLayout(llvm::Module &mod) {
+
+        // ensure LLVM targets have been initialized
+        assert(codegen::is_llvm_initialized());
+
         // set data layout and triple of module to this machine (unless disabled)
         // else terrible bugs happen:
         // https://bugs.llvm.org/show_bug.cgi?id=45188
         auto target_machine = tuplex::codegen::getOrCreateTargetMachine();
         assert(target_machine);
         auto DL = target_machine->createDataLayout();
-        _logger.info("LLVM optimizing for triple " + llvm::sys::getDefaultTargetTriple() + " and data layout: " + DL.getStringRepresentation());
+        std::stringstream ss;
+        ss<<"LLVM optimizing for triple "
+          <<llvm::sys::getDefaultTargetTriple()
+          <<", CPU="<<target_machine->getTargetCPU().str()
+          <<" and data layout: "
+          <<DL.getStringRepresentation();
+
+        _logger.info(ss.str());
+
+        auto process_triple = llvm::sys::getProcessTriple();
+
         mod.setDataLayout(DL.getStringRepresentation());
         mod.setTargetTriple(llvm::sys::getDefaultTargetTriple());
     }
@@ -321,43 +242,13 @@ namespace tuplex {
 
         // OptLevel 3, SizeLevel 0
         //Optimize(mod, 3, 0);
-        
+
         // Optimize(mod, 2, 0);
 
         //Optimize(mod, 2, 0);
 
         // // perform some basic passes (for fast opt) -> defer complex logic to general-case.
-        optimizePipelineI(mod);
+//        optimizePipelineI(mod);
+        Optimize(mod, 2, 0);
     }
-
-    // use https://github.com/jmmartinez/easy-just-in-time/blob/master/runtime/Function.cpp
-    // static void Optimize(llvm::Module& M, const char* Name, const easy::Context& C, unsigned OptLevel, unsigned OptSize) {
-    //
-    //  llvm::Triple Triple{llvm::sys::getProcessTriple()};
-    //
-    //  llvm::PassManagerBuilder Builder;
-    //  Builder.OptLevel = OptLevel;
-    //  Builder.SizeLevel = OptSize;
-    //  Builder.LibraryInfo = new llvm::TargetLibraryInfoImpl(Triple);
-    //  Builder.Inliner = llvm::createFunctionInliningPass(OptLevel, OptSize, false);
-    //
-    //  std::unique_ptr<llvm::TargetMachine> TM = GetHostTargetMachine();
-    //  assert(TM);
-    //  TM->adjustPassManager(Builder);
-    //
-    //  llvm::legacy::PassManager MPM;
-    //  MPM.add(llvm::createTargetTransformInfoWrapperPass(TM->getTargetIRAnalysis()));
-    //  MPM.add(easy::createContextAnalysisPass(C));
-    //  MPM.add(easy::createInlineParametersPass(Name));
-    //  Builder.populateModulePassManager(MPM);
-    //  MPM.add(easy::createDevirtualizeConstantPass(Name));
-    //
-    //#ifdef NDEBUG
-    //  MPM.add(llvm::createVerifierPass());
-    //#endif
-    //
-    //  Builder.populateModulePassManager(MPM);
-    //
-    //  MPM.run(M);
-    //}
 }

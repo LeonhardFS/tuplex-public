@@ -35,7 +35,7 @@ namespace tuplex {
              * @param processRowFunc (optional) function to be called before output is written.
              *        Most likely this is not a nullptr, because users want to transform data.
              */
-            void processRow(llvm::IRBuilder<> &builder,
+            void processRow(IRBuilder &builder,
                             llvm::Value *userData,
                             llvm::Value *parseCode,
                             llvm::Value *parseResult,
@@ -52,7 +52,7 @@ namespace tuplex {
             // building vars for LLVM
             void createMainLoop(llvm::Function *read_block_func, bool terminateEarlyOnLimitCode);
 
-            FlattenedTuple createFlattenedTupleFromCSVParseResult(llvm::IRBuilder<> &builder, llvm::Value *parseResult,
+            FlattenedTuple createFlattenedTupleFromCSVParseResult(IRBuilder &builder, llvm::Value *parseResult,
                                                                   const python::Type &parseRowType);
 
             std::vector<bool> _columnsToSerialize;
@@ -66,7 +66,7 @@ namespace tuplex {
              * @param env CodeEnv where to generate code into
              * @param fileInputRowType the detected row Type of the file
              * @param fileGeneralCaseInputRowType the detected general case row type of the file
-             * @param columnsToSerialize if empty vector, all rows get serialized. If not, indicates which columns should be serialized. Length must match rowType.
+             * @param columnsToSerialize if empty vector, all rows get serialized. If not, indicates which columns should be serialized. Length must match rowTypeAsTupleType.
              * @param name Name of the function to generate
              * @param operatorID ID of the operator for exception handling.
              * @param delimiter CSV delimiter for which to produce a parser
@@ -89,10 +89,10 @@ namespace tuplex {
                                              ) : BlockBasedTaskBuilder::BlockBasedTaskBuilder(env,
                                                                                             restrictRowType(
                                                                                                     columnsToSerialize,
-                                                                                                    fileInputRowType),
+                                                                                                    fileInputRowType.isRowType() ? fileInputRowType.get_columns_as_tuple_type() : fileInputRowType),
                                                                                             restrictRowType(
                                                                                                     columnsToSerialize,
-                                                                                                    fileGeneralCaseInputRowType),
+                                                                                                    fileGeneralCaseInputRowType.isRowType() ? fileGeneralCaseInputRowType.get_columns_as_tuple_type() : fileGeneralCaseInputRowType),
                                                                                             normalToGeneralMapping,
                                                                                             name,
                                                                                             except_mode),

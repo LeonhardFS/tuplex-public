@@ -71,8 +71,7 @@ TEST_F(DataFrameTest, PrefixNullTest) {
     auto confB = microTestOptions();
     // this should also work...
     confB.set("tuplex.optimizer.generateParser", "true");
-//    for(const auto& conf : vector<ContextOptions>{confB, confA}) {
-    for(const auto& conf : vector<ContextOptions>{confB}) {
+    for(const auto& conf : vector<ContextOptions>{confB, confA}) {
         Context c(conf);
         auto v = c.csv(uri.toPath(), std::vector<std::string>(),
                        false, ',', '"',
@@ -627,4 +626,26 @@ TEST_F(DataFrameTest, ShowI64Options) {
     EXPECT_EQ(res[2].toPythonString(), "(None,3)");
     EXPECT_EQ(res[3].toPythonString(), "(4,None)");
     EXPECT_EQ(res[4].toPythonString(), "(None,5)");
+}
+
+TEST_F(DataFrameTest, HeterogeneouslyTypedCSVFile) {
+    using namespace tuplex;
+    Context c(microTestOptions());
+
+    auto path = "../resources/int_str_mix.csv";
+    auto v = c.csv(path).collectAsVector();
+
+    ASSERT_FALSE(v.empty());
+    EXPECT_EQ(v.size(), 7);
+}
+
+TEST_F(DataFrameTest, ListOfOptionsIndexNull) {
+    //  List[Option[str]]  needle type: null
+    using namespace tuplex;
+    Context c(microTestOptions());
+
+    auto test_data = std::vector<Row>{Row(Field::null())};
+    auto v = c.parallelize(test_data).map(UDF("lambda x: ['a', 'b', None, 'c'].index(x)")).collectAsVector();
+    ASSERT_EQ(v.size(), 1);
+    EXPECT_EQ(v[0].getInt(0), 2);
 }

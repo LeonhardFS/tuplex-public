@@ -23,6 +23,9 @@ import fnmatch
 import re
 import atexit
 
+# variables for build configuration
+LLVM_CI_ROOT_DIR = '/opt/llvm-16.0.6'
+
 def in_google_colab():
     """
         check whether framework runs in Google Colab environment
@@ -76,11 +79,38 @@ webui_dependencies = [
     'iso8601'
 ]
 
+def run_command(cmd, cwd, env):
+    """
+    run shell command `cmd`
+    :param cmd: command to run (list of strings)
+    :param cwd: working directory for command
+    :param env: environment dictionary
+    
+    "raises": raise subprocess.Ca
+    """
+
+    output, error = None, None
+    res = None
+    try:
+        res = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd, env=env)
+        output, error = res.communicate()
+        if output:
+            logging.info(f"ret> {res.returncode}")
+            logging.info(f"OK> output {output.decode()}")
+        if error:
+            logging.info(f"ret> {res.returncode}")
+            logging.info(f"Error> error {error.decode().strip()}")
+    except os.OSError as e:
+        logging.error(f"OSError > {e.errno}")
+        logging.error(f"OSError > {e.strerror}")
+        logging.error(f"OSError > {e.filename}")
+    except:
+        logging.error("Error > {sys.exc_info()[0]}")
+        raise subprocess.CalledProcessError(res.returncode if res else 1, cmd, output, error)
+
 # dependencies for AWS Lambda backend...
 # boto is broken currently...
 aws_lambda_dependencies = []
-
-# check python version, e.g., cloudpickle is specific
 
 # manual fix for google colab
 if in_google_colab():
@@ -100,7 +130,9 @@ if in_google_colab():
         'astor',
         'prompt_toolkit',
         'jedi',
-        'cloudpickle>=0.6.1,<2.0.0',
+        "cloudpickle>=0.6.1,<2.0.0;python_version<'3.10'",
+        "cloudpickle>=2.1.0;python_version=='3.10'",
+        "cloudpickle>=2.2.1;python_version>='3.11'",
         'PyYAML>=3.13',
         'psutil',
         'pymongo',
@@ -120,7 +152,9 @@ else:
         'astor',
         'prompt_toolkit',
         'jedi',
-        'cloudpickle>=0.6.1,<2.0.0',
+        "cloudpickle>=0.6.1,<2.0.0;python_version<'3.10'",
+        "cloudpickle>=2.1.0;python_version=='3.10'",
+        "cloudpickle>=2.2.1;python_version>='3.11'",
         'PyYAML>=3.13',
         'psutil',
         'pymongo',
@@ -311,8 +345,7 @@ class CMakeBuild(build_ext):
             #       -DPython3_LIBRARY=/opt/python/cp37-cp37m/lib/python3.7/ \
             #       -DBoost_INCLUDE_DIR=/opt/boost/python3.7/include/ \
             #       -DLLVM_ROOT=/usr/lib64/llvm9.0/ ..
-            # llvm_root = '/usr/lib64/llvm9.0/' # yum based
-            llvm_root = '/opt/llvm-9.0'  # manual install
+            llvm_root = LLVM_CI_ROOT_DIR # set via variable (configurable above)
             boost_include_dir = '/opt/boost/python{}/include/'.format(py_maj_min)
             py_include_dir = pyconfig.get_paths()['include']
             py_libs_dir = pyconfig.get_paths()['stdlib']
@@ -322,12 +355,13 @@ class CMakeBuild(build_ext):
             if platform.system().lower() == 'darwin':
                 # mac os, use brewed versions!
                 out_py = subprocess.check_output(['brew', 'info', 'python3']).decode()
-                print(out_py)
                 def find_pkg_path(lines):
-                    return list(filter(lambda x: 'usr/local' in x, lines.split('\n')))[0]
+                    ans = list(filter(lambda x: 'usr/local' in x, lines.split('\n')))
+                    return None if 0 == len(ans) else ans[0]
 
                 out_py = find_pkg_path(out_py)
-                print('Found python3 @ {}'.format(out_py))
+                if out_py:
+                    logging.info('Found python3 @ {}'.format(out_py))
 
                 # setups find everything automatically...
                 llvm_root = None
@@ -367,6 +401,13 @@ class CMakeBuild(build_ext):
                 except:
                     logging.error('Could not detect macos version, defaulting to macos 10.13 as build target')
 
+            # special case: Python3.8 earlier, widely deployed versions only support suffxi 10_13 or up to 10.16 so use that as target
+            if sys.version_info.major == 3 and sys.version_info.minor == 8:
+                if macos_build_target != "10.13" or macos_build_target != "10.16":
+                    logging.warning(f"Building Tuplex with Python {sys.version_info}, however earlier versions of Python 3.8 can only comprehend tag 10_13, using therefore deployment target 10.13")
+                    macos_build_target = "10.13"
+
+            logging.info(f"Building with macOS platform tag {macos_build_target}")
             # get mac OS version
             cmake_args.append('-DCMAKE_OSX_DEPLOYMENT_TARGET={}'.format(macos_build_target))
 
@@ -378,10 +419,10 @@ class CMakeBuild(build_ext):
         if llvm_root is not None:
             cmake_args.append('-DLLVM_ROOT={}'.format(llvm_root))
             if os.environ.get('CIBUILDWHEEL', '0') == '1':
-                print('setting prefix path...')
                 # ci buildwheel?
                 # /opt/llvm-9.0/lib/cmake/llvm/
-                prefix_path = "/opt/llvm-9.0/lib/cmake/llvm/" #os.path.join(llvm_root, '/lib/cmake/llvm')
+                prefix_path = os.path.join(llvm_root, '/lib/cmake/llvm')
+                
                 #cmake_args.append('-DCMAKE_PREFIX_PATH={}'.format(prefix_path))
                 cmake_args.append('-DLLVM_DIR={}'.format(prefix_path))
                 cmake_args.append('-DLLVM_ROOT_DIR={}'.format(llvm_root))
@@ -463,7 +504,7 @@ class CMakeBuild(build_ext):
         else:
             # restrict to shared object only...
             logging.info('Building only shared objects...')
-            build_args += ['--target', 'tuplex']
+            build_args += ['--target', 'tuplex', 'runtime']
 
         # hack: only run for first invocation!
         if ext_filename == 'tuplex_runtime':
@@ -501,16 +542,17 @@ class CMakeBuild(build_ext):
         if 'MACOSX_DEPLOYMENT_TARGET' not in build_env.keys() and platform.system().lower() == 'darwin':
             build_env['MACOSX_DEPLOYMENT_TARGET'] = macos_build_target
 
-        subprocess.check_call(
-            ["cmake", ext.sourcedir] + cmake_args, cwd=self.build_temp, env=build_env
-        )
+        cmake_command = ["cmake", ext.sourcedir] + cmake_args
+        logging.info('cmake build command: {}'.format(' '.join(cmake_command)))
+        run_command(cmake_command, cwd=self.build_temp, env=build_env)
+
         logging.info('configuration done, workdir={}'.format(self.build_temp))
         subprocess.check_call(
             ["cmake", "--build", "."] + build_args, cwd=self.build_temp, env=build_env
         )
 
         # this helps to search paths in doubt
-        # print('searching for .so files in {}'.format(self.build_temp))
+        # logging.info('searching for .so files in {}'.format(self.build_temp))
         # subprocess.check_call(['find', '.', '-name', '*.so'], cwd = self.build_temp)
         # subprocess.check_call(['find', '.', '-name', '*.so'], cwd = ext.sourcedir)
 
@@ -652,7 +694,7 @@ def tplx_package_data():
 # The information here can also be placed in setup.cfg - better separation of
 # logic and declaration, and simpler if you include description/version in a file.
 setup(name="tuplex",
-    python_requires='>=3.7.0',
+    python_requires='>=3.8.0',
     version="0.3.7",
     author="Leonhard Spiegelberg",
     author_email="tuplex@cs.brown.edu",
@@ -692,9 +734,10 @@ setup(name="tuplex",
 
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
-        'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
     ],
     scripts=['tuplex/historyserver/bin/tuplex-webui'],
     project_urls={

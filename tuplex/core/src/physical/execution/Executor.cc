@@ -559,26 +559,31 @@ namespace tuplex {
         // stops detached queue.
         _done = true;
 
+        // cout<<"Waiting for threads to join..."<<endl;
         if(_thread.joinable())
             _thread.join();
 
         //@Todo: release memory allocated for ManagedPartitions
         //lockListMutex();
         {
+            // cout<<"Acquiring listMutex to release individual partitions:"<<endl;
             std::unique_lock<boost::shared_mutex> lock(_listMutex);
             if(!_partitions.empty()) {
-               cout<<"[GLOBAL] releasing " + std::to_string(_partitions.size()) + " active partitions"<<endl;
+               // cout<<"[GLOBAL] releasing "<<pluralize(_partitions.size(), " active partition")<<endl;
                 for(auto& p : _partitions) {
+                    // cout<<"Deleting partition."<<endl;
                     if(p)
                         delete p;
+                    // cout<<"Partition set to nullptr."<<endl;
                     p = nullptr;
                 }
 
                 _partitions.clear();
+                // cout<<"Partitions cleared."<<endl;
             }
 
             if(!_storedPartitions.empty()) {
-                cout<<"[GLOBAL] releasing " + std::to_string(_storedPartitions.size()) + " stored partitions"<<endl;
+                // cout<<"[GLOBAL] releasing "<<pluralize(_storedPartitions.size(), " stored partition")<<endl;
                 for(auto& p : _storedPartitions) {
                     if(p)
                         delete p;
@@ -590,6 +595,7 @@ namespace tuplex {
         }
 
         //unlockListMutex();
+        // cout<<"Executor release done."<<endl;
     }
 
     URI Executor::getPartitionURI(Partition* partition) const {

@@ -224,41 +224,6 @@ namespace tuplex {
 
         return true;
     }
-
-    template<typename T> bool vec_set_eq(const std::vector<T>& lhs, const std::vector<T>& rhs) {
-        std::set<T> L(lhs.begin(), lhs.end());
-        std::set<T> R(rhs.begin(), rhs.end());
-
-        auto lsize = L.size();
-        auto rsize = R.size();
-
-        if(lsize != rsize)
-            return false;
-
-        // merge sets
-        for(auto el : rhs)
-            L.insert(el);
-        return L.size() == lsize;
-    }
-
-    void reorder_row(Row& row,
-                     const std::vector<std::string>& row_column_names,
-                     const std::vector<std::string>& dest_column_names) {
-
-        assert(row_column_names.size() == dest_column_names.size());
-        assert(vec_set_eq(row_column_names, dest_column_names)); // expensive check
-
-        // for each name, figure out where it has to be moved to!
-        std::unordered_map<unsigned, unsigned> map;
-        std::vector<Field> fields(row_column_names.size());
-        for(unsigned i = 0; i < row_column_names.size(); ++i) {
-            map[i] = indexInVector(row_column_names[i], dest_column_names);
-        }
-        for(unsigned i = 0; i < row_column_names.size(); ++i)
-            fields[map[i]] = row.get(i);
-        row = Row::from_vector(fields);
-    }
-
 }
 
 TEST(JSONUtils, relativeOrderTest) {
@@ -509,7 +474,7 @@ namespace tuplex {
             vector<python::StructEntry> kv_pairs; kv_pairs.reserve(num_columns);
             for(unsigned j = 0; j < num_columns; ++j) {
                 python::StructEntry entry;
-                entry.alwaysPresent = true;
+                entry.presence = python::StructPresence::ALWAYS_PRESENT;
                 entry.key = escape_to_python_str(column_names[i][j]);
                 entry.keyType = python::Type::STRING;
                 entry.valueType = rows[i].getType(j);

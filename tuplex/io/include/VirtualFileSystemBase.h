@@ -34,7 +34,8 @@ namespace tuplex {
         VFS_WRITE= 1ul << 1,
         VFS_OVERWRITE=1ul << 2,
         VFS_APPEND= 1ul << 3,
-        VFS_TEXTMODE=1ul << 4 // append terminating '\0' if necessary
+        VFS_TEXTMODE=1ul << 4, // append terminating '\0' if necessary
+        VFS_THREADSAFE=1ul << 5 // creates own client if needed for file to avoid data races.
     };
 
     // cf. http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2012/n3485.pdf, 17.5.2.1.3 Bitmask types

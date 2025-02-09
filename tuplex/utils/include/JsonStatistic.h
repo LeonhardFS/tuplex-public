@@ -6,17 +6,17 @@
 #define TUPLEX_JSONSTATISTIC_H
 
 #include "CSVUtils.h"
+#include <simdjson.h>
 #include <vector>
 #include <TypeSystem.h>
 
-#include <simdjson.h>
 #include <TypeHelper.h>
 
 namespace tuplex {
 
     // parse using simdjson
-    // use 4MB for Github data!
-    static const auto SIMDJSON_BATCH_SIZE = 4 * 1024 * 1024ul; //simdjson::dom::DEFAULT_BATCH_SIZE;
+    // use 24MB for Github data! There are some very large documents.
+    static const auto SIMDJSON_BATCH_SIZE = 24 * 1024 * 1024ul; //simdjson::dom::DEFAULT_BATCH_SIZE;
 
     /*!
      * finds the start of a valid newline-delimited JSON entry.

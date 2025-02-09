@@ -6,14 +6,14 @@ if rpm -q yum-utils > /dev/null; then
   echo "Package yum-utils already installed. Good."
 else
   echo "Going to install yum-utils..."
-  yum -y install yum-utils
+  dnf -y install yum-utils
 fi
 
 echo 'Trimming .log files larger than 50M...'
 find /var -name "*.log" \( \( -size +50M -mtime +7 \) -o -mtime +30 \) -exec truncate {} --size 0 \;
 
 echo "Cleaning yum caches..."
-yum clean all
+dnf clean all
 rm -rf /var/cache/yum
 rm -rf /var/tmp/yum-*
 

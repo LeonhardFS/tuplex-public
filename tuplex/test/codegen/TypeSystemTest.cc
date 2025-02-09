@@ -10,9 +10,11 @@
 
 #include "gtest/gtest.h"
 #include "TypeSystem.h"
+#include "Timer.h"
 #include <TupleTree.h>
 #include <vector>
 #include <TypeHelper.h>
+#include <fstream>
 
 boost::any get_representative_value(const python::Type& type) {
     using namespace tuplex;
@@ -211,7 +213,8 @@ TEST(TypeSys, StructTypeStringKeyDecodingEncoding) {
 TEST(TypeSys, Cerealization) {
     auto row_type = python::Type::makeTupleType({python::Type::I64, python::Type::I64, python::Type::PYOBJECT});
     std::ostringstream oss; {
-        cereal::BinaryOutputArchive ar(oss);
+        // cereal::BinaryOutputArchive ar(oss);
+        BinaryOutputArchive ar(oss);
         ar(row_type);
     }
 
@@ -418,4 +421,226 @@ TEST(TypeSys, RowTypeUpcast) {
     ASSERT_TRUE(minor.isRowType());
 
     EXPECT_TRUE(python::canUpcastType(minor, major));
+}
+
+TEST(TypeSys, SparseStruct) {
+    using namespace tuplex;
+    using namespace std;
+
+    auto t = python::Type::makeStructuredDictType({make_pair(Field(Tuple(20, 30)), python::Type::I64),
+                                          make_pair(Field(Tuple(Field(Tuple(20, 32)), 20, 30)), Field(Tuple(20, 3.4)).getType()),
+                                          make_pair("test", python::Type::STRING),
+                                          make_pair("world", python::Type::I64),
+                                          make_pair(42, python::Type::makeTupleType({
+                                                                                            python::Type::makeOptionType(python::Type::I64), python::Type::STRING
+                                                                                    }))
+                                         }, true);
+
+
+    auto encoded_type = t.encode();
+    EXPECT_TRUE(strStartsWith(encoded_type, "SparseStruct["));
+
+    auto decoded_type = python::Type::decode(encoded_type);
+    EXPECT_EQ(decoded_type, t);
+    EXPECT_EQ(decoded_type.encode(), encoded_type);
+}
+
+TEST(TypeSys, DictEquality) {
+    using namespace tuplex;
+
+    // empty struct dict should be empty dict
+    auto empty_struct = python::Type::makeStructuredDictType(std::vector<python::StructEntry>(), false);
+    auto empty_sparse = python::Type::makeStructuredDictType(std::vector<python::StructEntry>(), true);
+
+    // but empty sparsestruct is different from empty struct dict.
+    EXPECT_EQ(empty_struct, python::Type::EMPTYDICT);
+    EXPECT_NE(empty_struct, empty_sparse);
+    EXPECT_NE(empty_sparse, python::Type::EMPTYDICT);
+}
+
+TEST(TypeSys, UninitializedDecodeEncode) {
+    using namespace tuplex;
+    auto t = python::Type::fromHash(-1);
+    auto str = t.encode();
+    EXPECT_EQ(str, "uninitialized");
+    EXPECT_EQ(python::Type::decode(str), t);
+}
+
+TEST(TypeSys, UnknownHash) {
+    using namespace tuplex;
+    // make sure this holds;
+    ASSERT_EQ(python::Type::UNKNOWN.hash(), 0);
+}
+
+TEST(TypeSys, DecodeRowTypeWithConstantInt) {
+    using namespace tuplex;
+    auto s = "Row['YEAR'->_Constant[i64,value=2003],'QUARTER'->_Constant[i64,value=3],'MONTH'->_Constant[i64,value=7],'DAY_OF_MONTH'->i64,'DAY_OF_WEEK'->i64,'OP_UNIQUE_CARRIER'->str,'OP_CARRIER_FL_NUM'->i64,'ORIGIN_AIRPORT_ID'->i64,'ORIGIN'->str,'ORIGIN_STATE_NM'->str,'DEST_AIRPORT_ID'->i64,'DEST'->str,'DEST_STATE_NM'->str,'CRS_DEP_TIME'->i64,'DEP_DELAY'->f64,'CRS_ARR_TIME'->i64,'ARR_DELAY'->f64,'DISTANCE'->f64,'CARRIER_DELAY'->Option[f64],'WEATHER_DELAY'->Option[f64],'NAS_DELAY'->Option[f64],'SECURITY_DELAY'->Option[f64],'LATE_AIRCRAFT_DELAY'->Option[f64]]";
+
+    auto t = python::Type::decode(s);
+
+    EXPECT_TRUE(t.isRowType());
+}
+
+
+// Helper function: (duplicate, because io is separate test folder)
+std::string fileToString(const std::string &Path) {
+    std::ifstream T(Path);
+    return std::string((std::istreambuf_iterator<char>(T)),
+                       std::istreambuf_iterator<char>());
+}
+
+TEST(TypeSys, TimeDecode) {
+    using namespace tuplex;
+    using namespace std;
+    // Can use this to profile decode function. It's quite slow atm, which is a problem for serialization/deserialization.
+
+    // Load file to string vector
+    auto data = fileToString("../resources/schemas.txt");
+    auto lines = splitToLines(data);
+
+    auto N_runs = 250;
+
+    Timer timer;
+    for(int i = 0; i < N_runs; ++i) {
+        for(const auto& line : lines) {
+            auto t = python::decodeType(line);
+            EXPECT_GT(t.hash(), 0); // should not be unknown or uninitialized.
+        }
+    }
+    auto duration = timer.time();
+    cout<<"Took "<<duration<<"s to decode everything.";
+}
+
+// Type -> id.
+int collect_unique_types_and_return_id(std::unordered_map<int, int>& unique_types_map, const python::Type& t) {
+    if(t.hash() < python::N_PREREGISTERED_TYPES)
+        return t.hash();
+
+    if(unique_types_map.find(t.hash()) != unique_types_map.end())
+        return unique_types_map.at(t.hash());
+
+    // Register in map, for compound types their primitives as well. --> this should be done as a post-processing step, to
+    // speed this collection step here up.
+    auto max_id = static_cast<int>(unique_types_map.size());
+    return unique_types_map[t.hash()] = max_id;
+}
+
+
+void add_primitives_if_not_present(std::unordered_map<int, int>& unique_types_map, const python::Type& t) {
+    auto max_id = static_cast<int>(unique_types_map.size());
+
+    // Add this type (recursive call chain) if not present.
+    if(unique_types_map.find(t.hash()) == unique_types_map.end() && t.hash() >= python::N_PREREGISTERED_TYPES) {
+        unique_types_map[t.hash()] = max_id;
+    }
+
+    // Assume hash of t is already added or is from the preregistered range.
+    assert(unique_types_map.find(t.hash()) != unique_types_map.end() || t.hash() < python::N_PREREGISTERED_TYPES);
+
+    // Primitive types have no children, and because t must be in unique_types_map -> skip.
+    if(t.isAbstractPrimitiveType())
+        return;
+
+    if(t.isTupleType()) {
+        for(const auto& bt : t.parameters())
+            add_primitives_if_not_present(unique_types_map, bt);
+        return;
+    }
+
+    if(t.isOptionType()) {
+        add_primitives_if_not_present(unique_types_map, t.getReturnType());
+        return;
+    }
+
+    if(t.isSparseStructuredDictionaryType() || t.isStructuredDictionaryType()) {
+        for(const auto& pairs: t.get_struct_pairs()) {
+            add_primitives_if_not_present(unique_types_map, pairs.keyType);
+            add_primitives_if_not_present(unique_types_map, pairs.valueType);
+        }
+        return;
+    }
+
+    // sparse/struct handled before.
+    if(t.isDictionaryType()) {
+        add_primitives_if_not_present(unique_types_map, t.keyType());
+        add_primitives_if_not_present(unique_types_map, t.valueType());
+        return;
+    }
+
+    if(t.isConstantValued()) {
+        add_primitives_if_not_present(unique_types_map, t.underlying());
+        return;
+    }
+
+    if(t.isListType()) {
+        add_primitives_if_not_present(unique_types_map, t.elementType());
+        return;
+    }
+
+    if(t.isRowType()) {
+        for(const auto& column_type : t.get_column_types()) {
+            add_primitives_if_not_present(unique_types_map, column_type);
+        }
+        return;
+    }
+
+    // unknown is special case
+    if(t == python::Type::UNKNOWN || t.hash() < 0)
+        return;
+
+    throw std::runtime_error("Unknown type, can not say whether all base types are present: " + t.desc());
+}
+
+// Ensure compound types have all primitives present.
+void post_process_unique_types(std::unordered_map<int, int>& unique_types_map) {
+    std::vector<int> keys; keys.reserve(unique_types_map.size());
+    for(const auto& keyval : unique_types_map)
+        keys.push_back(keyval.first);
+
+    for(const auto& key : keys) {
+        auto t = python::Type::fromHash(key);
+
+        // Can skip these, because they must have been encoded or skipped.
+        if(t.isAbstractPrimitiveType())
+            return;
+
+        add_primitives_if_not_present(unique_types_map, t);
+    }
+}
+
+void display_type_map(const std::unordered_map<int, int>& unique_types_map) {
+    using namespace std;
+
+    for(auto kv : unique_types_map) {
+        cout<<kv.second<<": hash="<<kv.first<<" "<<python::Type::fromHash(kv.first).desc();
+    }
+}
+
+TEST(TypeSys, LargeTypeEncodeDecode) {
+    using namespace tuplex;
+    using namespace std;
+
+    // use look up table to speed up type encoding/decoding.
+    // Load file to string vector
+    auto data = fileToString("../resources/schemas.txt");
+    auto lines = splitToLines(data);
+
+    std::unordered_map<int, int> unique_types_map;
+    for (const auto &line: lines) {
+        auto t = python::decodeType(line);
+        collect_unique_types_and_return_id(unique_types_map, t);
+    }
+
+    cout<<"Found "<<pluralize(unique_types_map.size(), "type")<<" before post processing."<<endl;
+
+    // post process
+    post_process_unique_types(unique_types_map);
+
+    cout<<"Found "<<pluralize(unique_types_map.size(), "type")<<" after post processing."<<endl;
+
+    cout<<"Map is: \n"<<endl;
+
+    display_type_map(unique_types_map);
+
+    cout<<endl;
 }

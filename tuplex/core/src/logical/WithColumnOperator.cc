@@ -9,6 +9,7 @@
 //--------------------------------------------------------------------------------------------------------------------//
 
 #include <logical/WithColumnOperator.h>
+#include "tracing/TraceRowObject.h"
 
 namespace tuplex {
     WithColumnOperator::WithColumnOperator(const std::shared_ptr<LogicalOperator>& parent, const std::vector <std::string>& columnNames,
@@ -54,6 +55,8 @@ namespace tuplex {
 
     Schema WithColumnOperator::inferSchema(Schema parentSchema, bool is_projected_row_type) {
 
+        auto& logger = Logger::instance().logger("logical plan");
+
         // if(is_projected_row_type)
         //    throw std::runtime_error("nyimpl");
 
@@ -71,14 +74,14 @@ namespace tuplex {
 
         // unknown or ill-defined?
         if(retType == python::Type::UNKNOWN || retType.isIllDefined()) {
-            auto& logger = Logger::instance().logger("logical plan");
-            logger.error("failed to type withColumn operator");
+            logger.error("Failed to type withColumn operator.");
             return Schema::UNKNOWN;
         }
 
-        // could be exception -> return immediately then.
+        // could be exception, return then immediately
         if(udfRetRowType.isExceptionType())
             return Schema(Schema::MemoryLayout::ROW, udfRetRowType);
+
 
         assert(udfRetRowType.isTupleType());
         if(udfRetRowType.parameters().size() == 1)
@@ -104,11 +107,15 @@ namespace tuplex {
             inParameters[_columnToMapIndex] = retType;
         else
             inParameters.emplace_back(retType);
+
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " inferSchema done, returning output schema.");
         return Schema(Schema::MemoryLayout::ROW, python::Type::makeTupleType(inParameters));
     }
 
     Schema
     WithColumnOperator::getOutputSchemaFromReturnAndInputRowType(const python::Type &retType, const python::Type &input_type) const {
+        // auto& logger = Logger::instance().logger("logical plan");
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " getOutputSchemaFromReturnAndInputRowType.");
 
         if(retType == python::Type::UNKNOWN) {
             return Schema::UNKNOWN;
@@ -158,6 +165,12 @@ namespace tuplex {
         // get python type from UDF operator
         auto udf_ret_type = _udf.getAnnotatedAST().getReturnType();
 
+        // UDF not properly typed? ==> short route escape here.
+        if(python::Type::UNKNOWN == _udf.getAnnotatedAST().getReturnType()) {
+            Logger::instance().logger("codegen").debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " getOutputSchema() in withColumn operator returns UNKNOWN, because UDF has return type UNKNOWN.");
+            return Schema::UNKNOWN;
+        }
+
         auto in_schema = getInputSchema();
         if(Schema::UNKNOWN == in_schema)
             return Schema::UNKNOWN;
@@ -186,6 +199,9 @@ namespace tuplex {
     std::vector<Row> WithColumnOperator::getSample(const size_t num) const {
         // @TODO: refactor the whole sampling into SampleProcessor.
         using namespace std;
+
+        // auto& logger = Logger::instance().defaultLogger();
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " WithColumn operator getSample.");
 
         auto vSamples = parent()->getSample(num);
         auto pickledCode = _udf.getPickledCode();
@@ -233,6 +249,16 @@ namespace tuplex {
         size_t numExceptions = 0;
         for(auto row : vSamples) {
 
+            // convert to row with row type.
+            if(!row.getRowType().isRowType()) {
+                auto columns = parent()->columns();
+                if(columns.size() != row.getRowType().parameters().size()) {
+                    std::cerr<<"invalid column count retrieved from parent, skipping row."<<std::endl;
+                    continue;
+                }
+                row = row.with_columns(columns);
+            }
+
             auto rowObj = python::rowToPython(row);
 
             // object should be a tuple, get column
@@ -246,8 +272,12 @@ namespace tuplex {
             // HACK: skip for pushdown.
             // this is bad, but let's get tplx208 done.
             if(!inputColumns().empty() && row.getNumColumns() != inputColumns().size()) {
-                std::cerr<<"HACK executed here, pls fix."<<std::endl;
-                continue;
+                 //std::cerr<<"HACK executed here, pls fix."<<std::endl;
+                 // tuple type does not support column mismatch...
+                 if(!row.getRowType().isRowType()) {
+                     std::cerr<<"Make sure to pass rows with type set as Row[...], skipping for now."<<std::endl;
+                     continue;
+                 }
             }
             Py_XINCREF(rowObj);
 
@@ -261,9 +291,26 @@ namespace tuplex {
 //            Logger::instance().defaultLogger().debug(ss.str());
 //#endif
 
+            // // create Row object
+            // std::vector<PyObject*> items;
+            // for(unsigned i = 0; i < PyTuple_Size(rowObj); ++i) {
+            //     auto item = PyTuple_GET_ITEM(rowObj, i);
+            //     Py_XINCREF(item);
+            //     items.push_back(item);
+            // }
+            // Py_XDECREF(rowObj);
+            // rowObj = reinterpret_cast<PyObject*>(TraceRowObject::create(items, inputColumns()));
+            // auto pcr = python::callFunctionWithTraceObject(pFunc, rowObj);
 
-            auto pcr = !inputColumns().empty() ? python::callFunctionWithDictEx(pFunc, rowObj, inputColumns()) :
+            auto columns = row.getRowType().isRowType() ? row.getRowType().get_column_names() : inputColumns();
+            if(columns.empty())
+                columns = inputColumns();
+            auto num_input_columns = columns.size();
+
+            // old:
+            auto pcr = !inputColumns().empty() ? python::callFunctionWithDictEx(pFunc, rowObj, columns) :
                        python::callFunctionEx(pFunc, rowObj);
+
             ec = pcr.exceptionCode;
             auto pyobj_res = pcr.res;
 
@@ -273,20 +320,37 @@ namespace tuplex {
                 Py_XDECREF(rowObj);
             } else {
                 assert(pyobj_res);
+                if(row.getRowType().isTupleType()) {
+                    // now perform adding or replacing column
+                    if(_columnToMapIndex < num_input_columns)
+                        PyTuple_SetItem(rowObj, _columnToMapIndex, pyobj_res);
+                    else {
+                        // create a copy!
+                        if(PyTuple_Check(rowObj))
+                            assert(_columnToMapIndex == PyTuple_Size(rowObj));
 
-                // now perform adding or replacing column
-                if(_columnToMapIndex < PyTuple_Size(rowObj))
-                    PyTuple_SetItem(rowObj, _columnToMapIndex, pyobj_res);
-                else {
-                    // create a copy!
-                    assert(_columnToMapIndex == PyTuple_Size(rowObj));
+                        auto singleColObj = PyTuple_New(1);
+                        PyTuple_SET_ITEM(singleColObj, 0, pyobj_res);
+                        rowObj = PySequence_Concat(rowObj, singleColObj);
+                    }
+                    auto res = python::pythonToRow(rowObj);
+                    vRes.push_back(res);
+                } else {
+                    // check what the column name is, and then replace accordingly.
+                    auto idx = indexInVector(_newColumn, columns);
+                    auto fields = row.to_vector();
+                    if(idx >= 0) {
+                        // replace
+                        fields[idx] = python::pythonToField(pyobj_res);
+                    } else {
+                        // append
+                        fields.push_back(python::pythonToField(pyobj_res));
+                        columns.push_back(_newColumn);
+                    }
 
-                    auto singleColObj = PyTuple_New(1);
-                    PyTuple_SET_ITEM(singleColObj, 0, pyobj_res);
-                    rowObj = PySequence_Concat(rowObj, singleColObj);
+                    auto res = Row::from_vector(fields).with_columns(columns);
+                    vRes.push_back(res);
                 }
-                auto res = python::pythonToRow(rowObj);
-                vRes.push_back(res);
             }
 
             Py_XDECREF(rowObj);
@@ -297,6 +361,8 @@ namespace tuplex {
             + std::to_string(numExceptions) + " exceptions");
 
         python::unlockGIL();
+
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " WithColumn operator return " + pluralize(vRes.size(), "sample") + ".");
 
         return vRes;
     }
@@ -344,8 +410,17 @@ namespace tuplex {
     }
 
     bool WithColumnOperator::retype(const RetypeConfiguration& conf) {
-
         auto input_row_type = conf.row_type;
+
+        // if output schema is unknown, need to infer directly, i.e. this may be caused by the UDF not being typed at all.
+        if(getOutputSchema() == Schema::UNKNOWN) {
+            auto rc = UDFOperator::retype(conf);
+
+            if(!rc) {
+                Logger::instance().logger("codegen").debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " retype of withColumn operator failed, can not retype operator.");
+                return false;
+            }
+        }
 
         assert(good());
 

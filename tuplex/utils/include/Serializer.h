@@ -15,11 +15,7 @@
 #include <Schema.h>
 #include <Tuple.h>
 #include <List.h>
-#ifdef BUILD_WITH_AWS
-#include <aws/core/external/cjson/cJSON.h>
-#else
-#include <cJSON.h>
-#endif
+#include <Base.h>
 #include "optional.h"
 
 
@@ -63,6 +59,7 @@ namespace tuplex {
         ~Buffer() {
             free_and_reset();
         }
+
 
         void provideSpace(const size_t numBytes);
 
@@ -129,7 +126,7 @@ namespace tuplex {
         Serializer& appendWithoutInference(const option<Tuple> &tuple, const python::Type &tupleType);
         Serializer& appendWithoutInference(const uint8_t* buf, size_t bufSize);
 
-        Serializer& appendWithoutInference(const Field f);
+        Serializer& appendWithoutInference(const Field& f);
 
         inline bool hasSchemaVarLenFields() const {
             // from _isVarLenField, if any element is set to true return true
@@ -145,11 +142,14 @@ namespace tuplex {
         Serializer& appendWithoutInferenceHelper(const List &l);
         Serializer& appendWithoutInferenceHelper(const std::string &str);
 
+        Serializer& appendStructDictWithoutInference(const python::Type& dict_type, const uint8_t *json_data, size_t json_data_size, bool is_null);
+
     public:
         Serializer(bool autoSchema = true) : _autoSchema(autoSchema),
                                              _fixedLenFields(_bufferGrowthConstant),
                                              _varLenFields(_bufferGrowthConstant), _col(0)   {}
-         ~Serializer() {
+
+        ~Serializer() {
 
         }
 
@@ -167,7 +167,6 @@ namespace tuplex {
         // make non-copyable
         Serializer(const Serializer& other) = delete;
         Serializer& operator = (const Serializer& other) = delete;
-
 
         Serializer& reset();
 
@@ -202,11 +201,13 @@ namespace tuplex {
 
         Serializer& appendObject(const uint8_t* buf, size_t bufSize);
 
+        Serializer& appendField(const Field& f);
+
         Serializer& appendNull();
 
         // only define append for long when long and int64_t are not the same to avoid overload error
         template<class T=long>
-        typename std::enable_if<!std::is_same<int64_t, T>::value, Serializer&>::type append(const T l) { return append(static_cast<int64_t>(l)); }
+        typename std::enable_if<!std::is_same<int64_t, T>::value && !std::is_same<Field, T>::value, Serializer&>::type append(const T l) { return append(static_cast<int64_t>(l)); }
 
         Schema getSchema()  { fixSchema(); return _schema; }
 
@@ -225,6 +226,8 @@ namespace tuplex {
          * @return length that serialized contents would have
          */
         size_t length();
+
+        Serializer& appendStructDict(const python::Type& dict_type, const uint8_t *json_data, size_t json_data_size, bool is_null);
     };
 
     class Deserializer {
@@ -311,6 +314,8 @@ namespace tuplex {
          */
         List        getListHelper(const python::Type &listType, const uint8_t *ptr) const;
 
+        Field getStructuredDictionaryHelper(const python::Type& dictType, const uint8_t* ptr, size_t buf_size) const;
+
         const uint8_t* getPtr(const int col) const;
         size_t getSize(const int col) const;
 
@@ -347,6 +352,31 @@ namespace tuplex {
     template<class... Args> Schema serializationSchema(Args... args) {
         std::vector<python::Type> v = {deductType(args)...};
         return Schema(Schema::MemoryLayout::UNKNOWN, python::TypeFactory::instance().createOrGetTupleType(v));
+    }
+
+    /*!
+     * get size of list to serialize
+     * @param l
+     * @return
+     */
+    extern size_t serialized_list_size(const List& l);
+
+    size_t serialize_list_to_ptr(const List& l, uint8_t* ptr, size_t capacity_left);
+
+    inline std::tuple<size_t, size_t> unpack_offset_and_size_from_value(uint64_t data) {
+        uint64_t size = ((data & (0xFFFFFFFFl << 32)) >> 32);
+        uint64_t offset = data & 0xFFFFFFFF;
+        return std::make_tuple(offset, size);
+    }
+
+    inline uint64_t pack_offset_and_size(uint64_t offset, uint64_t size) {
+        return offset | (size << 32);
+    }
+
+    inline size_t calc_bitmap_size_in_64bit_blocks(size_t num_elements) {
+        auto numBitmapFields = core::ceilToMultiple(num_elements, 64ul) / 64;
+        auto bitmapSize = numBitmapFields * sizeof(uint64_t);
+        return bitmapSize;
     }
 
 }

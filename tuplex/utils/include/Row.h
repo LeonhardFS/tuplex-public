@@ -49,10 +49,16 @@ namespace tuplex {
         // get length from values
         Serializer getSerializer() const;
         size_t getSerializedLength() const;
+
+        python::Type row_type_from_values() const;
+
+        // For faster size compute, have handy map ready to lookup types.
+        static const std::unordered_map<size_t, size_t> precomputed_size_map;
     public:
         Row() : _serializedLength(0) {}
 
         Row(const Row& other) : _schema(other._schema), _values(other._values), _serializedLength(other._serializedLength) {}
+
         Row& operator = (const Row& other) {
             _schema = other._schema;
             _values = other._values;
@@ -66,10 +72,11 @@ namespace tuplex {
             other._schema = Schema::UNKNOWN;
         }
 
+
         // new constructor using variadic templates
         template<typename... Targs> Row(Targs... Fargs) {
             vec_build(_values, Fargs...);
-            _schema = Schema(Schema::MemoryLayout::ROW, getRowType());
+            _schema = Schema(Schema::MemoryLayout::ROW, row_type_from_values());
             _serializedLength = getSerializedLength();
         }
 
@@ -88,11 +95,12 @@ namespace tuplex {
             _values[col] = f;
 
             // need to update type of row!
-            auto old_type = _schema.getRowType();
-            auto types = old_type.parameters();
+            auto old_type = getRowType();
+            auto types = old_type.isTupleType() ? old_type.parameters() : old_type.get_column_types();
             if(types[col] != f.getType()) {
                 types[col] = f.getType();
-                _schema = Schema(_schema.getMemoryLayout(), python::Type::makeTupleType(types));
+                auto new_type = old_type.isTupleType() ? python::Type::makeTupleType(types) : python::Type::makeRowType(types, old_type.get_column_names());
+                _schema = Schema(_schema.getMemoryLayout(), new_type);
             }
 
             // update length, may change!
@@ -187,12 +195,19 @@ namespace tuplex {
         static Row from_vector(const std::vector<Field>& fields) {
             Row row;
             row._values = fields;
-            row._schema = Schema(Schema::MemoryLayout::ROW, row.getRowType());
+            row._schema = Schema(Schema::MemoryLayout::ROW, row.row_type_from_values());
             row._serializedLength = row.getSerializedLength();
             return row;
         }
 
+        inline std::vector<Field> to_vector() const {
+            return _values;
+        }
+
         Row upcastedRow(const python::Type& targetType) const;
+
+        // creates new Row with RowType
+        Row with_columns(const std::vector<std::string>& column_names) const;
 
 #ifdef BUILD_WITH_CEREAL
         // cereal serialization function
@@ -235,6 +250,123 @@ namespace tuplex {
                                               bool independent_columns=true,
                                               bool use_nvo=true,
                                               const TypeUnificationPolicy& t_policy=TypeUnificationPolicy::defaultPolicy());
+
+    extern python::Type detectMajorityRowType(const std::vector<python::Type>& row_types,
+                                       double threshold,
+                                       bool independent_columns=true,
+                                       bool use_nvo=true,
+                                       const TypeUnificationPolicy& t_policy=TypeUnificationPolicy::defaultPolicy());
+
+    template<typename T> bool vec_set_eq(const std::vector<T>& lhs, const std::vector<T>& rhs) {
+        std::set<T> L(lhs.begin(), lhs.end());
+        std::set<T> R(rhs.begin(), rhs.end());
+
+        auto lsize = L.size();
+        auto rsize = R.size();
+
+        if(lsize != rsize)
+            return false;
+
+        // merge sets
+        for(auto el : rhs)
+            L.insert(el);
+        return L.size() == lsize;
+    }
+
+    inline void reorder_row(Row& row,
+                     const std::vector<std::string>& row_column_names,
+                     const std::vector<std::string>& dest_column_names) {
+
+        assert(row_column_names.size() == dest_column_names.size());
+        assert(vec_set_eq(row_column_names, dest_column_names)); // expensive check
+
+        // for each name, figure out where it has to be moved to!
+        std::unordered_map<unsigned, unsigned> map;
+        std::vector<Field> fields(row_column_names.size());
+        for(unsigned i = 0; i < row_column_names.size(); ++i) {
+            map[i] = indexInVector(row_column_names[i], dest_column_names);
+        }
+        for(unsigned i = 0; i < row_column_names.size(); ++i)
+            fields[map[i]] = row.get(i);
+        row = Row::from_vector(fields);
+    }
+
+    template<typename T> inline std::vector<T> vec_set_difference(const std::vector<T>& lhs, const std::vector<T>& rhs) {
+        std::unordered_set<T> S_lhs(lhs.begin(), lhs.end());
+        std::unordered_set<T> S_rhs(rhs.begin(), rhs.end());
+
+        std::vector<T> v;
+        for(const auto& el : S_lhs) {
+            if(S_rhs.find(el) == S_rhs.end())
+                v.push_back(el);
+        }
+        return v;
+    }
+
+    inline void reorder_and_fill_missing_will_null(Row& row, const std::vector<std::string>& row_column_names, const std::vector<std::string>& dest_column_names) {
+        // check now which names are missing
+        std::vector<std::string> missing_dest = vec_set_difference(dest_column_names, row_column_names);
+        auto missing_origin = vec_set_difference(row_column_names, dest_column_names);
+
+        // append to dest missing origing, and put them at the end.
+        auto expanded_dest_column_names = dest_column_names;
+        if(!missing_origin.empty())
+            std::copy(missing_origin.begin(), missing_origin.end(), std::back_inserter(expanded_dest_column_names));
+
+        if(!missing_dest.empty()) {
+            auto fields = row.to_vector();
+            auto expanded_names = row_column_names;
+            for(const auto& name : missing_dest) {
+                fields.push_back(Field::null());
+                expanded_names.push_back(name);
+            }
+
+            // checks:
+            assert(expanded_names.size() == expanded_dest_column_names.size());
+            assert(fields.size() == expanded_names.size());
+
+            row = Row::from_vector(fields); // this sets the new type as well.
+            reorder_row(row, expanded_names, expanded_dest_column_names);
+
+            if(PARAM_USE_ROW_TYPE)
+                row = row.with_columns(expanded_dest_column_names);
+
+
+            // // do not reorder, simply fill. This also projects out in case.
+            // std::vector<Field> dest;
+            // for(const auto& name : dest_column_names) {
+            //     auto idx = indexInVector(name, expanded_names);
+            //     if(idx >= 0)
+            //         dest.push_back(fields[idx]);
+            //     else
+            //         dest.push_back(Field::null());
+            // }
+            //
+            // row = Row::from_vector(dest);
+            return;
+        }
+
+        assert(row_column_names.size() == expanded_dest_column_names.size());
+        assert(row.getNumColumns() == row_column_names.size());
+        reorder_row(row, row_column_names, expanded_dest_column_names);
+
+        if(PARAM_USE_ROW_TYPE)
+            row = row.with_columns(expanded_dest_column_names);
+    }
+
+    inline std::vector<std::string> reorder_and_expand_column_names(const std::vector<std::string>& row_column_names,
+                                                                    const std::vector<std::string>& dest_column_names) {
+        // check now which names are missing
+        std::vector<std::string> missing_dest = vec_set_difference(dest_column_names, row_column_names);
+        auto missing_origin = vec_set_difference(row_column_names, dest_column_names);
+
+        // append to dest missing origing, and put them at the end.
+        auto expanded_dest_column_names = dest_column_names;
+        if(!missing_origin.empty())
+            std::copy(missing_origin.begin(), missing_origin.end(), std::back_inserter(expanded_dest_column_names));
+
+        return expanded_dest_column_names;
+    }
 
 }
 #endif //TUPLEX_ROW_H

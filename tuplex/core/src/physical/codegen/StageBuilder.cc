@@ -29,6 +29,10 @@
 
 #include <climits>
 
+#ifdef BUILD_WITH_CEREAL
+#include <CustomArchive.h>
+#endif
+
 // New: Stage Specialization, maybe rename?
 #include <physical/codegen/StagePlanner.h>
 #include <physical/codegen/CodeGenerationContext.h>
@@ -93,6 +97,25 @@ namespace tuplex {
 //                  _outputLimit(std::numeric_limits<size_t>::max()),
 //                  _generateNormalCaseCodePath(generateSpecializedNormalCaseCodePath) {
 //        }
+
+        void apply_stage_builder_conf_to_planner(const StageBuilderConfiguration& conf, StagePlanner& planner) {
+            auto& logger = Logger::instance().logger("logical optimizer");
+
+            planner.disableAll();
+            if(conf.nullValueOptimization)
+                planner.enableNullValueOptimization();
+            if(conf.filterPromotion)
+                planner.enableFilterPromoOptimization();
+            planner.enableDelayedParsingOptimization();
+            if(conf.constantFoldingOptimization)
+                planner.enableConstantFoldingOptimization();
+            if(conf.sparsifyStructs)
+                planner.enableSparsifyStructsOptimization();
+            if(conf.simplifyLargeStructs.has_value())
+                planner.enableSimplifyLargeStructs(conf.simplifyLargeStructs.value());
+
+            logger.info("Stage optimizer using " + planner.info_string());
+        }
 
         StageBuilder::StageBuilder(int64_t stage_number,
                                    bool rootStage,
@@ -169,11 +192,11 @@ namespace tuplex {
                         auto fileop = std::dynamic_pointer_cast<FileInputOperator>(op);
                         if (fileop->fileFormat() == FileFormat::OUTFMT_CSV) {
                             // use cells, b.c. parser already has string contents.
-                            ppb.cellInput(op->getID(), op->columns(), fileop->null_values(), fileop->typeHints(),
+                            ppb.cellInput(op->getID(), op->inputColumns(), fileop->null_values(), fileop->typeHints(),
                                           fileop->inputColumnCount(), fileop->projectionMap());
                         } else if (fileop->fileFormat() == FileFormat::OUTFMT_TEXT) {
                             // text pipeline is the same with forced string type!
-                            ppb.cellInput(op->getID(), op->columns(), fileop->null_values(), {{0, python::Type::STRING}}, 1);
+                            ppb.cellInput(op->getID(), op->inputColumns(), fileop->null_values(), {{0, python::Type::STRING}}, 1);
                             Logger::instance().defaultLogger().warn("accessing untested feature in Tuplex");
                         } else {
                             throw std::runtime_error("Unsupported file input type!");
@@ -278,14 +301,15 @@ namespace tuplex {
                         auto jop = dynamic_cast<JoinOperator*>(op.get()); assert(jop);
 
                         // TODO test this out, seems rather quick yet
-                        auto leftColumn = jop->buildRight() ? jop->leftColumn().value_or("") : jop->rightColumn().value_or("");
+                        auto leftColumn = jop->leftColumn().value_or(""); //jop->buildRight() ? jop->leftColumn().value_or("") : jop->rightColumn().value_or("");
+                        auto rightColumn = jop->rightColumn().value_or("");
                         auto bucketColumns = jop->bucketColumns();
                         if(jop->joinType() == JoinType::INNER) {
                             ppb.innerJoinDict(jop->getID(), next_hashmap_name(),
-                                              leftColumn, bucketColumns,
+                                              leftColumn, rightColumn, bucketColumns,
                                               jop->leftPrefix(), jop->leftSuffix(), jop->rightPrefix(), jop->rightSuffix());
                         } else if(jop->joinType() == JoinType::LEFT) {
-                            ppb.leftJoinDict(jop->getID(), next_hashmap_name(), leftColumn, bucketColumns,
+                            ppb.leftJoinDict(jop->getID(), next_hashmap_name(), leftColumn, rightColumn, bucketColumns,
                                              jop->leftPrefix(), jop->leftSuffix(), jop->rightPrefix(), jop->rightSuffix());
                         } else {
                             throw std::runtime_error("right join not yet supported!");
@@ -572,8 +596,8 @@ namespace tuplex {
 
             BasicBlock *bbISBody = BasicBlock::Create(env->getContext(), "", fastPathInitStageFunc);
             BasicBlock *bbRSBody = BasicBlock::Create(env->getContext(), "", fastPathReleaseStageFunc);
-            IRBuilder<> isBuilder(bbISBody);
-            IRBuilder<> rsBuilder(bbRSBody);
+            IRBuilder isBuilder(bbISBody);
+            IRBuilder rsBuilder(bbRSBody);
             auto isArgs = codegen::mapLLVMFunctionArgs(fastPathInitStageFunc, {"num_args", "hashmaps", "null_buckets"});
 
             // debug print
@@ -677,11 +701,11 @@ namespace tuplex {
                         auto null_bucket_global = env->createNullInitializedGlobal(null_bucket_global_name,
                                                                                    env->i8ptrType());
 
-                        isBuilder.CreateStore(isBuilder.CreateLoad(
-                                isBuilder.CreateGEP(isArgs["hashmaps"], env->i32Const(global_var_cnt))),
+                        isBuilder.CreateStore(isBuilder.CreateLoad(env->i8ptrType(),
+                                isBuilder.CreateGEP(env->i8ptrType(), isArgs["hashmaps"], env->i32Const(global_var_cnt))),
                                               hash_map_global);
-                        isBuilder.CreateStore(isBuilder.CreateLoad(
-                                isBuilder.CreateGEP(isArgs["null_buckets"], env->i32Const(global_var_cnt))),
+                        isBuilder.CreateStore(isBuilder.CreateLoad(env->i8ptrType(),
+                                isBuilder.CreateGEP(env->i8ptrType(), isArgs["null_buckets"], env->i32Const(global_var_cnt))),
                                               null_bucket_global);
 
                         rsBuilder.CreateStore(env->i8nullptr(), hash_map_global);
@@ -918,15 +942,17 @@ namespace tuplex {
                         if(!pathContext.operators.empty())
                             leaveNormalCase = pathContext.operators.back()->type() == LogicalOperatorType::CACHE;
 
-                        // force output type to be always general case (=> so merging works easily!)
-                        if(!leaveNormalCase) {
-                            if (!pip->addTypeUpgrade(generalCaseOutputRowType))
-                                throw std::runtime_error(
-                                        "type upgrade from " + pathContext.outputSchema.getRowType().desc() + " to " +
-                                        generalCaseOutputRowType.desc() + " failed.");
-                            // set normal case output type to general case
-                            // _normalCaseOutputSchema = _generalCaseOutputSchema;
-                        }
+//#error "make this part of takeoperator/planning. I.e., if the last operator is take -> give it general case info and type upgrade if need be."
+                        // Don't do this.
+                        // // force output type to be always general case (=> so merging works easily!)
+                        // if(!leaveNormalCase) {
+                        //     if (!pip->addTypeUpgrade(generalCaseOutputRowType))
+                        //         throw std::runtime_error(
+                        //                 "type upgrade from " + pathContext.outputSchema.getRowType().desc() + " to " +
+                        //                 generalCaseOutputRowType.desc() + " failed.");
+                        //     // set normal case output type to general case
+                        //     // _normalCaseOutputSchema = _generalCaseOutputSchema;
+                        // }
 
                         pip->buildWithTuplexWriter(ret.writeMemoryCallbackName,
                                                    ctx.outputNodeID,
@@ -1113,7 +1139,7 @@ namespace tuplex {
             tb->setIgnoreCodes(ignoreCodes);
 
             // #error "need to add here the optional checking for the input! --> i.e. smaller pipeline etc."
-            logger.warn("hack, need to fix stuff here...");
+            // logger.warn("hack, need to fix stuff here...");
             tb->setPipeline(pip);
 
             // special case: intermediate
@@ -1216,7 +1242,6 @@ namespace tuplex {
 
             auto readSchema = pathContext.readSchema.getRowType(); // what to read from files (before projection pushdown)
             auto inSchema = pathContext.inputSchema.getRowType(); // with what to start the pipeline (after projection pushdown)
-            auto resolveInSchema = inSchema;
             auto outSchema = pathContext.outputSchema.getRowType(); // what to output from pipeline
 
             auto env = make_shared<codegen::LLVMEnvironment>(env_name);
@@ -1236,26 +1261,17 @@ namespace tuplex {
 
             BasicBlock *bbISBody = BasicBlock::Create(env->getContext(), "", slowPathInitStageFunc);
             BasicBlock *bbRSBody = BasicBlock::Create(env->getContext(), "", slowPathReleaseStageFunc);
-            IRBuilder<> isBuilder(bbISBody);
-            IRBuilder<> rsBuilder(bbRSBody);
+            IRBuilder isBuilder(bbISBody);
+            IRBuilder rsBuilder(bbRSBody);
             auto isArgs = codegen::mapLLVMFunctionArgs(slowPathInitStageFunc,
                                                                  {"num_args", "hashmaps", "null_buckets"});
 
-            // Note: this here is quite confusing, because for map operator when tuples are needed, this will return not the row schema but the UDF input schema =? fix that
-            // @TODO: fix getInputSchema for MapOperator!!!
-            inSchema = _inputSchema.getRowType(); // old: _operators.front()->getInputSchema().getRowType();
-//            string funcSlowPathName = "processViaSlowPath_Stage_" + to_string(number());
-//            string funcResolveRowName = "resolveSingleRow_Stage_" + to_string(number());
-//            string slowPathMemoryWriteCallback = "memOutViaSlowPath_Stage_" + to_string(number());
-//            string slowPathHashWriteCallback = "hashOutViaSlowPath_Stage_" + to_string(number());
-//            string slowPathExceptionCallback = "exceptionOutViaSlowPath_Stage_" + to_string(number());
-
-            logger.debug("input schema for general case is: " + resolveInSchema.desc());
+            logger.debug("input schema for general case is: " + inSchema.desc());
             logger.debug("intermediate type for general case is: " + intermediateType(pathContext.operators).desc());
 
             std::cout.flush();
 
-            auto slowPip = std::make_shared<codegen::PipelineBuilder>(env, resolveInSchema, intermediateType(pathContext.operators), ret.funcStageName/*funcSlowPathName*/);
+            auto slowPip = std::make_shared<codegen::PipelineBuilder>(env, inSchema, intermediateType(pathContext.operators), ret.funcStageName/*funcSlowPathName*/);
             int global_var_cnt = 0;
             auto num_operators = pathContext.operators.size();
             bool resolvers_found = false;
@@ -1336,11 +1352,11 @@ namespace tuplex {
                         auto null_bucket_global = env->createNullInitializedGlobal(null_bucket_global_name,
                                                                                    env->i8ptrType());
 
-                        isBuilder.CreateStore(isBuilder.CreateLoad(
-                                isBuilder.CreateGEP(isArgs["hashmaps"], env->i32Const(global_var_cnt))),
+                        isBuilder.CreateStore(isBuilder.CreateLoad(env->i8ptrType(),
+                                isBuilder.CreateGEP(env->i8ptrType(), isArgs["hashmaps"], env->i32Const(global_var_cnt))),
                                               hash_map_global);
-                        isBuilder.CreateStore(isBuilder.CreateLoad(
-                                isBuilder.CreateGEP(isArgs["null_buckets"], env->i32Const(global_var_cnt))),
+                        isBuilder.CreateStore(isBuilder.CreateLoad(env->i8ptrType(),
+                                                                   isBuilder.CreateGEP(env->i8ptrType(), isArgs["null_buckets"], env->i32Const(global_var_cnt))),
                                               null_bucket_global);
 
                         rsBuilder.CreateStore(env->i8nullptr(), hash_map_global);
@@ -1437,8 +1453,10 @@ namespace tuplex {
                 }
             }
 
-
+#ifndef NDEBUG
             std::cout<<"HACK: need to fix resolver throwing exception case here."<<std::endl;
+#endif
+
             if(resolvers_found) {
                 // add exception callback (required when resolvers throw exceptions themselves!)
                 slowPip->addExceptionHandler(ret.writeExceptionCallbackName/*slowPathExceptionCallback*/);
@@ -1491,7 +1509,7 @@ namespace tuplex {
             auto rowProcessFunc = codegen::createProcessExceptionRowWrapper(slowPip->env(),
                                                                             pip_input_row_type,
                                                                             pip_func,
-                                                                            _inputNode->type() == LogicalOperatorType::FILEINPUT ? std::dynamic_pointer_cast<FileInputOperator>(_inputNode) : nullptr,
+                                                                            pathContext.inputNode->type() == LogicalOperatorType::FILEINPUT ? std::dynamic_pointer_cast<FileInputOperator>(pathContext.inputNode) : nullptr,
                                                                             ret.funcStageName/*funcResolveRowName*/,
                                                                             normal_case_type,
                                                                             normalToGeneralMapping,
@@ -1731,13 +1749,16 @@ namespace tuplex {
 //                auto last_name = last_op->name();
 //            }
 
+            // set for file input operator (when no sample use) the normal-case to be true
+            if(!conf.use_sample) {
+                if(inputNode->type() == LogicalOperatorType::FILEINPUT) {
+                    std::dynamic_pointer_cast<FileInputOperator>(inputNode)->useNormalCase();
+                }
+            }
+
             // node need to find some smart way to QUICKLY detect whether the optimization can be applied or should be rather skipped...
             codegen::StagePlanner planner(inputNode, operators, conf.policy.normalCaseThreshold);
-            planner.disableAll();
-            if(conf.nullValueOptimization)
-                planner.enableNullValueOptimization();
-            if(conf.constantFoldingOptimization)
-                planner.enableConstantFoldingOptimization();
+            apply_stage_builder_conf_to_planner(conf, planner);
             planner.optimize();
 
             // use optimized or non-optimized schema
@@ -1807,11 +1828,19 @@ namespace tuplex {
                 // need to set codeGenerationContext.normalToGeneralMapping here as well!
                 // 2. specialize fast path (if desired)
                 codeGenerationContext.slowPathContext = getGeneralPathContext();
-                if(_conf.generateSpecializedNormalCaseCodePath)
+                if(_conf.generateSpecializedNormalCaseCodePath) {
+                    auto conf = _conf;
+                    conf.use_sample = false; // <-- per default set to false, only set to true if one of the sample requiring optimizations is active!
+                    if(conf.filterPromotion || conf.constantFoldingOptimization)
+                        conf.use_sample = true;
                     codeGenerationContext.fastPathContext = specializePipeline(codeGenerationContext.slowPathContext,
                                                                                codeGenerationContext.normalToGeneralMapping,
-                                                                               _conf);
-                else
+                                                                               conf);
+
+                    // Update internals (to fill stage correctly).
+                    _normalCaseInputSchema = Schema(_normalCaseInputSchema.getMemoryLayout(), codeGenerationContext.fastPathContext.inputSchema.getRowType());
+                    _normalCaseOutputSchema = Schema(_normalCaseOutputSchema.getMemoryLayout(), codeGenerationContext.fastPathContext.outputSchema.getRowType());
+                } else
                     codeGenerationContext.fastPathContext = getGeneralPathContext();
 
                 // 3. fill in general case codepath context
@@ -1840,6 +1869,10 @@ namespace tuplex {
 
                 // actual code generation happens below in separate threads.
                 stage->_generalCaseColumnsToKeep = boolArrayToIndices<unsigned>(codeGenerationContext.slowPathContext.columnsToRead);
+
+
+                // Before generating slow path, store correct input schema.
+                _inputSchema = codeGenerationContext.slowPathContext.inputSchema;
 
                 // kick off slow path generation
                 std::shared_future<TransformStage::StageCodePath> slowCodePath_f = std::async(std::launch::async, [this,
@@ -1899,7 +1932,8 @@ namespace tuplex {
                 stage->_generalHashOutputBucketType = codeGenerationContext.slowPathContext.hashBucketType(hash_key_cols);
             }
 
-            // fill parameters from builder
+            // Fill parameters from builder.
+            // !!! Make sure to update members of Stagebuilder/this before calling this function. !!!
             fillStageParameters(stage);
 
             // DEBUG, write out generated trafo code...
@@ -2045,6 +2079,14 @@ namespace tuplex {
                     auto py_path = generatePythonCode(ctx, number(), _conf.pure_python_mode);
                     stage->_pyCode = py_path.pyCode;
                     stage->_pyPipelineName = py_path.pyPipelineName;
+
+#ifndef NDEBUG
+                    // Save for debugging.
+                    auto debug_py_uri = URI(stage->_pyPipelineName + ".py");
+                    logger.debug("Saving python pipeline code to " + debug_py_uri.toString());
+                    stringToFile(debug_py_uri, stage->_pyCode);
+#endif
+
                 }
 
                 // use fast path context
@@ -2075,47 +2117,62 @@ namespace tuplex {
                 }
 
                 if(gen_slow_code) {
-                    stage->_slowCodePath = generateResolveCodePath(ctx, ctx.slowPathContext, normalCaseInputRowType, ctx.normalToGeneralMapping);
+
+                    auto path_ctx = ctx.slowPathContext;
+                    if(backend->context().getOptions().OPT_SIMPLIFY_LARGE_STRUCTS()) {
+                        auto threshold = backend->context().getOptions().OPT_SIMPLIFY_LARGE_STRUCTS_THRESHOLD();
+                        logger.info("Applying simplify-large-structs(threshold=" + std::to_string(threshold) + ") to slow compiled code path.");
+
+                        // apply to slow path the simplify-large-struct pass in order to save compilation time on the client.
+                        StagePlanner planner(ctx.slowPathContext.inputNode, ctx.slowPathContext.operators, 0.5);
+                        planner.disableAll();
+
+                        planner.enableSimplifyLargeStructs(threshold);
+                        planner.optimize(false);
+                        path_ctx.inputNode = planner.input_node();
+                        path_ctx.operators = planner.optimized_operators();
+                        path_ctx.checks = planner.checks();
+
+                        // output schema: the schema this stage yields ultimately after processing
+                        // input schema: the general case input schema this stage reads from (CSV, Tuplex, ...)
+                        // read schema: the schema to read from (specialized) but unprojected.
+                        if(path_ctx.inputNode->type() == LogicalOperatorType::FILEINPUT) {
+                            auto fop = std::dynamic_pointer_cast<FileInputOperator>(path_ctx.inputNode);
+                            path_ctx.inputSchema = fop->getOutputSchema();
+                            path_ctx.readSchema = fop->getInputSchema(); // when null-value opt is used, then this is different! hence apply!
+                            path_ctx.columnsToRead = fop->columnsToSerialize();
+                            // print out columns & types!
+                            auto col_types = path_ctx.inputSchema.getRowType().isRowType() ? path_ctx.inputSchema.getRowType().get_column_types() : path_ctx.inputSchema.getRowType().parameters();
+                            assert(fop->columns().size() == col_types.size());
+                            for(unsigned i = 0; i < fop->columns().size(); ++i) {
+                                std::cout<<"col "<<i<<" (" + fop->columns()[i] + ")"<<": "<<col_types[i].desc()<<std::endl;
+                            }
+
+                        } else {
+                            path_ctx.inputSchema = path_ctx.inputNode->getOutputSchema();
+                            path_ctx.readSchema = Schema::UNKNOWN; // not set, b.c. not a reader...
+                            path_ctx.columnsToRead = {};
+                        }
+
+                        path_ctx.outputSchema = path_ctx.operators.back()->getOutputSchema();
+                    }
+
+                    // if no separate fast path is generated, use as normal-case the current path.
+                    if(!gen_fast_code)
+                        normalCaseInputRowType = path_ctx.inputSchema.getRowType();
+
+                    // Before generating slow path, store correct input schema.
+                    _inputSchema = path_ctx.inputSchema;
+
+                    // mapping will be intact, because slow path won't be affected.
+                    stage->_slowCodePath = generateResolveCodePath(ctx, path_ctx, normalCaseInputRowType, ctx.normalToGeneralMapping);
                 }
 
 #ifndef NDEBUG
                 stringToFile("python_code_" + stage->_pyPipelineName + ".py", stage->_pyCode);
 #endif
 
-#ifdef BUILD_WITH_CEREAL
-                // use test-wise cereal to encode the context (i.e., the stage) to send
-                // over to individual executors for specialization.
-                std::ostringstream oss(std::stringstream::binary);
-                {
-                    cereal::BinaryOutputArchive ar(oss);
-                    ar(ctx);
-                    // ar going out of scope flushes everything
-                }
-                auto bytes_str = oss.str();
-#else
-                std::string bytes_str;
-
-                // use custom written JSON serialization routine
-                bytes_str = ctx.toJSON();
-#endif
-                logger.info("Serialized CodeGeneration Context to " + sizeToMemString(bytes_str.size()));
-                // compress this now using zip or so...
-                // https://gist.github.com/gomons/9d446024fbb7ccb6536ab984e29e154a
-                auto compressed_cg_str = compress_string(bytes_str);
-                logger.info("ZLIB compressed CodeGeneration Context is: " + sizeToMemString(compressed_cg_str.size()));
-                // @TODO: remove the hacky stuff!
-
-                #ifndef NDEBUG
-                    // validate result
-                    auto decompressed_str = decompress_string(compressed_cg_str);
-                    if(decompressed_str != bytes_str)
-                        logger.error("decompressed string doesn't match compressed one.");
-                #endif
-
-//                auto json_str = ctx.toJSON();
-//                logger.info("serialized stage as JSON string (TODO: make this better, more efficient, ...");
-                // stage->_encodedData = json_str; // hack
-                stage->_encodedData = compressed_cg_str; // the codegen context
+                stage->_encodedData = codegen::serialize_codegen_context(ctx); // the codegen context
 
                 // fill in hashing
                 auto hash_key_cols = ctx.hashColKeys;

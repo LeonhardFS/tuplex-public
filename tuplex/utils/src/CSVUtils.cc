@@ -729,6 +729,9 @@ unquoted_field:
 
         // parse first row
         using namespace std;
+        if(columnCount == 0)
+            throw std::runtime_error("Can't detect header, column count must be at least 1");
+
         assert(columnCount > 0);
         assert(start <= end);
 

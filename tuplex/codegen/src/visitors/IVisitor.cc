@@ -56,4 +56,15 @@ namespace tuplex {
             return make_tuple(true, true, ifelse->_else.get());
         }
     }
+
+    bool has_any_statement_positive_visits(NSuite* suite) {
+        if(!suite)
+            return false;
+
+        for(const auto& stmt : suite->_statements) {
+            if(stmt->hasAnnotation() && stmt->annotation().numTimesVisited > 0)
+                return true;
+        }
+        return false;
+    }
 }

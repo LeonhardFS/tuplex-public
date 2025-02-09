@@ -11,6 +11,7 @@
 #include <Tuple.h>
 #include <sstream>
 #include <string>
+#include <Serializer.h>
 
 namespace tuplex {
 
@@ -20,9 +21,11 @@ namespace tuplex {
             _elements = nullptr;
         } else {
             _numElements = elements.size();
-            _elements = new Field[_numElements];
-            for(int i = 0; i < _numElements; ++i)
-                _elements[i] = elements[i];
+            if(_numElements > 0) {
+                _elements = new Field[_numElements];
+                for(int i = 0; i < _numElements; ++i)
+                    _elements[i] = elements[i];
+            }
         }
     }
 
@@ -41,6 +44,11 @@ namespace tuplex {
     }
 
     Tuple& Tuple::operator = (const Tuple &other) {
+
+        // perform self-assignment check to avoid unpredictable behavior.
+        if(&other == this)
+            return *this;
+
         // release mem
         if(_elements)
             delete [] _elements;
@@ -121,7 +129,7 @@ namespace tuplex {
             return false;
 
         // elementwise comparison
-        for(unsigned i = 0; i < rhs._numElements; ++i) {
+        for(int i = 0; i < rhs._numElements; ++i) {
             Field a = rhs.getField(i);
             Field b = rhs.getField(i);
             if(a != b)
@@ -134,10 +142,45 @@ namespace tuplex {
         Tuple *t = new Tuple();
         assert(t->_elements == nullptr);
         t->_numElements = _numElements;
-        t->_elements = new Field[t->_numElements];
-        for(unsigned i = 0; i < _numElements; ++i) {
-            t->_elements[i] = _elements[i];
+
+        if(_numElements > 0) {
+            t->_elements = new Field[t->_numElements];
+            for(unsigned i = 0; i < _numElements; ++i) {
+                t->_elements[i] = _elements[i];
+            }
         }
         return t;
     }
+
+    size_t Tuple::serialized_length() const {
+        if(_numElements == 0)
+            return 0;
+
+        // use Serializer to check length
+        Serializer s;
+        for(unsigned i = 0; i < _numElements; ++i)
+            s.appendField(_elements[i]);
+        return s.length();
+    }
+
+    size_t Tuple::serialize_to(uint8_t* ptr) const {
+        if(_numElements == 0)
+            return 0;
+
+        // use Serializer to check length
+        Serializer s;
+        for(unsigned i = 0; i < _numElements; ++i)
+            s.appendField(_elements[i]);
+        auto length = s.length();
+        return s.serialize(ptr, length);
+    }
+
+    std::vector<Field> Tuple::to_vector() const {
+        std::vector<Field> v;
+        for(unsigned i = 0; i < _numElements; ++i) {
+            v.push_back(_elements[i]);
+        }
+        return v;
+    }
 }
+

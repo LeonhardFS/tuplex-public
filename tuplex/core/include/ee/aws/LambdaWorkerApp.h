@@ -12,12 +12,13 @@
 #define TUPLEX_LAMBDAWORKERAPP_H
 
 #include "../worker/WorkerApp.h"
+#include "AWSLambdaInvocationService.h"
 
 #ifdef BUILD_WITH_AWS
 
 #include <AWSCommon.h>
 #include <ee/aws/ContainerInfo.h>
-#include <ee/aws/RequestInfo.h>
+#include <ee/RequestInfo.h>
 #include <aws/core/Aws.h>
 #include <aws/core/utils/Outcome.h>
 #include <aws/core/utils/logging/DefaultLogSystem.h>
@@ -32,6 +33,9 @@
 // safety time to allocate for creating proper response
 #define AWS_LAMBDA_SAFETY_DURATION_IN_MS 1000
 
+// timeout if less than 2s are left, this should leave enough time to return/create a partial result.
+#define AWS_LAMBDA_TIMEOUT_IN_S (2.0)
+
 namespace tuplex {
 
     // externally link, i.e. in testing need dummy to make linking work!
@@ -45,18 +49,26 @@ namespace tuplex {
     /// Lambda specific Worker, inherits from base WorkerApp class
     class LambdaWorkerApp : public WorkerApp {
     public:
-        LambdaWorkerApp(const LambdaWorkerSettings& ws) : WorkerApp(ws), _outstandingRequests(0) {
+        LambdaWorkerApp() = default;
 
+        LambdaWorkerApp(const LambdaWorkerSettings& ws) : WorkerApp(ws), _outstandingRequests(0), _timeoutFunctor(nullptr) {
             // for Lambda install sighandler for curl
             _aws_options.httpOptions.installSigPipeHandler = true;
+            setLoggerName("Lambda worker");
         }
-
-        tuplex::messages::InvocationResponse generateResponse();
 
         int globalInit(bool skip) override;
 
-        ~LambdaWorkerApp() {
+        ~LambdaWorkerApp() {}
 
+        void setFunctionName(const std::string& name) { _functionName = name; }
+
+        /*!
+             * set function which returns how many seconds are left before timing out.
+             * @param f
+             */
+        inline void setTimeoutFunctor(std::function<double()> f=nullptr) {
+            _timeoutFunctor = f;
         }
 
     protected:
@@ -83,14 +95,51 @@ namespace tuplex {
 
         int processMessage(const tuplex::messages::InvocationRequest& req) override;
 
-        MessageHandler& logger() const override {
-            return Logger::instance().logger("Lambda worker");
-        }
-
         std::string _functionName;
         NetworkSettings _networkSettings;
         tuplex::AWSCredentials _credentials;
+
+    protected:
+        void fill_with_result(messages::InvocationResponse& response);
+        int invokeRecursivelyAsync(int num_to_invoke,
+                                                            const std::string& error_code,
+                                                            const messages::InvocationRequest& error_message,
+                                                            const std::vector<std::vector<FilePart>>& parts) override;
+        int waitForInvoker() const override;
+        void fill_response_with_self_invocation_state(messages::InvocationResponse& response) const override;
+
+
+        // timeout handling, i.e. query global environment periodically.
+        std::function<double()> _timeoutFunctor;
+        std::mutex _timeoutMutex;
+        bool aboutToTimeout() override;
     private:
+
+        // Self-invoking AWS Lambda Invocation service.
+        std::unique_ptr<AwsLambdaInvocationService> _lambdaInvoker;
+
+        // thread-safe callback functions.
+
+        // Allow to freely manipulate _response, yet this is thread-safe version used only by the lambda handlers.
+        messages::InvocationResponse _thread_safe_response;
+        std::mutex _thread_safe_response_mutex;
+        void thread_safe_lambda_success_handler(const AwsLambdaRequest& request,
+                                                const AwsLambdaResponse& response);
+
+        void thread_safe_lambda_failure_handler(const AwsLambdaRequest& request, LambdaStatusCode error_code, const std::string& error_message);
+
+        inline void reset_lambda_invocation_service(const std::shared_ptr<Aws::Lambda::LambdaClient>& client) {
+            _lambdaInvoker.reset(new AwsLambdaInvocationService(client, _functionName));
+            {
+                // Clear thread_safe_response.
+                std::lock_guard<std::mutex> lock(_thread_safe_response_mutex);
+                _thread_safe_response.Clear();
+            }
+        }
+
+
+        // update network settings from current environment, or restores it to default AWS Lambda settings.
+        void update_network_settings(const std::unordered_map<std::string, std::string> &env={});
 
         struct Metrics {
             double global_init_time;
@@ -110,6 +159,7 @@ namespace tuplex {
             _requests.clear();
             _output_uris.clear();
             _input_uris.clear();
+            _response.Clear();
         }
 
         // self-invocation to scale-out
@@ -194,8 +244,11 @@ namespace tuplex {
 
 
         std::shared_ptr<Aws::Lambda::LambdaClient> _lambdaClient;
-        std::shared_ptr<Aws::Lambda::LambdaClient> createClient(double timeout, size_t max_connections);
-
+        std::shared_ptr<Aws::Lambda::LambdaClient> createLambdaClient(Aws::Client::ClientConfiguration config, double timeout, size_t max_connections) const;
+        inline std::shared_ptr<Aws::Lambda::LambdaClient> createLambdaClient(double timeout, size_t max_connections) const {
+            Aws::Client::ClientConfiguration config;
+            return createLambdaClient(config, timeout, max_connections);
+        }
 
         struct LambdaRequestContext : public Aws::Client::AsyncCallerContext {
             LambdaWorkerApp *app;
@@ -221,8 +274,7 @@ namespace tuplex {
                              const std::string& errorName,
                              const std::string& errorMessage);
 
-        void prepareResponseFromSelfInvocations();
-
+        //void prepareResponseFromSelfInvocations();
     };
 
     extern std::vector<ContainerInfo> selfInvoke(const std::string& functionName,
@@ -250,6 +302,10 @@ namespace tuplex {
 
     // check whether AWS env is set
     extern bool checkIfOptionIsSetInEnv(const std::string& option_name);
+
+    // expose helpers to test them.
+    extern URI create_spill_uri_from_first_part_uri(const URI& first_part_uri, int first_part_offset, int offset);
+    extern URI create_output_uri_from_first_part_uri(const URI& first_part_uri, int first_part_offset, int offset);
 
 }
 

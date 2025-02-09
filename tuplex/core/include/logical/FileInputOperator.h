@@ -40,7 +40,8 @@ namespace tuplex {
 
         // JSON fields
         bool _json_unwrap_first_level;
-        bool _json_treat_heterogenous_lists_as_tuples;
+        bool _json_treat_heterogeneous_lists_as_tuples;
+        bool _json_use_generic_dicts; // whether to use generic dicts instead of structured dicts
 
         // general fields for managing both cases & projections
         std::vector<std::string> _null_values;
@@ -53,7 +54,7 @@ namespace tuplex {
         std::unordered_map<size_t, python::Type> _indexBasedHints;
 
         // *** members NOT to serialize ***
-        // Variables that wont' get serialized.
+        // Variables that won't get serialized.
         double _sampling_time_s;
         SamplingMode _samplingMode;
         size_t _samplingSize;
@@ -113,6 +114,9 @@ namespace tuplex {
             return false;
         }
 
+        // goes over all stored JSON samples and makes sure they work with normal case / general case type by updating them.
+        void adjustJsonSamples(std::vector<std::string> assumed_column_names, size_t assumed_column_count);
+
     public:
         // helper function to project a schema
         inline python::Type projectRowType(const python::Type& rowType) const {
@@ -123,7 +127,7 @@ namespace tuplex {
 
             if(PARAM_USE_ROW_TYPE) {
                 if(!rowType.isRowType()) {
-                    Logger::instance().logger("logical planner").error("PARAM_USE_ROW_TYPE set, but given rowType is " + rowType.desc() + ", assert will fail.");
+                    Logger::instance().logger("logical planner").error("PARAM_USE_ROW_TYPE set, but given rowTypeAsTupleType is " + rowType.desc() + ", assert will fail.");
                 }
                 assert(rowType.isRowType());
                 if(python::Type::EMPTYROW == rowType)
@@ -147,7 +151,7 @@ namespace tuplex {
                 throw std::runtime_error("can't project row type, expected a tuple type but got " + rowType.desc());
 
             assert(rowType.isTupleType());
-            // assert(rowType.parameters().size() == _columnsToSerialize.size());
+            // assert(rowTypeAsTupleType.parameters().size() == _columnsToSerialize.size());
 
             auto params = rowType.parameters();
             std::vector<python::Type> col_types;
@@ -253,6 +257,9 @@ namespace tuplex {
 
         // TODO: Refactor constructors
 
+        // project row according to which column should get serialized.
+        Row projectRow(const Row& row) const;
+
         // CSV Constructor
         FileInputOperator(const std::string& pattern,
                           const ContextOptions& co,
@@ -304,6 +311,40 @@ namespace tuplex {
         std::vector<Row> sampleORCFile(const URI& uri, size_t uri_size, const SamplingMode& mode);
         std::vector<Row> sampleJsonFile(const URI& uri, size_t uri_size, const SamplingMode& mode,
                                         std::vector<std::vector<std::string>>* outNames, const SamplingParameters& sampling_params);
+
+
+        // sample cache functions (each with a lock)
+        inline aligned_string getSampleFromCache(const std::tuple<URI, SamplingMode>& key) {
+            std::lock_guard<std::mutex> lock(_sampleCacheMutex);
+
+            // check if in sample cache already
+            auto it = _sampleCache.find(key);
+            if(it != _sampleCache.end())
+                return it->second;
+            return "";
+        }
+
+        inline aligned_string getSampleFromCache(const URI& uri, const SamplingMode& mode) {
+            auto key = std::make_tuple(uri, perFileMode(mode));
+            return getSampleFromCache(key);
+        }
+
+        inline size_t addSampleToCache(const std::tuple<URI, SamplingMode>& key, const aligned_string& sample) {
+            std::lock_guard<std::mutex> lock(_sampleCacheMutex);
+
+            // put into cache
+            _sampleCache[key] = sample;
+
+            return _sampleCache.size();
+        }
+
+        inline void clearCache() {
+            std::lock_guard<std::mutex> lock(_sampleCacheMutex);
+            _cachePopulated = false;
+
+            // clear internal caches
+            _sampleCache.clear();
+        }
 
         /*!
          * samples a file according to internally stored file mode and a per-file sampling mode.
@@ -397,13 +438,17 @@ namespace tuplex {
          * @param unwrap_first_level if true, then the first level is unwrapped. Else, dataset is treated to have a single column.
          * @param treat_heterogenous_lists_as_tuples set to true to lower footprint.
          * @param co context options
+         * @param sampling_mode which sampling mode to use
+         * @param optional normal_case_schema.
+         * @param optional general_case_schema.
          * @return input operator
          */
         static FileInputOperator *fromJSON(const std::string& pattern,
                                            bool unwrap_first_level,
                                            bool treat_heterogenous_lists_as_tuples,
                                            const ContextOptions& co,
-                                           const SamplingMode& sampling_mode);
+                                           const SamplingMode& sampling_mode,
+                                           const std::unordered_map<std::string, python::Type>& column_based_type_hints={});
 
 
         std::string name() const override {
@@ -430,6 +475,8 @@ namespace tuplex {
         bool isActionable() override { return false; }
 
         bool isDataSource() override { return true; }
+
+        inline SamplingMode samplingMode() const { return _samplingMode; }
 
         /*!
          * get the partitions where the parallelized data is stored.
@@ -527,6 +574,12 @@ namespace tuplex {
         void selectColumns(const std::vector<size_t>& columnsToSerialize, bool original_indices=true);
 
         /*!
+         * select columns based on column names.
+         * @param columns
+         */
+        void selectColumns(const std::vector<std::string>& columns);
+
+        /*!
          * explicitly define some column names for this operator.
          * @param columnNames
          */
@@ -590,6 +643,12 @@ namespace tuplex {
 
         void setProjectionDefaults();
 
+        // for optimizer only.
+        void setRowSample(const std::vector<Row>& sample) {
+            _rowsSample = sample;
+            _cachePopulated = true;
+        }
+
         int64_t cost() const override;
 
         /*!
@@ -626,7 +685,8 @@ namespace tuplex {
             obj["fmt"] = (int)_fmt;
 
             obj["jsonUnwrap"] = _json_unwrap_first_level;
-            obj["jsonTuples"] = _json_treat_heterogenous_lists_as_tuples;
+            obj["jsonTuples"] = _json_treat_heterogeneous_lists_as_tuples;
+            obj["jsonGenericDict"] = _json_use_generic_dicts;
 
             obj["samplingMode"] = (int)_samplingMode;
             obj["samplingSize"] = _samplingSize;
@@ -661,7 +721,8 @@ namespace tuplex {
             fop->_header = obj["hasHeader"].get<bool>();
 
             fop->_json_unwrap_first_level = obj["jsonUnwrap"].get<bool>();
-            fop->_json_treat_heterogenous_lists_as_tuples = obj["jsonTuples"].get<bool>();
+            fop->_json_treat_heterogeneous_lists_as_tuples = obj["jsonTuples"].get<bool>();
+            fop->_json_use_generic_dicts = obj["jsonGenericDict"] = obj["jsonGenericDict"].get<bool>();
             for(const auto& uri : obj["uris"])
                 fop->_fileURIs.push_back(uri.get<std::string>());
             fop->_sizes = obj["sizes"].get<std::vector<size_t>>();
@@ -696,7 +757,8 @@ namespace tuplex {
                     _header,
                     _null_values,
                     _json_unwrap_first_level,
-                    _json_treat_heterogenous_lists_as_tuples,
+                    _json_treat_heterogeneous_lists_as_tuples,
+                    _json_use_generic_dicts,
                     _columnNames,
                     _columnsToSerialize,
                     _indexBasedHints,
@@ -717,7 +779,8 @@ namespace tuplex {
                 _header,
                 _null_values,
                 _json_unwrap_first_level,
-                _json_treat_heterogenous_lists_as_tuples,
+                _json_treat_heterogeneous_lists_as_tuples,
+                _json_use_generic_dicts,
                 _columnNames,
                 _columnsToSerialize,
                 _indexBasedHints,

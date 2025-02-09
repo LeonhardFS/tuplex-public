@@ -20,6 +20,21 @@ namespace tuplex {
     private:
         std::string _columnToMap;
         int         _columnToMapIndex;
+
+        inline python::Type create_ret_type(const std::vector<python::Type>& colTypes, const python::Type& input_row_type) {
+            if(input_row_type.isRowType()) {
+                // additional column or not?
+                if(_columnToMapIndex < colTypes.size()) {
+                    // overwrite
+                    return python::Type::makeRowType(colTypes, input_row_type.get_column_names());
+                } else {
+                    auto columns = input_row_type.get_column_names();
+                    columns.push_back(_columnToMap);
+                    return python::Type::makeRowType(colTypes, columns);
+                }
+            }
+           return python::Type::makeTupleType(colTypes);
+        }
     public:
         std::shared_ptr<LogicalOperator> clone(bool cloneParents) const override;
 
@@ -63,6 +78,9 @@ namespace tuplex {
         void rewriteParametersInAST(const std::unordered_map<size_t, size_t>& rewriteMap) override;
 
         Schema getInputSchema() const override {
+            if(0 == numParents())
+                return Schema::UNKNOWN;
+
             return parent()->getOutputSchema(); // overwrite here, because UDFOperator always returns the UDF's input schema. However, for mapColumn it's not a row but an element!
         }
 

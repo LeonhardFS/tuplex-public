@@ -32,7 +32,8 @@ namespace tuplex {
         // go over pairs and make them all optional
         auto kv_pairs = struct_type.get_struct_pairs();
         for(auto& p : kv_pairs) {
-            p.alwaysPresent = false;
+            // p.alwaysPresent = false;
+            p.presence = python::MAYBE_PRESENT;
 
             // update value types as well
             p.valueType = generalize_struct_type(p.valueType);
@@ -62,11 +63,17 @@ namespace tuplex {
     }
 
 
-    FileInputOperator::FileInputOperator() : _fmt(FileFormat::OUTFMT_UNKNOWN), _json_unwrap_first_level(false),
-                                             _json_treat_heterogenous_lists_as_tuples(true), _header(false),
+    FileInputOperator::FileInputOperator() : _fmt(FileFormat::OUTFMT_UNKNOWN),
+                                             _json_unwrap_first_level(false),
+                                             _json_treat_heterogeneous_lists_as_tuples(true),
+                                             _json_use_generic_dicts(false),
+                                             _header(false),
                                              _sampling_time_s(0.0), _quotechar('\0'),
                                              _delimiter('\0'), _samplingMode(SamplingMode::UNKNOWN),
-                                             _isRowSampleProjected(false) {}
+                                             _isRowSampleProjected(false),
+                                             _cachePopulated(false),
+                                             _estimatedRowCount(0),
+                                             _samplingSize(0) {}
 
     void FileInputOperator::detectFiles(const std::string& pattern) {
         auto &logger = Logger::instance().logger("fileinputoperator");
@@ -121,16 +128,18 @@ namespace tuplex {
 
         auto key = std::make_tuple(uri, perFileMode(mode));
         if(use_cache) {
-            std::lock_guard<std::mutex> lock(_sampleCacheMutex);
-
-            // check if in sample cache already
-            auto it = _sampleCache.find(key);
-            if(it != _sampleCache.end())
-                return it->second;
+            auto retrieved_sample = getSampleFromCache(key);
+            if(!retrieved_sample.empty())
+                return retrieved_sample;
         }
 
         auto vfs = VirtualFileSystem::fromURI(uri);
         auto read_mode = VirtualFileMode::VFS_READ;
+
+        // Ensure thread-safety if specified in sampling mode.
+        if(mode & SamplingMode::MULTITHREADED)
+            read_mode = read_mode | VirtualFileMode::VFS_THREADSAFE;
+
         auto vf = vfs.open_file(target_uri, read_mode);
         if (!vf) {
             logger.error("could not open file " + uri.toString());
@@ -144,12 +153,11 @@ namespace tuplex {
         if(file_offset)
             *file_offset = range_start;
 
-        // determine sample size
-        if (range_size >= sampleSize)
-            sampleSize = core::floorToMultiple(std::min(sampleSize, range_size), 16ul);
-        else {
-            sampleSize = core::ceilToMultiple(std::min(sampleSize, range_size), 16ul);
-        }
+        // make sample size multiple
+        sampleSize = core::ceilToMultiple(std::min(sampleSize, range_size), 16ul);
+
+        if(sampleSize > range_size)
+            sampleSize = range_size;
 
         if(0 == sampleSize)
             return "";
@@ -177,10 +185,8 @@ namespace tuplex {
                 break;
         }
 
-        assert(sampleSize % 16 == 0); // needs to be divisible by 16...
-
         // memory must be at least 16
-        auto nbytes_sample = sampleSize + 16 + 1;
+        auto nbytes_sample = core::ceilToMultiple(sampleSize + 16 + 1, 16ul);
         aligned_string sample(nbytes_sample, '\0');
         assert(sample.capacity() > 16 && sample.size() > 16);
 
@@ -192,18 +198,16 @@ namespace tuplex {
         // read contents
         size_t bytesRead = 0;
         vf->readOnly(ptr, sampleSize, &bytesRead); // use read-only here to speed up sampling
-        auto end = ptr + sampleSize;
-        ptr[sampleSize] = 0; // important!
+        auto end = ptr + bytesRead;
 
-        Logger::instance().defaultLogger().info(
-                "sampled " + uri.toString() + " on " + sizeToMemString(sampleSize));
+        // memset to 0 after bytesRead for 16 bytes
+        assert(bytesRead + 16 < nbytes_sample);
+        std::memset(ptr + bytesRead, 0, 16ul);
 
-        if(use_cache) {
-            std::lock_guard<std::mutex> lock(_sampleCacheMutex);
+        logger.info("sampled " + uri.toString() + " on " + sizeToMemString(sampleSize));
 
-            // put into cache
-            _sampleCache[key] = sample;
-        }
+        if(use_cache)
+            addSampleToCache(key, sample);
 
         return sample;
     }
@@ -228,7 +232,7 @@ namespace tuplex {
         size_t accLineLength = 0;
         for(auto line : lines)
             accLineLength += line.length();
-        double avgLineLength = lines.empty() ? 1.0 : accLineLength / (double)lines.size();
+        double avgLineLength = lines.empty() ? 1.0 : (double)accLineLength / (double)lines.size();
         double estimatedRowCount = 0.0;
         for(auto s : _sizes)
             estimatedRowCount += (double)s / (double)avgLineLength;
@@ -238,7 +242,7 @@ namespace tuplex {
     FileInputOperator::FileInputOperator(const std::string& pattern,
             const ContextOptions& co,
             const std::vector<std::string>& null_values,
-            const SamplingMode& sampling_mode) : _null_values(null_values), _estimatedRowCount(0), _sampling_time_s(0.0), _samplingMode(sampling_mode), _samplingSize(co.SAMPLE_SIZE()), _cachePopulated(false) {
+            const SamplingMode& sampling_mode) : _null_values(null_values), _estimatedRowCount(0), _sampling_time_s(0.0), _samplingMode(normalizeSamplingMode(sampling_mode)), _samplingSize(co.SAMPLE_SIZE()), _cachePopulated(false) {
 
         auto &logger = Logger::instance().logger("fileinputoperator");
         _fmt = FileFormat::OUTFMT_TEXT;
@@ -292,39 +296,56 @@ namespace tuplex {
                                      column_name_hints, index_based_type_hints, column_based_type_hints, sampling_mode);
     }
 
-    FileInputOperator* FileInputOperator::fromJSON(const std::string &pattern,
+    inline void check_is_row_type(const python::Type& row_type) {
+        if(PARAM_USE_ROW_TYPE) {
+            if(row_type != python::Type::UNKNOWN && !row_type.isRowType())
+                throw std::runtime_error("PARAM_USE_ROW_TYPE is specified, but given type is " + row_type.desc() + ", should be Row[...]");
+        }
+    }
+
+    FileInputOperator *FileInputOperator::fromJSON(const std::string &pattern,
                                                    bool unwrap_first_level,
                                                    bool treat_heterogenous_lists_as_tuples,
                                                    const ContextOptions &co,
-                                                   const SamplingMode& sampling_mode) {
+                                                   const SamplingMode &sampling_mode,
+                                                   const std::unordered_map<std::string, python::Type>& column_based_type_hints) {
         auto &logger = Logger::instance().logger("fileinputoperator");
-
 
         auto f = new FileInputOperator();
         f->_fmt = FileFormat::OUTFMT_JSON;
         f->_json_unwrap_first_level = unwrap_first_level; //! set here for detect to work.
-        f->_json_treat_heterogenous_lists_as_tuples = treat_heterogenous_lists_as_tuples;
-        f->_samplingMode = sampling_mode;
+        f->_json_treat_heterogeneous_lists_as_tuples = treat_heterogenous_lists_as_tuples;
+        f->_json_use_generic_dicts = co.EXPERIMENTAL_USE_GENERIC_DICTS();
+        f->_samplingMode = normalizeSamplingMode(sampling_mode);
         f->_samplingSize = co.SAMPLE_SIZE();
 
-       Timer timer;
-       f->detectFiles(pattern);
+        Timer timer;
+        f->detectFiles(pattern);
 
-        if(!f->_fileURIs.empty()) {
+        std::vector<std::string> sample_column_names; // <-- store names of sample.
+
+        if (!f->_fileURIs.empty()) {
 
             std::vector<std::vector<std::string>> nameCollection;
-            std::vector<std::vector<std::string>>* namePtr = f->_json_unwrap_first_level ? &nameCollection : nullptr;
+            std::vector<std::vector<std::string>> *namePtr = f->_json_unwrap_first_level ? &nameCollection : nullptr;
 
             // fill sampling cache
-            f->fillFileCache(sampling_mode);
+            f->fillFileCache(f->_samplingMode);
             // now fill row cache (by parsing rows)
-            if(!co.USE_STRATIFIED_SAMPLING())
-                f->fillRowCache(sampling_mode, namePtr, co.SAMPLE_SIZE());
+            if (!co.USE_STRATIFIED_SAMPLING())
+                f->fillRowCache(f->_samplingMode, namePtr, co.SAMPLE_SIZE());
             else
-                f->fillRowCacheWithStratifiedSamples(sampling_mode, namePtr, co.SAMPLE_SIZE(), co.SAMPLE_STRATA_SIZE(), co.SAMPLE_SAMPLES_PER_STRATA());
+                f->fillRowCacheWithStratifiedSamples(f->_samplingMode, namePtr, co.SAMPLE_SIZE(), co.SAMPLE_STRATA_SIZE(),
+                                                     co.SAMPLE_SAMPLES_PER_STRATA());
 
-            // detect normal/general type
-            auto t = f->detectJsonTypesAndColumns(co, nameCollection);
+            // detect normal/general type if not given
+            std::tuple<python::Type, python::Type> t{python::Type::UNKNOWN, python::Type::UNKNOWN};
+            // need to invoke always in order to fill sample cache.
+            t = f->detectJsonTypesAndColumns(co, nameCollection);
+
+            // save names from sample
+            sample_column_names = f->_columnNames;
+
             python::Type normalcasetype = std::get<0>(t);
             python::Type generalcasetype = std::get<1>(t);
 
@@ -332,52 +353,233 @@ namespace tuplex {
             generalcasetype = generalize_type(generalcasetype);
 
             // special case, no unwrap -> remove inner option.
-            if(!unwrap_first_level) {
-                if(generalcasetype.isTupleType())
-                    generalcasetype = python::Type::makeTupleType(std::vector<python::Type>({generalcasetype.parameters().front().withoutOption()}));
+            if (!unwrap_first_level) {
+                if (generalcasetype.isTupleType())
+                    generalcasetype = python::Type::makeTupleType(
+                            std::vector<python::Type>({generalcasetype.parameters().front().withoutOption()}));
                 else
                     generalcasetype = generalcasetype.withoutOption();
             }
 
-            // check
-            logger.debug("JSON - normal case type: " + normalcasetype.desc());
-            logger.debug("JSON - general case type: " + generalcasetype.desc());
-
             // run row count estimation (required for cost-based optimizer)
             f->_estimatedRowCount = f->estimateSampleBasedRowCount();
 
-            if(PARAM_USE_ROW_TYPE) {
-                assert(!f->_columnNames.empty() && f->_columnNames.size() == normalcasetype.parameters().size());
-                assert(!f->_columnNames.empty() && f->_columnNames.size() == generalcasetype.parameters().size());
-                assert(normalcasetype.isTupleType());
-                assert(generalcasetype.isTupleType());
-                f->_normalCaseRowType = python::Type::makeRowType(normalcasetype.parameters(), f->_columnNames);
-                f->_generalCaseRowType = python::Type::makeRowType(generalcasetype.parameters(), f->_columnNames);
-                f->setOutputSchema(Schema(Schema::MemoryLayout::ROW, f->_generalCaseRowType));
+            if (PARAM_USE_ROW_TYPE) {
+                if (nameCollection.empty()) {
+                    logger.info("no samples given, setting type to empty row.");
+                    f->_normalCaseRowType = python::Type::EMPTYROW;
+                    f->_generalCaseRowType = python::Type::EMPTYROW;
+                } else {
+
+                    normalcasetype = python::Type::makeRowType(normalcasetype.parameters(), sample_column_names);
+                    generalcasetype = python::Type::makeRowType(generalcasetype.parameters(), sample_column_names);
+
+                    assert(normalcasetype.isRowType());
+                    f->_normalCaseRowType = normalcasetype;
+
+                    assert(generalcasetype.isRowType());
+                    f->_generalCaseRowType = generalcasetype;
+                }
             } else {
                 // get type & assign schema
                 f->_normalCaseRowType = normalcasetype;
                 f->_generalCaseRowType = generalcasetype;
-                f->setOutputSchema(Schema(Schema::MemoryLayout::ROW, generalcasetype));
             }
         } else {
             f->_estimatedRowCount = 0;
             logger.warn("no input files found, can't infer type from given path: " + pattern);
 
-            if(PARAM_USE_ROW_TYPE) {
-                f->setOutputSchema(Schema(Schema::MemoryLayout::ROW, python::Type::EMPTYROW));
-            } else {
-                f->setOutputSchema(Schema(Schema::MemoryLayout::ROW, python::Type::EMPTYTUPLE));
+            auto default_type = PARAM_USE_ROW_TYPE ? python::Type::EMPTYROW : python::Type::EMPTYTUPLE;
+
+            f->_normalCaseRowType = default_type;
+            f->_generalCaseRowType = default_type;
+        }
+
+        if(!column_based_type_hints.empty()) {
+
+            // which columns are contained? which aren't?
+            std::unordered_map<std::string, python::Type> contained_hints;
+            std::map<std::string, python::Type> new_hints;
+            for(auto kv: column_based_type_hints) {
+                if(indexInVector(kv.first, f->_columnNames) >= 0)
+                    contained_hints[kv.first] = kv.second;
+                else
+                    new_hints[kv.first] = kv.second;
+            }
+            std::vector<std::string> new_columns;
+            for(auto kv: new_hints)
+                new_columns.push_back(kv.first);
+            std::sort(new_columns.begin(), new_columns.end());
+
+            auto n_col_types = f->_normalCaseRowType.isTupleType() ? f->_normalCaseRowType.parameters() : f->_normalCaseRowType.get_column_types();
+            auto g_col_types = f->_generalCaseRowType.isTupleType() ? f->_generalCaseRowType.parameters() : f->_generalCaseRowType.get_column_types();
+
+            std::vector<python::Type> dummy(new_columns.size(), python::Type::NULLVALUE);
+            // append new columns w. hints
+            std::copy(new_columns.begin(), new_columns.end(), std::back_inserter(f->_columnNames));
+            std::copy(dummy.begin(), dummy.end(), std::back_inserter(n_col_types));
+            std::copy(dummy.begin(), dummy.end(), std::back_inserter(g_col_types));
+
+            f->_indexBasedHints.clear();
+
+            // update existing types
+            for(auto kv : column_based_type_hints) {
+                auto idx = indexInVector(kv.first, f->_columnNames);
+                n_col_types[idx] = kv.second;
+                g_col_types[idx] = kv.second;
+
+                // param check
+                if(f->_normalCaseRowType.isRowType() && idx < f->_normalCaseRowType.get_column_count())
+                    assert(f->_normalCaseRowType.get_column_name(idx) == kv.first);
+                if(f->_generalCaseRowType.isRowType() && idx < f->_generalCaseRowType.get_column_count())
+                    assert(f->_generalCaseRowType.get_column_name(idx) == kv.first);
+
+                // convert to index based hints.
+                f->_indexBasedHints[idx] = kv.second;
             }
 
-
+            // update types:
+            if(PARAM_USE_ROW_TYPE) {
+                f->_normalCaseRowType = python::Type::makeRowType(n_col_types, f->_columnNames);
+                f->_generalCaseRowType = python::Type::makeRowType(g_col_types, f->_columnNames);
+            } else {
+                f->_normalCaseRowType = python::Type::makeTupleType(n_col_types);
+                f->_generalCaseRowType = python::Type::makeTupleType(g_col_types);
+            }
         }
+
+        // adjust if normal-case / general-case column count differs.
+        auto normal_case_column_count = extract_columns_from_type(f->_normalCaseRowType);
+        auto general_case_column_count = extract_columns_from_type(f->_generalCaseRowType);
+        auto normal_case_column_names = f->_normalCaseRowType.isRowType() ? f->_normalCaseRowType.get_column_names() : f->_columnNames;
+        auto general_case_column_names = f->_generalCaseRowType.isRowType() ? f->_generalCaseRowType.get_column_names() : f->_columnNames;
+        auto treat_missing_first_level_as_null = unwrap_first_level; // TODO: expose as separate parameter?
+        if(normal_case_column_count != general_case_column_count) {
+            if(treat_missing_first_level_as_null) {
+
+                // check what the total number of columns is
+                std::set<std::string> unique_names(normal_case_column_names.begin(), normal_case_column_names.end());
+                for(const auto& name : general_case_column_names)
+                    unique_names.insert(name);
+                auto n_unique_columns = unique_names.size();
+
+                // adjust and sort names
+                std::vector<std::string> names{unique_names.begin(), unique_names.end()};
+                std::sort(names.begin(), names.end(), [](const std::string& sa, const std::string& sb) {
+                    return lexicographical_compare(sa.begin(), sa.end(), sb.begin(), sb.end());
+                });
+
+                std::vector<python::Type> normal_types;
+                std::vector<python::Type> general_types;
+
+                auto n_tuple_type = f->_normalCaseRowType.isRowType() ? f->_normalCaseRowType.get_columns_as_tuple_type() : f->_normalCaseRowType;
+                auto g_tuple_type = f->_generalCaseRowType.isRowType() ? f->_generalCaseRowType.get_columns_as_tuple_type() : f->_generalCaseRowType;
+                for(const auto& name : names) {
+                    auto n_idx = indexInVector(name, normal_case_column_names);
+                    auto g_idx = indexInVector(name, general_case_column_names);
+
+                    if(n_idx >= 0)
+                        normal_types.push_back(n_tuple_type.parameters()[n_idx]);
+                    else
+                        normal_types.push_back(python::Type::NULLVALUE);
+                    if(g_idx >= 0)
+                        general_types.push_back(g_tuple_type.parameters()[g_idx]);
+                    else {
+                        if(n_idx >= 0)
+                            general_types.push_back(python::Type::makeOptionType(n_tuple_type.parameters()[n_idx]));
+                        else
+                            general_types.push_back(python::Type::NULLVALUE);
+                    }
+                }
+
+                f->_columnNames = names;
+                f->_normalCaseRowType = PARAM_USE_ROW_TYPE ? python::Type::makeRowType(normal_types, names) : python::Type::makeTupleType(normal_types);
+                f->_generalCaseRowType = PARAM_USE_ROW_TYPE ? python::Type::makeRowType(general_types, names) : python::Type::makeTupleType(general_types);
+            } else {
+                // TODO: error.
+                f->useNormalCase();
+            }
+        }
+
+        // use general case output type
+        f->setOutputSchema(Schema(Schema::MemoryLayout::ROW, f->_generalCaseRowType));
 
         // set defaults for possible projection pushdown...
         f->setProjectionDefaults();
         f->_sampling_time_s += timer.time();
 
+        assert(f->_normalCaseRowType.hash() >= 0);
+        assert(f->_generalCaseRowType.hash() >= 0);
+
+        // check
+        logger.debug("JSON - normal case type: " + f->_normalCaseRowType.desc());
+        logger.debug("JSON - general case type: " + f->_generalCaseRowType.desc());
+
+        // empty? no files found? proceed.
+        if(f->_estimatedRowCount == 0)
+            return f;
+
+        // need to adjust samples (fill in nulls etc.)
+        assert(!sample_column_names.empty()); // <-- should be valid...
+        f->adjustJsonSamples(sample_column_names, sample_column_names.size());
+
+        // debug check:
+        // if rows have different number of columns, must use row type!
+#ifndef NDEBUG
+        size_t num_row_types = 0;
+        size_t min_column_count = 99999999;
+        size_t max_column_count = 0;
+        for(const auto& row: f->_rowsSample) {
+            num_row_types += row.getRowType().isRowType();
+            min_column_count = std::min(min_column_count, row.getNumColumns());
+            max_column_count = std::max(max_column_count, row.getNumColumns());
+        }
+
+        // different counts?
+        if(min_column_count != max_column_count) {
+            assert(num_row_types == f->_rowsSample.size()); // <-- all must be of row type.
+        }
+#endif
+
+
         return f;
+    }
+
+    void FileInputOperator::adjustJsonSamples(std::vector<std::string> assumed_column_names, size_t assumed_column_count) {
+
+        if(assumed_column_count != 0 && assumed_column_names.empty() && !_columnNames.empty())
+            assumed_column_names = _columnNames;
+
+        // check what normal case column names & general case column names are
+        auto normal_case_column_names = _normalCaseRowType.isRowType() ? _normalCaseRowType.get_column_names() : _columnNames;
+        auto general_case_column_names = _generalCaseRowType.isRowType() ? _generalCaseRowType.get_column_names() : _columnNames;
+
+        if(!vec_equal(normal_case_column_names, general_case_column_names) && (!_normalCaseRowType.isRowType() || !_generalCaseRowType.isRowType())) {
+            throw std::runtime_error("Both normal/general types must be of RowType.");
+        }
+
+        for(auto& row : _rowsSample) {
+            assert(row.getNumColumns() == assumed_column_count); // <-- this must hold.
+
+            // std::cout<<"row (before): "<<row.getRowType().desc()<<std::endl;
+
+            // are assumed_column_names given?
+            reorder_and_fill_missing_will_null(row, assumed_column_names, normal_case_column_names);
+
+
+            // each sample is usually assumed to be a tuple with column names
+            // std::cout<<"row (after): "<<row.getRowType().desc()<<std::endl;
+        }
+
+        // adjust column names based on expanded column names.
+        auto adjusted_normal_case_column_names = reorder_and_expand_column_names(assumed_column_names,
+                                                                                 normal_case_column_names);
+        _columnNames = adjusted_normal_case_column_names;
+
+        // // reset which columns to serialize.
+        // _columnsToSerialize = std::vector<bool>(_columnNames.size(), true);
+        //
+        // assert(_columnsToSerialize.size() == _columnNames.size());
     }
 
     void FileInputOperator::fillRowCache(SamplingMode mode, std::vector<std::vector<std::string>>* outNames, size_t sample_limit) {
@@ -429,6 +631,7 @@ namespace tuplex {
             _rowsSample = sample(mode, outNames, params);
         else
             _rowsSample = multithreadedSample(mode, outNames, params);
+
         logger.info("Extracting stratified row sample took " + std::to_string(timer.time()) + "s (sampling mode=" + samplingModeToString(mode) + ")");
     }
 
@@ -438,11 +641,7 @@ namespace tuplex {
 
         // cache already populated?
         // drop!
-        if(_cachePopulated) {
-            std::lock_guard<std::mutex> lock(_sampleCacheMutex);
-            _sampleCache.clear();
-            _cachePopulated = false;
-        }
+        clearCache();
 
         // if neither single-threaded nor multi-threaded are specified, use multi-threaded mode per default.
         if(!(mode & SamplingMode::SINGLETHREADED) && !(mode & SamplingMode::MULTITHREADED)) {
@@ -516,8 +715,6 @@ namespace tuplex {
         auto &logger = Logger::instance().logger("fileinputoperator");
 
         // first, fill the internal cache
-        assert(_sampleCache.empty());
-
         // this works by loading/requesting files in parallel
         std::set<int> file_indices;
         if(mode & SamplingMode::FIRST_FILE && _fileURIs.size() >= 1)
@@ -555,11 +752,9 @@ namespace tuplex {
             auto uri = _fileURIs[idx];
             auto file_mode = perFileMode(mode);
             auto key = std::make_tuple(uri, file_mode);
-            {
-                std::lock_guard<std::mutex> lock(_sampleCacheMutex);
-                // place into cache
-                _sampleCache[key] = vf[i].get();
-            }
+
+            auto sample = vf[i].get();
+            addSampleToCache(key, sample);
         }
 
         logger.info("Parallel sample fetch done.");
@@ -574,6 +769,9 @@ namespace tuplex {
         // construct indices from cache
         if(!_cachePopulated)
             fillFileCache(mode);
+
+
+
         set<unsigned> file_indices;
         {
             std::lock_guard<std::mutex> lock(_sampleCacheMutex);
@@ -654,7 +852,9 @@ namespace tuplex {
                                          const std::unordered_map<size_t, python::Type>& index_based_type_hints,
                                          const std::unordered_map<std::string, python::Type>& column_based_type_hints,
                                          const SamplingMode& sampling_mode) :
-                                                                            _null_values(null_values), _sampling_time_s(0.0), _samplingMode(sampling_mode), _samplingSize(co.SAMPLE_SIZE()), _cachePopulated(false), _estimatedRowCount(0) {
+            _null_values(null_values), _sampling_time_s(0.0), _samplingMode(normalizeSamplingMode(sampling_mode)), _samplingSize(co.SAMPLE_SIZE()),
+            _cachePopulated(false), _estimatedRowCount(0),
+            _json_unwrap_first_level(false), _json_treat_heterogeneous_lists_as_tuples(false), _json_use_generic_dicts(false) {
         auto &logger = Logger::instance().logger("fileinputoperator");
         _fmt = FileFormat::OUTFMT_CSV;
 
@@ -727,6 +927,10 @@ namespace tuplex {
             bool use_independent_columns = true;
             // when NVO is deactivated, normalcase and general case detected here are the same.
             auto normalcasetype = detectMajorityRowType(_rowsSample, co.NORMALCASE_THRESHOLD(), use_independent_columns, co.OPT_NULLVALUE_OPTIMIZATION());
+
+            if(python::Type::UNKNOWN == normalcasetype) {
+                throw std::runtime_error("failed to detect normal case type from sample for operator " + name());
+            }
 
             // general-case type is option[T] version of types encountered in normalcasetype.
             // for null, assume option[str].
@@ -881,7 +1085,7 @@ namespace tuplex {
         return new FileInputOperator(pattern, co, sampling_mode);
     }
 
-    FileInputOperator::FileInputOperator(const std::string &pattern, const ContextOptions &co, const SamplingMode& sampling_mode): _sampling_time_s(0.0), _samplingMode(sampling_mode), _samplingSize(co.SAMPLE_SIZE()), _cachePopulated(false) {
+    FileInputOperator::FileInputOperator(const std::string &pattern, const ContextOptions &co, const SamplingMode& sampling_mode): _sampling_time_s(0.0), _samplingMode(normalizeSamplingMode(sampling_mode)), _samplingSize(co.SAMPLE_SIZE()), _cachePopulated(false), _estimatedRowCount(0) {
 
 #ifdef BUILD_WITH_ORC
         auto &logger = Logger::instance().logger("fileinputoperator");
@@ -970,6 +1174,7 @@ namespace tuplex {
             return {};
         }
 
+        auto& logger = Logger::instance().defaultLogger();
 
         // restrict to num
         if(num <= _rowsSample.size()) {
@@ -981,13 +1186,14 @@ namespace tuplex {
             else return randomSampleFromReservoir(_rowsSample, num);
         } else {
             // need to increase sample size!
-            Logger::instance().defaultLogger().warn("requested " + std::to_string(num)
+            logger.warn("Requested " + std::to_string(num)
                                                     + " rows for sampling, but only "
                                                     + std::to_string(_rowsSample.size())
                                                     + " stored. Consider decreasing sample size. Returning all available rows.");
-            if(!_isRowSampleProjected)
+            if(!_isRowSampleProjected) {
+                logger.info("Returning projected sample.");
                 return projectSample(_rowsSample);
-            else
+            } else
                 return _rowsSample;
         }
     }
@@ -1048,6 +1254,55 @@ namespace tuplex {
         }
 
         return indices;
+    }
+
+    void FileInputOperator::selectColumns(const std::vector<std::string>& columns) {
+        using namespace std;
+
+        auto& logger = Logger::instance().logger("logical");
+
+        if(columns.empty()) {
+            auto columns_before = this->columns();
+            _columnsToSerialize = vector<bool>(_columnsToSerialize.size(), false);
+
+            stringstream ss;
+            ss<<"Columns before selectColumns: "<<columns_before<<"\nColumns after  selectColumns: "<<this->columns();
+            logger.debug(ss.str());
+
+            assert(extract_columns_from_type(getOutputSchema().getRowType()) == columns.size());
+
+            return;
+        }
+
+        // check that all columns are actually contained.
+        std::vector<int> indices;
+        std::vector<std::string> names_not_found;
+        for(const auto& name : columns) {
+            auto idx = indexInVector(name, this->_columnNames);
+            indices.push_back(idx);
+            if(idx < 0)
+                names_not_found.push_back(name);
+        }
+
+        if(!names_not_found.empty()) {
+            stringstream ss;
+            ss << "Can not select columns " << names_not_found << " from " << name()
+               << " operator, because columns are not contained.";
+            throw std::runtime_error(ss.str());
+        }
+
+        // reset columns to serialize, and print out result
+        auto columns_before = this->columns();
+        _columnsToSerialize = vector<bool>(_columnsToSerialize.size(), false);
+
+        for(auto idx : indices)
+            _columnsToSerialize[idx] = true;
+
+        stringstream ss;
+        ss<<"Columns before selectColumns: "<<columns_before<<"\nColumns after  selectColumns: "<<this->columns();
+        logger.debug(ss.str());
+
+        assert(extract_columns_from_type(getOutputSchema().getRowType()) == columns.size());
     }
 
     void FileInputOperator::selectColumns(const std::vector<size_t> &columnsToSerialize, bool original_indices) {
@@ -1173,26 +1428,27 @@ namespace tuplex {
     }
 
     FileInputOperator::FileInputOperator(const tuplex::FileInputOperator &other) : _fileURIs(other._fileURIs),
-                                                                             _sizes(other._sizes),
-                                                                             _estimatedRowCount(other._estimatedRowCount),
-                                                                             _fmt(other._fmt),
-                                                                             _quotechar(other._quotechar),
-                                                                             _delimiter(other._delimiter),
-                                                                             _header(other._header),
-                                                                             _null_values(other._null_values),
-                                                                             _columnsToSerialize(other._columnsToSerialize),
-                                                                             _columnNames(other._columnNames),
-                                                                             _normalCaseRowType(other._normalCaseRowType),
-                                                                             _generalCaseRowType(other._generalCaseRowType),
-                                                                             _indexBasedHints(other._indexBasedHints),
-                                                                             _rowsSample(other._rowsSample),
-                                                                             _isRowSampleProjected(other._isRowSampleProjected),
-                                                                             _cachePopulated(other._cachePopulated),
-                                                                             _samplingMode(other._samplingMode),
-                                                                             _sampling_time_s(other._sampling_time_s),
-                                                                             _samplingSize(other._samplingSize),
-                                                                             _json_unwrap_first_level(other._json_unwrap_first_level),
-                                                                             _json_treat_heterogenous_lists_as_tuples(other._json_treat_heterogenous_lists_as_tuples) {
+                                                                                   _sizes(other._sizes),
+                                                                                   _estimatedRowCount(other._estimatedRowCount),
+                                                                                   _fmt(other._fmt),
+                                                                                   _quotechar(other._quotechar),
+                                                                                   _delimiter(other._delimiter),
+                                                                                   _header(other._header),
+                                                                                   _null_values(other._null_values),
+                                                                                   _columnsToSerialize(other._columnsToSerialize),
+                                                                                   _columnNames(other._columnNames),
+                                                                                   _normalCaseRowType(other._normalCaseRowType),
+                                                                                   _generalCaseRowType(other._generalCaseRowType),
+                                                                                   _indexBasedHints(other._indexBasedHints),
+                                                                                   _rowsSample(other._rowsSample),
+                                                                                   _isRowSampleProjected(other._isRowSampleProjected),
+                                                                                   _cachePopulated(other._cachePopulated),
+                                                                                   _samplingMode(other._samplingMode),
+                                                                                   _sampling_time_s(other._sampling_time_s),
+                                                                                   _samplingSize(other._samplingSize),
+                                                                                   _json_unwrap_first_level(other._json_unwrap_first_level),
+                                                                                   _json_treat_heterogeneous_lists_as_tuples(other._json_treat_heterogeneous_lists_as_tuples),
+                                                                                   _json_use_generic_dicts(other._json_use_generic_dicts) {
         // copy members for logical operator
         LogicalOperator::copyMembers(&other);
         LogicalOperator::setDataSet(other.getDataSet());
@@ -1202,14 +1458,10 @@ namespace tuplex {
     }
 
     void FileInputOperator::cloneCaches(const tuplex::FileInputOperator &other) {
-        std::lock_guard<std::mutex> lock(_sampleCacheMutex);
+        clearCache();
 
+        // copy caches
         _cachePopulated = other._cachePopulated;
-
-        // clear internal caches
-        _sampleCache.clear();
-        _rowsSample.clear();
-
         _sampleCache = other._sampleCache;
         _rowsSample = other._rowsSample;
         _isRowSampleProjected = other._isRowSampleProjected;
@@ -1304,6 +1556,15 @@ namespace tuplex {
                     fillRowCacheWithStratifiedSamples(sm, namePtr, sample_limit, strata_size, samples_per_strata, random_seed);
                 }
 
+
+                // Quick check: Empty sample? Then warn and return.
+                if(estimateSampleBasedRowCount() == 0) {
+                    std::stringstream ss;
+                    ss<<"Could not retrieve sample from "<<_fileURIs<<". Skipping resample/retype step for "<<name();
+                    logger.warn(ss.str());
+                    return;
+                }
+
                 // detect new type
                 auto t = detectJsonTypesAndColumns(co, namesCollection);
 
@@ -1337,6 +1598,13 @@ namespace tuplex {
             }
 
             _estimatedRowCount = estimateSampleBasedRowCount();
+            // Quick check: Empty sample? Then warn and return.
+            if(_estimatedRowCount == 0) {
+                std::stringstream ss;
+                ss<<"Could not retrieve sample from "<<_fileURIs<<". Skipping resample/retype step for "<<name();
+                logger.warn(ss.str());
+                return;
+            }
 
             // correct for if columns are different
             if(!vec_equal(inputColumns(), cols_before_resample)) {
@@ -1455,6 +1723,43 @@ namespace tuplex {
         auto input_row_type = conf.row_type;
         bool is_projected_row_type = conf.is_projected;
 
+        // simpler way, create lookup maps (assume columns are always existing. Need to fix else).
+        std::set<std::string> all_column_names;
+        std::unordered_map<std::string, python::Type> conf_name_to_type_map;
+        std::unordered_map<std::string, python::Type> this_name_to_type_map;
+        for(unsigned i = 0; i < conf.columns.size(); ++i) {
+            auto name = conf.columns[i];
+            auto col_type = conf.row_type.isRowType() ? conf.row_type.get_column_type(name) : conf.row_type.parameters()[i];
+            all_column_names.insert(name);
+            conf_name_to_type_map[name] = col_type;
+        }
+
+        for(unsigned i = 0; i < columns().size(); ++i) {
+            auto name = columns()[i];
+            auto col_type = normalCaseSchema().getRowType().isRowType() ? normalCaseSchema().getRowType().get_column_type(name) : normalCaseSchema().getRowType().parameters()[i];
+            all_column_names.insert(name);
+            this_name_to_type_map[name] = col_type;
+        }
+
+        // debug:
+#ifndef NDEBUG
+        {
+            auto& logger = Logger::instance().logger("codegen");
+
+
+            // now check by printing everything:
+            std::stringstream ss;
+            ss<<"Performing file operator retype with:\n";
+            for(auto name : all_column_names) {
+                auto current_type = this_name_to_type_map.find(name) != this_name_to_type_map.end() ? this_name_to_type_map[name].desc() : "";
+                auto new_type = conf_name_to_type_map.find(name) != conf_name_to_type_map.end() ? conf_name_to_type_map[name].desc() : "";
+                ss<<"name= "<<name<<" current= "<<current_type<<" new= "<<new_type<<"\n";
+            }
+            logger.debug(ss.str());
+        }
+#endif
+
+
         // check that #columns corresponds to number of col types!
         if(!conf.columns.empty()) {
             assert(input_row_type.isTupleType());
@@ -1463,6 +1768,11 @@ namespace tuplex {
 
         assert(input_row_type.isTupleType());
         auto col_types = input_row_type.parameters();
+        auto col_names = conf.columns;
+
+        // check this is valid
+        assert(!col_names.empty() && col_types.size() == col_names.size());
+
         auto old_col_types = normalCaseSchema().getRowType().isRowType() ? normalCaseSchema().getRowType().get_column_types() : normalCaseSchema().getRowType().parameters();
         auto old_general_col_types = getOutputSchema().getRowType().isRowType() ? getOutputSchema().getRowType().get_column_types() : getOutputSchema().getRowType().parameters();
 
@@ -1472,6 +1782,7 @@ namespace tuplex {
         auto& logger = Logger::instance().logger("codegen");
 
         // check whether number of columns are compatible (necessary when no concrete columns are given)
+        // if this fails, need to update projected columns first!
         if(conf.columns.size() != projectColumns(inputColumns()).size()) {
             if (is_projected_row_type) {
                 if (col_types.size() != num_projected_columns) {
@@ -1510,33 +1821,40 @@ namespace tuplex {
 
             assert(lookup_index < old_general_col_types.size());
 
-            if(!python::canUpcastType(t, old_general_col_types[lookup_index])) {
-                // both struct types? => replace, can have different format. that's ok
-                if(t.withoutOption().isStructuredDictionaryType() &&
-                   old_general_col_types[lookup_index].withoutOption().isStructuredDictionaryType()) {
-                    logger.debug("encountered struct dict with different structure at index " + std::to_string(i));
-                } else {
-                    if(!(ignore_check_for_str_option && old_general_col_types[lookup_index] == str_opt_type)) {
-                        logger.warn("provided specialized type " + col_types[i].desc() + " can't be upcast to "
-                                    + old_general_col_types[lookup_index].desc() + ", ignoring in retype.");
-                        assert(lookup_index < old_col_types.size());
-                        col_types[i] = old_col_types[lookup_index];
-                    }
-                }
-            }
+            // TODO: why is this block here needed? => always use new types.
+            // if(!python::canUpcastType(t, old_general_col_types[lookup_index])) {
+            //     // both struct types? => replace, can have different format. that's ok
+            //     if((t.withoutOption().isSparseStructuredDictionaryType() || t.withoutOption().isStructuredDictionaryType()) &&
+            //             (old_general_col_types[lookup_index].withoutOption().isStructuredDictionaryType() || old_general_col_types[lookup_index].withoutOption().isSparseStructuredDictionaryType())) {
+            //         logger.debug("encountered struct dict with different structure at index " + std::to_string(i));
+            //     } else {
+            //         if(!(ignore_check_for_str_option && old_general_col_types[lookup_index] == str_opt_type)) {
+            //             logger.warn("provided specialized type " + col_types[i].desc() + " can't be upcast to "
+            //                         + old_general_col_types[lookup_index].desc() + ", ignoring in retype.");
+            //             assert(lookup_index < old_col_types.size());
+            //             col_types[i] = old_col_types[lookup_index];
+            //         }
+            //     }
+            // }
         }
 
         // type hints have precedence over sampling! I.e., include them here!
         for(const auto& kv : typeHints()) {
             auto idx = kv.first;
-            // are we having a projected type? then lookup in projection map!
-            auto m = projectionMap();
-            if(is_projected_row_type && !m.empty())
-                idx = m[idx]; // get projected index...
 
-            if(idx < col_types.size()) {
+            auto name = inputColumns()[idx];
+
+            // this here is buggy, use instead name search.
+            // // are we having a projected type? then lookup in projection map!
+            // auto m = projectionMap();
+            // if(is_projected_row_type && !m.empty())
+            //     idx = m[idx]; // get projected index...
+
+            idx = indexInVector(name, col_names);
+
+            if(idx >= 0 && idx < col_types.size()) {
                 col_types[idx] = kv.second;
-            } else
+            } else if(idx < 0)
                 logger.error("internal error, invalid type hint (with wrong index?)");
         }
 
@@ -1565,7 +1883,6 @@ namespace tuplex {
             else
                 _normalCaseRowType = python::Type::makeTupleType(col_types);
         }
-
 
         return true;
     }
@@ -1782,13 +2099,16 @@ namespace tuplex {
                     v = csv_parseRows(sample.c_str(), sample.size(), expectedColumnCount, file_offset,
                                       _delimiter, _quotechar, _null_values, limit);
                     sample_limit -= std::min(v.size(), limit);
-                    // offset = 0?
-                    if(file_offset == 0) {
-                        // header? ignore first row!
-                        if(_header && !v.empty())
+
+                    if(!v.empty()) {
+                        // offset = 0?
+                        if(file_offset == 0) {
+                            // header? ignore first row!
+                            if(_header)
+                                v.erase(v.begin());
+                        } else {
                             v.erase(v.begin());
-                    } else {
-                        v.erase(v.begin());
+                        }
                     }
                 }
             }
@@ -1880,6 +2200,8 @@ namespace tuplex {
         std::vector<Row> v;
         assert(mode & SamplingMode::FIRST_ROWS || mode & SamplingMode::LAST_ROWS || mode & SamplingMode::RANDOM_ROWS);
 
+        auto PARAM_USE_GENERIC_DICT = _json_use_generic_dicts;
+
         if(0 == uri_size || uri == URI::INVALID) {
             logger.debug("empty file, can't obtain sample from it");
             return {};
@@ -1933,7 +2255,7 @@ namespace tuplex {
         // check file sampling modes & then load the samples accordingly
         if(m & SamplingMode::FIRST_ROWS && sample_limit > 0) {
             auto sample = loadSample(_samplingSize, uri, uri_size, SamplingMode::FIRST_ROWS, true);
-            auto sample_length = std::min(sample.size() - 1, strlen(sample.c_str()));
+            auto sample_length = std::min(sample.size() - 1, strlen(sample.c_str()) + 1);
 
             size_t start_offset = 0;
             // range start != 0?
@@ -1948,13 +2270,14 @@ namespace tuplex {
 
             if(sampling_params.use_stratified_sampling()) {
                 std::set<unsigned> skip_rows;
+                assert(sample.size() >= start_offset + sample_length);
                 v = parseRowsFromJSONStratified(sample.c_str() + start_offset, sample_length,
-                                      outNames, outNames, _json_treat_heterogenous_lists_as_tuples, limit,
-                                      sampling_params.strata_size, sampling_params.samples_per_strata,
-                                      sampling_params.random_seed, skip_rows, PARAM_USE_GENERIC_DICT);
+                                                outNames, outNames, _json_treat_heterogeneous_lists_as_tuples, limit,
+                                                sampling_params.strata_size, sampling_params.samples_per_strata,
+                                                sampling_params.random_seed, skip_rows, PARAM_USE_GENERIC_DICT);
             } else {
                 v = parseRowsFromJSON(sample.c_str() + start_offset, sample_length,
-                                      outNames, outNames, _json_treat_heterogenous_lists_as_tuples, limit, PARAM_USE_GENERIC_DICT);
+                                      outNames, outNames, _json_treat_heterogeneous_lists_as_tuples, limit, PARAM_USE_GENERIC_DICT);
             }
             sample_limit -= std::min(v.size(), limit);
         }
@@ -1963,7 +2286,7 @@ namespace tuplex {
             // the smaller of remaining and sample size!
             size_t file_offset = 0;
             auto sample = loadSample(_samplingSize, uri, uri_size, SamplingMode::LAST_ROWS, true, &file_offset);
-            auto sample_length = std::min(sample.size() - 1, strlen(sample.c_str()));
+            auto sample_length = std::min(sample.size() - 1, strlen(sample.c_str()) + 1);
             size_t offset = 0;
             if(!v.empty()) {
                 if(range_size < 2 * sampling_size) {
@@ -1984,12 +2307,12 @@ namespace tuplex {
                 if(sampling_params.use_stratified_sampling()) {
                     std::set<unsigned> skip_rows;
                     rows = parseRowsFromJSONStratified(sample.c_str() + offset + start_offset, sample_length,
-                                             outNames, outNames, _json_treat_heterogenous_lists_as_tuples,
-                                             limit, sampling_params.strata_size, sampling_params.samples_per_strata,
+                                                       outNames, outNames, _json_treat_heterogeneous_lists_as_tuples,
+                                                       limit, sampling_params.strata_size, sampling_params.samples_per_strata,
                                                        sampling_params.random_seed, skip_rows, PARAM_USE_GENERIC_DICT);
                 } else {
                     rows = parseRowsFromJSON(sample.c_str() + offset + start_offset, sample_length,
-                                             outNames, outNames, _json_treat_heterogenous_lists_as_tuples,
+                                             outNames, outNames, _json_treat_heterogeneous_lists_as_tuples,
                                              limit, PARAM_USE_GENERIC_DICT);
                 }
                 sample_limit -= std::min(rows.size(), limit);
@@ -2006,12 +2329,12 @@ namespace tuplex {
                 if(sampling_params.use_stratified_sampling()) {
                     std::set<unsigned> skip_rows;
                     v = parseRowsFromJSONStratified(sample.c_str() + start_offset, sample_length,
-                                          outNames, outNames, _json_treat_heterogenous_lists_as_tuples,
-                                          limit, sampling_params.strata_size, sampling_params.samples_per_strata,
+                                                    outNames, outNames, _json_treat_heterogeneous_lists_as_tuples,
+                                                    limit, sampling_params.strata_size, sampling_params.samples_per_strata,
                                                     sampling_params.random_seed, skip_rows, PARAM_USE_GENERIC_DICT);
                 } else {
                     v = parseRowsFromJSON(sample.c_str() + start_offset, sample_length,
-                                          outNames, outNames, _json_treat_heterogenous_lists_as_tuples,
+                                          outNames, outNames, _json_treat_heterogeneous_lists_as_tuples,
                                           limit, PARAM_USE_GENERIC_DICT);
                 }
 
@@ -2036,12 +2359,12 @@ namespace tuplex {
             if(sampling_params.use_stratified_sampling()) {
                 std::set<unsigned> skip_rows;
                 rows = parseRowsFromJSONStratified(sample.c_str() + start_offset, sample_length,
-                                         outNames, outNames, _json_treat_heterogenous_lists_as_tuples,
-                                         limit, sampling_params.strata_size, sampling_params.samples_per_strata,
-                                         sampling_params.random_seed, skip_rows, PARAM_USE_GENERIC_DICT);
+                                                   outNames, outNames, _json_treat_heterogeneous_lists_as_tuples,
+                                                   limit, sampling_params.strata_size, sampling_params.samples_per_strata,
+                                                   sampling_params.random_seed, skip_rows, PARAM_USE_GENERIC_DICT);
             } else {
                 rows = parseRowsFromJSON(sample.c_str() + start_offset, sample_length,
-                                         outNames, outNames, _json_treat_heterogenous_lists_as_tuples,
+                                         outNames, outNames, _json_treat_heterogeneous_lists_as_tuples,
                                          limit, PARAM_USE_GENERIC_DICT);
             }
 
@@ -2148,7 +2471,7 @@ namespace tuplex {
     }
 
     std::vector<Row> FileInputOperator::sampleORCFile(const URI& uri, size_t uri_size, const SamplingMode& mode) {
-        throw std::runtime_error("not yet implemented");
+        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented");
         return {};
     }
 

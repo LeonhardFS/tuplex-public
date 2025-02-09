@@ -33,12 +33,14 @@ namespace tuplex {
 
     public:
         List() : _elements(nullptr), _numElements(0), _listType(python::Type::EMPTYLIST)   {}
-        ~List();
-
         List(List&& other) : _numElements(other._numElements), _elements(other._elements), _listType(other._listType) {
             other._numElements = 0;
             other._elements = nullptr;
         }
+
+        List(const python::Type& elementType) : _elements(nullptr), _numElements(0), _listType(python::Type::makeListType(elementType)) {}
+
+        ~List();
 
         // new variadic template param ctor
          template<typename... Targs> explicit List(Targs... Fargs) {
@@ -70,7 +72,12 @@ namespace tuplex {
             return l;
         }
 
+        std::vector<Field> to_vector() const;
+
         List* allocate_deep_copy() const;
+
+        size_t serialized_length() const;
+        size_t serialize_to(uint8_t* ptr) const;
     };
 
 

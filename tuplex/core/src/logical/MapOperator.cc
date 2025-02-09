@@ -72,6 +72,9 @@ namespace tuplex {
             }
         }
 
+        // auto& logger = Logger::instance().logger("logical plan");
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " has output type:" + getOutputSchema().getRowType().desc());
+
 #ifndef NDEBUG
         if(!_udf.empty())
             Logger::instance().defaultLogger().info(
@@ -106,6 +109,9 @@ namespace tuplex {
         // empty udf? take sample from parent!
         if(_udf.empty())
             return parent()->getSample(num);
+
+        // auto& logger = Logger::instance().defaultLogger();
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Map operator getSample.");
 
         // first retrieve samples from parent
         // then, apply lambda (python version)
@@ -160,6 +166,8 @@ namespace tuplex {
                     "sampling map operator lead to " + std::to_string(numExceptions) + " exceptions");
 
         python::unlockGIL();
+
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Map operator returns " + pluralize(vRes.size(), "sample") + ".");
 
         return vRes;
     }
@@ -218,9 +226,13 @@ namespace tuplex {
     bool MapOperator::retype(const RetypeConfiguration& conf) {
         // assert(good());
 
+        auto& logger = Logger::instance().logger("logical plan");
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " retype.");
+
         // there are two options:
         // 1.) it's a rename operator -> special case
         if(_udf.empty()) {
+            logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + name() + " not supported with empty UDF yet.");
             throw std::runtime_error("rename not supported yet. Basically check if rename scheme works etc.");
         } else {
 

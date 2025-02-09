@@ -173,11 +173,13 @@ namespace tuplex {
         /*!
          * use PyObjects to trace within UDF and detect types + annotate which branches to use
          * @param sample array of PyObjects to feed to the AST
+         * param the original Row objects which are representing the sample
          * @param inputRowType optional input row type on which to filter samples
          * @param acquireGIL whether function should call lockGil/unlockGil
          * @return whether it succeeded (should be true, unless everyhting resulted in an exception)
          */
         bool hintSchemaWithSample(const std::vector<PyObject*>& sample,
+                                  const std::vector<Row>& original_sample_rows,
                                   const python::Type& inputRowType=python::Type::UNKNOWN,
                                   bool acquireGIL=false);
 

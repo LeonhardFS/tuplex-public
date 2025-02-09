@@ -2,7 +2,7 @@
 // Created by Leonhard Spiegelberg on 1/31/22.
 //
 
-#include <ee/aws/RequestInfo.h>
+#include <ee/RequestInfo.h>
 #include <AWSCommon.h>
 #include <aws/core/utils/HashingUtils.h>
 
@@ -30,37 +30,15 @@ namespace tuplex {
         std::vector<std::string> tabCols;
         splitString(reportLine, '\t', [&](const std::string& s) { tabCols.emplace_back(s); });
 
+        info.awsTimings = AWSLambdaTimings::parse_from_log(reportLine);
+
         // extract parts
         for(auto col : tabCols) {
             trim(col);
 
-            if (info.requestId.empty() && strStartsWith(col, "RequestId: ")) {
+            if (info.awsRequestId.empty() && strStartsWith(col, "RequestId: ")) {
                 // extract ID and store it
-                info.requestId = col.substr(strlen("RequestId: "));
-            }
-
-            if (strStartsWith(col, "Duration: ") && strEndsWith(col, " ms")) {
-                // extract ID and store it
-                auto r = col.substr(strlen("Duration: "), col.length() - 3 - strlen("Duration: "));
-                info.durationInMs = std::stod(r);
-            }
-
-            if (strStartsWith(col, "Billed Duration: ") && strEndsWith(col, " ms")) {
-                // extract ID and store it
-                auto r = col.substr(strlen("Billed Duration: "), col.length() - 3 - strlen("Billed Duration: "));
-                info.billedDurationInMs = std::stoi(r);
-            }
-
-            if (strStartsWith(col, "Memory Size: ") && strEndsWith(col, " MB")) {
-                // extract ID and store it
-                auto r = col.substr(strlen("Memory Size: "), col.length() - 3 - strlen("Memory Size: "));
-                info.memorySizeInMb = std::stoi(r);
-            }
-
-            if (strStartsWith(col, "Max Memory Used: ") && strEndsWith(col, " MB")) {
-                // extract ID and store it
-                auto r = col.substr(strlen("Max Memory Used: "), col.length() - 3 - strlen("Max Memory Used: "));
-                info.maxMemoryUsedInMb = std::stoi(r);
+                info.awsRequestId = col.substr(strlen("RequestId: "));
             }
 
             // error message is formatted using RequestId: .... Error: ...

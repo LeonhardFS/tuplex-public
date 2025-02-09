@@ -55,7 +55,7 @@ namespace tuplex {
         tasks.clear();
     }
 
-    LocalBackend::LocalBackend(const Context& context) : IBackend(context), _compiler(nullptr), _options(context.getOptions()) {
+    LocalBackend::LocalBackend(Context& context) : IBackend(context), _compiler(nullptr), _options(context.getOptions()) {
 
         // initialize driver
         auto& logger = this->logger();
@@ -776,6 +776,31 @@ namespace tuplex {
 
             //Note: maybe put all these user-defined functions into fake, tuplex module??
 
+            {
+                auto mainModule = python::getMainModule();
+                // import cloudpickle for serialized functions
+                PyObject *cloudpickleModule = PyImport_ImportModule("cloudpickle");
+                if(!cloudpickleModule) {
+                     throw std::runtime_error("could not find cloudpickle module");
+                }
+
+                PyModule_AddObject(mainModule, "cloudpickle", cloudpickleModule);
+                auto versionObj =  PyObject_GetAttr(cloudpickleModule, python::PyString_FromString("__version__"));
+                auto version_string = python::PyString_AsString(versionObj);
+
+                // get information about Python version and cloudpickle version used
+                std::stringstream ss;
+                ss<<"Python version: "<<PY_MAJOR_VERSION<<"."<<PY_MINOR_VERSION<<"."<<PY_MICRO_VERSION;
+                ss<<" cloudpickle: "<<version_string;
+
+                // logging not supported within GIL, need lo leave quickly.
+                python::unlockGIL();
+                auto& logger = Logger::instance().logger("python");
+                logger.info(ss.str());
+                python::lockGIL();
+            }
+
+
             // get main module
             // Note: This needs to get called BEFORE globals/locals...
             auto main_mod = python::getMainModule();
@@ -787,7 +812,7 @@ namespace tuplex {
 
             // check for errors
             if(PyErr_Occurred()) {
-                Logger::instance().defaultLogger().error("while interpreting python pipeline code, an error occurred.");
+                std::cerr<<"While interpreting python pipeline code, an error occurred:"<<std::endl;
                 PyErr_Print();
                 std::cerr<<std::endl;
                 std::cout.flush();
@@ -905,15 +930,21 @@ namespace tuplex {
         // @TODO: do not compile slow path yet, do it later in parallel when other threads are already working!
         // deactivate slow path symbols when using interpreter only for resolve...
         auto syms = tstage->compile(*_compiler, _options.USE_LLVM_OPTIMIZER() ? &optimizer : nullptr,
-                                    _options.RESOLVE_WITH_INTERPRETER_ONLY());
+                                    _options.RESOLVE_WITH_INTERPRETER_ONLY(), true, _options.EXPERIMENTAL_TRACE_EXECUTION());
         bool combineOutputHashmaps = syms->aggInitFunctor && syms->aggCombineFunctor && syms->aggAggregateFunctor;
         JobMetrics& metrics = tstage->PhysicalStage::plan()->getContext().metrics();
         double total_compilation_time = metrics.getTotalCompilationTime() + timer.time();
         metrics.setTotalCompilationTime(total_compilation_time);
-        {
+        if(syms->valid()) {
             std::stringstream ss;
             ss<<"[Transform Stage] Stage "<<tstage->number()<<" compiled to x86 in "<<timer.time()<<"s";
             Logger::instance().defaultLogger().info(ss.str());
+        } else {
+            // failed to compile, abort stage execution
+            std::stringstream ss;
+            ss<<"[Transform Stage] Failed to compile stage to x86.";
+            Logger::instance().defaultLogger().error(ss.str());
+            throw std::runtime_error("transform stage compilation error");
         }
 
         // -------------------------------------------------------------------

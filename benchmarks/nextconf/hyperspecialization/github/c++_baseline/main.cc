@@ -192,7 +192,11 @@ namespace mode {
             //            return None
             //        return repo.get('id')
             //    else:
-            //        return row['repo'].get('id')
+            //        repo = row.get('repo')
+            //        if repo:
+            //            return repo.get('id')
+            //        else:
+            //            return None
             if(2012 <= year && year <= 2014) {
                 if("FollowEvent" == row.type) {
                     if(!row.payload_target_id_present)
@@ -213,7 +217,7 @@ namespace mode {
                 return row.repository_id;
             } else {
                 if(!row.repo_present)
-                    throw std::runtime_error("");
+                    return {};
                 if(!row.repo_id_present)
                     return {};
                 return row.repo_id;
@@ -302,7 +306,11 @@ namespace mode {
             //            return None
             //        return repo.get('id')
             //    else:
-            //        return row['repo'].get('id')
+            //        repo = row.get('repo')
+            //        if repo:
+            //            return repo.get('id')
+            //        else:
+            //            return None
             if(2012 <= year && year <= 2014) {
                 if("FollowEvent" == type) {
                     return (int64_t)cJSON_AS4CPP_GetNumberValue(cJSON_AS4CPP_GetObjectItem(cJSON_AS4CPP_GetObjectItem(cJSON_AS4CPP_GetObjectItem(row, "payload"), "target"), "id"));
@@ -323,8 +331,11 @@ namespace mode {
                 else
                     return (int64_t)cJSON_AS4CPP_GetNumberValue(id);
             } else {
+                auto repo = cJSON_AS4CPP_GetObjectItem(row, "repo");
+                if(!repo)
+                    return {};
 
-                auto id = cJSON_AS4CPP_GetObjectItem(cJSON_AS4CPP_GetObjectItem(row, "repo"), "id");
+                auto id = cJSON_AS4CPP_GetObjectItem(repo, "id");
                 if(!id)
                     return {};
                 else
@@ -455,7 +466,11 @@ namespace mode {
             //            return None
             //        return repo.get('id')
             //    else:
-            //        return row['repo'].get('id')
+            //        repo = row.get('repo')
+            //        if repo:
+            //            return repo.get('id')
+            //        else:
+            //            return None
             if(2012 <= year && year <= 2014) {
                 if("FollowEvent" == type) {
                     return (int64_t)yyjson_mut_get_sint(yyjson_mut_obj_get(yyjson_mut_obj_get(yyjson_mut_obj_get(row, "payload"), "target"), "id"));
@@ -476,8 +491,12 @@ namespace mode {
                 else
                     return (int64_t)yyjson_mut_get_sint(id);
             } else {
+                auto repo = yyjson_mut_obj_get(row, "repo");
 
-                auto id = yyjson_mut_obj_get(yyjson_mut_obj_get(row, "repo"), "id");
+                if(!repo)
+                    return {};
+
+                auto id = yyjson_mut_obj_get(repo, "id");
                 if(!id)
                     return {};
                 else
@@ -614,7 +633,11 @@ namespace mode {
             //            return None
             //        return repo.get('id')
             //    else:
-            //        return row['repo'].get('id')
+            //        repo = row.get('repo')
+            //        if repo:
+            //            return repo.get('id')
+            //        else:
+            //            return None
             if(2012 <= year && year <= 2014) {
                 if("FollowEvent" == type) {
                     return doc["payload"]["target"]["id"].get_int64();
@@ -637,6 +660,9 @@ namespace mode {
                     return id;
             } else {
                 int64_t id;
+
+                // keep logic here as is, given error handling is folded into simdjson.
+
                 auto error = doc["repo"]["id"].get(id);
                 if(error)
                     return {};

@@ -23,6 +23,7 @@
 #include <iostream>
 #include <Logger.h>
 #include "JSONUtils.h"
+#include "StructCommon.h"
 
 #endif
 
@@ -125,12 +126,21 @@ namespace tuplex {
         if(other.hasPtrData()) {
             assert(_ptrValue == nullptr);
 
+            // is other NULL? --> skip.
+            if(other.isNull()) {
+                _isNull = true;
+                _ptrValue = nullptr;
+                _size = 0;
+                _type = other._type;
+                return;
+            }
+
             // special data structs have to perform individual deep copies
-            if(other._type.isTupleType()) {
+            if(other._type.withoutOption().isTupleType()) {
                 auto tuple_ptr = reinterpret_cast<Tuple*>(other._ptrValue);
                 _ptrValue = reinterpret_cast<uint8_t*>(tuple_ptr->allocate_deep_copy());
                 _size = sizeof(Tuple);
-            } else if(other._type.isListType()) {
+            } else if(other._type.withoutOption().isListType()) {
                 auto list_ptr = reinterpret_cast<List*>(other._ptrValue);
                 _ptrValue = reinterpret_cast<uint8_t*>(list_ptr->allocate_deep_copy());
                 _size = sizeof(List);
@@ -156,6 +166,9 @@ namespace tuplex {
 
     Field& Field::operator = (const Field &other) {
 
+        if(&other == this)
+            return *this;
+
         _size = other._size;
         _isNull = other._isNull;
 
@@ -166,11 +179,10 @@ namespace tuplex {
             _ptrValue = nullptr;
 
             // only invoke deepcopy if size != 0
-            if(other._size != 0) {
+            if(other._size != 0 && !other._isNull) {
                 assert(other._ptrValue);
                 deep_copy_from_other(other);
             }
-
         } else {
             // primitive val copy (doesn't matter which)
             _iValue = other._iValue;
@@ -183,11 +195,27 @@ namespace tuplex {
     void Field::releaseMemory() {
         if(hasPtrData()) {
             if(_ptrValue) {
+
                 // select correct deletion method!
-                if(_type.withoutOption().isListType() || _type.withoutOption().isTupleType())
-                    delete _ptrValue;
-                else
+                if((_type.withoutOption().isListType() && _type.withoutOption() != python::Type::EMPTYLIST)
+                || (_type.withoutOption().isTupleType() && !_type.withoutOption().parameters().empty())) {
+                    assert(!_isNull);
+
+                    // need to cast to invoke correct destructor.
+
+                    if(_type.withoutOption().isListType())
+                        delete (List*)_ptrValue;
+                    else if(_type.withoutOption().isTupleType())
+                        delete (Tuple*)_ptrValue;
+                    else {
+#ifndef NDEBUG
+                        std::cerr<<"wrong Field::~Field()"<<std::endl;
+#endif
+                    }
+                    _ptrValue = nullptr;
+                } else {
                     delete [] _ptrValue;
+                }
             }
         }
         _ptrValue = nullptr;
@@ -293,7 +321,7 @@ namespace tuplex {
             // @TODO: update with concrete/correct typing -> conversion to python!
             char *dstr = reinterpret_cast<char*>(_ptrValue);
             if(!type.isStructuredDictionaryType())
-                return PrintCJSONDict(cJSON_Parse(dstr));
+                return std::string(dstr); //PrintCJSONDict(cJSON_Parse(dstr));
 
             return dstr;
         } else if(type.isListType()) {
@@ -346,10 +374,25 @@ namespace tuplex {
                 cJSON_free(b);
 
                 return ans;
+            } else if(lhs._type.isStructuredDictionaryType()) {
+
+                // @TODO: could replace with yyjson
+                // -> costly compare via indirect cJSON route. Could speed this up...
+
+                // parse cJSON and compare
+                auto a = cJSON_Parse((const char*)lhs._ptrValue);
+                auto b = cJSON_Parse((const char*)rhs._ptrValue);
+
+                auto ans = cJSON_Compare(a, b, true);
+
+                cJSON_free(a);
+                cJSON_free(b);
+
+                return ans;
             } else {
                 Logger::instance().defaultLogger().error("trying to compare for Field equality of "
                                                          "Field with type " + lhs._type.desc()
-                                                         +". Not yet implemented");
+                                                         +". Not yet implemented, exiting with status code 1");
                 exit(1);
             }
         } else {
@@ -385,8 +428,8 @@ namespace tuplex {
 
         // emptylist to any list
         if(f._type == python::Type::EMPTYLIST && targetType.isListType()) {
-            // upcast to list
-            throw std::runtime_error("not yet implemented, pls add");
+            // upcast to empty list with set list type
+            return Field(List(targetType.elementType()));
         }
 
         // emptydict to any dict
@@ -415,6 +458,7 @@ namespace tuplex {
             Field c = upcastTo_unsafe(tmp, targetType.elementType());
             c._type = targetType;
             c._isNull = f._isNull;
+            return c;
         }
 
         if(t == python::Type::BOOLEAN) {
@@ -428,8 +472,40 @@ namespace tuplex {
             return Field((double)f._iValue);
         }
 
+        // upcasting lists to each other
+        // right now do not support i64 -> f64.
+        // but support upcasting struct dicts!
+        if(f._type.isListType() && targetType.isListType() && python::canUpcastType(f._type.elementType(), targetType.elementType())) {
+            assert(f.hasPtrData());
+            auto L = *((List*)f.getPtr());
+            auto list_elements = L.to_vector();
+            std::vector<Field> casted_fields; casted_fields.reserve(list_elements.size());
+            for(const auto& el : list_elements)
+                casted_fields.push_back(upcastTo_unsafe(el, targetType.elementType()));
+            auto ret_list = List::from_vector(casted_fields);
+            return Field((ret_list));
+        }
+
+        if(f._type.isStructuredDictionaryType() && targetType.isStructuredDictionaryType()) {
+            // check if an upcast is possible
+            if(python::canUpcastType(f._type, targetType)) {
+                return struct_dict_upcast_field(f, targetType);
+            }
+        }
+
+        if(f._type.isTupleType() && targetType.isTupleType() && f._type.parameters().size() == targetType.parameters().size()) {
+            assert(f.hasPtrData());
+            auto T = *((Tuple*)f.getPtr());
+            auto tuple_elements = T.to_vector();
+            std::vector<Field> casted_fields; casted_fields.reserve(tuple_elements.size());
+            for(unsigned i = 0; i < tuple_elements.size(); ++i)
+                casted_fields.push_back(upcastTo_unsafe(tuple_elements[i], targetType.parameters()[i]));
+            auto ret_list = Tuple::from_vector(casted_fields);
+            return Field((ret_list));
+        }
+
 #ifndef NDEBUG
-        throw std::runtime_error("bad field in upcast");
+        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " bad field in upcast, field has type: " + f._type.desc() + " and target type is: " + targetType.desc());
 #endif
         // @TODO: construct dummy based on target type
         return Field::null();
@@ -442,7 +518,7 @@ namespace tuplex {
         f._isNull = false;
         f._type = python::Type::PYOBJECT;
         f._size = buf_size;
-        f._ptrValue =  new uint8_t[buf_size];
+        f._ptrValue = new uint8_t[buf_size];
         memcpy(f._ptrValue, buf, buf_size);
 
         return f;
@@ -709,6 +785,73 @@ namespace tuplex {
             throw std::runtime_error("internal error, what other struct is stored as JSON?");
         }
         return "None";
+    }
+
+    Field Field::from_constant_type(const python::Type &constant_type) {
+        assert(constant_type.isConstantValued());
+        auto t = constant_type.underlying();
+        auto value = constant_type.constant();
+        if(t == python::Type::BOOLEAN) {
+            if(value == "True")
+                return Field(true);
+            if(value == "False")
+                return Field(false);
+            throw std::runtime_error("Unknown boolean constant " + value + " in constant type to Field conversion.");
+        }
+
+        if(t == python::Type::I64) {
+            return Field((int64_t)std::stoi(value));
+        }
+
+        if(t == python::Type::F64) {
+            return Field(std::stod(value));
+        }
+
+        if(t == python::Type::STRING) {
+            return Field(value);
+        }
+
+        if(t == python::Type::EMPTYLIST)
+            return Field::empty_list();
+        if(t == python::Type::EMPTYDICT)
+            return Field::empty_dict();
+        if(t == python::Type::EMPTYTUPLE)
+            return Field::empty_tuple();
+
+        if(t == python::Type::NULLVALUE)
+            return Field::null();
+
+        throw std::runtime_error("unsupported conversion from constant type " + constant_type.desc() + " to Field, not implemented yet.");
+    }
+
+    size_t Field::serialized_list_size() const {
+        if(!_type.withoutOption().isListType())
+            throw std::runtime_error("can only call on list types, got " + _type.desc());
+        if(_type.withoutOption() == python::Type::EMPTYLIST)
+            return 0;
+
+        if(_isNull)
+            return 0;
+
+        // get list
+        auto list_ptr = reinterpret_cast<List*>(getPtr());
+        assert(list_ptr);
+        return list_ptr->serialized_length();
+    }
+
+    size_t Field::serialized_tuple_size() const {
+        if(!_type.withoutOption().isTupleType())
+            throw std::runtime_error("can only call on tuple types, got " + _type.desc());
+        if(_type.withoutOption() == python::Type::EMPTYTUPLE)
+            return 0;
+
+        if(_isNull)
+            return 0;
+
+        // get tuple
+        auto tuple_ptr = reinterpret_cast<Tuple*>(getPtr());
+        assert(tuple_ptr);
+        return tuple_ptr->serialized_length();
     }
 
 }

@@ -68,5 +68,4 @@ namespace tuplex {
         _output.unlock();
         _inputPartition->unlock();
     }
-
 }

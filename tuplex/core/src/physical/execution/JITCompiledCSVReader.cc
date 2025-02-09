@@ -18,7 +18,7 @@
 
 namespace tuplex {
 
-    void JITCompiledCSVReader::read(const URI &inputFilePath) {
+    void JITCompiledCSVReader::read(const URI& inputFilePath, const std::function<bool()>& blockFunctor) {
 
         // @TODO: in mapped, need to adjust chunking
         // //// use buffered for S3 and co

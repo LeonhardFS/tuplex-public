@@ -47,6 +47,119 @@
 
 namespace tuplex {
 
+    static size_t compute_total_requests(const std::vector<size_t>& sizes,
+                                         size_t minimum_chunk_size,
+                                         size_t maximum_chunk_size) {
+
+        // this code here is adapted from AWSLambdaBackend.cc
+        // to condense it more, maybe this formulat works. Yet it is somehow off.
+        //            size_t p = 0;
+        //            for(auto s : sizes) {
+        //                // smaller equal then c_min + c_max: 1 request.
+        //                if(s <= c_min + c_max)
+        //                    p++;
+        //                else {
+        //                    // integer rounded down
+        //                    p += s / c_max;
+        //                }
+        //            }
+
+
+        auto n_requests = 0;
+
+        // Go through uris and create initial requests (no TrafoStage fill in yet).
+        for(auto uri_size : sizes) {
+            // single part?
+            if(uri_size <= maximum_chunk_size + minimum_chunk_size) { // Note the add here.
+                n_requests++;
+            } else {
+                // split up. There will be at least two parts. One maximum chunk size, the other at least minimum chunk size.
+                // First chunk part will be executed by the worker itself, the others will be self-invoke.
+                std::vector<FilePart> parts;
+                int64_t remaining_bytes = uri_size;
+                size_t current_offset = 0;
+                while(remaining_bytes > maximum_chunk_size + minimum_chunk_size) {
+                    n_requests++;
+                    current_offset += maximum_chunk_size;
+                    remaining_bytes -= maximum_chunk_size;
+                }
+                // add last part, whatever is remaining.
+                n_requests++;
+            }
+        }
+
+        return n_requests;
+    }
+
+
+    size_t find_max_chunk_size(std::vector<size_t> sizes, size_t c_min, size_t parallelism) {
+        using namespace std;
+
+        // c_min -> minimum chunk size
+        // c_max -> maximum chunk size
+        // this is a basic heuristic approach (there's probably an optimization problem/formula for this)
+
+        // check invariant
+        for(auto s : sizes)
+            assert(s >= c_min);
+
+        // minimum parallelism needed. Else, no solution.
+        assert(parallelism >= sizes.size());
+
+        size_t max_size = 0;
+        for(auto s: sizes)
+            max_size = std::max(s, max_size);
+
+        // Trivial solution: If sizes.size() == parallelism, it is max file size.
+        if(sizes.size() == parallelism)
+            return max_size;
+
+        // upper/lower bounds for c_max.
+        // lower bound is c_min.
+        // upper bound can be calculated by max_size.
+        size_t c_max_lower = c_min;
+        size_t c_max_upper = max_size;
+
+        // check:
+        if(c_max_lower >= c_max_upper) {
+#ifndef NDEBUG
+            cout<<"ill-defined bounds, no solution. Returning c_min."<<endl;
+#endif
+            return c_min;
+        }
+
+        size_t c_max = c_min; // start value.
+
+        // iterations (basically binary search here)
+        size_t max_iterations = 40; // 40 steps should be sufficient to solve most scenarios. Could also set time limit.
+        for(int i = 0; i < max_iterations; ++i) {
+            // Calculate current parallelism p (direct, no request creation yet).
+            auto p = compute_total_requests(sizes, c_min, c_max);
+
+            // Current iteration:
+#ifndef NDEBUG
+            cout<<"i="<<i<<"\tp_target: "<<parallelism<<" p: "<<p<<" c_max: "<<c_max<<" ("<<sizeToMemString(c_max)<<")"<<endl;
+#endif
+            // adjust variables for finding.
+            // smaller c_max -> higher p
+            // larger c_max -> lower p
+            if(p == parallelism)
+                return c_max; // solution found
+
+            if(p > parallelism) {
+                c_max_lower = c_max;
+                // need larger c_max, less parallelism.
+                c_max = (c_max_lower + c_max_upper) / 2;
+            } else {
+                c_max_upper = c_max;
+                // need smaller c_max, more parallelism.
+                c_max = (c_max_lower + c_max_upper + 1) / 2; // bias towards max.
+            }
+        }
+
+        return c_max;
+    }
+
     AwsLambdaBackend::~AwsLambdaBackend() {
         // stop http requests
         if (_client)
@@ -82,15 +195,19 @@ namespace tuplex {
         else
             clientConfig.region = _options.AWS_REGION().c_str(); // hard-coded here
 
-        // verify zone
-        if (!isValidAWSZone(clientConfig.region.c_str())) {
-            logger().warn("Specified AWS zone '" + std::string(clientConfig.region.c_str()) +
-                          "' is not a valid AWS zone. Defaulting to " + _credentials.default_region + " zone.");
-            clientConfig.region = _credentials.default_region.c_str();
+        auto ns = _options.AWS_NETWORK_SETTINGS();
+        if(!_options.AWS_LAMBDA_ENDPOINT().empty()) {
+            ns.endpointOverride = _options.AWS_LAMBDA_ENDPOINT();
+        } else {
+            // verify zone
+            if (!isValidAWSZone(clientConfig.region.c_str())) {
+                logger().warn("Specified AWS zone '" + std::string(clientConfig.region.c_str()) +
+                              "' is not a valid AWS zone. Defaulting to " + _credentials.default_region + " zone.");
+                clientConfig.region = _credentials.default_region.c_str();
+            }
         }
 
         //clientConfig.userAgent = "tuplex"; // should be perhaps set as well.
-        auto ns = _options.AWS_NETWORK_SETTINGS();
         applyNetworkSettings(ns, clientConfig);
 
         // change aws settings here
@@ -156,7 +273,7 @@ namespace tuplex {
             }
         }
 
-        logger().info("Using Lambda running on " + _functionArchitecture);
+        logger().info("Using Lambda running on " + _functionArchitecture + ".");
 #ifdef BUILD_WITH_CEREAL
         logger().info("Lambda client uses Cereal AST serialization format.");
 #else
@@ -317,17 +434,38 @@ namespace tuplex {
     }
 
     void AwsLambdaBackend::invokeAsync(const AwsLambdaRequest &req) {
+        assert(_service);
 
-      assert(_service);
+        // invoke using callbacks!
+        _service->invokeAsync(req, [this](const AwsLambdaRequest &req, const AwsLambdaResponse &resp) {
+                                  onLambdaSuccess(req, resp);
+                              },
+                              [this](const AwsLambdaRequest &req, LambdaStatusCode code,
+                                     const std::string &msg) { onLambdaFailure(req, code, msg); },
+                              [this](const AwsLambdaRequest &req, LambdaStatusCode code, const std::string &msg,
+                                     bool b) { onLambdaRetry(req, code, msg, b); });
 
-      // invoke using callbacks!
-      _service->invokeAsync(req, [this](const AwsLambdaRequest& req, const AwsLambdaResponse& resp) { onLambdaSuccess(req, resp); },
-                            [this](const AwsLambdaRequest& req, LambdaErrorCode code, const std::string& msg) { onLambdaFailure(req, code, msg); },
-                            [this](const AwsLambdaRequest& req, LambdaErrorCode code, const std::string& msg, bool b) { onLambdaRetry(req, code, msg, b); });
+        // add to local tracking (thread-safe)
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+            _invokedRequests[uuidToString(req.id)] = req;
+        }
     }
 
-    void AwsLambdaBackend::onLambdaFailure(const AwsLambdaRequest &req, LambdaErrorCode err_code,
+    void AwsLambdaBackend::onLambdaFailure(const AwsLambdaRequest &req, LambdaStatusCode err_code,
                                            const std::string &err_msg) {
+
+        // TODO: what about cost?
+
+        if(!_service)
+            return;
+
+        // Save request for easier debugging/re-execution.
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+            _failedRequests.push_back(std::make_tuple(err_code, err_msg, req));
+        }
+
         // abort all requests
         _service->abortAllRequests(false);
 
@@ -335,7 +473,7 @@ namespace tuplex {
         logger().error(err_msg);
     }
 
-    void AwsLambdaBackend::onLambdaRetry(const AwsLambdaRequest &req, LambdaErrorCode retry_code,
+    void AwsLambdaBackend::onLambdaRetry(const AwsLambdaRequest &req, LambdaStatusCode retry_code,
                                          const std::string &retry_msg, bool decreasesRetryCount) {
 
         auto retries_left_str = req.retriesLeft == 1 ? "1 retry left" : std::to_string(req.retriesLeft) + " retries left";
@@ -350,6 +488,40 @@ namespace tuplex {
         }
     }
 
+
+    struct ResponseInfo {
+        int statusCode;
+        bool reused;
+        std::string id;
+        double taskExecutionTime;
+        size_t outputRowCount;
+        size_t exceptionRowCount;
+        size_t selfActualInvokedCount;
+        size_t selfActualFailureCount;
+        size_t selfInvokeCount;
+
+        ResponseInfo() : statusCode(200), reused(false), taskExecutionTime(0), outputRowCount(0), exceptionRowCount(0), selfInvokeCount(0), selfActualFailureCount(0), selfActualInvokedCount(0) {}
+
+        static ResponseInfo from_protobuf(const messages::InvocationResponse& response) {
+            ResponseInfo r;
+            r.taskExecutionTime = response.taskexecutiontime();
+            r.reused = response.container().reused();
+            r.outputRowCount = response.numrowswritten();
+            r.exceptionRowCount = response.numexceptions();
+            r.id = response.container().uuid();
+
+            // If self-invoke, add up self-invoked container responses.
+            for(const auto& self_response : response.invokedresponses()) {
+                r.outputRowCount += self_response.numrowswritten();
+                r.exceptionRowCount += self_response.numexceptions();
+                r.selfActualFailureCount += self_response.status() != messages::InvocationResponse_Status::InvocationResponse_Status_SUCCESS;
+            }
+            r.selfActualInvokedCount = response.invokedresponses_size();
+            r.selfInvokeCount = response.invokedrequests_size();
+            return r;
+        }
+    };
+
     void AwsLambdaBackend::onLambdaSuccess(const AwsLambdaRequest &req, const AwsLambdaResponse &resp) {
 
         // message
@@ -357,13 +529,28 @@ namespace tuplex {
 
         auto statusCode = 200; // should be that?
 
-         // this here should go into the success callback!
-         ss << "LAMBDA task done in " << resp.response.taskexecutiontime() << "s ";
-         std::string container_status = resp.response.container().reused() ? "reused" : "new";
-         ss << "[" << statusCode << ", " << pluralize(resp.response.numrowswritten(), "row")
-            << ", " << pluralize(resp.response.numexceptions(), "exception") << ", "
-            << container_status << ", id: " << resp.response.container().uuid() << "] ";
+        // parse:
+        auto r = ResponseInfo::from_protobuf(resp.response);
 
+        // Get cost before to print out delta.
+        auto cost_before = lambdaCost();
+
+        // Add this request to cost.
+        addBilling(resp.info.awsTimings.billedDurationInMs * resp.info.awsTimings.memorySizeInMb, 1);
+
+        // Recursive invocations? Add them too.
+        if(resp.response.invokedrequests_size() > 0) {
+            for(const auto& info : resp.response.invokedrequests()) {
+                addBilling(static_cast<size_t>(info.timings().billeddurationinms()) * static_cast<size_t>(info.timings().memorysizeinmb()), 1);
+            }
+        }
+
+        // this here should go into the success callback!
+        ss << "LAMBDA task done in " << r.taskExecutionTime << "s ";
+        std::string container_status = r.reused ? "reused" : "new";
+        ss << "[" << statusCode << ", " << pluralize(r.outputRowCount, "row")
+           << ", " << pluralize(r.exceptionRowCount, "exception") << ", "
+           << container_status << ", id: " << r.id << "] ";
         // compute cost and print out
         ss << "Cost so far: $";
         double price = lambdaCost();
@@ -373,12 +560,41 @@ namespace tuplex {
             ss.precision(6);
         ss << std::fixed << price;
 
+        // print delta.
+        ss<<" (+ $"<<(price - cost_before)<<")";
+
+        // Check if self-invoke, then print out stats from there:
+        if(r.selfInvokeCount > 0) {
+            ss<<" -- "<<r.selfInvokeCount<<" to recursively invoke, "<<r.selfActualInvokedCount<<" actually invoked, "<<r.selfActualFailureCount<<" thereof failed.";
+
+
+            // additional debug output for failures:
+            if(r.selfActualFailureCount > 0) {
+                // Get error messages of failed Lambdas.
+                for(const auto& self_response : resp.response.invokedresponses()) {
+                    if(self_response.status() != messages::InvocationResponse_Status::InvocationResponse_Status_SUCCESS) {
+                        ss<<"\n -- Self-invoked LAMBDA failed with: "<<self_response.errormessage();
+                    }
+                }
+            }
+        }
+
         logger().info(ss.str());
 
         // lock & save response!
         {
             std::lock_guard<std::mutex> lock(_mutex);
             _tasks.push_back(resp);
+
+#ifndef NDEBUG
+            // print response as JSON for easy debugging (selected fields).
+            std::string response_as_string;
+            google::protobuf::util::MessageToJsonString(resp.response, &response_as_string);
+            std::stringstream ss;
+            auto j = nlohmann::json::parse(response_as_string);
+            ss<<"Got response for task:\n"<<j.dump(2)<<std::endl;
+            logger().debug(ss.str());
+#endif
         }
     }
 
@@ -500,11 +716,54 @@ namespace tuplex {
             return URI(root_path).join_path("job_0000.json").toString();
         unsigned max_job_no = 0;
         for (auto uri: uris) {
-            auto name = uri.basename();
+            auto name = uri.base_name();
             unsigned num = std::stoi(remove_non_digits(name));
             max_job_no = std::max(num, max_job_no);
         }
         return URI(root_path).join_path("job_" + fixedLength(max_job_no + 1, 4) + ".json").toString();
+    }
+
+
+    void AwsLambdaBackend::fill_with_stage(std::vector<AwsLambdaRequest> &requests, TransformStage *tstage, size_t numThreads,
+                                           size_t max_retries) {
+        for (unsigned i = 0; i < requests.size(); ++i) {
+            auto &req = requests[i];
+            req.retriesLeft = max_retries;
+            fill_with_transform_stage(req.body, tstage);
+            fill_env(req.body);
+        }
+    }
+
+
+    void AwsLambdaBackend::fill_output_uris(std::vector<AwsLambdaRequest> &requests, const TransformStage* tstage, int num_digits, int numThreads) {
+
+        // quick check that num_digits >= ilog10c(requests.size()) + 1
+        assert(num_digits >= ilog10c(requests.size()) + 1);
+
+        uint32_t part_offset = 0;
+        for (unsigned i = 0; i < requests.size(); ++i) {
+            auto &req = requests[i];
+
+            req.body.set_partnooffset(part_offset);
+            // for different parts need different spill folders.
+            auto worker_spill_uri = this->spillURI() + "/lam" + fixedLength(part_offset, num_digits);
+            fill_with_worker_config(req.body, worker_spill_uri, numThreads);
+
+            // Output URI.
+            auto lambda_output_uri = generate_output_base_uri(tstage, part_offset, num_digits, 0, 0);
+            req.body.set_baseoutputuri(lambda_output_uri.toString());
+            req.body.set_baseisfinaloutput(true); // <-- is final, the recursive will modify it.
+
+            // print out info
+            {
+                std::stringstream ss;
+                ss << "Request " << i << ": part_offset=" << part_offset << " self-invoke count: "
+                   << recursive_invocation_count(req.body) << " , producing parts from " << lambda_output_uri;
+                logger().debug(ss.str());
+            }
+
+            part_offset += 1 + recursive_invocation_count(req.body);
+        }
     }
 
     void AwsLambdaBackend::execute(PhysicalStage *stage) {
@@ -580,7 +839,7 @@ namespace tuplex {
                     Timer timer;
                     int partNo = 0;
                     auto num_partitions = tstage->inputPartitions().size();
-                    auto num_digits = ilog10c(num_partitions);
+                    auto num_digits = ilog10c(num_partitions) + 1;
                     size_t total_uploaded = 0;
                     for (auto p: tstage->inputPartitions()) {
                         // lock each and write to S3!
@@ -668,12 +927,7 @@ namespace tuplex {
         }
         logger().info("Lambda executors each use " + pluralize(numThreads, "thread"));
         auto spillURI = _options.AWS_SCRATCH_DIR() + "/spill_folder";
-        // perhaps also use:  - 64 * numThreads ==> smarter buffer scaling necessary.
-        size_t buf_spill_size = (_options.AWS_LAMBDA_MEMORY() - 256) / numThreads * 1000 * 1024;
-
-        // limit to 128mb each
-        if (buf_spill_size > 128 * 1000 * 1024)
-            buf_spill_size = 128 * 1000 * 1024;
+        auto buf_spill_size = compute_buf_spill_size(numThreads);
 
         logger().info("Setting buffer size for each thread to " + sizeToMemString(buf_spill_size));
 
@@ -688,39 +942,103 @@ namespace tuplex {
                 break;
             }
             case AwsLambdaExecutionStrategy::TREE: {
+                logger().info("Using tree invocation strategy (specialize per file and then distribute).");
 
                 // configure
                 RequestConfig conf;
 
                 // check how large input data is in total
-                size_t total_size = 0;
-                for (auto info: uri_infos) {
-                    total_size += std::get<1>(info);
-                }
+                std::vector<size_t> sizes;
+                for (auto info: uri_infos)
+                    sizes.emplace_back(std::get<1>(info));
+                size_t total_size = std::reduce(sizes.begin(), sizes.end());
 
                 size_t max_lambda_parallelism = _options.AWS_MAX_CONCURRENCY();
                 size_t max_parallelism = numThreads * max_lambda_parallelism;
-                size_t chunk_lambda_size = total_size / max_lambda_parallelism;
-                size_t chunk_size = total_size / max_parallelism;
                 {
                     std::stringstream ss;
-                    ss<<"found "<<sizeToMemString(total_size)
+                    ss<<"Found "<<sizeToMemString(total_size)
                       <<" to process in total, with maximum parallelism of "<<max_parallelism
                       <<" ("<<pluralize(max_lambda_parallelism, "lambda")
-                      <<") split into chunks of "<<sizeToMemString(chunk_size)<<" ("<<sizeToMemString(chunk_lambda_size)<<" per lambda).";
+                      <<", "<<pluralize(max_parallelism, "thread")<<").";
                     logger().info(ss.str());
                 }
 
-                conf.maximum_lambda_process_size = chunk_lambda_size;
-                conf.spillURI = spillURI;
-                conf.specialization_unit_size = _options.EXPERIMENTAL_SPECIALIZATION_UNIT_SIZE();
-                conf.minimum_size_to_specialize = _options.EXPERIMENTAL_MINIMUM_SIZE_TO_SPECIALIZE();
-                conf.buf_spill_size = buf_spill_size;
-                auto requests = createSpecializingSelfInvokeRequests(tstage, optimizedBitcode, numThreads, uri_infos, conf);
+                // Minimum AWS input size per-lambda.
+                // Needs to be smallest file for solver to work.
+                size_t minimum_chunk_size = _options.EXPERIMENTAL_AWS_MINIMUM_INPUT_SIZE_PER_LAMBDA();
+                size_t maximum_chunk_size = 0;
+                for(const auto& s : sizes) {
+                    minimum_chunk_size = std::min(s, minimum_chunk_size);
+                    maximum_chunk_size = std::max(s, maximum_chunk_size);
+                }
 
-                throw std::runtime_error("not yet supported");
-//                requests = createSelfInvokingRequests(tstage, optimizedBitcode, numThreads, uri_infos, spillURI,
-//                                                      buf_spill_size);
+                size_t chunk_size = maximum_chunk_size; // per default, set chunk size to largest file (i.e., no split).
+                // if lambda_parallelism > #files, find suitable chunking size.
+                if(max_lambda_parallelism >= sizes.size()) {
+                    chunk_size = find_max_chunk_size(sizes, minimum_chunk_size, max_lambda_parallelism);
+                    {
+                        std::stringstream ss;
+                        auto n_requests = compute_total_requests(sizes, minimum_chunk_size, chunk_size);
+                        ss<<"Distributing "<<sizeToMemString(total_size)<<" over "<<pluralize(n_requests, "request")<<" (max lambda parallelism: "<<max_lambda_parallelism<<")";
+                        logger().info(ss.str());
+                    }
+
+                    // Create first number of requests by distributing data.
+                    auto L = logger();
+                    requests = create_specializing_recursive_requests(uri_infos, minimum_chunk_size, chunk_size, L);
+
+                    // Fill in invocation details (code path etc.)
+                    // This should also generate proper output/offset output uris.
+                    size_t max_retries = 5;
+                    logger().info("Generating requests with num threads=" + std::to_string(numThreads) + ", max retries=" + std::to_string(max_retries) + ".");
+                    fill_with_stage(requests, tstage, numThreads, max_retries);
+
+                    // Same true for specialization unit (should be each file).
+                    // Because this here is tree invocation, fill in specialization unit as full files.
+                    logger().info("Specializing on each file (" + pluralize(requests.size(), "request") + ").");
+                    assert(requests.size() == uri_infos.size());
+
+                    // compute total requests.
+                    size_t n_requests = 0;
+                    for (const auto &req: requests)
+                        n_requests += req.body.inputuris_size();
+                    auto num_digits = ilog10c(n_requests) + 1;
+
+                    // set specialization units (per file).
+                    for (unsigned i = 0; i < requests.size(); ++i) {
+                        auto &req = requests[i];
+
+                        auto sampling_mode = tstage->samplingMode();
+                        fill_specialization_unit(*requests[i].body.mutable_stage()->mutable_specializationunit(),
+                                                 {uri_infos[i]}, sampling_mode);
+
+                        // add (self) invocation count.
+                        int num_self_invocations = (int) requests[i].body.inputuris_size() - 1;
+                        assert(num_self_invocations >= 0);
+                        req.body.mutable_stage()->add_invocationcount(num_self_invocations);
+
+                        logger().info("Specializing " + std::get<0>(uri_infos[i]) + " and performing " +
+                                      pluralize(num_self_invocations, "self invocation") + " then.");
+                    }
+
+                    // set output uris, spill uris etc.
+                    fill_output_uris(requests, tstage, num_digits, numThreads);
+
+                    // @TODO: if file too small, no need to hyperspecialize. If even smaller, no need to compile -> simply use python interpreter.
+
+                    // Check that max concurrency works with requests being processed. I.e., each request incl. all recursive invocations must be <= MAX_CONCURRENCY.
+                    validate_requests_can_be_served_with_concurrency_limit(requests, _options.AWS_MAX_CONCURRENCY());
+
+                } else {
+                    // Need to distribute files across few parallel workers (likely partial results with timeouts.
+                    auto L = logger();
+                    requests = create_specializing_requests_with_multiple_files(tstage, numThreads, uri_infos, L);
+
+                    auto num_digits = ilog10c(requests.size()) + 1;
+                    fill_output_uris(requests, tstage, num_digits, numThreads);
+                }
+
                 break;
             }
             default:
@@ -728,6 +1046,8 @@ namespace tuplex {
                 throw std::runtime_error("unknown invocation strategy '" + _options.AWS_LAMBDA_INVOCATION_STRATEGY() + "', abort");
                 break;
         }
+
+        // Start request invocation.
         if (!requests.empty()) {
             logger().info("Invoking " + pluralize(requests.size(), "request") + " ...");
 
@@ -741,8 +1061,15 @@ namespace tuplex {
             logger().debug("Debug files written (" + pluralize(requests.size(), "file") + ").");
 #endif
 
-            for (const auto &req: requests)
-                invokeAsync(req);
+            if(_emitRequestsOnly) {
+                logger().info("Skipping actual LAMBDA invocation, storing " + pluralize(requests.size(), "request") + " as pending.");
+                _pendingRequests.clear();
+                for(const auto& aws_req : requests)
+                    _pendingRequests.push_back(aws_req.body);
+                return; // <-- stop further processing, early abort.
+            } else {
+                perform_requests(requests, _options.AWS_MAX_CONCURRENCY());
+            }
             logger().info("LAMBDA requesting took " + std::to_string(timer.time()) + "s");
         } else {
             logger().warn("No requests generated, skipping stage.");
@@ -753,6 +1080,15 @@ namespace tuplex {
         // wait till everything finished computing
         assert(_service);
         _service->waitForRequests();
+
+        // Now check whether processing succeeded or not.
+
+        auto processed_input_uris = thread_safe_get_input_uris();
+        auto processed_output_uris = thread_safe_get_output_uris();
+
+        logger().info("LAMBDA backend transformed " + pluralize(processed_input_uris.size(), "input path") + " -> " + pluralize(processed_output_uris.size(), "output path"));
+        // logger().info("Expected input paths: " + std::to_string());
+
         gatherStatistics();
 
         std::unordered_map<std::tuple<int64_t, ExceptionCode>, size_t> ecounts;
@@ -784,7 +1120,6 @@ namespace tuplex {
         // save request end! --> i.e. synchronization points!
         _endTimestamp = current_utc_timestamp();
 
-
         // check if any remote files are required to be downloaded
         if(!_remoteToLocalURIMapping.empty()) {
             Timer fetchTimer;
@@ -805,7 +1140,7 @@ namespace tuplex {
                         logger().warn("could not find output uri " + output_uri + " in remote -> local mapping, skipping.");
                     } else {
                         // get basename of remote uri and map to local (join with parent)
-                        auto remote_basename = URI(it->first).basename();
+                        auto remote_basename = URI(it->first).base_name();
                         auto local_parent = it->second.parent();
                         auto target_path = local_parent.join(remote_basename).toPath();
                         logger().info("storing " + it->first.toPath() + " to " + target_path);
@@ -820,6 +1155,83 @@ namespace tuplex {
         dumpAsJSON(path);
         logger().info("dumped job info as JSON to " + path);
 
+        // For easier debugging purposes, dump logs of Lambdas to folder.
+        // They're also contained in json, but this here may be easier.
+        auto log_path = strReplaceAll(path, ".json", "") + "/logs";
+        log_path = strReplaceAll(log_path, "file://", "");
+        if(!dirExists(log_path)) {
+            std::filesystem::create_directories(log_path);
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+
+            int lam_no = 0;
+            for (const auto &task: _tasks) {
+                if(task.response.type() == messages::MessageType::MT_TRANSFORM) {
+//                    // Get lambda name from spill uri.
+//                    auto key = task.response.container().uuid();
+//
+//                    // Check if key was found
+//                    auto req = _invokedRequests.at(key);
+//                    auto spill_uri = req.body.settings().spillrooturi();
+//                    auto lam_no_str = spill_uri.substr(spill_uri.rfind("/lam") + 4);
+//                    auto lam_no = std::stoi(lam_no_str);
+
+                    // log of this container.
+                    for (const auto &r: task.response.resources()) {
+                        if (r.type() == static_cast<uint32_t>(ResourceType::LOG)) {
+                            auto log = decompress_string(r.payload());
+                            stringToFile(URI(log_path).join_path("lam" + std::to_string(lam_no) + ".txt"), log);
+                            lam_no++;
+                            break;
+                        }
+                    }
+
+                    for (unsigned i = 0; i < task.response.invokedresponses_size(); ++i) {
+                        // the lam no here won't match. This is not perfect.
+                        // TODO: return lam no/identifier in map?
+                        auto self_invoke_response = task.response.invokedresponses(i);
+                        for (const auto &r: self_invoke_response.resources()) {
+                            if (r.type() == static_cast<uint32_t>(ResourceType::LOG)) {
+                                auto log = decompress_string(r.payload());
+                                stringToFile(URI(log_path).join_path("lam" + std::to_string(lam_no) + ".txt"), log);
+                                lam_no++;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        logger().info("Saved " + pluralize(glob(log_path + "/*.txt").size(), "log") + " to " + log_path);
+
+
+        // failed requests? If so dump them to file under failed_requests.
+        if(!_failedRequests.empty()) {
+            std::string failed_request_path = "failed_requests";
+            logger().error("Found " + pluralize(_failedRequests.size(), "failed requests") + ", saving to disk to " + failed_request_path + ".");
+            if(!dirExists(failed_request_path.c_str())) {
+                std::filesystem::create_directories(failed_request_path);
+            }
+            int pos = 0;
+            for(auto t : _failedRequests) {
+                stringToFile(URI(failed_request_path).join("log" + std::to_string(pos) + ".txt"), "Lambda request failed with code " +
+                        lambda_status_to_string(std::get<0>(t)) + "\n\n" + std::get<1>(t));
+                // save request (as raw protobuf)
+                auto failed_req = std::get<2>(t);
+                auto bin_proto = failed_req.body.SerializeAsString();
+                std::string json_proto;
+                google::protobuf::util::MessageToJsonString(failed_req.body, &json_proto);
+                // Save as json and proto.
+                stringToFile(URI(failed_request_path).join("request" + std::to_string(pos) + ".bin"), bin_proto);
+                stringToFile(URI(failed_request_path).join("request" + std::to_string(pos) + ".json"), json_proto);
+
+                pos++;
+            }
+            logger().info("Saved failed requests to disk.");
+        }
+
         {
             std::stringstream ss;
             ss << "LAMBDA compute took " << timer.time() << "s";
@@ -827,7 +1239,7 @@ namespace tuplex {
             if (cost < 0.01)
                 ss << ", cost < $0.01";
             else
-                ss << std::fixed << std::setprecision(2) << ", cost $" << cost;
+                ss << std::fixed << std::setprecision(2) << ", cost: $" << cost <<"";
             logger().info(ss.str());
         }
 
@@ -861,7 +1273,7 @@ namespace tuplex {
                 // download and store each part in one partition (TODO: resize etc.)
                 vector<Partition *> output_partitions;
                 int partNo = 0;
-                int num_digits = ilog10c(output_uris.size());
+                int num_digits = ilog10c(output_uris.size()) + 1;
                 vector<URI> local_paths;
                 for (const auto &uri: output_uris) {
                     // download to local scratch dir
@@ -923,6 +1335,79 @@ namespace tuplex {
             _historyServer->sendStatus(JobStatus::FINISHED);
     }
 
+    void AwsLambdaBackend::perform_requests(const std::vector<AwsLambdaRequest> &requests, size_t concurrency_limit) {
+        validate_requests_can_be_served_with_concurrency_limit(requests, concurrency_limit);
+
+        if(!_blockRequests) {
+            // Check that total request count can be served with limit, else need to perform throttled invocation (not yet implemented).
+            size_t total_request_count = 0;
+            for(const auto& req : requests) {
+                total_request_count += 1 + recursive_invocation_count(req.body);
+            }
+
+//            if(total_request_count > concurrency_limit) {
+//                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Got in total " + pluralize(total_request_count, "request") + ", but Lambda is configured with " + std::to_string(concurrency_limit) + " concurrency limit. Need to implement throttled invocation.");
+//            }
+
+            // is rate limiting necessary (because of max concurrency?), if so limit.
+            if(requests.size() > concurrency_limit) {
+                for(const auto& req: requests) {
+                    // simple wait, no fancy filling in requests on capacity.
+                    while(_service->activeMaximumConcurrency() >= concurrency_limit) {
+                        std::this_thread::sleep_for(std::chrono::duration<double, std::milli>(100.0));
+                    }
+                    invokeAsync(req);
+                }
+            } else {
+                // limit using function themselves.
+                for (const auto &req: requests)
+                    invokeAsync(req);
+            }
+        } else {
+            // invoke requests one by one.
+            // the validation check ensures this works with the concurrency limit.
+            for(const auto& req : requests) {
+                invokeAsync(req);
+                _service->waitForRequests();
+            }
+        }
+    }
+
+    std::vector<URI> AwsLambdaBackend::thread_safe_get_input_uris() {
+        std::lock_guard<std::mutex> lock(_mutex);
+        std::vector<URI> uris;
+        for (const auto &task: _tasks) {
+            for(const auto& uri : task.response.inputuris())
+                uris.push_back(uri);
+        }
+
+        std::sort(uris.begin(), uris.end(),[](const URI& a, const URI& b) {
+            return a.toString() < b.toString();
+        });
+        return uris;
+    }
+
+    std::vector<URI> AwsLambdaBackend::thread_safe_get_output_uris() {
+        std::lock_guard<std::mutex> lock(_mutex);
+        std::vector<URI> uris;
+        for (const auto &task: _tasks) {
+            for(const auto& uri : task.response.outputuris())
+                uris.push_back(uri);
+            // self-invoke?
+            if(task.response.invokedrequests_size() > 0) {
+                for(const auto& self_invoke_response : task.response.invokedresponses()) {
+                    for(const auto& uri : self_invoke_response.outputuris())
+                        uris.push_back(uri);
+                }
+            }
+        }
+
+        std::sort(uris.begin(), uris.end(),[](const URI& a, const URI& b) {
+            return a.toString() < b.toString();
+        });
+
+        return uris;
+    }
 
     // recurse depth:
     // 2^n?
@@ -974,6 +1459,7 @@ namespace tuplex {
 
         // transform to request
         messages::InvocationRequest req;
+        fill_env(req);
         req.set_type(messages::MessageType::MT_TRANSFORM);
         auto pb_stage = tstage->to_protobuf();
         for (auto count: recursive_invocations)
@@ -1051,7 +1537,7 @@ namespace tuplex {
 //
 //        // worker config
 //        auto ws = std::make_unique<messages::WorkerSettings>();
-//        auto worker_spill_uri = spillURI + "/lam" + fixedPoint(i, num_digits) + "/" + fixedPoint(part_no, num_digits_part);
+//        auto worker_spill_uri = spillURI + "/lam" + fixedLength(i, num_digits) + "/" + fixedLength(part_no, num_digits_part);
 //        config_worker(ws.get(), options, numThreads, worker_spill_uri, buf_spill_size);
 //        req.set_allocated_settings(ws.release());
 //        req.set_verboselogging(options.AWS_VERBOSE_LOGGING());
@@ -1100,74 +1586,301 @@ namespace tuplex {
         return aws_req;
     }
 
+    std::vector<AwsLambdaRequest> create_specializing_recursive_requests(const std::vector<std::tuple<URI, std::size_t>> &uri_infos,
+                                                                         size_t minimum_chunk_size,
+                                                                         size_t maximum_chunk_size,
+                                                                         MessageHandler& logger,
+                                                                         std::function<std::string(int n, int n_digits)> generate_output_base_uri) {
+
+        assert(minimum_chunk_size < maximum_chunk_size);
+        // at least 1KB.
+        assert(minimum_chunk_size > 1024);
+        assert(maximum_chunk_size > 1024);
+        std::vector<AwsLambdaRequest> requests;
+
+        // How many URIs are there?
+        {
+            std::stringstream ss;
+            ss<<"Found "<<pluralize(uri_infos.size(), "specialization unit")<<" to use.";
+            logger.info(ss.str());
+        }
+
+        // Step 1: Figure out how much data needs to get processed.
+        // -> From this, infer part size for max-parallelism.
+        size_t total_size_in_bytes = 0;
+        for(auto uri_info : uri_infos) {
+            total_size_in_bytes += std::get<1>(uri_info);
+        }
+        {
+            std::stringstream ss;
+            ss<<"Found "<<sizeToMemString(total_size_in_bytes)
+            <<" to process, each LAMBDA will receive at most ~"<<sizeToMemString(maximum_chunk_size);
+            logger.info(ss.str());
+        }
+
+        // Go through uris and create initial requests (no TrafoStage fill in yet).
+        for(auto uri_info : uri_infos) {
+            AwsLambdaRequest req;
+
+            // Split URI into equal chunks to parallelize them.
+            // A chunk must be at least minimum chunk size.
+            auto uri = std::get<0>(uri_info);
+            auto uri_size = std::get<1>(uri_info);
+
+            // single part?
+            if(uri_size <= maximum_chunk_size + minimum_chunk_size) { // Note the add here.
+                req.body.add_inputuris(uri.toString());
+                req.body.add_inputsizes(uri_size);
+
+                // no split up necessary, simply process full data.
+                req.body.mutable_stage()->add_invocationcount(0);
+
+                {
+                    std::stringstream ss;
+                    ss<<uri<<" ("<<sizeToMemString(uri_size)<<") not split";
+                    logger.info(ss.str());
+                }
+
+            } else {
+                // split up. There will be at least two parts. One maximum chunk size, the other at least minimum chunk size.
+                // First chunk part will be executed by the worker itself, the others will be self-invoke.
+                std::vector<FilePart> parts;
+                int64_t remaining_bytes = uri_size;
+                size_t current_offset = 0;
+                while(remaining_bytes > maximum_chunk_size + minimum_chunk_size) {
+                    FilePart part;
+                    part.size = uri_size;
+                    part.rangeStart = current_offset;
+                    part.rangeEnd = current_offset + maximum_chunk_size;
+                    part.uri = uri;
+                    parts.push_back(part);
+
+                    current_offset += maximum_chunk_size;
+                    remaining_bytes -= maximum_chunk_size;
+                }
+                // add last part, whatever is remaining.
+                FilePart last_part;
+                last_part.size = uri_size;
+                last_part.rangeStart = current_offset;
+                last_part.rangeEnd = uri_size;
+                last_part.uri = uri;
+                parts.push_back(last_part);
+
+                // go over parts and add them individually.
+                for(const auto& part: parts) {
+                    auto inputURI = encodeRangeURI(part.uri, part.rangeStart, part.rangeEnd);
+                    auto inputSize = part.size;
+                    req.body.add_inputuris(inputURI);
+                    req.body.add_inputsizes(inputSize);
+                }
+
+                {
+                    std::stringstream ss;
+                    auto smallest_part_size = std::min(maximum_chunk_size, last_part.part_size());
+                    auto largest_part_size = std::max(maximum_chunk_size, last_part.part_size());
+                    ss<<uri<<" ("<<sizeToMemString(uri_size)<<") split into "<<pluralize(parts.size(), "part")<<" (smallest: "<<sizeToMemString(smallest_part_size)<<", largest: "<<sizeToMemString(largest_part_size)<<")";
+                    logger.info(ss.str());
+                }
+
+                assert(parts.size() >= 2);
+                req.body.mutable_stage()->add_invocationcount(parts.size() - 1);
+            }
+
+            requests.push_back(req);
+        }
+
+        // Step 2: generate output uris (consecutive)
+        int n_output_parts = 0;
+        // Count how many output parts there will be.
+        for(const auto& req : requests) {
+            n_output_parts++; // +1 for the request itself.
+            // Are there self-invocations? For each invocation count +1.
+            // Only 1 level supported yet.
+            n_output_parts += recursive_invocation_count(req.body);
+        }
+        int n_digits = ilog10c(n_output_parts) + 1;
+        logger.info("Recursive tree invocation will invoke in total " + pluralize(n_output_parts, "lambda") + " producing " + pluralize(n_output_parts, "part") + ".");
+
+        // Go over requests again & set part offsets.
+        int task_no = 0;
+        for(auto& req : requests) {
+            req.body.set_partnooffset(task_no);
+            auto lambda_output_uri = generate_output_base_uri(task_no, n_digits);
+            req.body.set_baseoutputuri(lambda_output_uri);
+            req.body.set_baseisfinaloutput(true); // <-- is final, the recursive will modify it.
+            task_no += 1 + recursive_invocation_count(req.body);
+        }
+
+        logger.info("Recursive Lambda invocation will produce " + pluralize(task_no, "output file") + ".");
+
+
+
+
+        // TODO:
+        //             // for different parts need different spill folders.
+        //            auto worker_spill_uri = spillURI() + "/lam" + fixedLength(partno, num_digits);
+        //            fill_with_worker_config(req.body, worker_spill_uri, numThreads);
+
+        // TODO:
+        //             // @TODO: specialization unit.
+        //            fill_specialization_unit(*req.body.mutable_stage()->mutable_specializationunit(),
+        //                                     {uri_info}, sampling_mode);
+
+
+        return requests;
+    }
+
     std::vector<AwsLambdaRequest>
-    AwsLambdaBackend::createSpecializingSelfInvokeRequests(const TransformStage *tstage, const std::string &bitCode,
+    AwsLambdaBackend::createSpecializingSelfInvokeRequests(const TransformStage *tstage,
+                                                           const std::string &bitCode,
                                                            const size_t numThreads,
                                                            const std::vector<std::tuple<std::string, std::size_t>> &uri_infos,
                                                            const RequestConfig &conf) {
-        // check config is valid
-        if(!conf.valid()) {
-            throw std::runtime_error("given request config is not valid.");
-        }
 
         std::vector<AwsLambdaRequest> requests;
         std::vector<URI> request_uris;
 
-        // now generation is quite simple. Go over files, and then check wrt to specialization size if they're large enough to get specialized on. Then issue appropriate number of requests.
-        for(auto uri_info : uri_infos) {
-            auto input_uri = std::get<0>(uri_info);
-            auto input_uri_size = std::get<1>(uri_info);
-
-            if(input_uri_size >= conf.minimum_size_to_specialize) {
-                // issue specialization query!
-
-                // how many queries to issue? could be that input uri needs to be split up into multiple files...!
-                // -> make sure each part is at least specialization unit size
-                assert(conf.specialization_unit_size >= conf.minimum_size_to_specialize);
-
-                size_t bytes_so_far = 0;
-                while(bytes_so_far < input_uri_size) {
-                    // part from bytes_so_far, bytes_so_far + specialization_unit_size
-
-                    // is this is the last part?
-                    if(bytes_so_far + 2 * conf.specialization_unit_size < input_uri_size) {
-                        request_uris.push_back(encodeRangeURI(input_uri, bytes_so_far, bytes_so_far + conf.specialization_unit_size));
-
-                        auto uri = input_uri;
-                        auto uri_size = input_uri_size;
-                        auto range_start = bytes_so_far;
-                        auto range_end = bytes_so_far + conf.specialization_unit_size;
-
-                        create_tree_based_hyperspecialization_request(tstage, bitCode, uri, uri_size,
-                                                                      range_start, range_end,
-                                                                      _options,
-                                                                      _remoteToLocalURIMapping);
-                        bytes_so_far += conf.specialization_unit_size;
-                    } else {
-                        // last part, issue and then that's it
-                        request_uris.push_back(encodeRangeURI(input_uri, bytes_so_far, input_uri_size));
-                        // create_tree_based_hyperspecialization_request(...)
-#warning "need to implement stuff here..."
-                        break;
-                        bytes_so_far = input_uri_size;
-                    }
-
-                    bytes_so_far += conf.specialization_unit_size;
-                }
-            } else {
-                // not large enough to warrant specialization. process in parallel
-                // i.e. just keep query as is, do not issue specialization request.
-                // create_tree_based_regular_request(...)
-#warning "need to implement stuff here..."
-                throw std::runtime_error("not yet supported");
-            }
+        // How many URIs are there?
+        {
+            std::stringstream ss;
+            ss<<"Found "<<pluralize(uri_infos.size(), "specialization unit")<<" to use.";
+            logger().info(ss.str());
         }
 
-        logger().info("Created " + std::to_string(requests.size()) + " LAMBDA requests.");
-        // how many thereof are regular? how many hperspecialziing?
-        // "thereof {} regular / {} specializing"
+        // Generate for each URI a specialization unit (and request).
+        int partno = 0;
+        int max_retries = 5; // @TODO: should be option.
+        auto num_digits = ilog10c(uri_infos.size()) + 1;
 
-        return {};
+        assert(tstage);
+        auto sampling_mode = tstage->samplingMode();
+
+
+        // Step 1: Figure out how much data needs to get processed.
+        // -> From this, infer part size for max-parallelism.
+        size_t total_size_in_bytes = 0;
+        for(auto uri_info : uri_infos) {
+            total_size_in_bytes += std::get<1>(uri_info);
+        }
+        size_t per_lambda_total_size = total_size_in_bytes / _options.AWS_MAX_CONCURRENCY();
+        {
+            std::stringstream ss;
+            ss<<"Found "<<sizeToMemString(total_size_in_bytes)
+            <<" to process, with maximum parallelism of "<<_options.AWS_MAX_CONCURRENCY()
+            <<" each LAMBDA will receive ~"<<sizeToMemString(per_lambda_total_size);
+            logger().info(ss.str());
+        }
+
+        // TODO: figure this here out.
+        int num_self_invoke = 20; // 3 parts.
+
+        // @TODO: improve this.
+        auto base_output_uri = tstage->outputURI();
+
+        // Produce S3 output uris as follows for each request invoking n Lambdas overall:
+        // first request:
+        // <base_uri>/part0.csv
+        // ...
+        // <base_uri>/part{n}.csv
+
+        int current_part_offset = 0;
+
+        for(auto uri_info : uri_infos) {
+            AwsLambdaRequest req;
+            req.retriesLeft = max_retries;
+            req.body.set_partnooffset(partno); // offset for parts.
+
+            fill_with_transform_stage(req.body, tstage);
+            fill_env(req.body);
+
+            // for different parts need different spill folders.
+            auto worker_spill_uri = spillURI() + "/lam" + fixedLength(partno, num_digits); //+ fixedLength(i, num_digits) + "/" + fixedLength(part_no, num_digits_part);
+            fill_with_worker_config(req.body, worker_spill_uri, numThreads);
+
+            // @TODO: specialization unit.
+            fill_specialization_unit(*req.body.mutable_stage()->mutable_specializationunit(),
+                                     {uri_info}, sampling_mode);
+
+            // Split URI into equal chunks to parallelize then.
+            // Basically the Lambda worker will do self-invoke with the number of parts.
+            // Can limit then.
+            int n_parts = num_self_invoke + 1; // Let Lambda itself work on data as well.
+            // Split into parts.
+            auto split_parts = splitIntoEqualParts(n_parts, {std::get<0>(uri_info)}, {std::get<1>(uri_info)}, 1024);
+            std::vector<FilePart> parts;
+            for(const auto& thread_parts : split_parts) {
+                for(auto part : thread_parts) {
+                    part.partNo = parts.size();
+                    parts.push_back(part);
+                }
+            }
+
+            // go over parts and add them individually.
+            for(const auto& part : parts) {
+                auto inputURI = encodeRangeURI(part.uri, part.rangeStart, part.rangeEnd);
+                auto inputSize = part.size;
+                req.body.add_inputuris(inputURI);
+                req.body.add_inputsizes(inputSize);
+            }
+
+            // no output yet, will be done in NEXT loop.
+
+            // set self invocation, i.e. recurse.
+            req.body.mutable_stage()->add_invocationcount(num_self_invoke);
+            requests.push_back(req);
+        }
+
+
+        // Step 2: generate output uris (consecutive)
+        int n_output_parts = 0;
+        // Count how many output parts there will be.
+        for(const auto& req : requests) {
+            n_output_parts++; // +1 for the request itself.
+            // Are there self-invocations? For each invocation count +1.
+            // Only 1 level supported yet.
+            n_output_parts += recursive_invocation_count(req.body);
+        }
+        int n_digits = ilog10c(n_output_parts) + 1;
+        logger().info("Recursive tree invocation will invoke in total " + pluralize(n_output_parts, "lambda") + " producing " + pluralize(n_output_parts, "part") + ".");
+
+        // Go over requests again & set part offsets.
+        int task_no = 0;
+        for(auto& req : requests) {
+            req.body.set_partnooffset(task_no);
+            auto lambda_output_uri = generate_output_base_uri(tstage, task_no, n_digits, 0, 0);
+            req.body.set_baseoutputuri(lambda_output_uri.toString());
+            req.body.set_baseisfinaloutput(true); // <-- is final, the recursive will modify it.
+            task_no += 1 + recursive_invocation_count(req.body);
+        }
+
+        logger().info("Recursive Lambda invocation will produce " + pluralize(task_no, "output file") + ".");
+        return requests;
+    }
+
+    void AwsLambdaBackend::fill_specialization_unit(messages::SpecializationUnit& m,
+                                                    const std::vector<std::tuple<URI,size_t>>& uri_infos,
+                                                    const SamplingMode& sampling_mode) {
+        for(auto entry : uri_infos) {
+            m.add_inputuris(std::get<0>(entry).toString());
+            m.add_inputsizes(std::get<1>(entry));
+        }
+        m.set_samplemode(static_cast<uint64_t>(sampling_mode));
+    }
+
+    void AwsLambdaBackend::fill_with_worker_config(messages::InvocationRequest& req,
+                                                   const std::string& worker_spill_uri,
+                                                   int numThreads) const {
+        // worker config
+        auto ws = std::make_unique<messages::WorkerSettings>();
+        config_worker(ws.get(), _options, numThreads, worker_spill_uri, compute_buf_spill_size(numThreads));
+        req.set_allocated_settings(ws.release());
+        req.set_verboselogging(_options.AWS_VERBOSE_LOGGING());
+    }
+
+    void AwsLambdaBackend::fill_with_transform_stage(messages::InvocationRequest& req, const TransformStage* tstage) const {
+        req.set_type(messages::MessageType::MT_TRANSFORM);
+        auto pb_stage = tstage->to_protobuf();
+        req.set_allocated_stage(pb_stage.release());
     }
 
     std::vector<AwsLambdaRequest>
@@ -1194,7 +1907,7 @@ namespace tuplex {
         // Note: for now, super simple: 1 request per file (this is inefficient, but whatever)
         // @TODO: more sophisticated splitting of workload!
         Timer timer;
-        int num_digits = ilog10c(uri_infos.size());
+        int num_digits = ilog10c(uri_infos.size()) + 1;
         for (int i = 0; i < uri_infos.size(); ++i) {
             auto info = uri_infos[i];
 
@@ -1206,14 +1919,18 @@ namespace tuplex {
             int part_no = 0;
             size_t cur_size = 0;
             while (cur_size < uri_size) {
-                messages::InvocationRequest req;
-                req.set_type(messages::MessageType::MT_TRANSFORM);
-                auto pb_stage = tstage->to_protobuf();
 
                 auto rangeStart = cur_size;
                 auto rangeEnd = std::min(cur_size + splitSize, uri_size);
 
-                req.set_allocated_stage(pb_stage.release());
+                messages::InvocationRequest req;
+
+                auto worker_spill_uri = spillURI + "/lam" + fixedLength(i, num_digits) + "/" + fixedLength(part_no, num_digits_part);
+                fill_with_transform_stage(req, tstage);
+
+                // add other core data to the request.
+                fill_env(req);
+                fill_with_worker_config(req, worker_spill_uri, numThreads);
 
                 // add request for this
                 auto inputURI = std::get<0>(info);
@@ -1222,52 +1939,13 @@ namespace tuplex {
                 req.add_inputuris(inputURI);
                 req.add_inputsizes(inputSize);
 
-                // worker config
-                auto ws = std::make_unique<messages::WorkerSettings>();
-                auto worker_spill_uri = spillURI + "/lam" + fixedPoint(i, num_digits) + "/" + fixedPoint(part_no, num_digits_part);
-                config_worker(ws.get(), _options, numThreads, worker_spill_uri, buf_spill_size);
-                req.set_allocated_settings(ws.release());
-                req.set_verboselogging(_options.AWS_VERBOSE_LOGGING());
-
                 // output uri of job? => final one? parts?
                 // => create temporary if output is local! i.e. to memory etc.
                 int taskNo = i;
-                if (tstage->outputMode() == EndPointMode::MEMORY) {
-                    // create temp file in scratch dir!
-                    req.set_baseoutputuri(scratchDir(hintsFromTransformStage(tstage)).join_path(
-                            "output.part" + fixedLength(taskNo, num_digits) + "_" +
-                            fixedLength(part_no, num_digits_part)).toString());
-                } else if (tstage->outputMode() == EndPointMode::FILE) {
-                    // create output URI based on taskNo
-                    auto uri = outputURI(tstage->outputPathUDF(), tstage->outputURI(), taskNo, tstage->outputFormat());
-                    auto remote_output_uri = uri.toPath();
 
-                    // is it a local file URI as target? if so, generate dummy uri under spill folder for this job & add mapping
-                    if(uri.isLocal()) {
-                        auto tmp_uri = scratchDir(hintsFromTransformStage(tstage)).join_path(
-                                "output.part" + fixedLength(taskNo, num_digits) + "_" +
-                                fixedLength(part_no, num_digits_part)).toString();
-
-                        remote_output_uri = tmp_uri;
-
-                        // add extension to mapping
-                        auto output_fmt = tstage->outputFormat();
-                        auto ext = defaultFileExtension(output_fmt);
-                        tmp_uri += "." + ext; // done in worker app, fix in the future.
-                        _remoteToLocalURIMapping[tmp_uri] = uri;
-                    }
-
-                    req.set_baseoutputuri(remote_output_uri);
-                } else if (tstage->outputMode() == EndPointMode::HASHTABLE) {
-                    // there's two options now, either this is an end-stage (i.e., unique/aggregateByKey/...)
-                    // or an intermediate stage where a temp hash-table is required.
-                    // in any case, because compute is done on Lambda materialize hash-table as temp file.
-                    auto temp_uri = tempStageURI(tstage->number());
-                    req.set_baseoutputuri(temp_uri.toString());
-                } else throw std::runtime_error("unknown output endpoint in lambda backend");
-
-
-
+                auto remote_output_uri = generate_output_base_uri(tstage, taskNo, num_digits, part_no, num_digits_part);
+                req.set_baseoutputuri(remote_output_uri.toString());
+                req.set_baseisfinaloutput(true); // Only single file.
                 AwsLambdaRequest aws_req;
                 aws_req.body = req;
                 aws_req.retriesLeft = 5;
@@ -1283,9 +1961,55 @@ namespace tuplex {
         return requests;
     }
 
-    AwsLambdaBackend::AwsLambdaBackend(const Context &context,
+    URI AwsLambdaBackend::generate_output_base_uri(const TransformStage* tstage, int taskNo, int num_digits, int part_no, int num_digits_part) {
+
+        // Adjust amount of digits to print, default to regular printing if not set.
+        if(num_digits <= 0 || ilog10c(taskNo) + 1 > num_digits)
+            num_digits = ilog10c(taskNo) + 1;
+        if(part_no >= 0 && (num_digits_part <= 0 || ilog10c(part_no) + 1 > num_digits_part))
+            num_digits_part = ilog10c(part_no) + 1;
+
+        if (tstage->outputMode() == EndPointMode::MEMORY) {
+            // create temp file in scratch dir!
+            return scratchDir(hintsFromTransformStage(tstage)).join_path(
+                    "output.part" + fixedLength(taskNo, num_digits) + "_" +
+                    fixedLength(part_no, num_digits_part));
+        } else if (tstage->outputMode() == EndPointMode::FILE) {
+            // create output URI based on taskNo
+            auto uri = outputURI(tstage->outputPathUDF(), tstage->outputURI(), taskNo, tstage->outputFormat());
+            auto remote_output_uri = uri.toPath();
+
+            // is it a local file URI as target? if so, generate dummy uri under spill folder for this job & add mapping
+            if(uri.isLocal()) {
+                auto part_str ="output.part" + fixedLength(taskNo, num_digits);
+                if(part_no >= 0)
+                    part_str += "_" + fixedLength(part_no, num_digits_part);
+
+                auto tmp_uri = scratchDir(hintsFromTransformStage(tstage)).join_path(part_str).toString();
+
+                remote_output_uri = tmp_uri;
+
+                // Add extension to mapping.
+                auto output_fmt = tstage->outputFormat();
+                auto ext = defaultFileExtension(output_fmt);
+                tmp_uri += "." + ext; // done in worker app, fix in the future.
+                _remoteToLocalURIMapping[tmp_uri] = uri;
+            }
+            return remote_output_uri;
+
+        } else if (tstage->outputMode() == EndPointMode::HASHTABLE) {
+            // there's two options now, either this is an end-stage (i.e., unique/aggregateByKey/...)
+            // or an intermediate stage where a temp hash-table is required.
+            // in any case, because compute is done on Lambda materialize hash-table as temp file.
+            auto temp_uri = tempStageURI(tstage->number());
+            return temp_uri.toString();
+        } else throw std::runtime_error("unknown output endpoint in lambda backend");
+    }
+
+    AwsLambdaBackend::AwsLambdaBackend(Context &context,
                                        const AWSCredentials &credentials,
-                                       const std::string &functionName) : IBackend(context), _credentials(credentials),
+                                       const std::string &functionName) : IRequestBackend(context),
+                                                                          _credentials(credentials),
                                                                           _functionName(functionName),
                                                                           _options(context.getOptions()),
                                                                           _logger(Logger::instance().logger(
@@ -1498,7 +2222,7 @@ namespace tuplex {
 
                 // find in map the info with requestid
                 for(auto& kv : uri_map) {
-                    if(kv.second.requestId == info.requestId) {
+                    if(kv.second.requestId == info.awsRequestId) {
                         // save now in normal etc.
                         kv.second.in_normal = info.in_normal;
                         kv.second.in_general = info.in_general;
@@ -1524,7 +2248,7 @@ namespace tuplex {
             entries.push_back(std::make_tuple(kv.first, kv.second.to_csv()));
 
             // write to local dir for convenience
-            auto log_path = "./logs/" + URI(kv.first).basename()  + ".log.txt";
+            auto log_path = "./logs/" + URI(kv.first).base_name()  + ".log.txt";
             stringToFile(log_path, kv.second.log);
         }
 
@@ -1543,99 +2267,154 @@ namespace tuplex {
         using namespace std;
         stringstream ss;
 
-        ss << "{";
-
-        // 0. general info
-        ss << "\"stageStartTimestamp\":" << _startTimestamp << ",";
-        ss << "\"stageEndTimestamp\":" << _endTimestamp << ",";
-
-        // settings etc.
-        ss << "\"hyper_mode\":" << (_options.USE_EXPERIMENTAL_HYPERSPECIALIZATION() ? "true" : "false") << ",";
-        ss << "\"cost\":" << _info.cost << ",";
-        ss << "\"input_paths_taken\":{"
-           << "\"normal\":" << _info.total_input_normal_path << ","
-           << "\"general\":" << _info.total_input_general_path << ","
-           << "\"fallback\":" << _info.total_input_fallback_path << ","
-           << "\"unresolved\":" << _info.total_input_unresolved
-           << "},";
-        ss << "\"output_paths_taken\":{"
-           << "\"normal\":" << _info.total_output_rows << ","
-           << "\"unresolved\":" << _info.total_output_exceptions
-           << "},";
-
-
-        // 1. tasks
-        ss << "\"tasks\":[";
+        // Extract triplets from internal storage.
+        vector<TaskTriplet> requests_responses;
         {
             std::lock_guard<std::mutex> lock(_mutex);
-
-            int task_counter = 0;
             for (const auto &task: _tasks) {
-                ContainerInfo info = task.response.container();
-                ss << "{\"container\":" << info.asJSON() << ",\"invoked_containers\":[";
-                for (unsigned i = 0; i < task.response.invokedcontainers_size(); ++i) {
-                    info = task.response.invokedcontainers(i);
-                    ss << info.asJSON();
-                    if (i != task.response.invokedcontainers_size() - 1)
-                        ss << ",";
-                }
-                ss << "]";
+                messages::InvocationRequest req;
+                req.set_type(messages::MessageType::MT_UNKNOWN); // Unknown means missing here.
 
-                // log
-                for (const auto &r: task.response.resources()) {
-                    if (r.type() == static_cast<uint32_t>(ResourceType::LOG)) {
-                        auto log = decompress_string(r.payload());
-                        ss << ",\"log\":" << escape_for_json(log) << "";
-                        break;
+                // Lookup based on dict, if not check for failed requests.
+                auto requestId = task.info.requestId;
+                if(_invokedRequests.find(requestId) != _invokedRequests.end()) {
+                    req = _invokedRequests.at(requestId).body;
+                } else {
+                    logger().debug("Did not find request for " + requestId + ", checking failed requests.");
+                    for(const auto& failed_request_info : _failedRequests) {
+                        if(uuidToString(get<2>(failed_request_info).id) == requestId) {
+                            req = get<2>(failed_request_info).body;
+                            break;
+                        }
+                    }
+                    if(req.type() == messages::MessageType::MT_UNKNOWN) {
+                        logger().error("Could not find request in successful and failed requests with id " + requestId +", storing dummy.");
                     }
                 }
-
-
-                ss << ",\"invoked_requests\":[";
-                RequestInfo r_info;
-                for (unsigned i = 0; i < task.response.invokedrequests_size(); ++i) {
-                    r_info = task.response.invokedrequests(i);
-                    ss << r_info.asJSON();
-                    if (i != task.response.invokedrequests_size() - 1)
-                        ss << ",";
-                }
-                ss << "]";
-
-                // invoked input uris
-                ss << ",\"input_uris\":[";
-                for (unsigned i = 0; i < task.response.inputuris_size(); ++i) {
-                    ss << "\"" << task.response.inputuris(i) << "\"";
-                    if (i != task.response.inputuris_size() - 1)
-                        ss << ",";
-                }
-
-                ss << "]";
-
-                // end container.
-                ss << "}";
-                if (task_counter != _tasks.size() - 1)
-                    ss << ",";
-                task_counter++;
+                requests_responses.push_back({task.info, req, task.response});
             }
         }
-        ss << "],";
 
+        IRequestBackend::dumpAsJSON(ss, _startTimestamp, _endTimestamp, _options.USE_EXPERIMENTAL_HYPERSPECIALIZATION(),_info.cost,
+                                    numRequests(), _total_mbms, costPerGBSecond(), _info.total_input_normal_path, _info.total_input_general_path, _info.total_input_fallback_path, _info.total_input_unresolved,
+                                    _info.total_output_rows, _info.total_output_exceptions, requests_responses);
 
-        // 2. requests & responses?
-        // 1. tasks
-        ss << "\"requests\":[";
-        {
-            std::lock_guard<std::mutex> lock(_mutex);
-            for (unsigned i = 0; i < _tasks.size(); ++i) {
-                auto &info = _tasks[i].info;
-                ss << info.asJSON();
-                if (i != _tasks.size() - 1)
-                    ss << ",";
-            }
-        }
-        ss << "]";
-
-        ss << "}";
+//        ss << "{";
+//
+//        // 0. general info
+//        ss << "\"stageStartTimestamp\":" << _startTimestamp << ",";
+//        ss << "\"stageEndTimestamp\":" << _endTimestamp << ",";
+//
+//        // settings etc.
+//        ss << "\"hyper_mode\":" << (_options.USE_EXPERIMENTAL_HYPERSPECIALIZATION() ? "true" : "false") << ",";
+//        ss << "\"cost\":" << _info.cost << ",";
+//
+//        // detailed billing info to breakdown better.
+//        ss <<"\"billing\":{";
+//        ss<<"\"requestCount\":"<<numRequests()<<",";
+//        ss<<"\"mbms\":"<<_total_mbms<<",";
+//        ss<<"\"costPerGBSecond\":"<<costPerGBSecond();
+//        ss<<"},";
+//
+//        ss << "\"input_paths_taken\":{"
+//           << "\"normal\":" << _info.total_input_normal_path << ","
+//           << "\"general\":" << _info.total_input_general_path << ","
+//           << "\"fallback\":" << _info.total_input_fallback_path << ","
+//           << "\"unresolved\":" << _info.total_input_unresolved
+//           << "},";
+//        ss << "\"output_paths_taken\":{"
+//           << "\"normal\":" << _info.total_output_rows << ","
+//           << "\"unresolved\":" << _info.total_output_exceptions
+//           << "},";
+//
+//
+//        // 1. tasks
+//        ss << "\"tasks\":[";
+//        {
+//            std::lock_guard<std::mutex> lock(_mutex);
+//
+//            int task_counter = 0;
+//            for (const auto &task: _tasks) {
+//                ContainerInfo info = task.response.container();
+//                ss << "{\"container\":" << info.asJSON() << ",\"invoked_containers\":[";
+//                for (unsigned i = 0; i < task.response.invokedresponses_size(); ++i) {
+//                    auto invoked_response = task.response.invokedresponses(i);
+//                    ContainerInfo info = invoked_response.container();
+//                    ss << info.asJSON();
+//                    if (i != task.response.invokedresponses_size() - 1)
+//                        ss << ",";
+//                }
+//                ss << "]";
+//
+//                // log
+//                for (const auto &r: task.response.resources()) {
+//                    if (r.type() == static_cast<uint32_t>(ResourceType::LOG)) {
+//                        auto log = decompress_string(r.payload());
+//                        ss << ",\"log\":" << escape_for_json(log) << "";
+//                        break;
+//                    }
+//                }
+//
+//                ss << ",\"invoked_requests\":[";
+//                RequestInfo r_info;
+//                for (int i = 0; i < task.response.invokedrequests_size(); ++i) {
+//                    r_info = task.response.invokedrequests(i);
+//                    r_info.fillInFromResponse(task.response.invokedresponses(i));
+//                    ss << r_info.asJSON();
+//                    if (i != task.response.invokedrequests_size() - 1)
+//                        ss << ",";
+//                }
+//                ss << "]";
+//
+//                // invoked input uris
+//                ss << ",\"input_uris\":[";
+//                for (unsigned i = 0; i < task.response.inputuris_size(); ++i) {
+//                    ss << "\"" << task.response.inputuris(i) << "\"";
+//                    if (i != task.response.inputuris_size() - 1)
+//                        ss << ",";
+//                }
+//
+//                ss << "]";
+//
+//                // end container.
+//                ss << "}";
+//                if (task_counter != _tasks.size() - 1)
+//                    ss << ",";
+//                task_counter++;
+//            }
+//        }
+//        ss << "],";
+//
+//
+//        // 2. requests & responses?
+//        // 1. tasks
+//        ss << "\"requests\":[";
+//        {
+//            std::lock_guard<std::mutex> lock(_mutex);
+//            for (unsigned i = 0; i < _tasks.size(); ++i) {
+//                auto &info = _tasks[i].info;
+//                ss << info.asJSON();
+//                if (i != _tasks.size() - 1)
+//                    ss << ",";
+//            }
+//        }
+//        ss << "]";
+//
+//        // Dump all responses (full data for analysis).
+//        ss << ",\"responses\":[";
+//        {
+//            std::lock_guard<std::mutex> lock(_mutex);
+//            for (unsigned i = 0; i < _tasks.size(); ++i) {
+//                std::string response_as_str;
+//                google::protobuf::util::MessageToJsonString(_tasks[i].response, &response_as_str);
+//                ss << response_as_str;
+//                if (i != _tasks.size() - 1)
+//                    ss << ",";
+//            }
+//        }
+//        ss << "]";
+//
+//        ss << "}";
 
         stringToFile(json_path, ss.str());
     }
@@ -1666,6 +2445,9 @@ namespace tuplex {
             size_t total_interpreter_path = 0;
             size_t total_unresolved = 0;
 
+            // sanity checks, output paths -> these should be unique.
+            std::vector<std::string> written_output_paths;
+
             // aggregate stats over responses
             for (const auto &task: _tasks) {
                 total_num_output_rows += task.response.numrowswritten();
@@ -1676,6 +2458,9 @@ namespace tuplex {
                 total_general_path += task.response.rowstats().general();
                 total_interpreter_path += task.response.rowstats().interpreter();
                 total_unresolved += task.response.rowstats().unresolved();
+
+
+                std::copy(task.response.outputuris().begin(), task.response.outputuris().end(), std::back_inserter(written_output_paths));
 
                 awsInitTime.update(task.response.awsinittime());
                 taskExecutionTime.update(task.response.taskexecutiontime());
@@ -1701,6 +2486,20 @@ namespace tuplex {
                 containerIDs.insert(task.response.container().uuid());
                 numReused += task.response.container().reused();
                 numNew += !task.response.container().reused();
+
+                // Add recursive invocation statistics:
+                if(task.response.invokedresponses_size() > 0) {
+                    for(const auto& self_invoke_response: task.response.invokedresponses()) {
+                        containerIDs.insert(self_invoke_response.container().uuid());
+                        numReused += self_invoke_response.container().reused();
+                        numNew += !task.response.container().reused();
+
+                        total_num_output_rows += self_invoke_response.numrowswritten();
+                        total_num_exceptions += self_invoke_response.numexceptions();
+
+                        std::copy(self_invoke_response.outputuris().begin(), self_invoke_response.outputuris().end(), std::back_inserter(written_output_paths));
+                    }
+                }
             }
 
             // print stage stats
@@ -1711,6 +2510,36 @@ namespace tuplex {
             logger().info("LAMBDA paths input rows took: normal: " + std::to_string(total_normal_path)
                           + " general: " + general_info + " interpreter: "
                           + std::to_string(total_interpreter_path));
+
+            std::unordered_set<URI> unique_written_output_paths(written_output_paths.begin(), written_output_paths.end());
+            logger().info("LAMBDA wrote " + pluralize(written_output_paths.size(), "output uri") + " (" + pluralize(unique_written_output_paths.size(), "unique uri") + ")");
+
+            // If non unique URIs, check what went wrong by explicitly listing debug information
+            if(written_output_paths.size() != unique_written_output_paths.size()) {
+                // go over request and print out for each specializaition unit which output uris were created.
+                std::stringstream ss;
+                ss<<"Output uris do not seem unique:\n"<<std::endl;
+
+                for (const auto &task: _tasks) {
+                    std::vector<std::string> output_paths;
+                    for(auto uri : task.response.outputuris())
+                        output_paths.push_back(uri);
+                    if(task.response.invokedresponses_size() > 0) {
+                        for(const auto& self_invoke_response: task.response.invokedresponses()) {
+                            for(auto uri : self_invoke_response.outputuris())
+                                output_paths.push_back(uri);
+                        }
+                    }
+
+                    ss << "Task " << task.info.requestId << ":\n";
+                    for(auto path : output_paths) {
+                        ss<<"  -- "<<path<<std::endl;
+                    }
+                }
+
+                logger().error(ss.str());
+            }
+
 
             // save to internal
             _info.total_input_normal_path = total_normal_path;
@@ -1746,32 +2575,6 @@ namespace tuplex {
         ss << "Lambda cost: $" << lambdaCost();
 
         logger().info("LAMBDA statistics: \n" + ss.str());
-    }
-
-    size_t AwsLambdaBackend::getMB100Ms() {
-        std::lock_guard<std::mutex> lock(_mutex);
-
-        // sum up billed mb ms
-        size_t billed = 0;
-        for (const auto task: _tasks) {
-            size_t billedDurationInMs = task.info.billedDurationInMs;
-            size_t memorySizeInMb = task.info.memorySizeInMb;
-            billed += billedDurationInMs / 100 * memorySizeInMb;
-        }
-        return billed;
-    }
-
-    size_t AwsLambdaBackend::getMBMs() {
-        std::lock_guard<std::mutex> lock(_mutex);
-
-        // sum up billed mb ms
-        size_t billed = 0;
-        for (const auto& task: _tasks) {
-            size_t billedDurationInMs = task.info.billedDurationInMs;
-            size_t memorySizeInMb = task.info.memorySizeInMb;
-            billed += billedDurationInMs * memorySizeInMb;
-        }
-        return billed;
     }
 
     URI AwsLambdaBackend::scratchDir(const std::vector<URI> &hints) {
@@ -1836,6 +2639,8 @@ namespace tuplex {
 
     void AwsLambdaBackend::reset() {
         _tasks.clear();
+        _failedRequests.clear();
+        _invokedRequests.clear();
 
         // reset path mapping
         _remoteToLocalURIMapping.clear();
@@ -1844,23 +2649,280 @@ namespace tuplex {
         if(_service)
             _service->reset();
 
+        // reset billing
+        resetBilling();
+
+        _info.reset();
+
         // other reset? @TODO.
     }
 
-//    void AwsLambdaBackend::abortRequestsAndFailWith(int returnCode, const std::string &errorMessage) {
-//        logger().error("LAMBDA execution failed due to exit code " + std::to_string(returnCode) +
-//                       " on one executor, details: " + errorMessage);
+
+    void AwsLambdaBackend::validate_requests_can_be_served_with_concurrency_limit(const std::vector<AwsLambdaRequest>& requests,
+                                                                                  size_t concurrency_limit) {
+        size_t min_concurrency_needed = 1;
+        for(const auto& req : requests) {
+            size_t invocations = 1 + recursive_invocation_count(req.body);
+            min_concurrency_needed = std::max(invocations, min_concurrency_needed);
+        }
+
+        if(min_concurrency_needed > concurrency_limit)
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Recursive requests need at least " + std::to_string(min_concurrency_needed) + " concurrency, but Lambda is configured with " + std::to_string(concurrency_limit) + " concurrency limit.");
+    }
+
+    AwsLambdaRequest& find_request_with_least_bytes_to_process(std::vector<AwsLambdaRequest>& requests) {
+        size_t minimum_total_size = std::numeric_limits<size_t>::max();
+        int smallest_element_idx = 0;
+
+        assert(!requests.empty());
+
+        int pos = 0;
+        for(const auto& req: requests) {
+
+            // compute size of request
+            size_t req_total_size = 0;
+            for(unsigned i = 0; i < req.body.inputuris_size(); ++i) {
+                // range URI?
+                std::string uri = req.body.inputuris(i);
+                URI baseURI;
+                size_t range_start=0, range_end=0;
+                decodeRangeURI(uri, baseURI, range_start, range_end);
+                if(uri != baseURI.toString() && !(range_start == 0 && range_end == 0)) {
+                    req_total_size += range_end - range_start;
+                } else
+                    req_total_size += req.body.inputsizes(i);
+            }
+
+            // recursive requests.
+            if(recursive_invocation_count(req.body) != 0)
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " need to implement");
+
+            if(req_total_size < minimum_total_size)
+                smallest_element_idx = pos;
+            minimum_total_size = std::min(req_total_size, minimum_total_size);
+            pos++;
+        }
+        assert(smallest_element_idx >= 0);
+        return requests[smallest_element_idx];
+    }
+
+
+//    std::vector<AwsLambdaRequest> AwsLambdaBackend::create_specializing_requests_with_multiple_files(
+//            const TransformStage* tstage,
+//            int numThreads,
+//            const std::vector<std::tuple<std::string, size_t>>& uri_infos, MessageHandler& logger,
+//            std::function<std::string(int n, int n_digits)> generate_output_base_uri) {
 //
-//        int numPending = std::max((int) _numPendingRequests, 0);
-//        if (numPending > 0)
-//            logger().info("Aborting " + pluralize(numPending, " pending request"));
-//        else
-//            logger().info("Aborting.");
+//        // no self-invocation because too few parallelism.
+//        // But issue directly requests, some may have multiple files. Still specialize PER file.
+//        size_t total_size_in_bytes_to_process = 0;
+//        for(const auto& info : uri_infos)
+//            total_size_in_bytes_to_process += std::get<1>(info);
 //
-//        _numPendingRequests = 0;
-//        _client->DisableRequestProcessing();
-//        logger().info("Shutdown remote execution.");
-//        _client->EnableRequestProcessing();
+//        size_t avg_size_in_bytes_to_process = total_size_in_bytes_to_process / uri_infos.size();
+//        {
+//            std::stringstream ss;
+//            ss<<pluralize(uri_infos.size(), "input file")<<" ("<<sizeToMemString(total_size_in_bytes_to_process)<<") to distribute (avg size per file: "<<sizeToMemString(avg_size_in_bytes_to_process)<<").";
+//            logger.debug(ss.str());
+//        }
+//
+//        auto sampling_mode = tstage->samplingMode();
+//
+//        // later: need to sort requests
+//        std::vector<AwsLambdaRequest> requests;
+//
+//        // sort files after size (heuristic).
+//        auto uri_infos_sorted_by_size = uri_infos;
+//        std::sort(uri_infos_sorted_by_size.begin(), uri_infos_sorted_by_size.end(),
+//                  [](const std::tuple<std::string, size_t>& lhs, const std::tuple<std::string, size_t>& rhs) {
+//            return std::get<1>(lhs) >= std::get<1>(rhs);
+//        });
+//
+//        // this approach ensures greedy file selection.
+//        size_t max_parallelism =  _options.AWS_MAX_CONCURRENCY();
+//
+//        // Doesn't preserve order of input files.
+//        for(const auto& info : uri_infos_sorted_by_size) {
+//            URI uri = std::get<0>(info);
+//            size_t uri_size = std::get<1>(info);
+//
+//            if(requests.size() < max_parallelism) {
+//                AwsLambdaRequest req;
+//
+//                req.body.add_inputuris(uri.toString());
+//                req.body.add_inputsizes(uri_size);
+//
+//                // no split up necessary, simply process full data.
+//                req.body.mutable_stage()->add_invocationcount(0);
+//                requests.emplace_back(req);
+//            } else {
+//                // add to file with smallest total bytes sum.
+//                auto& req = find_request_with_least_bytes_to_process(requests);
+//
+//                // add this file to request. Note: could split up file as well in the future!
+//                req.body.add_inputuris(uri.toString());
+//                req.body.add_inputsizes(uri_size);
+//            }
+//        }
+//
+//        // Step 2: generate output uris (consecutive)
+//        int n_output_parts = 0;
+//        // Count how many output parts there will be.
+//        for(const auto& req : requests) {
+//            n_output_parts++; // +1 for the request itself.
+//            // Are there self-invocations? For each invocation count +1.
+//            // Only 1 level supported yet.
+//            n_output_parts += recursive_invocation_count(req.body);
+//        }
+//        int n_digits = ilog10c(n_output_parts) + 1;
+//        logger.info("Recursive tree invocation will invoke in total " + pluralize(n_output_parts, "lambda") + " producing " + pluralize(n_output_parts, "part") + ".");
+//
+//        // Go over requests again & set part offsets.
+//        int task_no = 0;
+//        auto num_digits = ilog10c(requests.size()) + 1;
+//        for(auto& req : requests) {
+//            req.body.set_partnooffset(task_no);
+//            auto lambda_output_uri = generate_output_base_uri(task_no, n_digits);
+//            req.body.set_baseoutputuri(lambda_output_uri);
+//            req.body.set_baseisfinaloutput(true); // <-- is final, the recursive will modify it.
+//            task_no += 1 + recursive_invocation_count(req.body);
+//
+//
+//            // fill with trafo.
+//            fill_with_transform_stage(req.body, tstage);
+//            fill_env(req.body);
+//
+//            // for different parts need different spill folders.
+//            auto worker_spill_uri = spillURI() + "/lam" + fixedLength(task_no, num_digits);
+//            fill_with_worker_config(req.body, worker_spill_uri, numThreads);
+//
+//            // Check whether specialization should occur. If so, add specialization units for each file exceeding threshold.
+//            if(_options.USE_EXPERIMENTAL_HYPERSPECIALIZATION()) {
+//                req.body.mutable_stage()->mutable_specializationunit()->set_samplemode(static_cast<uint64_t>(sampling_mode));
+//
+//                for(unsigned i = 0; i < req.body.inputuris_size(); ++i) {
+//                    auto su = req.body.mutable_stage()->mutable_specializationunit();
+//                    // Other param re specialization unit size NOT YET SUPPORTED.
+//                    if(req.body.inputsizes(i) > _options.EXPERIMENTAL_MINIMUM_SIZE_TO_SPECIALIZE()) {
+//                        su->add_inputuris(req.body.inputuris(i));
+//                        su->add_inputsizes(req.body.inputuris_size());
+//                    }
+//                }
+//            }
+//        }
+//
+//        logger.info("Recursive Lambda invocation will produce " + pluralize(task_no, "output file") + ".");
+//
+//        return requests;
 //    }
+
+    std::vector<AwsLambdaRequest> AwsLambdaBackend::create_specializing_requests_with_multiple_files(
+            const TransformStage* tstage,
+            int numThreads,
+            const std::vector<std::tuple<std::string, size_t>>& uri_infos, MessageHandler& logger,
+            std::function<std::string(int n, int n_digits)> generate_output_base_uri) {
+
+        // no self-invocation because too few parallelism.
+        // But issue directly requests, some may have multiple files. Still specialize PER file.
+        size_t total_size_in_bytes_to_process = 0;
+        for(const auto& info : uri_infos)
+            total_size_in_bytes_to_process += std::get<1>(info);
+
+        size_t avg_size_in_bytes_to_process = total_size_in_bytes_to_process / uri_infos.size();
+        {
+            std::stringstream ss;
+            ss<<pluralize(uri_infos.size(), "input file")<<" ("<<sizeToMemString(total_size_in_bytes_to_process)<<") to distribute (avg size per file: "<<sizeToMemString(avg_size_in_bytes_to_process)<<").";
+            logger.debug(ss.str());
+        }
+
+        auto sampling_mode = tstage->samplingMode();
+
+        // later: need to sort requests
+        std::vector<AwsLambdaRequest> requests;
+
+        // this approach ensures greedy file selection.
+        size_t max_parallelism =  _options.AWS_MAX_CONCURRENCY();
+
+        // For each file assume one request.
+        for(const auto& info : uri_infos) {
+            URI uri = std::get<0>(info);
+            size_t uri_size = std::get<1>(info);
+
+            AwsLambdaRequest req;
+
+            req.body.add_inputuris(uri.toString());
+            req.body.add_inputsizes(uri_size);
+
+            // no split up necessary, simply process full data.
+            req.body.mutable_stage()->add_invocationcount(0);
+            requests.emplace_back(req);
+        }
+
+        // Step 2: generate output uris (consecutive)
+        int n_output_parts = 0;
+        // Count how many output parts there will be.
+        for(const auto& req : requests) {
+            n_output_parts++; // +1 for the request itself.
+            // Are there self-invocations? For each invocation count +1.
+            // Only 1 level supported yet.
+            n_output_parts += recursive_invocation_count(req.body);
+        }
+        int n_digits = ilog10c(n_output_parts) + 1;
+        logger.info("Recursive tree invocation will invoke in total " + pluralize(n_output_parts, "lambda") + " producing " + pluralize(n_output_parts, "part") + ".");
+
+        // Go over requests again & set part offsets.
+        int task_no = 0;
+        auto num_digits = ilog10c(requests.size()) + 1;
+        for(auto& req : requests) {
+            req.body.set_partnooffset(task_no);
+            auto lambda_output_uri = generate_output_base_uri(task_no, n_digits);
+            req.body.set_baseoutputuri(lambda_output_uri);
+            req.body.set_baseisfinaloutput(true); // <-- is final, the recursive will modify it.
+            task_no += 1 + recursive_invocation_count(req.body);
+
+
+            // fill with trafo.
+            fill_with_transform_stage(req.body, tstage);
+            fill_env(req.body);
+
+            // for different parts need different spill folders.
+            auto worker_spill_uri = spillURI() + "/lam" + fixedLength(task_no, num_digits);
+            fill_with_worker_config(req.body, worker_spill_uri, numThreads);
+
+            // Check whether specialization should occur. If so, add specialization units for each file exceeding threshold.
+            if(_options.USE_EXPERIMENTAL_HYPERSPECIALIZATION()) {
+                req.body.mutable_stage()->mutable_specializationunit()->set_samplemode(static_cast<uint64_t>(sampling_mode));
+
+                for(unsigned i = 0; i < req.body.inputuris_size(); ++i) {
+                    auto su = req.body.mutable_stage()->mutable_specializationunit();
+                    // Other param re specialization unit size NOT YET SUPPORTED.
+                    if(req.body.inputsizes(i) > _options.EXPERIMENTAL_MINIMUM_SIZE_TO_SPECIALIZE()) {
+                        su->add_inputuris(req.body.inputuris(i));
+                        su->add_inputsizes(req.body.inputuris_size());
+                    }
+                }
+            }
+        }
+
+        // Go over requests again & set part offsets.
+        task_no = 0;
+        for(auto& req : requests) {
+            req.body.set_partnooffset(task_no);
+            auto lambda_output_uri = generate_output_base_uri(task_no, n_digits);
+            req.body.set_baseoutputuri(lambda_output_uri);
+            req.body.set_baseisfinaloutput(true); // <-- is final, the recursive will modify it.
+            task_no += 1 + recursive_invocation_count(req.body);
+        }
+
+        logger.info("Recursive Lambda invocation will produce " + pluralize(task_no, "output file") + ".");
+
+
+        logger.info("Lambda invocation will produce " + pluralize(task_no, "output file") + ".");
+
+
+
+        return requests;
+    }
+
 }
 #endif

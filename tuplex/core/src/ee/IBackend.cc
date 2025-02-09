@@ -45,4 +45,8 @@ namespace tuplex {
 
         return infos;
     }
+
+    void IBackend::setContext(Context &context) {
+        _context = &context;
+    }
 }

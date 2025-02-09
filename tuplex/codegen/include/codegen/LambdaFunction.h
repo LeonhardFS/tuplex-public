@@ -55,7 +55,7 @@ namespace tuplex {
              * @param exceptionCode where to store the exception data
              * @param args (flattened) arguments needed by the function (includes sizes)
              */
-            void callWithExceptionHandler(llvm::IRBuilder<>& builder,
+            void callWithExceptionHandler(codegen::IRBuilder& builder,
                                           llvm::Value* const resVal,
                                           llvm::BasicBlock* const handler,
                                           llvm::Value* const exceptionCode,
@@ -87,7 +87,7 @@ namespace tuplex {
             /*!
              * helper function to fill _paramLookup with llvm::Values
              */
-            void unflattenParameters(llvm::IRBuilder<>& builder, NParameterList* params, bool isFirstArgTuple);
+            void unflattenParameters(codegen::IRBuilder& builder, NParameterList* params, bool isFirstArgTuple);
 
             inline llvm::Value *i1Const(const bool value) {
                 return llvm::Constant::getIntegerValue(llvm::Type::getInt1Ty(_context), llvm::APInt(1, value));
@@ -104,10 +104,10 @@ namespace tuplex {
             LambdaFunctionBuilder& create(NLambda *lambda, std::string func_name);
             LambdaFunctionBuilder& create(NFunction* func);
 
-            llvm::IRBuilder<> getLLVMBuilder() { assert(_body); return llvm::IRBuilder<>(_body); }
+            codegen::IRBuilder getIRBuilder() { assert(_body); return codegen::IRBuilder(_body); }
 
-            llvm::IRBuilder<> addException(llvm::IRBuilder<>& builder, ExceptionCode ec, llvm::Value *condition, const std::string& exception_message);
-            llvm::IRBuilder<> addException(llvm::IRBuilder<>& builder, llvm::Value* ecCode, llvm::Value *condition, const std::string& exception_message);
+            codegen::IRBuilder addException(const codegen::IRBuilder& builder, ExceptionCode ec, llvm::Value *condition, const std::string& exception_message);
+            codegen::IRBuilder addException(const codegen::IRBuilder& builder, llvm::Value* ecCode, llvm::Value *condition, const std::string& exception_message);
 
             inline LLVMEnvironment& env() const {
                 if(!_env)
@@ -138,19 +138,29 @@ namespace tuplex {
              * helper to stop generation in expressions
              * @return
              */
-            inline bool hasExited() const { return _body == nullptr; }
+            inline bool hasExited() const {
+                if(!_body)
+                    return true;
+
+                // Also early exit if current block ends with ret.
+                if(blockContainsRet(_body))
+                    return true;
+
+                return false;
+            }
 
             /*!
              * finishes current basicblock and exits it with exception.
              * @param ec which code to exit with
+             * @param message optional message to displau when exiting for debugging purposes.
              * @return the function itself
              */
-            LambdaFunction exitWithException(const ExceptionCode& ec);
+            LambdaFunction exitWithException(const ExceptionCode& ec, const std::string& message="");
 
-            inline llvm::IRBuilder<> setLastBlock(llvm::BasicBlock* bb) {
+            inline codegen::IRBuilder setLastBlock(llvm::BasicBlock* bb) {
                 assert(bb);
                 _body = bb;
-               return getLLVMBuilder();
+               return getIRBuilder();
             }
 
             inline llvm::BasicBlock* getLastBlock() const { return _body; }
@@ -178,9 +188,31 @@ namespace tuplex {
 
             std::string funcName() const {
                 assert(_func._func);
-                return _func._func->getName();
+                return _func._func->getName().str();
             }
         };
+
+        /*!
+         * Helper function to run dict.get() on StructuredDictionary.
+         * @param lfb
+         * @param env
+         * @param builder
+         * @param dict_type
+         * @param dict_ptr
+         * @param key_type
+         * @param key
+         * @param value_type_to_return
+         * @return
+         */
+        extern std::tuple<llvm::Value*, llvm::Value*, SerializableValue> struct_dict_get_by_key(LambdaFunctionBuilder &lfb,
+                                                                                                LLVMEnvironment& env,
+                                                                                                const IRBuilder &builder,
+                                                                                                const python::Type& dict_type,
+                                                                                                llvm::Value* dict_ptr,
+                                                                                                const python::Type& key_type,
+                                                                                                const SerializableValue& key,
+                                                                                                const python::Type& value_type_to_return
+        );
 
     }
 }

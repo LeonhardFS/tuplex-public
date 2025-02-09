@@ -9,7 +9,7 @@
 //--------------------------------------------------------------------------------------------------------------------//
 
 #include <gtest/gtest.h>
-#include <UTF8.h>
+#include <utf8/UTF8.h>
 
 TEST(UTF8Helpers, ASCIICompatibility) {
     EXPECT_EQ(static_cast<char>(utf8toi("a")), 'a');

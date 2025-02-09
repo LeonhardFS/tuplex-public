@@ -30,7 +30,7 @@ sys.path.insert(0, 'python')
 # -- Project information -----------------------------------------------------
 
 project = 'Tuplex'
-copyright = '(c) 2021 Tuplex Contributors'
+copyright = '(c) 2017 - 2023 Tuplex Contributors'
 author = 'Leonhard Spiegelberg'
 
 # The short X.Y version

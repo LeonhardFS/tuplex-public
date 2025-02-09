@@ -13,6 +13,10 @@
 
 #include <PythonHelpers.h>
 
+#ifndef EXPORT_SYMBOL
+#define EXPORT_SYMBOL __attribute__((visibility("default")))
+#endif
+
 extern "C" {
 
     /*!
@@ -47,6 +51,7 @@ extern "C" {
 
     extern void releasePythonFunction(uint8_t* pyobj) __attribute__((used));
 
+    EXPORT_SYMBOL extern int debug_printf(const char* format, ...);
 }
 
 #endif //TUPLEX_PYTHONCALLBACKS_H

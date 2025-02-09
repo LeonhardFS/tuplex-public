@@ -123,6 +123,10 @@ public:
     TaskType type() const override { return TaskType::SIMPLEFILEWRITE; }
     std::vector<Partition*> getOutputPartitions() const override { return std::vector<Partition*>{}; }
 
+    void releaseAllLocks() override {
+        for(auto p : _partitions)
+            p->unlock();
+    }
 private:
     URI _uri;
     std::vector<Partition *> _partitions;
@@ -199,11 +203,6 @@ private:
         } else {
             throw std::runtime_error("could not convert row type to orc batch.");
         }
-    }
-
-    void releaseAllLocks() override {
-        for(auto p : _partitions)
-            p->unlock();
     }
 };
 

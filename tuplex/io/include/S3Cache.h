@@ -30,9 +30,9 @@ namespace tuplex {
         inline void setFS(S3FileSystemImpl& fs, bool requesterPays=true) {
             _s3fs = &fs;
             if(requesterPays)
-                _requestPayer = Aws::S3::Model::RequestPayer::requester;
+                _requestPayer = AwsS3RequestPayerRequester;
             else
-                _requestPayer = Aws::S3::Model::RequestPayer::NOT_SET;
+                _requestPayer = AwsS3RequestPayerNotSet;
         }
         static S3FileCache& instance() {
             static S3FileCache the_one_and_only;
@@ -59,6 +59,7 @@ namespace tuplex {
         void free(uint8_t* buf);
 
         inline size_t cacheSize() const { return _cacheSize; }
+        inline size_t maxCacheSize() const { return _maxSize; }
     private:
         std::mutex _mutex; // everything for this cache needs to be thread-safe.
 
@@ -85,7 +86,8 @@ namespace tuplex {
             CacheEntry() : buf(nullptr), range_start(0), range_end(0), timestamp(0), uri_size(0) {}
             CacheEntry(const CacheEntry& other) = delete;
             CacheEntry(CacheEntry&& other) {
-                buf = other.buf; other.buf = nullptr;
+                buf = other.buf;
+                other.buf = nullptr;
                 range_start = other.range_start;
                 range_end = other.range_end;
 
@@ -94,7 +96,28 @@ namespace tuplex {
                 timestamp = other.timestamp;
             }
 
-            CacheEntry& operator = (CacheEntry&& other) = default;
+            CacheEntry& operator = (CacheEntry&& other) noexcept {
+                // important to transfer buffer ownership.
+                buf = other.buf;
+                other.buf = nullptr;
+                range_start = other.range_start;
+                range_end = other.range_end;
+
+                uri = other.uri;
+                uri_size = other.uri_size;
+                timestamp = other.timestamp;
+
+                // reset for better debugging.
+                other.timestamp = 0;
+                other.uri_size = 0;
+                other.range_start = 0;
+                other.range_end = 0;
+                other.uri = URI::INVALID;
+
+                return *this;
+            }
+
+            CacheEntry& operator = (const CacheEntry& other) = delete;
 
             ~CacheEntry() {
                 if(buf)
@@ -108,8 +131,10 @@ namespace tuplex {
 
         bool pruneBy(size_t size);
 
+        void putChunk(CacheEntry&& chunk);
+
         S3FileSystemImpl* _s3fs; // weak ptr.
-        Aws::S3::Model::RequestPayer _requestPayer;
+        AwsS3RequestPayer _requestPayer;
         CacheEntry s3Read(const URI& uri, size_t range_start, size_t range_end);
 
         /*!

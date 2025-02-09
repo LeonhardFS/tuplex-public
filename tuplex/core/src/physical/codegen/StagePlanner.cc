@@ -21,7 +21,13 @@
 #include <physical/codegen/StageBuilder.h>
 #include <graphviz/GraphVizBuilder.h>
 #include "logical/LogicalOptimizer.h"
+#include <visitors/ApplyVisitor.h>
 #include <unordered_map>
+#include <tracing/TraceVisitor.h>
+
+#ifdef BUILD_WITH_CEREAL
+#include <CustomArchive.h>
+#endif
 
 #define VERBOSE_BUILD
 
@@ -103,19 +109,824 @@ namespace tuplex {
             }
         }
 
-        std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::constantFoldingOptimization(const std::vector<Row>& sample) {
+        std::vector<std::string> get_column_names_from_sample(const std::vector<Row>& sample) {
+            std::vector<std::string> names;
+            std::unordered_set<std::string> names_seen;
+            for(const auto& row : sample) {
+                if(row.getRowType().isRowType()) {
+                    for(const auto& name : row.getRowType().get_column_names()) {
+                        if(names_seen.find(name) == names_seen.end()) {
+                            names.push_back(name);
+                            names_seen.insert(name);
+                        }
+                    }
+                }
+            }
+            return names;
+        }
+
+        struct SparsifyInfo {
+            std::vector<std::vector<access_path_t>> column_access_paths;
+            std::vector<std::string> columns;
+
+            inline std::vector<access_path_t> get_paths(const std::string& column) {
+                auto idx = indexInVector(column, columns);
+                if(idx >= 0)
+                    return column_access_paths[idx];
+                return {};
+            }
+        };
+
+        void merge_access_paths(std::vector<access_path_t>& paths, const std::vector<access_path_t>& in_paths) {
+            if(paths.empty()) {
+                paths = in_paths;
+                return;
+            }
+
+            // can use string rep as hash.
+            std::set<std::string> hashes;
+            for(auto path : paths)
+                hashes.insert(access_path_to_str(path));
+
+            // insert any paths that are not existing yet.
+            for(auto path : in_paths) {
+                auto key = access_path_to_str(path);
+                if(hashes.find(key) == hashes.end()) {
+                    paths.push_back(path);
+                    hashes.insert(key); // avoids duplicates in in_paths;
+                }
+            }
+        }
+
+        /*!
+         * remove existing annotations.
+         * @param node
+         */
+        void reset_annotations(ASTNode* node) {
+            ApplyVisitor av([](const ASTNode* node) { return true; }, [](ASTNode& node) {
+                node.removeAnnotation();
+            });
+            node->accept(av);
+        }
+
+        bool StagePlanner::input_schema_contains_structs(const Schema& schema) {
+            auto input_row_type_as_tuple = schema.getRowType();
+            if(input_row_type_as_tuple.isRowType())
+                input_row_type_as_tuple = input_row_type_as_tuple.get_columns_as_tuple_type();
+
+            for(const auto& col_type : input_row_type_as_tuple.parameters())
+                if(col_type.withoutOption().isStructuredDictionaryType() || col_type.withoutOption().isSparseStructuredDictionaryType())
+                   return true;
+            return false;
+        }
+
+        std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::sparsifyStructs(std::vector<Row> sample,
+                                                                                    const option<std::vector<std::string>>& sample_columns,
+                                                                                    bool relax_for_sample) {
+            using namespace std;
+            vector<shared_ptr<LogicalOperator>> opt_ops; // the operators to return.
+
+            std::stringstream os; // output stream where to capture optimization details.
+
+            auto& logger = Logger::instance().logger("specializing stage optimizer");
+
+            // check current input node schema, if it contains no struct_dict - can skip.
+            if(!_inputNode) {
+                logger.error("internal problem with _inputNode, skipping.");
+                return vec_prepend(_inputNode, _operators);
+            }
+
+            if(sample.empty()) {
+                logger.info("Empty sample, skipping sparsifyStructs optimization.");
+                return vec_prepend(_inputNode, _operators);
+            }
+
+            // TODO: could sparsify within operators as well.
+
+            auto struct_dict_found = input_schema_contains_structs(_inputNode->getOutputSchema());
+
+            if(!struct_dict_found) {
+                logger.error("Skipping sparsify-struct pass, because no struct dicts found in input operator.");
+                return vec_prepend(_inputNode, _operators);
+            }
+
+            // get column names from sample.
+            auto column_names = get_column_names_from_sample(sample);
+
+            // check with provided values.
+            if(sample_columns.has_value())
+                column_names = sample_columns.value();
+
+#ifndef NDEBUG
+            // check that counts match.
+            {
+                auto n_columns = column_names.size();
+                for(const auto& row : sample) {
+                    if(row.getRowType().isRowType())
+                        assert(n_columns >= extract_columns_from_type(row.getRowType()));
+                    else
+                        assert(n_columns == extract_columns_from_type(row.getRowType()));
+                }
+            }
+#endif
+
+            std::vector<PyObject*> python_sample;
+
+            // go through operators with sample, and then for each record which paths are accessed:
+            std::unordered_map<LogicalOperator*, SparsifyInfo> info_map;
+            bool done=false;
+            for(const auto& op : vec_prepend(_inputNode, _operators)) {
+                if(done)
+                    break;
+
+                switch(op->type()) {
+                    case LogicalOperatorType::FILEINPUT: {
+                        stringstream ss;
+                        ss<<"Found file input parameter, processing sample: ";
+                        logger.debug(ss.str());
+                        break;
+                    }
+                    case LogicalOperatorType::MAP:
+                    case LogicalOperatorType::FILTER: {
+                        auto udfop = std::dynamic_pointer_cast<UDFOperator>(op);
+                        auto func_root = udfop->getUDF().getAnnotatedAST().getFunctionAST();
+                        assert(func_root);
+
+                        reset_annotations(func_root);
+
+                        // Trace now which columns are accessed.
+                        // convert to python.
+                        python::lockGIL();
+                        python_sample.clear();
+                        for(auto row : sample) {
+                            // row = row.with_columns(column_names);
+                            // reorder_and_fill_missing_will_null(row,
+                            //                                   row.getRowType().get_column_names(),
+                            //                                   column_names);
+                            python_sample.push_back(python::rowToPython(row));
+                        }
+
+                        // Trace
+                        TraceVisitor tv;
+                        for (unsigned i = 0; i < sample.size(); ++i) {
+                            auto py_object = python_sample[i];
+                            tv.recordTrace(func_root, py_object, column_names);
+                        }
+
+                        python::unlockGIL();
+
+                        // results, and print them out:
+                        auto column_access_paths = tv.columnAccessPaths();
+
+                        info_map[udfop.get()].columns = tv.columns();
+                        info_map[udfop.get()].column_access_paths = tv.columnAccessPaths();
+
+                        // check which names are accessed:
+                        auto columns = tv.columns();
+                        int num_accessed = 0;
+                        for (unsigned i = 0; i < columns.size(); ++i) {
+                            if (!column_access_paths[i].empty()) {
+                                os << "Access paths for column: " << columns[i] << "\n";
+                                for (auto path: column_access_paths[i])
+                                    os << " -- " << access_path_to_str(path) << "\n";
+                                os << std::endl;
+                                num_accessed++;
+                            }
+                        }
+                        os << num_accessed << "/" << pluralize(columns.size(), "column") << " accessed." << endl;
+
+                        if(op->type() == LogicalOperatorType::MAP) {
+                            // processing stops after the first map operator encountered.
+                            done=true;
+//                            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Need to update sample for map operator.");
+                        }
+                        break;
+                    }
+                    case LogicalOperatorType::WITHCOLUMN: {
+                        // apply same tracing logic.
+                        auto wop = std::dynamic_pointer_cast<WithColumnOperator>(op);
+                        auto func_root = wop->getUDF().getAnnotatedAST().getFunctionAST();
+                        assert(func_root);
+
+                        reset_annotations(func_root);
+
+                        // Trace now which columns are accessed.
+                        // convert to python.
+                        python::lockGIL();
+                        python_sample.clear();
+                        for(const auto& row : sample) {
+                            // row = row.with_columns(column_names);
+                            // reorder_and_fill_missing_will_null(row,
+                            //                                   row.getRowType().get_column_names(),
+                            //                                   column_names);
+                            python_sample.push_back(python::rowToPython(row));
+                        }
+
+                        // Trace
+                        TraceVisitor tv;
+                        std::vector<Field> results;
+                        for (unsigned i = 0; i < sample.size(); ++i) {
+                            auto py_object = python_sample[i];
+                            tv.recordTrace(func_root, py_object, column_names);
+                            auto field = python::pythonToField(tv.lastResult());
+                            results.push_back(field);
+                        }
+
+                        python::unlockGIL();
+
+                        // results, and print them out:
+                        auto column_access_paths = tv.columnAccessPaths();
+
+                        info_map[wop.get()].columns = tv.columns();
+                        info_map[wop.get()].column_access_paths = tv.columnAccessPaths();
+
+                        os<<"Sparsify struct tracing results for operator "<<op->name()<<"::\n";
+
+                        os<<"UDF:\n"<<wop->getUDF().getCode()<<endl<<endl;
+
+                        // check which names are accessed:
+                        auto columns = tv.columns();
+                        int num_accessed = 0;
+                        for (unsigned i = 0; i < columns.size(); ++i) {
+                            if (!column_access_paths[i].empty()) {
+                                os << "Access paths for column: " << columns[i] << "\n";
+                                for (auto path: column_access_paths[i])
+                                    os << " -- " << access_path_to_str(path) << "\n";
+                                os << std::endl;
+                                num_accessed++;
+                            }
+                        }
+                        os << num_accessed << "/" << pluralize(columns.size(), "column") << " accessed." << endl;
+
+                        // update sample (and column names!)
+                        if(wop->creates_new_column()) {
+                            // go through python result objects.
+                            assert(results.size() == sample.size());
+                            column_names.push_back(wop->columnToMap());
+                            for(unsigned i = 0; i < sample.size(); ++i) {
+                                auto field = results[i];
+                                auto fields = sample[i].to_vector();
+                                fields.push_back(field);
+                                sample[i] = Row::from_vector(fields);
+                            }
+                        } else {
+                            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " update sample for withColumn in sparsifyStructs.");
+                        }
+
+                        break;
+                    }
+                    default: {
+                        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " unknown operator " + op->name() + " in sparsifyStructs.");
+                    }
+                }
+            }
+
+            // for each operator, it is now known which access paths there are.
+            // next step is to (by reversing) identify the file operators valid paths in order to sparsify.
+            std::vector<LogicalOperator*> r_operators;
+            for(const auto& op : vec_prepend(_inputNode, _operators))
+                r_operators.push_back(op.get());
+            std::reverse(r_operators.begin(), r_operators.end());
+
+            // retrieve for input operator which columns are accessed how.
+            std::unordered_map<std::string, std::vector<access_path_t>> column_to_access_path_map;
+            for(const auto& op : r_operators) {
+                if(info_map.find(op) != info_map.end()) {
+
+                    auto info = info_map[op];
+
+                    switch(op->type()) {
+                        case LogicalOperatorType::WITHCOLUMN: {
+                            auto wop = static_cast<WithColumnOperator*>(op);
+
+                            // is the new column already contained? then remove.
+                            if(wop->creates_new_column() && column_to_access_path_map.find(wop->columnToMap()) != column_to_access_path_map.end()) {
+                                column_to_access_path_map.erase(wop->columnToMap());
+                            } else {
+                                // replace access (override column)
+                                column_to_access_path_map[wop->columnToMap()] = info_map[op].get_paths(wop->columnToMap());
+                            }
+
+                            // merge paths for all other columns.
+                            for(unsigned i = 0; i < info.columns.size(); ++i) {
+                                // handled above.
+                                if(info.columns[i] == wop->columnToMap())
+                                    continue;
+
+                                if(!info.column_access_paths[i].empty()) {
+                                    merge_access_paths(column_to_access_path_map[info.columns[i]], info.column_access_paths[i]);
+                                }
+                            }
+
+                            break;
+                        }
+                        case LogicalOperatorType::FILTER: {
+                            // merge paths for all other columns.
+                            for(unsigned i = 0; i < info.columns.size(); ++i) {
+                                 if(!info.column_access_paths[i].empty()) {
+                                    merge_access_paths(column_to_access_path_map[info.columns[i]], info.column_access_paths[i]);
+                                }
+                            }
+
+                            break;
+                        }
+                        case LogicalOperatorType::MAP: {
+                            // reset access paths.
+                            column_to_access_path_map = {};
+
+                            // merge paths for all other columns.
+                            for(unsigned i = 0; i < info.columns.size(); ++i) {
+                                if(!info.column_access_paths[i].empty()) {
+                                    merge_access_paths(column_to_access_path_map[info.columns[i]], info.column_access_paths[i]);
+                                }
+                            }
+                            break;
+                        }
+                        default: {
+                            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " unknown operator " + op->name() + " in sparsifyStructs.");
+                        }
+                    }
+                }
+            }
+
+            // erase now all columns which aren't present in input operator
+            std::vector<std::string> columns_to_remove;
+            for(const auto& kv : column_to_access_path_map) {
+                if(indexInVector(kv.first, _inputNode->columns()) < 0)
+                    columns_to_remove.push_back(kv.first);
+            }
+            for(auto name : columns_to_remove)
+                column_to_access_path_map.erase(name);
+
+            // sparsify now.
+            auto r_row_type = _inputNode->getOutputSchema().getRowType();
+            std::vector<std::vector<access_path_t>> r_access_paths;
+            for(auto name : _inputNode->columns()) {
+                r_access_paths.push_back({});
+                if(column_to_access_path_map.find(name) != column_to_access_path_map.end()) {
+                    r_access_paths.back() = column_to_access_path_map[name];
+                }
+            }
+
+            auto sparse_type = sparsify_and_project_row_type(r_row_type, r_access_paths);
+
+            os<<"Input row type before sparsification:\n"<<r_row_type.desc()<<endl;
+            os<<"Input row type after sparsification:\n"<<sparse_type.desc()<<endl;
+
+
+            // if desired, relax type to make sure sample passes.
+            if(relax_for_sample) {
+
+                std::vector<std::pair<int, int>> indices;
+                int pos = 0;
+                for(auto name : sparse_type.get_column_names()) {
+                    if(sparse_type.get_column_type(pos).withoutOption().isStructuredDictionaryType() || sparse_type.get_column_type(pos).isSparseStructuredDictionaryType()) {
+                        indices.push_back(make_pair(pos, indexInVector(name, sample_columns.data())));
+                        assert(indices.back().second >= 0);
+                    }
+                    pos++;
+                }
+
+                auto before_type = sparse_type;
+
+                for(const auto& row : sample) {
+                    // for each sparse struct in row_type check whether it passes or not, if not -> change from NOT_PRESENT or ALWAYS_PRESENT to MAYBE_PRESENT.
+                    // now check sparse types for fields to keep
+                    for(auto p : indices) {
+                        auto i = p.first;
+                        auto idx = p.second;
+                        auto field = row.get(idx);
+                        if(!field.isNull() && field.getType().withoutOption().isStructuredDictionaryType()) {
+
+                            // TODO: better struct/JSON type matching here...
+
+                            auto column_name = sparse_type.get_column_name(i);
+
+                            // different type?
+                            auto expected_type = sparse_type.get_column_type(i);
+                            bool is_option = expected_type.isOptionType();
+                            expected_type = expected_type.withoutOption();
+                            auto expected_pairs = expected_type.get_struct_pairs();
+                            if(field.getType().withoutOption() != expected_type) {
+
+                                if(expected_type.isStructuredDictionaryType()) {
+                                    // full check:
+                                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented");
+                                } else {
+                                    assert(expected_type.isSparseStructuredDictionaryType());
+                                    // partial check:
+
+                                    bool relaxation_found = false;
+
+                                    // i.e., all always present/not present in sparse dict must be ok.
+                                    for(auto& kv_pair : expected_pairs) {
+                                        if(kv_pair.presence == python::MAYBE_PRESENT)
+                                            continue;
+
+                                        access_path_t path{make_pair(kv_pair.key, kv_pair.keyType)};
+                                        auto field_present = is_field_present(field, path);
+
+                                        if(kv_pair.presence == python::ALWAYS_PRESENT) {
+                                            // ensure that kv_pair is present, else relax to maybe present.
+                                            if(!field_present) {
+                                                os<<column_name<<": Path "<<access_path_to_str(path)<<" not present, relax struct pair for key "<<kv_pair.key<<" to maybe present"<<endl;
+                                                relaxation_found = true;
+                                                kv_pair = python::StructEntry(kv_pair.key, kv_pair.keyType, kv_pair.valueType, python::MAYBE_PRESENT);
+                                            }
+                                        } else if(kv_pair.presence == python::NOT_PRESENT) {
+                                            // ensure that kv_pair is not present, else relax to maybe present.
+                                            if(field_present) {
+
+                                                // NOT_PRESENT uses often ~> PYOBJECT. Yet this can get compiled to => PYOBJECT easily.
+                                                // infer therefore the type from the field.
+                                                auto value_type = kv_pair.valueType;
+                                                if(python::Type::PYOBJECT == value_type) {
+                                                    // find from field the type
+                                                    value_type = python::Type::UNKNOWN;
+                                                    try {
+                                                        auto field_element = get_struct_field_by_path(field, path);
+                                                        if(field_element.getType() != python::Type::PYOBJECT)
+                                                            value_type = field_element.getType();
+                                                    } catch(const std::exception& path) {
+                                                        //... nothing, simply silent exception.
+                                                    }
+                                                }
+
+                                                if(value_type != python::Type::UNKNOWN) {
+                                                    os<<column_name<<": Path "<<access_path_to_str(path)<<" present, relax struct pair for key "<<kv_pair.key<<" to maybe present"<<endl;
+                                                    relaxation_found = true;
+                                                    kv_pair = python::StructEntry(kv_pair.key, kv_pair.keyType, value_type, python::MAYBE_PRESENT);
+                                                }
+                                            } else {
+                                                //// check that not is pyobject. If not simplify.
+                                                //if(kv_pair.valueType != python::Type::PYOBJECT)
+                                                //    kv_pair = python::StructEntry(kv_pair.key, kv_pair.keyType, python::Type::PYOBJECT, python::NOT_PRESENT);
+                                            }
+                                        }
+                                    }
+
+                                    // relaxation found? => update sparse type!
+                                    if(relaxation_found) {
+                                        auto new_expected_type = python::Type::makeStructuredDictType(expected_pairs, expected_type.isSparseStructuredDictionaryType());
+
+                                        // If previous type was identified as optional, carry over here.
+                                        if(is_option)
+                                            new_expected_type = python::Type::makeOptionType(new_expected_type);
+
+                                        // create new sparse type
+                                        auto column_names = sparse_type.get_column_names();
+                                        auto column_types = sparse_type.get_column_types();
+                                        column_types[i] = new_expected_type;
+                                        sparse_type = python::Type::makeRowType(column_types, column_names);
+                                    }
+
+                                }
+
+                            } else {
+                                // all good, type match.
+                            }
+                        }
+                    }
+                }
+
+                if(before_type != sparse_type) {
+                    os<<"Relaxed row type from\n"<<before_type.desc()<<" to \n"<<sparse_type.desc()<<endl;
+                }
+
+            }
+
+            // Overwrite input node with new sparse type & propagate through operators.
+            auto inputNode = _inputNode->clone(false);
+            RetypeConfiguration conf;
+            conf.row_type = sparse_type;
+            if(sparse_type.isRowType()) {
+                conf.row_type = sparse_type.get_columns_as_tuple_type();
+                conf.columns = sparse_type.get_column_names();
+            }
+            conf.is_projected = true;
+
+            // project columns, also need to update check indices (checks refer to output column indices).
+            if(!conf.columns.empty()) {
+                // !!! use here input columns, not output columns.
+                auto columns_before = inputNode->inputColumns(); // output columns.
+
+                // step 1: validate checks
+                for(const auto& check : _checks) {
+                    for(auto idx : check.colNos)
+                        if(idx >= columns_before.size())
+                            throw std::runtime_error("Check " + check.to_string() + " has invalid index " + std::to_string(idx));
+                }
+
+                // step 2: reselect relevant columns (i.e. perform selection pushdown).
+                std::dynamic_pointer_cast<FileInputOperator>(inputNode)->selectColumns(conf.columns);
+
+                // step 3: update checks (their indices) to new columns
+                auto columns_after = inputNode->inputColumns();
+                for(auto& check : _checks) {
+                    for(auto& idx : check.colNos) {
+                        auto new_idx = indexInVector(columns_before[idx], columns_after);
+                        if(new_idx < 0) {
+                            std::stringstream ss;
+                            ss<<"Check "<<check.to_string()<<" has invalid index "
+                              <<new_idx<<", required column "<<columns_before[idx]
+                              <<" can not be found in newly selected columns "<<columns_after;
+                            throw std::runtime_error(ss.str());
+                        }
+                        idx = new_idx; // this should update it!
+                    }
+                }
+
+                // step 4: validate current checks again, this time against columns_after.
+                for(const auto& check : _checks) {
+                    for(auto idx : check.colNos)
+                        if(idx >= columns_after.size())
+                            throw std::runtime_error("Check " + check.to_string() + " has invalid index " + std::to_string(idx));
+                }
+            }
+
+            inputNode->retype(conf);
+            std::dynamic_pointer_cast<FileInputOperator>(inputNode)->useNormalCase();
+            opt_ops.push_back(inputNode);
+
+            assert(std::dynamic_pointer_cast<FileInputOperator>(inputNode)->storedSampleRowCount() == sample.size()); // this should match, indeed the sample should be identical...
+
+            auto lastParent = inputNode;
+            // retype the other operators.
+            for(const auto& op : _operators) {
+                // clone operator & specialize!
+                auto opt_op = op->clone(false);
+                opt_op->setParent(lastParent);
+                opt_op->setID(op->getID());
+                if(hasUDF(opt_op.get())) {
+                    // important.
+                    reset_annotations(std::dynamic_pointer_cast<UDFOperator>(opt_op)->getUDF().getAnnotatedAST().getFunctionAST());
+                }
+
+                // before row type
+                std::stringstream ss;
+                ss<<op->name()<<" (before): "<<op->getInputSchema().getRowType().desc()<<" -> "<<op->getOutputSchema().getRowType().desc()<<endl;
+                // retype
+                ss<<"retyping with parent's output schema: "<<lastParent->getOutputSchema().getRowType().desc()<<endl;
+                opt_op->retype(lastParent->getOutputSchema().getRowType(), true);
+                // after retype
+                ss<<opt_op->name()<<" (after): "<<opt_op->getInputSchema().getRowType().desc()<<" -> "<<opt_op->getOutputSchema().getRowType().desc();
+                logger.debug(ss.str());
+                opt_ops.push_back(opt_op);
+                lastParent = opt_op;
+            }
+
+            return opt_ops;
+        }
+
+        size_t struct_field_count(const python::Type& t, bool recurse =true) {
+            if(!t.isStructuredDictionaryType() && !t.isSparseStructuredDictionaryType())
+                return 1;
+
+            if(!recurse)
+                return t.get_struct_pairs().size();
+
+            size_t field_count = 0;
+            for(auto kv_pair : t.get_struct_pairs()) {
+                field_count += struct_field_count(kv_pair.valueType.withoutOption(), recurse);
+            }
+            return field_count;
+        }
+
+        std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::simplifyLargeStructs(size_t max_field_count) {
+            using namespace std;
+
+            auto& logger = Logger::instance().logger("specializing stage optimizer");
+
+            // check whether input node contains any struct types.
+            auto struct_dict_found = input_schema_contains_structs(_inputNode->getOutputSchema());
+
+            if(!struct_dict_found) {
+                logger.info("Skipping simplify-large-structs pass, because no struct dicts found in input operator.");
+                return vec_prepend(_inputNode, _operators);
+            }
+
+            // structs are found, for each struct count now depth and then simplify
+            auto columns = _inputNode->columns();
+            auto tuple_row_type = _inputNode->getOutputSchema().getRowType();
+            if(tuple_row_type.isRowType())
+                tuple_row_type = tuple_row_type.get_columns_as_tuple_type();
+            assert(columns.size() == tuple_row_type.parameters().size());
+
+            auto col_types = tuple_row_type.parameters();
+            for(unsigned i = 0; i < columns.size(); ++i) {
+                auto original_col_type = col_types[i];
+                auto col_type = original_col_type.withoutOption();
+                if(col_type.isStructuredDictionaryType() || col_type.isSparseStructuredDictionaryType()) {
+                    auto col_field_count = struct_field_count(col_type);
+                    std::stringstream ss;
+                    ss<<"Column "<<columns[i]<<": "<<pluralize(col_field_count, "field");
+                    if(col_field_count > max_field_count) {
+                        ss<<" --> exceeds maximum field count of "<<max_field_count<<", substituting with generic dict.";
+                        if(original_col_type.isOptionType()) {
+                            col_types[i] = python::Type::makeOptionType(python::Type::GENERICDICT);
+                        } else {
+                            col_types[i] = python::Type::GENERICDICT;
+                        }
+                    }
+                    logger.info(ss.str());
+                }
+            }
+
+            // retype if different!
+            auto new_row_type = python::Type::makeRowType(col_types, columns);
+            if(new_row_type.get_columns_as_tuple_type() != tuple_row_type) {
+                // TOOD: retype.
+
+                // Overwrite input node with new sparse type & propagate through operators.
+                auto inputNode = _inputNode->clone(false);
+                RetypeConfiguration conf;
+                conf.row_type = new_row_type;
+                if(new_row_type.isRowType()) {
+                    conf.row_type = new_row_type.get_columns_as_tuple_type();
+                    conf.columns = new_row_type.get_column_names();
+                }
+                conf.is_projected = true;
+
+                // no columns change (only their types), so no need to reproject checks.
+                std::vector<std::shared_ptr<LogicalOperator>> opt_ops;
+                inputNode->retype(conf);
+                std::dynamic_pointer_cast<FileInputOperator>(inputNode)->useNormalCase();
+                opt_ops.push_back(inputNode);
+
+                auto lastParent = inputNode;
+                // retype the other operators.
+                for(const auto& op : _operators) {
+                    // clone operator & specialize!
+                    auto opt_op = op->clone(false);
+                    opt_op->setParent(lastParent);
+                    opt_op->setID(op->getID());
+                    if(hasUDF(opt_op.get())) {
+                        // important.
+                        reset_annotations(std::dynamic_pointer_cast<UDFOperator>(opt_op)->getUDF().getAnnotatedAST().getFunctionAST());
+                    }
+
+                    // before row type
+                    std::stringstream ss;
+                    ss<<op->name()<<" (before): "<<op->getInputSchema().getRowType().desc()<<" -> "<<op->getOutputSchema().getRowType().desc()<<endl;
+                    // retype
+                    ss<<"retyping with parent's output schema: "<<lastParent->getOutputSchema().getRowType().desc()<<endl;
+                    opt_op->retype(lastParent->getOutputSchema().getRowType(), true);
+                    // after retype
+                    ss<<opt_op->name()<<" (after): "<<opt_op->getInputSchema().getRowType().desc()<<" -> "<<opt_op->getOutputSchema().getRowType().desc();
+                    logger.debug(ss.str());
+                    opt_ops.push_back(opt_op);
+                    lastParent = opt_op;
+                }
+
+                return opt_ops;
+            }
+
+            // no change.
+            return vec_prepend(_inputNode, _operators);
+        }
+
+        std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::applyLogicalOptimizer() {
+            using namespace std;
+
+            auto& logger = Logger::instance().logger("specializing stage optimizer");
+
+            if(!_inputNode || !_inputNode->isDataSource()) {
+                logger.info("Skipping apply-logical-optimizer optimization because no data source found.");
+                // no change.
+                return vec_prepend(_inputNode, _operators);
+            }
+
+            auto opt_ops = vec_prepend(_inputNode, _operators);
+
+            // Init logical optimizer.
+            // Data source may require fewer columns to get accessed.
+            //    --> perform projection pushdown and then eliminate as many checks as possible.
+            auto accessed_columns_before_opt = get_accessed_columns(opt_ops);
+
+            // basically use just on this stage the logical optimization pipeline
+            auto logical_opt = std::make_unique<LogicalOptimizer>(options());
+
+            // logically optimize pipeline, this performs reordering/projection pushdown etc.
+            opt_ops = logical_opt->optimize(opt_ops, true); // inplace optimization
+
+            std::vector<size_t> accessed_columns = get_accessed_columns(opt_ops);
+
+            // so accCols should be sorted, now map to columns. Then check the position in accColsBefore
+            // => look up what the original cols were!
+            // => then push that down to reader/input node!
+            std::vector<size_t> out_accessed_columns;
+            std::vector<size_t> out_accessed_columns_before_opt;
+            // project each when input op present
+            if(_inputNode && _inputNode->type() == LogicalOperatorType::FILEINPUT) {
+                auto fop = std::dynamic_pointer_cast<FileInputOperator>(_inputNode);
+                for(const auto& idx : accessed_columns)
+                    out_accessed_columns.emplace_back(fop->projectReadIndex(idx));
+                for(const auto& idx : accessed_columns_before_opt)
+                    out_accessed_columns_before_opt.emplace_back(fop->projectReadIndex(idx));
+            } else {
+                out_accessed_columns = accessed_columns;
+                out_accessed_columns_before_opt = accessed_columns_before_opt;
+            }
+            _normalToGeneralMapping = createNormalToGeneralMapping(out_accessed_columns, out_accessed_columns_before_opt);
+
+            {
+                // print out new chain of types
+                std::stringstream ss;
+                ss<<"Pipeline (types):\n";
+
+                for(const auto& op : opt_ops) {
+                    ss<<op->name()<<":\n";
+                    ss<<"  in: "<<op->getInputSchema().getRowType().desc()<<"\n";
+                    ss<<" out: "<<op->getOutputSchema().getRowType().desc()<<"\n";
+                    ss<<"  in columns: "<<op->inputColumns()<<"\n";
+                    ss<<" out columns: "<<op->columns()<<"\n";
+                    ss<<"----\n";
+                }
+
+                logger.debug(ss.str());
+            }
+
+            // Project checks (because columns may have been removed)
+            // check which input columns are required and remove checks. --> this requires to use ORIGINAL indices.
+            // --> this requires pushdown to work before!
+            auto acc_cols = accessed_columns_before_opt;
+            std::vector<NormalCaseCheck> projected_checks;
+
+            // reproject checks, get for this actual input columns of operator.
+            auto current_input_columns = opt_ops.front()->inputColumns();
+            auto checks = _checks;
+            for(auto check : checks) {
+                if(!check.colNames.empty()) {
+                    check.colNos.clear();
+                    for(auto name : check.colNames) {
+                        check.colNos.push_back(indexInVector(name, current_input_columns));
+                    }
+                }
+                projected_checks.push_back(check);
+            }
+
+            logger.debug("normal case detection requires "
+                         + pluralize(checks.size(), "check")
+                         + ", given current logical optimizations "
+                         + pluralize(projected_checks.size(), "check")
+                         + " are required to detect normal case.");
+
+
+            {
+                std::stringstream ss;
+                ss<<"pipeline post-logical optimization requires now only "<<pluralize(accessed_columns.size(), "column");
+                ss<<" (general: "<<pluralize(accessed_columns_before_opt.size(), "column")<<")";
+                ss<<", reduced checks from "<<checks.size()<<" to "<<projected_checks.size();
+                logger.debug(ss.str());
+
+                ss.str("normal col to general col mapping:\n");
+                for(auto kv : _normalToGeneralMapping) {
+                    ss<<kv.first<<" -> "<<kv.second<<"\n";
+                }
+                logger.debug(ss.str());
+            }
+
+            // Add all projected checks.
+            _checks.clear();
+            for(const auto& check : projected_checks)
+                _checks.push_back(check);
+
+            // no change.
+            return vec_prepend(_inputNode, _operators);
+        }
+
+        python::Type simplify_constant_single_types(const python::Type& tuple_type) {
+            assert(tuple_type.isTupleType());
+
+            static std::vector<python::Type> single_types{python::Type::EMPTYTUPLE, python::Type::EMPTYDICT, python::Type::EMPTYLIST, python::Type::EMPTYSET};
+
+            auto col_types = tuple_type.parameters();
+            for(auto& type : col_types) {
+                if(type.isConstantValued()) {
+                    for(auto single_type : single_types)
+                        if(type.underlying() == single_type) {
+                            type = single_type;
+                            break;
+                        }
+                }
+            }
+            return python::Type::makeTupleType(col_types);
+        }
+
+        std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::constantFoldingOptimization(const std::vector<Row>& sample, const std::vector<std::string>& sample_columns) {
             using namespace std;
             vector<shared_ptr<LogicalOperator>> opt_ops;
 
             auto& logger = Logger::instance().logger("specializing stage optimizer");
 
-            // at least 100 samples required to be somehow reliable
-            static size_t MINIMUM_SAMPLES_REQUIRED = 100;
+            // at least 10 samples required to be somehow reliable (better: 100)
+            // for sure exclude the case of 1 row directly.
+            static size_t MINIMUM_SAMPLES_REQUIRED = 10;
 
-            if(!_useConstantFolding || sample.size() < MINIMUM_SAMPLES_REQUIRED) {
+            if(!_useConstantFolding || sample.size() < MINIMUM_SAMPLES_REQUIRED || sample.size() <= 1) {
                 if(sample.size() < MINIMUM_SAMPLES_REQUIRED)
                     logger.warn("not enough samples to reliably apply constant folding optimization, consider increasing sample size.");
-                // return vec_prepend(_inputNode, _operators);
+                 return vec_prepend(_inputNode, _operators);
             }
 
             // should have at least 100 samples to determine this...
@@ -137,6 +948,7 @@ namespace tuplex {
             // note that this sample is WITHOUT any projection pushdown, i.e. full columns
             DetectionStats ds;
             ds.detect(sample);
+            assert(!sample_columns.empty());
 
             {
                 assert(!sample.empty());
@@ -189,6 +1001,14 @@ namespace tuplex {
 
                     constant_type = simplifyConstantType(constant_type);
 
+                    // check if empty tuple, list, dict, ... -> skip. Parser will handle this.
+                    if(constant_type.isConstantValued() && (constant_type.underlying() == python::Type::EMPTYDICT || constant_type.underlying() == python::Type::EMPTYTUPLE
+                    || constant_type.underlying() == python::Type::EMPTYLIST || constant_type.underlying() == python::Type::EMPTYSET))
+                        continue;
+
+                    // which column is considered constant.
+                    auto column_name = sample_columns[idx];
+
                     // original index is from ALL available rows in input node
                     size_t original_idx = 0;
                     if(inputNode->type() == LogicalOperatorType::FILEINPUT)
@@ -209,10 +1029,14 @@ namespace tuplex {
                     if(constant_type == python::Type::NULLVALUE && opt_schema_col_type == python::Type::NULLVALUE) {
                         // skip
                     } else {
-                        if(constant_type.isConstantValued())
-                            checks.emplace_back(NormalCaseCheck::ConstantCheck(original_idx, constant_type));
-                        else if(constant_type == python::Type::NULLVALUE) {
-                            checks.emplace_back(NormalCaseCheck::NullCheck(original_idx));
+                        if(constant_type.isConstantValued()) {
+                            auto check = NormalCaseCheck::ConstantCheck(original_idx, constant_type);
+                            check.colNames.push_back(column_name);
+                            checks.emplace_back(check);
+                        } else if(constant_type == python::Type::NULLVALUE) {
+                            auto check = NormalCaseCheck::NullCheck(original_idx);
+                            check.colNames.push_back(column_name);
+                            checks.emplace_back(check);
                         } else {
                             logger.error("invalid constant type to check for: " + constant_type.desc());
                         }
@@ -223,7 +1047,6 @@ namespace tuplex {
                 logger.debug("skipped check generation, because input node is empty.");
             }
 
-
             // folding is done now in two steps:
             // 1. propagate the new input type through the ASTs, i.e. make certain fields constant
             //    this will help to drop potentially columns!
@@ -233,38 +1056,26 @@ namespace tuplex {
             // i.e. create dummy and fill in
             auto projected_specialized_row_type = get_specialized_row_type(inputNode, ds);
 
+            // simplify things like _Constant[{}] because they make not really much sense
+            projected_specialized_row_type = simplify_constant_single_types(projected_specialized_row_type);
+
             logger.debug("specialized output-type of " + inputNode->name() + " from " +
                          inputNode->getOutputSchema().getRowType().desc() + " to " + projected_specialized_row_type.desc());
-
-            // check which input columns are required and remove checks. --> this requires to use ORIGINAL indices.
-            // --> this requires pushdown to work before!
-            auto acc_cols = acc_cols_before_opt;
-            std::vector<NormalCaseCheck> projected_checks;
-            for(const auto& col_idx : acc_cols) {
-                // changed acc cols to retrieve original indices, below is commented old code:
-                //  auto original_col_idx =  inputNode->type() == LogicalOperatorType::FILEINPUT ?
-                //          std::dynamic_pointer_cast<FileInputOperator>(inputNode)->reverseProjectToReadIndex(col_idx)
-                //          : col_idx;
-                // new
-                auto original_col_idx = col_idx;
-               for(const auto& check : checks) {
-                   if(check.isSingleColCheck() && check.colNo() == original_col_idx) {
-                       projected_checks.emplace_back(check); // need to adjust internal colNo? => no, keep for now.
-                   } else if(!check.isSingleColCheck()) {
-                       throw std::runtime_error("multi-col check not supported yet");
-                   }
-               }
-            }
-            logger.debug("normal case detection requires "
-                         + pluralize(checks.size(), "check")
-                         + ", given current logical optimizations "
-                         + pluralize(projected_checks.size(), "check")
-                         + " are required to detect normal case.");
 
             // set input type for input node
             auto input_type_before = inputNode->getOutputSchema().getRowType();
             logger.debug("retyping stage with type " + projected_specialized_row_type.desc());
-            inputNode->retype(projected_specialized_row_type, true);
+
+            // TODO: allow for other input nodes...
+            // use retype configuration
+            auto r_conf = retype_configuration_from(projected_specialized_row_type, inputNode->columns());
+            if(inputNode->type() != LogicalOperatorType::FILEINPUT) {
+                std::stringstream ss;
+                    ss<<__FILE__<<":"<<__LINE__<<" unsupported input type.";
+                    throw std::runtime_error(ss.str());
+            }
+
+            std::dynamic_pointer_cast<FileInputOperator>(inputNode)->retype(r_conf, true);
             if(inputNode->type() == LogicalOperatorType::FILEINPUT)
                 ((FileInputOperator*)inputNode.get())->useNormalCase();
             auto lastParent = inputNode;
@@ -358,6 +1169,45 @@ namespace tuplex {
                 logger.debug(ss.str());
             }
 
+            // Project checks (because columns may have been removed)
+            // check which input columns are required and remove checks. --> this requires to use ORIGINAL indices.
+            // --> this requires pushdown to work before!
+            auto acc_cols = acc_cols_before_opt;
+            std::vector<NormalCaseCheck> projected_checks;
+
+            // reproject checks, get for this actual input columns of operator.
+            auto current_input_columns = opt_ops.front()->inputColumns();
+            for(auto check : checks) {
+                if(!check.colNames.empty()) {
+                    check.colNos.clear();
+                    for(auto name : check.colNames) {
+                        check.colNos.push_back(indexInVector(name, current_input_columns));
+                    }
+                }
+                projected_checks.push_back(check);
+            }
+
+//            for(const auto& col_idx : acc_cols) {
+//                // changed acc cols to retrieve original indices, below is commented old code:
+//                //  auto original_col_idx =  inputNode->type() == LogicalOperatorType::FILEINPUT ?
+//                //          std::dynamic_pointer_cast<FileInputOperator>(inputNode)->reverseProjectToReadIndex(col_idx)
+//                //          : col_idx;
+//                // new
+//                auto original_col_idx = col_idx;
+//                for(const auto& check : checks) {
+//                    if(check.isSingleColCheck() && check.colNo() == original_col_idx) {
+//                        projected_checks.emplace_back(check); // need to adjust internal colNo? => no, keep for now.
+//                    } else if(!check.isSingleColCheck()) {
+//                        throw std::runtime_error("multi-col check not supported yet");
+//                    }
+//                }
+//            }
+            logger.debug("normal case detection requires "
+                         + pluralize(checks.size(), "check")
+                         + ", given current logical optimizations "
+                         + pluralize(projected_checks.size(), "check")
+                         + " are required to detect normal case.");
+
 
             {
                 std::stringstream ss;
@@ -398,9 +1248,9 @@ namespace tuplex {
 //                        // do opt only if input cols are valid...!
 //
 //                        // retype UDF
-//                        cout<<"input type before: "<<mop->getInputSchema().getRowType().desc()<<endl;
-//                        cout<<"output type before: "<<mop->getOutputSchema().getRowType().desc()<<endl;
-//                        cout<<"num input columns required: "<<mop->inputColumns().size()<<endl;
+//                        os<<"input type before: "<<mop->getInputSchema().getRowType().desc()<<endl;
+//                        os<<"output type before: "<<mop->getOutputSchema().getRowType().desc()<<endl;
+//                        os<<"num input columns required: "<<mop->inputColumns().size()<<endl;
 //                        // retype
 //                        auto input_cols = mop->inputColumns(); // HACK! won't work if no input cols are specified.
 //                        auto input_type = mop->getInputSchema().getRowType();
@@ -443,11 +1293,11 @@ namespace tuplex {
 //                        // now update specialized type with constant if possible!
 //                        auto specialized_type = tuple_mode ? python::Type::makeTupleType({python::Type::makeTupleType(param_types)}) : python::Type::makeTupleType(param_types);
 //                        if(specialized_type != input_type) {
-//                            cout<<"specialized type "<<input_type.desc()<<endl;
-//                            cout<<"  - to - "<<endl;
-//                            cout<<specialized_type.desc()<<endl;
+//                            os<<"specialized type "<<input_type.desc()<<endl;
+//                            os<<"  - to - "<<endl;
+//                            os<<specialized_type.desc()<<endl;
 //                        } else {
-//                            cout<<"no specialization possible, same type";
+//                            os<<"no specialization possible, same type";
 //                            // @TODO: can skip THIS optimization, continue with the next one!
 //                        }
 //
@@ -462,9 +1312,9 @@ namespace tuplex {
 //
 //
 //                        // check again
-//                        cout<<"input type after: "<<mop->getInputSchema().getRowType().desc()<<endl;
-//                        cout<<"output type after: "<<mop->getOutputSchema().getRowType().desc()<<endl;
-//                        cout<<"num input columns required after opt: "<<accCols.size()<<endl;
+//                        os<<"input type after: "<<mop->getInputSchema().getRowType().desc()<<endl;
+//                        os<<"output type after: "<<mop->getOutputSchema().getRowType().desc()<<endl;
+//                        os<<"num input columns required after opt: "<<accCols.size()<<endl;
 //
 //                        // which columns where eliminated?
 //                        //     const std::vector<int> v1 {1, 2, 5, 5, 5, 9};
@@ -478,11 +1328,11 @@ namespace tuplex {
 //                        std::vector<size_t> diff;
 //                        std::set_difference(accColsBeforeOpt.begin(), accColsBeforeOpt.end(),
 //                                            accCols.begin(), accCols.end(), std::inserter(diff, diff.begin()));
-//                        cout<<"There were "<<pluralize(diff.size(), "column")<<" optimized away:"<<endl;
+//                        os<<"There were "<<pluralize(diff.size(), "column")<<" optimized away:"<<endl;
 //                        vector<string> opt_away_names;
 //                        for(auto idx : diff)
 //                            opt_away_names.push_back(mop->inputColumns()[idx]);
-//                        cout<<"-> "<<opt_away_names<<endl;
+//                        os<<"-> "<<opt_away_names<<endl;
 //
 //                        // rewrite which columns to access in input node
 //                        if(inputNode->type() != LogicalOperatorType::FILEINPUT) {
@@ -495,10 +1345,10 @@ namespace tuplex {
 //                        for(unsigned i = 0; i < colsToSerialize.size(); ++i)
 //                            if(colsToSerialize[i])
 //                                colsToSerializeIndices.push_back(i);
-//                        cout<<"reading columns: "<<colsToSerializeIndices<<endl;
+//                        os<<"reading columns: "<<colsToSerializeIndices<<endl;
 //
-//                        cout<<"Column indices to read before opt: "<<accColsBeforeOpt<<endl;
-//                        cout<<"After opt only need to read: "<<accCols<<endl;
+//                        os<<"Column indices to read before opt: "<<accColsBeforeOpt<<endl;
+//                        os<<"After opt only need to read: "<<accCols<<endl;
 //
 //                        // TODO: need to also rewrite access in mop again
 //                        // mop->rewriteParametersInAST(rewriteMap);
@@ -540,19 +1390,19 @@ namespace tuplex {
 //                            col_names_to_read_before.push_back(fop->inputColumns()[idx]);
 //                        for(auto idx : indices_to_read_from_previous_op)
 //                            col_names_to_read_after.push_back(fop->inputColumns()[idx]);
-//                        cout<<"Rewriting indices: "<<rewriteInfo<<endl;
+//                        os<<"Rewriting indices: "<<rewriteInfo<<endl;
 //
 //                        // this is quite hacky...
 //                        // ==> CLONE???
 //                        fop->selectColumns(indices_to_read_from_previous_op);
-//                        cout<<"file input now only reading: "<<indices_to_read_from_previous_op<<endl;
-//                        cout<<"I.e., read before: "<<col_names_to_read_before<<endl;
-//                        cout<<"now: "<<col_names_to_read_after<<endl;
+//                        os<<"file input now only reading: "<<indices_to_read_from_previous_op<<endl;
+//                        os<<"I.e., read before: "<<col_names_to_read_before<<endl;
+//                        os<<"now: "<<col_names_to_read_after<<endl;
 //                        fop->useNormalCase(); // !!! retype input op. mop already retyped above...
 //
 //                        mop->rewriteParametersInAST(rewriteMap);
 //                        // retype!
-//                        cout<<"mop updated: \ninput type: "<<mop->getInputSchema().getRowType().desc()
+//                        os<<"mop updated: \ninput type: "<<mop->getInputSchema().getRowType().desc()
 //                            <<"\noutput type: "<<mop->getOutputSchema().getRowType().desc()<<endl;
 //
 //#ifdef GENERATE_PDFS
@@ -581,8 +1431,10 @@ namespace tuplex {
             return opt_ops;
         }
 
-        void StagePlanner::optimize() {
+        void StagePlanner::optimize(bool use_sample) {
             using namespace std;
+
+            std::stringstream os;
 
             // clear checks
             //_checks.clear();
@@ -590,75 +1442,171 @@ namespace tuplex {
             vector<shared_ptr<LogicalOperator>> optimized_operators = vec_prepend(_inputNode, _operators);
             auto& logger = Logger::instance().logger("specializing stage optimizer");
 
+            logger.info("StagePlanner optimizing stage of " + pluralize(_operators.size() + 1, "operator") + ".");
+
             // run validation on initial pipeline
             bool validation_rc = validatePipeline();
             logger.debug(std::string("initial pipeline validation: ") + (validation_rc ? "ok" : "failed"));
 
             // step 1: retrieve sample from inputnode!
-            std::vector<Row> sample = fetchInputSample();
+            std::vector<Row> sample;
+            if(use_sample)
+                sample = fetchInputSample();
             std::vector<std::string> sample_columns = _inputNode ? _inputNode->columns() : std::vector<std::string>();
 
+            // columns may change, reflect here.
+            if(use_sample && !sample.empty()) {
+                if(sample.front().getRowType().isRowType())
+                    sample_columns = sample.front().getRowType().get_column_names();
+            }
+
+            os<<"Got sample of "<<pluralize(sample.size(), "row")<<" with columns "<<sample_columns<<endl;
+
+            if(!sample.empty()) {
+                os<<"First sample:\n";
+                for(unsigned i = 0; i < sample_columns.size(); ++i) {
+                    os<<"name="<<sample_columns[i]<<" type="<<sample.front().getType(i).desc()<<":\n"<<sample.front().get(i).toPythonString()<<endl;
+                }
+            }
+
             // retype using sample, need to do this initially.
-            retypeOperators(sample, sample_columns);
+            if(use_sample)
+                retypeOperators(sample, sample_columns, use_sample);
 
             // check now whether filters can be promoted or not
             if(_useFilterPromo) {
+                if(!use_sample) {
+                    logger.debug("Skipping filter promotion, because use of sample is deactivated.");
+                } else {
+                    auto input_columns_before = _inputNode->columns();
 
-                auto input_columns_before = _inputNode->columns();
-
-                promoteFilters();
-
-                // want to redo typing if checks changed!
-                if(_checks.end() != std::find_if(_checks.begin(),
-                                                 _checks.end(),
-                                                 [](const NormalCaseCheck& check) {
-                    return check.type == CheckType::CHECK_FILTER;
-                })) {
-                    logger.info("retyping b.c. of promoted filter");
-                    auto input_type_before_promo = _inputNode->getOutputSchema().getRowType();
-                    sample = fetchInputSample();
-                    sample_columns = _inputNode ? _inputNode->columns() : std::vector<std::string>();
-                    retypeOperators(sample, sample_columns);
-
-                    auto input_type_after_promo = _inputNode->getOutputSchema().getRowType();
-                    if(input_type_after_promo == input_type_before_promo) {
-                        logger.debug("input row type didn't change due to promoted filter.");
-                    } else {
-                        logger.debug("input row type changed:\nwas before: " + input_type_before_promo.desc() + "\nis now: " + input_type_after_promo.desc());
+                    std::vector<Row> sample_after_filter;
+                    auto rc_filter = promoteFilters(&sample_after_filter);
+                    if(rc_filter)
+                        sample = sample_after_filter;
+                    else {
+                        os<<"Filter promo not carried out, because filter found no relevant rows to keep. Can't specialize."<<endl;
                     }
 
-                    // did column order change?
-                    if(!vec_equal(sample_columns, input_columns_before)) {
-                        std::stringstream ss;
-                        ss<<"input columns changed:\nbefore: "<<input_columns_before<<"\nafter: "<<sample_columns;
-                        logger.debug(ss.str());
+                    if(!sample.empty()) {
+                        os<<"First sample (post-filter):\n";
+                        for(unsigned i = 0; i < sample_columns.size(); ++i) {
+                            os<<"name="<<sample_columns[i]<<" type="<<sample.front().getType(i).desc()<<":\n"<<sample.front().get(i).toPythonString()<<endl;
+                        }
                     }
 
-                    logger.debug("filter promo done.");
+                    // want to redo typing if checks changed!
+                    if(_checks.end() != std::find_if(_checks.begin(),
+                                                     _checks.end(),
+                                                     [](const NormalCaseCheck& check) {
+                                                         return check.type == CheckType::CHECK_FILTER;
+                                                     })) {
+                        logger.info("retyping b.c. of promoted filter");
+                        auto input_type_before_promo = _inputNode->getOutputSchema().getRowType();
+                        sample = fetchInputSample();
+                        sample_columns = _inputNode ? _inputNode->columns() : std::vector<std::string>();
+
+                        if(!sample.empty()) {
+                            os<<"First sample (retype due to filter promo):\n";
+                            for(unsigned i = 0; i < sample_columns.size(); ++i) {
+                                os<<"name="<<sample_columns[i]<<" type="<<sample.front().getType(i).desc()<<":\n"<<sample.front().get(i).toPythonString()<<endl;
+                            }
+                        }
+
+                        retypeOperators(sample, sample_columns, use_sample);
+
+                        auto input_type_after_promo = _inputNode->getOutputSchema().getRowType();
+                        if(input_type_after_promo == input_type_before_promo) {
+                            logger.debug("input row type didn't change due to promoted filter.");
+                        } else {
+                            logger.debug("input row type changed:\nwas before: " + input_type_before_promo.desc() + "\nis now: " + input_type_after_promo.desc());
+                        }
+
+                        // did column order change?
+                        if(!vec_equal(sample_columns, input_columns_before)) {
+                            std::stringstream ss;
+                            ss<<"input columns changed:\nbefore: "<<input_columns_before<<"\nafter: "<<sample_columns;
+                            logger.debug(ss.str());
+                        }
+
+                        logger.debug("filter promo done.");
+                    }
                 }
             }
 
 
             // perform sample based optimizations
             if(_useConstantFolding) {
-
-                // perform only when input op is present (could do later, but requires sample!)
-                if(_inputNode && _inputNode->type() == LogicalOperatorType::FILEINPUT) {
-                    logger.info("Performing constant folding optimization (sample size=" + std::to_string(sample.size()) + ")");
-                    optimized_operators = constantFoldingOptimization(sample);
-
-                    // overwrite internal operators to apply subsequent optimizations
-                    _inputNode = _inputNode ? optimized_operators.front() : nullptr;
-                    _operators = _inputNode ? vector<shared_ptr<LogicalOperator>>{optimized_operators.begin() + 1,
-                                                                                  optimized_operators.end()}
-                                            : optimized_operators;
-
-                    // run validation after applying constant folding
-                    validation_rc = validatePipeline();
-                    logger.debug(std::string("post-constant-folding pipeline validation: ") + (validation_rc ? "ok" : "failed"));
+                if(!use_sample) {
+                    logger.debug("Skipping constant-folding, because use of sample is deactivated.");
                 } else {
-                    logger.debug("skipping constant-folding optimization for stage");
+                    // perform only when input op is present (could do later, but requires sample!)
+                    if(_inputNode && _inputNode->type() == LogicalOperatorType::FILEINPUT) {
+                        logger.info("Performing constant folding optimization (sample size=" + std::to_string(sample.size()) + ")");
+                        optimized_operators = constantFoldingOptimization(sample, sample_columns);
+
+                        // overwrite internal operators to apply subsequent optimizations
+                        _inputNode = _inputNode ? optimized_operators.front() : nullptr;
+                        _operators = _inputNode ? vector<shared_ptr<LogicalOperator>>{optimized_operators.begin() + 1,
+                                                                                      optimized_operators.end()}
+                                                : optimized_operators;
+
+                        // run validation after applying constant folding
+                        validation_rc = validatePipeline();
+                        logger.debug(std::string("post-constant-folding pipeline validation: ") + (validation_rc ? "ok" : "failed"));
+                    } else {
+                        logger.debug("skipping constant-folding optimization for stage");
+                    }
                 }
+            }
+
+
+            // perform struct sparsification
+            if(_useSparsifyStructs) {
+                if(!use_sample) {
+                    logger.debug("Skipping struct sparsification, because use of sample is deactivated.");
+                } else {
+                    // perform only when input op is present (could do later, but requires sample!)
+                    if(_inputNode && _inputNode->type() == LogicalOperatorType::FILEINPUT) {
+                        logger.info("Performing struct sparsification optimization (sample size=" + std::to_string(sample.size()) + ")");
+                        optimized_operators = sparsifyStructs(sample, sample_columns);
+
+                        // overwrite internal operators to apply subsequent optimizations
+                        _inputNode = _inputNode ? optimized_operators.front() : nullptr;
+                        _operators = _inputNode ? vector<shared_ptr<LogicalOperator>>{optimized_operators.begin() + 1,
+                                                                                      optimized_operators.end()}
+                                                : optimized_operators;
+
+                        // run validation after applying constant folding
+                        validation_rc = validatePipeline();
+                        logger.debug(std::string("post-sparsify-structs pipeline validation: ") + (validation_rc ? "ok" : "failed"));
+                    } else {
+                        logger.debug("skipping sparsify structs optimization for stage");
+                    }
+                }
+            }
+
+            // simplify large structs (threshold 20?)
+            // this is necessary because large structs will kill the performance of the LLVM optimizer (in its default -O2 setting).
+            // This pass should come after sparsification to allow large structs to get sparsified first.
+            if(_simplifyLargeStructs) {
+                optimized_operators = simplifyLargeStructs(20);
+
+                // overwrite internal operators to apply subsequent optimizations
+                _inputNode = _inputNode ? optimized_operators.front() : nullptr;
+                _operators = _inputNode ? vector<shared_ptr<LogicalOperator>>{optimized_operators.begin() + 1,
+                                                                              optimized_operators.end()}
+                                        : optimized_operators;
+            }
+
+
+            // All optimizations were carried out, if this stage has as input operator a source, perform logical optimization step as last one.
+            if(_inputNode->isDataSource()) {
+                optimized_operators = applyLogicalOptimizer();
+                _inputNode = _inputNode ? optimized_operators.front() : nullptr;
+                _operators = _inputNode ? vector<shared_ptr<LogicalOperator>>{optimized_operators.begin() + 1,
+                                                                              optimized_operators.end()}
+                                        : optimized_operators;
             }
 
             // can filters get pushed down even further? => check! constant folding may remove code!
@@ -703,6 +1651,12 @@ namespace tuplex {
                     auto rop = std::dynamic_pointer_cast<ResolveOperator>(op);
                     assert(rop);
                     lastRowType = rop->getNormalParent()->getInputSchema().getRowType();
+                }
+
+                if(lastRowType == python::Type::UNKNOWN) {
+                    logger.error("operator " + op->name() + " has unknown schema.");
+                    validation_ok = false;
+                    return validation_ok;
                 }
 
                 if(!are_in_and_out_schemas_compatible(lastRowType, op->getInputSchema().getRowType())) {
@@ -793,15 +1747,7 @@ namespace tuplex {
             fop->cloneCaches(*((FileInputOperator*)_inputNode.get())); // copy samples!
 
             // need to restrict potentially?
-            RetypeConfiguration r_conf;
-            r_conf.is_projected = true;
-            r_conf.row_type = input_row_type;
-            r_conf.columns = input_column_names;
-            r_conf.remove_existing_annotations = true; // remove all annotations (except the column restore ones?)
-
-            // perform quick sanity check
-            if(!r_conf.columns.empty())
-                assert(r_conf.row_type.parameters().size() == r_conf.columns.size());
+            auto r_conf = retype_configuration_from(input_row_type, input_column_names);
 
             if(!fop->retype(r_conf, true))
                 throw std::runtime_error("failed to retype " + fop->name() + " operator."); // for input operator, ignore Option[str] compatibility which is set per default
@@ -823,6 +1769,12 @@ namespace tuplex {
                 r_conf.columns = last_columns;
                 r_conf.remove_existing_annotations = true; // remove all annotations (except the column restore ones?)
 
+                {
+                    std::stringstream ss;
+                    ss<<__FILE__<<":"<<__LINE__<<" node "<<node->name()<<" retype with type: "<<last_rowtype.desc()<<" columns: "<<last_columns;
+                    logger.debug(ss.str());
+                }
+
                 switch(node->type()) {
                     // handled above...
                     //  case LogicalOperatorType::PARALLELIZE: {
@@ -842,7 +1794,16 @@ namespace tuplex {
                     case LogicalOperatorType::MAPCOLUMN:
                     case LogicalOperatorType::WITHCOLUMN:
                     case LogicalOperatorType::IGNORE: {
-                        assert(node->getInputSchema() != Schema::UNKNOWN);
+
+                        // if(node->getInputSchema() == Schema::UNKNOWN) {
+                        //
+                        //     Logger::instance().logger("codegen").debug(std::string(__FILE__) + ":" + std::to_string(__LINE__)
+                        //     + " node " + node->name() + " has invalid input schema, was it properly retyped?");
+                        //
+                        //     throw std::runtime_error("invalid node encountered.");
+                        // }
+
+                        // assert(node->getInputSchema() != Schema::UNKNOWN);
 
                         auto op = node->clone(false); // no need to clone with parents, b.c. assigned below.
                         auto oldInputType = op->getInputSchema().getRowType();
@@ -854,8 +1815,16 @@ namespace tuplex {
                         // set FIRST the parent. Why? because operators like ignore depend on parent schema
                         // therefore, this needs to get updated first.
                         op->setParent(lastParent); // need to call this before retype, so that columns etc. can be utilized.
-                        if(!op->retype(r_conf))
-                            throw std::runtime_error("could not retype operator " + op->name());
+                        if(!op->retype(r_conf)) {
+                            std::stringstream ss;
+                            ss<<__FILE__<<":"<<__LINE__<<" Failed retype operator " + op->name()<<"\n";
+                            ss<<"operator columns: "<<columns_before<<"\n";
+                            if(hasUDF(op.get())) {
+                                auto udfop = std::dynamic_pointer_cast<UDFOperator>(op);
+                                ss<<"UDF:\n"<<udfop->getUDF().getCode()<<"\n";
+                            }
+                            throw std::runtime_error(ss.str());
+                        }
                         opt_ops.push_back(op);
                         opt_ops.back()->setID(node->getID());
 #ifdef VERBOSE_BUILD
@@ -896,7 +1865,7 @@ namespace tuplex {
                         vector<std::shared_ptr<LogicalOperator>> parents;
                         if(lastNode == jop->left()) {
                             // left side is pipeline
-                            //cout<<"pipeline is left side"<<endl;
+                            //os<<"pipeline is left side"<<endl;
 
                             // i.e. leave right side as is => do not take normal case there!
                             parents.push_back(lastParent); // --> normal case on left side
@@ -904,7 +1873,7 @@ namespace tuplex {
                         } else {
                             // right side is pipeline
                             assert(lastNode == jop->right());
-                            //cout<<"pipeline is right side"<<endl;
+                            //os<<"pipeline is right side"<<endl;
 
                             // i.e. leave left side as is => do not take normal case there!
                             parents.push_back(jop->left());
@@ -960,7 +1929,7 @@ namespace tuplex {
                             last_rowtype = cop->getOptimizedOutputSchema().getRowType();
                             last_columns = cop->columns();
                             checkRowType(last_rowtype);
-                            // cout<<"cache is a source: optimized schema "<<last_rowtype.desc()<<endl;
+                            // os<<"cache is a source: optimized schema "<<last_rowtype.desc()<<endl;
 
                             // use normal case & clone WITHOUT parents
                             // clone, set normal case & push back
@@ -971,8 +1940,8 @@ namespace tuplex {
                             // cache should not have any children
                             assert(cop->children().empty());
                             // => i.e. first time cache is seen, it's processed as action!
-                            // cout<<"cache is action, optimized schema: "<<endl;
-                            // cout<<"cache normal case will be: "<<last_rowtype.desc()<<endl;
+                            // os<<"cache is action, optimized schema: "<<endl;
+                            // os<<"cache normal case will be: "<<last_rowtype.desc()<<endl;
                             // => reuse optimized schema!
                             cop->setOptimizedOutputType(last_rowtype);
                             // simply push back, no cloning here necessary b.c. no data is altered
@@ -1039,8 +2008,8 @@ namespace tuplex {
                 }
 
                 if(!opt_ops.empty()) {
-                    // cout<<"last opt_op name: "<<opt_ops.back()->name()<<endl;
-                    // cout<<"last opt_op output type: "<<opt_ops.back()->getOutputSchema().getRowType().desc()<<endl;
+                    // os<<"last opt_op name: "<<opt_ops.back()->name()<<endl;
+                    // os<<"last opt_op output type: "<<opt_ops.back()->getOutputSchema().getRowType().desc()<<endl;
                     if(opt_ops.back()->type() != LogicalOperatorType::CACHE) {
                         last_rowtype = opt_ops.back()->getOutputSchema().getRowType();
                         last_columns = opt_ops.back()->columns();
@@ -1079,6 +2048,9 @@ namespace tuplex {
                          size_t samples_per_strata=1,
                          const codegen::StageBuilderConfiguration& conf=codegen::StageBuilderConfiguration()) {
         auto& logger = Logger::instance().logger("hyper specializer");
+
+        std::stringstream os;
+
         // run hyperspecialization using planner, yay!
         assert(stage);
 
@@ -1088,37 +2060,12 @@ namespace tuplex {
             return false;
         }
 
-        logger.info("specializing code to file " + uri.toString());
+        logger.info("Specializing code to file " + uri.toString());
 
         // deserialize using Cereal
 
         // fetch codeGenerationContext & restore logical operator tree!
-        codegen::CodeGenerationContext ctx;
-        Timer timer;
-#ifdef BUILD_WITH_CEREAL
-        {
-            auto compressed_str = stage->_encodedData;
-            auto decompressed_str = decompress_string(compressed_str);
-            logger.info("Decompressed Code context from " + sizeToMemString(compressed_str.size()) + " to " + sizeToMemString(decompressed_str.size()));
-            Timer deserializeTimer;
-            std::istringstream iss(decompressed_str);
-            cereal::BinaryInputArchive ar(iss);
-            ar(ctx);
-            logger.info("Deserialization of Code context took " + std::to_string(deserializeTimer.time()) + "s");
-        }
-        logger.info("Total Stage Decode took " + std::to_string(timer.time()) + "s");
-#else
-        // use custom JSON encoding
-        auto compressed_str = stage->_encodedData;
-        auto decompressed_str = decompress_string(compressed_str);
-        logger.info("Decompressed Code context from " + sizeToMemString(compressed_str.size()) + " to " + sizeToMemString(decompressed_str.size()));
-        Timer deserializeTimer;
-        ctx = codegen::CodeGenerationContext::fromJSON(decompressed_str);
-        logger.info("Deserialization of Code context took " + std::to_string(deserializeTimer.time()) + "s");
-        logger.info("Total Stage Decode took " + std::to_string(timer.time()) + "s");
-#endif
-        // old hacky version
-        // auto ctx = codegen::CodeGenerationContext::fromJSON(stage->_encodedData);
+        codegen::CodeGenerationContext ctx = codegen::deserialize_codegen_context(stage->_encodedData);
 
         assert(ctx.slowPathContext.valid());
         // decoded, now specialize
@@ -1127,9 +2074,24 @@ namespace tuplex {
         auto inputNode = path_ctx.inputNode;
         auto operators = path_ctx.operators;
 
-        auto input_row_type = inputNode->getOutputSchema().getRowType(); if(input_row_type.isRowType())input_row_type = input_row_type.get_columns_as_tuple_type();
+        auto input_row_type = inputNode->getOutputSchema().getRowType();
+        auto input_column_names = inputNode->columns();
+        if(input_column_names.empty() && input_row_type.isRowType())
+            input_column_names = input_row_type.get_column_names();
+        // transform to tuple type.
+        if(input_row_type.isRowType())
+            input_row_type = input_row_type.get_columns_as_tuple_type();
+
+        assert(input_row_type.isTupleType());
+        assert(input_row_type.parameters().size() == input_column_names.size());
+
         size_t num_input_before_hyper = input_row_type.parameters().size();
-        logger.info("number of input columns before hyperspecialization: " + std::to_string(num_input_before_hyper));
+        {
+            std::stringstream ss;
+            ss<<"number of input columns before hyperspecialization: " + std::to_string(num_input_before_hyper);
+            ss<<"\ninput columns: "<<input_column_names;
+           logger.info(ss.str());
+        }
 
         // force resampling b.c. of thin layer
         Timer samplingTimer;
@@ -1148,8 +2110,17 @@ namespace tuplex {
             if(0 != conf.sampling_size)
                 fop->setSamplingSize(conf.sampling_size);
 
-            // resample
-            fop->setInputFiles({uri}, {file_size}, true, sample_limit, true, strata_size, samples_per_strata);
+            // Check if URI is encoded range uri. This is not yet supported, warn about it but continue with full uri.
+            auto uri_to_sample_on = uri;
+            URI decoded_uri;
+            size_t range_start = 0, range_end = 0;
+            decodeRangeURI(uri.toString(), decoded_uri, range_start, range_end);
+            if(range_start != 0 || range_end != 0) {
+                logger.warn("Found range-based uri " + uri.toString() + ", using for sampling original uri " + decoded_uri.toString() + ". Ranges not yet supported for hyperspecialziation.");
+                uri_to_sample_on = decoded_uri;
+            }
+            // resample.
+            fop->setInputFiles({uri_to_sample_on}, {file_size}, true, sample_limit, true, strata_size, samples_per_strata);
 
             if(fop->fileFormat() == FileFormat::OUTFMT_JSON) {
                 enable_cf = false;
@@ -1167,23 +2138,16 @@ namespace tuplex {
 
         // node need to find some smart way to QUICKLY detect whether the optimization can be applied or should be rather skipped...
         codegen::StagePlanner planner(inputNode, operators, conf.policy.normalCaseThreshold);
+        apply_stage_builder_conf_to_planner(conf, planner);
 
-
-        planner.enableAll();
-        planner.disableAll();
-        if(conf.nullValueOptimization)
-            planner.enableNullValueOptimization();
-        if(conf.filterPromotion)
-            planner.enableFilterPromoOptimization();
-        planner.enableDelayedParsingOptimization();
-        if(enable_cf)
-            planner.enableConstantFoldingOptimization();
         planner.optimize();
         path_ctx.inputNode = planner.input_node();
         path_ctx.operators = planner.optimized_operators();
         path_ctx.checks = planner.checks();
 
         assert(inputNode->getID() == path_ctx.inputNode->getID());
+
+        // TODO: refactor together with code in StageBuilder.
 
         // output schema: the schema this stage yields ultimately after processing
         // input schema: the (optimized/projected, normal case) input schema this stage reads from (CSV, Tuplex, ...)
@@ -1197,7 +2161,7 @@ namespace tuplex {
             auto col_types = path_ctx.inputSchema.getRowType().isRowType() ? path_ctx.inputSchema.getRowType().get_column_types() : path_ctx.inputSchema.getRowType().parameters();
             assert(fop->columns().size() == col_types.size());
             for(unsigned i = 0; i < fop->columns().size(); ++i) {
-                std::cout<<"col "<<i<<" (" + fop->columns()[i] + ")"<<": "<<col_types[i].desc()<<std::endl;
+                os<<"col "<<i<<" (" + fop->columns()[i] + ")"<<": "<<col_types[i].desc()<<std::endl;
             }
 
         } else {
@@ -1211,9 +2175,9 @@ namespace tuplex {
         logger.info("specialized to output: " + path_ctx.outputSchema.getRowType().desc());
 
         // print out:
-        // std::cout<<"input schema ("<<pluralize(path_ctx.inputSchema.getRowType().parameters().size(), "column")<<"): "<<path_ctx.inputSchema.getRowType().desc()<<std::endl;
-        // std::cout<<"read schema ("<<pluralize(path_ctx.readSchema.getRowType().parameters().size(), "column")<<"): "<<path_ctx.readSchema.getRowType().desc()<<std::endl;
-        // std::cout<<"output schema ("<<pluralize(path_ctx.outputSchema.getRowType().parameters().size(), "column")<<"): "<<path_ctx.outputSchema.getRowType().desc()<<std::endl;
+        // os<<"input schema ("<<pluralize(path_ctx.inputSchema.getRowType().parameters().size(), "column")<<"): "<<path_ctx.inputSchema.getRowType().desc()<<std::endl;
+        // os<<"read schema ("<<pluralize(path_ctx.readSchema.getRowType().parameters().size(), "column")<<"): "<<path_ctx.readSchema.getRowType().desc()<<std::endl;
+        // os<<"output schema ("<<pluralize(path_ctx.outputSchema.getRowType().parameters().size(), "column")<<"): "<<path_ctx.outputSchema.getRowType().desc()<<std::endl;
 
         size_t numToRead = 0;
         for(auto indicator : path_ctx.columnsToRead)
@@ -1234,7 +2198,6 @@ namespace tuplex {
 
             logger.info(ss.str());
         }
-
 
 
         ctx.fastPathContext = path_ctx;
@@ -1264,7 +2227,7 @@ namespace tuplex {
         // assignment to stage should happen below...
 
         // generate code! Add to stage, can then compile this. Yay!
-        timer.reset();
+        Timer timer;
         TransformStage::StageCodePath fast_code_path;
         try {
             fast_code_path = codegen::StageBuilder::generateFastCodePath(ctx,
@@ -1291,15 +2254,20 @@ namespace tuplex {
 
         // update schemas!
         stage->_fastCodePath = fast_code_path;
-        stage->_normalCaseInputSchema = Schema(stage->_normalCaseInputSchema.getMemoryLayout(), path_ctx.inputSchema.getRowType());
+
+        auto stage_normal_case_before = stage->_normalCaseInputSchema.getRowType();
+        stage->_normalCaseInputSchema = Schema(stage->_normalCaseInputSchema.getMemoryLayout(), ctx.fastPathContext.inputSchema.getRowType());
+        logger.info("Transform stage row types with hyperspecialization:\n-- before: " + stage_normal_case_before.desc() + "\n-- after: " + stage->normalCaseInputSchema().getRowType().desc());
 
         // the output schema (str in tocsv) case is not finalized yet...
         // stage->_normalCaseOutputSchema = Schema(stage->_normalCaseOutputSchema.getMemoryLayout(), path_ctx.outputSchema.getRowType());
         auto after_hyper_output_row_type = ctx.fastPathContext.inputNode->getOutputSchema().getRowType();
+        logger.info("Input node output type after hyperspecialization: " + after_hyper_output_row_type.desc());
         size_t num_input_after_hyper = after_hyper_output_row_type.isRowType() ? after_hyper_output_row_type.get_column_count() : after_hyper_output_row_type.parameters().size();
-        logger.info("number of input columns after hyperspecialization: " + std::to_string(num_input_after_hyper));
+        logger.info("Number of input columns after hyperspecialization: " + std::to_string(num_input_after_hyper));
 
-        logger.info("generated code in " + std::to_string(timer.time()) + "s");
+        logger.info("Generated code in " + std::to_string(timer.time()) + "s");
+
         // can then compile everything, hooray!
         return true;
     }
@@ -1319,8 +2287,8 @@ namespace tuplex {
                     col_idxs.emplace_back(i);
             }
         } else {
-            // check from type
-            auto num_columns = ops.front()->getOutputSchema().getRowType().parameters().size();
+            // check from type.
+            auto num_columns = extract_columns_from_type(ops.front()->getOutputSchema().getRowType());
             for(unsigned i = 0; i < num_columns; ++i)
                 col_idxs.emplace_back(i);
         }
@@ -1582,7 +2550,7 @@ namespace tuplex {
                     ret.push_back(idx + numLeftColumnsBeforePushdown); // maybe correct for key column?
                 }
 
-                //cout<<"need to rewrite join here with combined "<<ret<<endl;
+                //os<<"need to rewrite join here with combined "<<ret<<endl;
                 // update join (because columns have changed)
                 assert(jop);
 
@@ -1798,6 +2766,10 @@ namespace tuplex {
                     return false;
                 node = node->parent();
             }
+            // If check for the case filter -> [non-filter op] -> [data source op].
+            if(node->type() != LogicalOperatorType::FILTER)
+                return false;
+
             return true;
         }
 
@@ -1807,40 +2779,65 @@ namespace tuplex {
 #ifdef BUILD_WITH_CEREAL
             std::ostringstream oss(std::stringstream::binary);
             {
+                // Use here regular encoding without typemap.
                 cereal::BinaryOutputArchive ar(oss);
+
+                //BinaryOutputArchive ar(oss);
                 ar(fop);
                 // ar going out of scope flushes everything
             }
             auto bytes_str = oss.str();
             serialized_filter = bytes_str;
 #else
-            serialized_filter = fop->to_json();
+            serialized_filter = fop->to_json().dump();
 #endif
             auto acc_cols = fop->getUDF().getAccessedColumns();
             return NormalCaseCheck::FilterCheck(acc_cols, serialized_filter);
         }
 
-        void StagePlanner::promoteFilters() {
+        bool StagePlanner::promoteFilters(std::vector<Row>* filtered_sample) {
             auto& logger = Logger::instance().logger("optimizer");
 
             logger.debug("carrying out potential filter promotion");
 
             if(!_inputNode) {
                 logger.warn("no input node, skip optimization.");
-                return;
+                return false;
             }
 
+            // Need to pushdown filters (so canPromoteFilter check works).
+            //             // basically use just on this stage the logical optimization pipeline
+            //            auto logical_opt = std::make_unique<LogicalOptimizer>(options());
+            //
+            //            // logically optimize pipeline, this performs reordering/projection pushdown etc.
+            //            opt_ops = logical_opt->optimize(opt_ops, true); // inplace optimization
+
+
             size_t original_sample_size = 0;
+            std::vector<Row> original_sample;
             if(_inputNode->type() == LogicalOperatorType::FILEINPUT) {
                 original_sample_size = std::dynamic_pointer_cast<FileInputOperator>(_inputNode)->storedSampleRowCount();
+
+                if(filtered_sample)
+                    original_sample = std::dynamic_pointer_cast<FileInputOperator>(_inputNode)->getSample(original_sample_size);
             }
 
             if(0 == original_sample_size) {
                 logger.debug("skip because empty original sample");
-                return;
+                return false;
             }
 
             std::vector<std::shared_ptr<LogicalOperator>> operators_post_op;
+
+            bool filter_promo_applied = false;
+            bool return_sample = filtered_sample != nullptr;
+            std::vector<size_t> indices_to_keep(original_sample_size); // track which of the original samples to keep.
+            // init indices as all
+            for(unsigned i = 0; i < original_sample_size; ++i)
+                indices_to_keep[i] = i;
+
+            // the current sample (to assign the input operator to)
+            std::vector<Row> current_input_sample; // empty for now.
 
             // check if there is at least one filter operator!
             // -> carry then repeated filters out!
@@ -1856,8 +2853,34 @@ namespace tuplex {
                 if(node->type() == LogicalOperatorType::FILTER) {
                     auto filter_node = std::dynamic_pointer_cast<FilterOperator>(node);
                     // get sample! is it non-empty and smaller than the original sample size?
-                    auto samples_post_filter = filter_node->getSample(original_sample_size, true);
+                    std::vector<size_t> indices_kept;
+                    auto samples_post_filter = filter_node->getSample(original_sample_size, true, &indices_kept);
                     logger.debug("sample size post-filter: " + pluralize(samples_post_filter.size(), "row"));
+
+                    if(!samples_post_filter.empty()) {
+                        // apply indices_kept to original indices
+                        std::vector<size_t> new_indices;
+                        new_indices.reserve(indices_kept.size());
+                        for(auto idx : indices_kept) {
+                            new_indices.push_back(indices_to_keep[idx]);
+                        }
+                        indices_to_keep = new_indices;
+
+                        // update:
+                        current_input_sample.clear();
+                        current_input_sample.reserve(indices_to_keep.size());
+                        for(auto idx : indices_to_keep) {
+                            assert(idx < original_sample.size());
+
+                            auto row = original_sample[idx];
+                            // ensure row type (w. columns)
+                            if(!row.getRowType().isRowType())
+                                row = row.with_columns(_inputNode->columns());
+
+                            current_input_sample.push_back(row);
+                        }
+                    }
+
 
                     // @TODD: There's two possibilities here:
                     // [1] if sample is empty, replace pipeline with simple filter node throwing normal-case if filter condition is not met.
@@ -1919,11 +2942,16 @@ namespace tuplex {
                             }
 
                             // no need for parents etc.
-                            _checks.push_back(filterToCheck(filter_node));
+                            auto check = filterToCheck(filter_node);
+                            check.colNames = acc_column_names; // <-- accessed column names?
+                            _checks.push_back(check);
+                            filter_promo_applied = true;
+
+                            assert(current_input_sample.size() == indices_to_keep.size());
 
                             // manipulate input node sample!
-                            std::dynamic_pointer_cast<FileInputOperator>(_inputNode)->setRowsSample(samples_post_filter);
-                            logger.debug("replaced samples in input operator with " + pluralize(_inputNode->getSample(original_sample_size).size(), "filtered sample"));
+                            std::dynamic_pointer_cast<FileInputOperator>(_inputNode)->setRowsSample(current_input_sample);
+                            logger.debug("replaced samples in input operator with " + pluralize(current_input_sample.size(), "filtered sample"));
                             logger.debug("promoted filter to check: \n" + core::withLineNumbers(filter_node->getUDF().getCode()));
 
                             node = nullptr;
@@ -1939,11 +2967,30 @@ namespace tuplex {
             if(node)
                 operators_post_op.push_back(node);
             _operators = operators_post_op;
+
+            // output filtered rows if desired (and filter promo was applied)
+            if(filtered_sample && filter_promo_applied) {
+                if(indices_to_keep.size() == current_input_sample.size())
+                    *filtered_sample = current_input_sample;
+                else {
+                    *filtered_sample = std::vector<Row>();
+                    for(auto idx : indices_to_keep) {
+                        assert(idx < original_sample.size());
+                        filtered_sample->push_back(original_sample[idx]);
+                    }
+                }
+            }
+
+            return filter_promo_applied;
         }
 
         bool StagePlanner::retypeOperators(const std::vector<Row>& sample,
-                                           const std::vector<std::string>& sample_columns) {
+                                           const std::vector<std::string>& sample_columns, bool use_sample) {
             auto& logger = Logger::instance().logger("specializing stage optimizer");
+
+            // helper stream to print out info if need be.
+            std::stringstream os;
+
 
             // @TODO: stats on types for sample. Use this to retype!
             // --> important first step!
@@ -1954,70 +3001,92 @@ namespace tuplex {
                 t_counts[row.getRowType()]++;
             }
             // for(const auto& keyval : counts) {
-            //     std::cout<<keyval.second<<": "<<keyval.first<<std::endl;
+            //     os<<keyval.second<<": "<<keyval.first<<std::endl;
             // }
 
-            if(sample.empty()) {
-                logger.info("got empty sample, skipping optimization.");
+            if(use_sample && sample.empty()) {
+                logger.info("Got empty sample, skipping optimization.");
                 return true;
             }
 
-            // detect majority type
-            // detectMajorityRowType(const std::vector<Row>& rows, double threshold, bool independent_columns)
-            auto majType = detectMajorityRowType(sample, _nc_threshold, true, _useNVO);
-            python::Type projectedMajType = majType;
-
-            assert(majType.isTupleType());
-            assert(projectedMajType.isTupleType());
-            size_t num_columns_before_pushdown = majType.parameters().size();
-            size_t num_columns_after_pushdown = projectedMajType.parameters().size();
-
             auto projectedColumns = _inputNode->columns();
 
+            // detect majority type
+            // detectMajorityRowType(const std::vector<Row>& rows, double threshold, bool independent_columns)
+            python::Type majType=python::Type::UNKNOWN, projectedMajType=python::Type::UNKNOWN;
+            if(use_sample && !sample.empty()) {
+                logger.info("Detecting majority type using " + pluralize(sample.size(), "sample") + " with threshold=" + std::to_string(_nc_threshold));
+                majType = detectMajorityRowType(sample, _nc_threshold, true, _useNVO);
+                projectedMajType = majType;
+                if(sample.front().getRowType().isRowType()) // <-- samples should have same type.
+                    projectedColumns = sample.front().getRowType().get_column_names();
+            } else {
+                majType = _inputNode->getOutputSchema().getRowType();
+                projectedMajType = majType;
+
+                // special case, fileinput operator -> use normal case?
+
+            }
+
+            if(use_sample) {
+                assert(majType.isTupleType());
+                assert(projectedMajType.isTupleType());
+                size_t num_columns_before_pushdown = majType.parameters().size();
+                size_t num_columns_after_pushdown = projectedMajType.parameters().size();
+
 #ifndef NDEBUG
-            // check how many rows adhere to the normal-case type.
-            // (can upcast to normal-case type)
-            size_t num_passing = 0;
-            std::vector<Row> majRows;
-            for(auto row: sample) {
-                if(python::canUpcastToRowType(deoptimizedType(row.getRowType()), deoptimizedType(majType))) {
-                    num_passing++;
-                    majRows.push_back(row);
+                // check how many rows adhere to the normal-case type.
+                // (can upcast to normal-case type)
+                size_t num_passing = 0;
+                std::vector<Row> majRows;
+                for(auto row: sample) {
+                    auto row_tuple_type = row.getRowType();
+                    if(row_tuple_type.isRowType())
+                        row_tuple_type = row_tuple_type.get_columns_as_tuple_type();
+                    if(python::canUpcastToRowType(deoptimizedType(row_tuple_type), deoptimizedType(majType))) {
+                        num_passing++;
+                        majRows.push_back(row);
+                    }
                 }
-            }
-            std::stringstream sample_stream;
-            for(const auto& row: sample) {
-                auto row_as_str = row.toJsonString(sample_columns); //row.toPythonString();
-                sample_stream<<row_as_str<<"\n";
-            }
+                std::stringstream sample_stream;
+                for(const auto& row: sample) {
+                    auto row_as_str = row.toJsonString(sample_columns); //row.toPythonString();
+                    sample_stream<<row_as_str<<"\n";
+                }
 
-            std::string sample_dbg_save_path = "extracted_sample.ndjson";
-            stringToFile(sample_dbg_save_path, sample_stream.str());
+                std::string sample_dbg_save_path = "extracted_sample.ndjson";
+                stringToFile(sample_dbg_save_path, sample_stream.str());
 
-            logger.debug("saved obtained sample to " + sample_dbg_save_path + " as ndjson");
-            logger.debug("Of " + pluralize(sample.size(), "sample row") + ", " + std::to_string(num_passing) + " adhere to detected majority type.");
-            for(unsigned i = 0; i < std::min(majRows.size(), 5ul); ++i)
-                std::cout<<majRows[i].toPythonString()<<std::endl;
+                logger.debug("saved obtained sample to " + sample_dbg_save_path + " as ndjson");
+                logger.debug("Of " + pluralize(sample.size(), "sample row") + ", " + std::to_string(num_passing) + " adhere to detected majority type.");
+                for(unsigned i = 0; i < std::min(majRows.size(), 5ul); ++i)
+                    os<<majRows[i].toPythonString()<<std::endl;
 
-            // check if any forkevents are found in the sample
-            std::vector<std::string> rows_as_python_strings;
-            size_t fork_events_found = 0;
-            for(auto row : sample) {
-                rows_as_python_strings.push_back(row.toPythonString());
-                if(rows_as_python_strings.back().find("ForkEvent") != std::string::npos)
-                    fork_events_found++;
-            }
-            std::cout<<"Found forkevents: "<<fork_events_found<<"x"<<std::endl;
+                // check if any forkevents are found in the sample
+                std::vector<std::string> rows_as_python_strings;
+                size_t fork_events_found = 0;
+                for(auto row : sample) {
+                    rows_as_python_strings.push_back(row.toPythonString());
+                    if(rows_as_python_strings.back().find("ForkEvent") != std::string::npos)
+                        fork_events_found++;
+                }
+                os<<"Found forkevents: "<<fork_events_found<<"x"<<std::endl;
 #endif
+            }
 
 
             // the detected majority type here is BEFORE projection pushdown.
             // --> therefore restrict it to the type of the input operator.
-            // std::cout<<"Majority detected row type is: "<<projectedMajType.desc()<<std::endl;
+            // os<<"Majority detected row type is: "<<projectedMajType.desc()<<std::endl;
 
             // if majType of sample is different from input node type input sample -> retype!
             // also need to restrict type first!
-            logger.debug("performing Retyping");
+            {
+                std::stringstream ss;
+                ss<<__FILE__<<":"<<__LINE__<<" Performing Retyping with type: "<<projectedMajType.desc()<<" columns: "<<projectedColumns;
+                logger.debug(ss.str());
+            }
+
             auto optimized_operators = retypeUsingOptimizedInputSchema(projectedMajType, projectedColumns);
 
             // overwrite internal operators to apply subsequent optimizations
@@ -2030,7 +3099,6 @@ namespace tuplex {
             // run validation after forcing majority sample based type
             auto validation_rc = validatePipeline();
             logger.debug(std::string("post-specialization pipeline validation: ") + (validation_rc ? "ok" : "failed"));
-            assert(validation_rc);
             return validation_rc;
         }
     }

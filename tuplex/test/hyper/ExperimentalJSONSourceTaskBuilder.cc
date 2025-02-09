@@ -6,7 +6,7 @@
 
 namespace tuplex {
     namespace codegen {
-        void ExperimentalJSONSourceTaskBuilder::checkRC(llvm::IRBuilder<> &builder, const std::string &key, llvm::Value *rc) {
+        void ExperimentalJSONSourceTaskBuilder::checkRC(const IRBuilder& builder, const std::string &key, llvm::Value *rc) {
             using namespace llvm;
             auto &ctx = _env.getContext();
             auto F = builder.GetInsertBlock()->getParent();
@@ -25,7 +25,7 @@ namespace tuplex {
             builder.SetInsertPoint(bbNext);
         }
 
-        void ExperimentalJSONSourceTaskBuilder::printValueInfo(llvm::IRBuilder<> &builder,
+        void ExperimentalJSONSourceTaskBuilder::printValueInfo(const IRBuilder& builder,
                                                                const std::string &key,
                                                                const python::Type &valueType,
                                                                llvm::Value *keyPresent,
@@ -56,7 +56,7 @@ namespace tuplex {
 
 
 
-        void ExperimentalJSONSourceTaskBuilder::parseAndPrintStructuredDictFromObject(llvm::IRBuilder<> &builder, llvm::Value *j,
+        void ExperimentalJSONSourceTaskBuilder::parseAndPrintStructuredDictFromObject(const IRBuilder& builder, llvm::Value *j,
                                                                                       llvm::BasicBlock *bbSchemaMismatch) {
             assert(j);
             using namespace llvm;
@@ -80,7 +80,7 @@ namespace tuplex {
 
             // create dict parser and store to row_var
             JSONParseRowGenerator gen(_env, _rowType, bbSchemaMismatch);
-            gen.parseToVariable(builder, builder.CreateLoad(obj_var), row_var);
+            gen.parseToVariable(builder, builder.CreateLoad(_env.i8ptrType(), obj_var), row_var);
 
             auto s = struct_dict_serialized_memory_size(_env, builder, row_var, _rowType);
             // _env.printValue(builder, s.val, "size of row materialized in bytes is: ");
@@ -91,7 +91,7 @@ namespace tuplex {
             // _env.printValue(builder, serialization_res.size, "realized serialization size is: ");
 
             // inc total size with serialization size!
-            auto cur_total = builder.CreateLoad(_outTotalSerializationSize);
+            auto cur_total = builder.CreateLoad(builder.getInt64Ty(), _outTotalSerializationSize);
             auto new_total = builder.CreateAdd(cur_total, serialization_res.size);
             builder.CreateStore(new_total, _outTotalSerializationSize);
 
@@ -104,7 +104,7 @@ namespace tuplex {
             //parseAndPrint(builder, builder.CreateLoad(obj_var), "", true, _rowType, true, bbSchemaMismatch);
 
             // free obj_var...
-            json_freeObject(_env, builder, builder.CreateLoad(obj_var));
+            json_freeObject(_env, builder, builder.CreateLoad(_env.i8ptrType(), obj_var));
 #ifndef NDEBUG
             builder.CreateStore(_env.i8nullptr(), obj_var);
 #endif
@@ -114,7 +114,7 @@ namespace tuplex {
 
         }
 
-        llvm::Value *ExperimentalJSONSourceTaskBuilder::isDocumentOfObjectType(llvm::IRBuilder<> &builder, llvm::Value *j) {
+        llvm::Value *ExperimentalJSONSourceTaskBuilder::isDocumentOfObjectType(const IRBuilder& builder, llvm::Value *j) {
             using namespace llvm;
             auto &ctx = _env.getContext();
             auto F = getOrInsertFunction(_env.getModule().get(), "JsonParser_getDocType", _env.i64Type(),
@@ -125,7 +125,7 @@ namespace tuplex {
         }
 
         llvm::BasicBlock *
-        ExperimentalJSONSourceTaskBuilder::emitBadParseInputAndMoveToNextRow(llvm::IRBuilder<> &builder, llvm::Value *j,
+        ExperimentalJSONSourceTaskBuilder::emitBadParseInputAndMoveToNextRow(const IRBuilder& builder, llvm::Value *j,
                                                                              llvm::Value *condition) {
             using namespace llvm;
             auto &ctx = _env.getContext();
@@ -149,7 +149,7 @@ namespace tuplex {
             // _env.printValue(builder, rowNumber(builder), "bad parse encountered for row number: ");
 
             // inc value
-            auto count = builder.CreateLoad(_badParseCountVar);
+            auto count = builder.CreateLoad(builder.getInt64Ty(), _badParseCountVar);
             builder.CreateStore(builder.CreateAdd(count, _env.i64Const(1)), _badParseCountVar);
 
             //_env.printValue(builder, line, "bad-parse for row: ");
@@ -164,7 +164,7 @@ namespace tuplex {
             return bbEmitBadParse;
         }
 
-        llvm::Value *ExperimentalJSONSourceTaskBuilder::hasNextRow(llvm::IRBuilder<> &builder, llvm::Value *j) {
+        llvm::Value *ExperimentalJSONSourceTaskBuilder::hasNextRow(const IRBuilder& builder, llvm::Value *j) {
             auto &ctx = _env.getContext();
             auto F = getOrInsertFunction(_env.getModule().get(), "JsonParser_hasNextRow", ctypeToLLVM<bool>(ctx),
                                          _env.i8ptrType());
@@ -174,7 +174,7 @@ namespace tuplex {
                     llvm::Type::getIntNTy(ctx, ctypeToLLVM<bool>(ctx)->getIntegerBitWidth()), 1));
         }
 
-        void ExperimentalJSONSourceTaskBuilder::moveToNextRow(llvm::IRBuilder<> &builder, llvm::Value *j) {
+        void ExperimentalJSONSourceTaskBuilder::moveToNextRow(const IRBuilder& builder, llvm::Value *j) {
             // move
             using namespace llvm;
             auto &ctx = _env.getContext();
@@ -190,7 +190,7 @@ namespace tuplex {
             _env.freeAll(builder); // -> call rtfree!
         }
 
-        void ExperimentalJSONSourceTaskBuilder::exitMainFunctionWithError(llvm::IRBuilder<> &builder, llvm::Value *exitCondition,
+        void ExperimentalJSONSourceTaskBuilder::exitMainFunctionWithError(const IRBuilder& builder, llvm::Value *exitCondition,
                                                                           llvm::Value *exitCode) {
             using namespace llvm;
             auto &ctx = _env.getContext();
@@ -208,7 +208,7 @@ namespace tuplex {
             builder.SetInsertPoint(bbContinue);
         }
 
-        llvm::Value *ExperimentalJSONSourceTaskBuilder::initJsonParser(llvm::IRBuilder<> &builder) {
+        llvm::Value *ExperimentalJSONSourceTaskBuilder::initJsonParser(const IRBuilder& builder) {
 
             auto F = getOrInsertFunction(_env.getModule().get(), "JsonParser_Init", _env.i8ptrType());
 
@@ -218,7 +218,7 @@ namespace tuplex {
             return j;
         }
 
-        llvm::Value *ExperimentalJSONSourceTaskBuilder::openJsonBuf(llvm::IRBuilder<> &builder, llvm::Value *j, llvm::Value *buf,
+        llvm::Value *ExperimentalJSONSourceTaskBuilder::openJsonBuf(const IRBuilder& builder, llvm::Value *j, llvm::Value *buf,
                                                                     llvm::Value *buf_size) {
             assert(j);
             auto F = getOrInsertFunction(_env.getModule().get(), "JsonParser_open", _env.i64Type(), _env.i8ptrType(),
@@ -226,14 +226,14 @@ namespace tuplex {
             return builder.CreateCall(F, {j, buf, buf_size});
         }
 
-        void ExperimentalJSONSourceTaskBuilder::freeJsonParse(llvm::IRBuilder<> &builder, llvm::Value *j) {
+        void ExperimentalJSONSourceTaskBuilder::freeJsonParse(const IRBuilder& builder, llvm::Value *j) {
             auto &ctx = _env.getContext();
             auto F = getOrInsertFunction(_env.getModule().get(), "JsonParser_Free", llvm::Type::getVoidTy(ctx),
                                          _env.i8ptrType());
             builder.CreateCall(F, j);
         }
 
-        void ExperimentalJSONSourceTaskBuilder::generateParseLoop(llvm::IRBuilder<> &builder, llvm::Value *bufPtr,
+        void ExperimentalJSONSourceTaskBuilder::generateParseLoop(const IRBuilder& builder, llvm::Value *bufPtr,
                                                                   llvm::Value *bufSize) {
             using namespace llvm;
             auto &ctx = _env.getContext();
@@ -264,7 +264,7 @@ namespace tuplex {
 #ifndef NDEBUG
             {
                 // debug: create an info statement for free block
-                llvm::IRBuilder<> b(_freeStart);
+                IRBuilder b(_freeStart);
                 // _env.printValue(b, rowNumber(b), "entered free row objects for row no=");
             }
 #endif
@@ -322,16 +322,16 @@ namespace tuplex {
             freeJsonParse(builder, parser);
 
             _env.printValue(builder, rowNumber(builder), "parsed rows: ");
-            _env.printValue(builder, builder.CreateLoad(_badParseCountVar),
+            _env.printValue(builder, builder.CreateLoad(builder.getInt64Ty(), _badParseCountVar),
                             "thereof bad parse rows (schema mismatch): ");
 
             // store in vars
             builder.CreateStore(rowNumber(builder), _outTotalRowsVar);
-            builder.CreateStore(builder.CreateLoad(_badParseCountVar), _outTotalBadRowsVar);
+            builder.CreateStore(builder.CreateLoad(builder.getInt64Ty(), _badParseCountVar), _outTotalBadRowsVar);
         }
 
 
-        void ExperimentalJSONSourceTaskBuilder::writeOutput(llvm::IRBuilder<> &builder, llvm::Value *var, llvm::Value *val) {
+        void ExperimentalJSONSourceTaskBuilder::writeOutput(const IRBuilder& builder, llvm::Value *var, llvm::Value *val) {
             using namespace llvm;
 
             assert(var && val);
@@ -370,7 +370,7 @@ namespace tuplex {
             auto m = mapLLVMFunctionArgs(F, {"buf", "buf_size", "out_total_rows", "out_bad_parse_rows", "out_total_size"});
 
             auto bbEntry = BasicBlock::Create(ctx, "entry", F);
-            IRBuilder<> builder(bbEntry);
+            IRBuilder builder(bbEntry);
 
             // allocate variables
             _outTotalRowsVar = _env.CreateFirstBlockVariable(builder, _env.i64Const(0));
@@ -380,9 +380,9 @@ namespace tuplex {
             // dummy parse, simply print type and value with type checking.
             generateParseLoop(builder, m["buf"], m["buf_size"]);
 
-            writeOutput(builder, m["out_total_rows"], builder.CreateLoad(_outTotalRowsVar));
-            writeOutput(builder, m["out_bad_parse_rows"], builder.CreateLoad(_outTotalBadRowsVar));
-            writeOutput(builder, m["out_total_size"], builder.CreateLoad(_outTotalSerializationSize));
+            writeOutput(builder, m["out_total_rows"], builder.CreateLoad(builder.getInt64Ty(), _outTotalRowsVar));
+            writeOutput(builder, m["out_bad_parse_rows"], builder.CreateLoad(builder.getInt64Ty(), _outTotalBadRowsVar));
+            writeOutput(builder, m["out_total_size"], builder.CreateLoad(builder.getInt64Ty(), _outTotalSerializationSize));
 
             builder.CreateRet(_env.i64Const(ecToI64(ExceptionCode::SUCCESS)));
         }

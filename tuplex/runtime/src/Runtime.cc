@@ -137,6 +137,13 @@ static void lazyGuard(MemoryHeap *heap) {
     }
 }
 
+extern "C" size_t getDefaultHeapBlockSize() noexcept {
+    if(!heap)
+        return RUNTIME_DEFAULT_BLOCK_SIZE;
+    else
+        return heap->defaultBlockSize;
+}
+
 /*!
  * externally called runtime function to (re)set the runtime memory that can be used from LLVM code
  * @param size
@@ -163,7 +170,6 @@ extern "C" void freeRunTimeMemory() noexcept {
         heap = new MemoryHeap();
 
     // go through chain & delete memory
-
     auto cur = heap->memory;
     while(cur) {
         auto block = cur;
@@ -223,9 +229,34 @@ extern "C" void *rtmalloc(const size_t requested_size) noexcept {
         // @Todo: maybe increase block size?
         // @Todo: Request super large block?
 
-        printf("fatal error: Requested object size %lu, is larger than default block size %lu! Can't handle memory request!\n", size, heap->defaultBlockSize);
-        exit(-1);
-        return NULL;
+        // Need to request block larger than what is used by default.
+        // -> Check if block is larger than 512MB, then error with bad alloc for now.
+        if(size > 512 * 1024 * 1024) {
+            printf("fatal error: Requested object size %lu, is larger than default block size %lu! Can't handle memory request, because it is exceeding hard limit of 512MB!\n", size, heap->defaultBlockSize);
+            exit(-1);
+        }
+
+        // has heap been initialized?
+        if(!heap->memory) {
+            // not yet, first block is larger than default block.
+            heap->memory = initMemoryBlock(size);
+            heap->lastBlock = heap->memory;
+        } else {
+            // Need for sure a new block, so add new last block to list.
+            heap->lastBlock->next = initMemoryBlock(size);
+            heap->lastBlock = heap->lastBlock->next;
+        }
+
+        uint8_t *memaddr = heap->lastBlock->mem;
+
+        // make sure addr is heap aligned
+        // cf. https://pzemtsov.github.io/2016/11/06/bug-story-alignment-on-x86.html
+        assert(is_aligned(HEAP_ALIGNMENT, memaddr));
+
+        // inc offset to clarify that block is full.
+        heap->lastBlock->offset += size;
+
+        return memaddr;
     }
 
     lazyGuard(heap);
@@ -303,8 +334,6 @@ extern "C" void *rtmalloc(const size_t requested_size) noexcept {
 extern "C" void rtfree(void *ptr) noexcept {
     // do nothing...
 }
-
-// #define TRACE_MEMORY
 
 extern "C" void rtfree_all() noexcept {
     if(!heap)
@@ -784,7 +813,9 @@ char* strJoin(const char *base_str, int64_t base_str_size, int64_t num_words, co
     return ret;
 }
 
-int64_t strSplit(const char *base_str, int64_t base_str_length, const char *delim, int64_t delim_length, char*** res_str_array, int64_t** res_len_array, int64_t* res_list_size) {
+[[maybe_unused]] int64_t strSplit(const char *base_str, int64_t base_str_length, const char *delim, int64_t delim_length, char*** res_str_array, int64_t** res_len_array, int64_t* res_list_size) {
+
+
     delim_length--; base_str_length--; // remove null terminator from length
 
     int64_t serialized_size = sizeof(int64_t); // number of elements
@@ -823,6 +854,17 @@ int64_t strSplit(const char *base_str, int64_t base_str_length, const char *deli
 }
 
 extern "C" char* quoteForCSV(const char *str, int64_t size, int64_t* new_size, char separator, char quotechar) {
+
+#ifndef NDEBUG
+    if(!str) {
+      char ret[] = "<null>";
+      auto dest_size = strlen(ret) + 1;
+      auto ret_ptr = (char*)rtmalloc(dest_size);
+      memcpy(ret_ptr, ret, dest_size);
+      *new_size = dest_size;
+      return ret_ptr;
+    }
+#endif
 
     // check if there are chars in it that need to be quoted
     size_t num_quotes = 0;
@@ -951,8 +993,6 @@ char* csvNormalize(const char quotechar, const char* start, const char* end, int
     char* res = (char*)rtmalloc(size);
     // memset(res, 0, size);
 
-#warning "might be wrong for strings which actually need to be dequoted :/ ?"
-
     // copy over unless quote char!
     const char* ptr = start;
     int i = 0;
@@ -963,11 +1003,16 @@ char* csvNormalize(const char quotechar, const char* start, const char* end, int
         ptr++;
     }
 
-    // important, set last to 0
-    res[i++] = '\0';
+    // important, set last to 0 (if not 0)
+    if('\0' != res[i])
+        res[i++] = '\0';
+
+    // adjust length (find first non-'\0' char)
+    while(i > 0 && res[i - 1] == '\0')
+        --i;
 
     if(ret_size)
-        *ret_size = size;
+        *ret_size = i + 1;
 
     return res;
 }
@@ -1238,6 +1283,49 @@ void llvm9_store_double(double* ptr, double value, int64_t idx) {
     assert(idx >= 0);
     ptr[idx] = value;
 }
+
+int fallback_spanner(const char* ptr, const char c1, const char c2, const char c3, const char c4) {
+    if(!ptr)
+        return 16;
+
+    char charset[256];
+    memset(charset, 0, 256);
+    charset[c1] = 1;
+    charset[c2] = 1;
+    charset[c3] = 1;
+    charset[c4] = 1;
+
+    // manual implementation
+    auto p = (const unsigned char *)ptr;
+    auto e = p + 16;
+
+    do {
+        if(charset[p[0]]) {
+            break;
+        }
+        if(charset[p[1]]) {
+            p++;
+            break;
+        }
+        if(charset[p[2]]) {
+            p += 2;
+            break;
+        }
+        if(charset[p[3]]) {
+            p += 3;
+            break;
+        }
+        p += 4;
+    } while(p < e);
+
+    if(! *p) {
+        return 16; // PCMPISTRI reports NUL encountered as no match.
+    }
+
+    auto ret =  p - (const unsigned char *)ptr;
+    return ret;
+}
+
 
 //#ifdef __cplusplus
 //}

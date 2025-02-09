@@ -18,6 +18,7 @@
 #include <JsonStatistic.h>
 #include <S3FileSystemImpl.h>
 #include <S3Cache.h>
+#include <S3File.h>
 
 namespace tuplex {
 
@@ -39,7 +40,7 @@ namespace tuplex {
 #ifdef BUILD_WITH_CEREAL
         logger().info("Using Cereal AST serialization");
 #else
-        logger().info("Using JSON AST serializastion");
+        logger().info("Using JSON AST serialization");
 #endif
         // runtime library path
         auto runtime_path = ContextOptions::defaults().RUNTIME_LIBRARY().toPath();
@@ -81,7 +82,7 @@ namespace tuplex {
         // general init here...
         // compiler already active? Else init
         logger().info("performing global initialization (Worker App)");
-        if(WORKER_OK != globalInit())
+        if(WORKER_OK != globalInit(false))
             return false;
 
         // before initializing compiler, make sure runtime has been loaded
@@ -104,16 +105,21 @@ namespace tuplex {
             // make sure s3 system is initialized
             auto s3impl = VirtualFileSystem::getS3FileSystemImpl();
             if(!s3impl) {
-                logger().error("required S3 cache, but S3 file system not initialized.");
+                logger().error("Required S3 cache, but S3 file system not initialized.");
                 return false;
             }
             s3impl->activateReadCache(_settings.s3PreCacheSize);
+            logger().info("Activated S3 read cache with " + sizeToMemString(_settings.s3PreCacheSize) + ".");
         } else {
             auto s3impl = VirtualFileSystem::getS3FileSystemImpl();
             if(!s3impl) {
-                logger().error("required S3 cache, but S3 file system not initialized.");
+                logger().error("Required S3 cache, but S3 file system not initialized.");
                 return false;
             }
+
+            if(s3impl->hasActiveReadCache())
+                logger().info("Disable previously active S3 cache.");
+
             s3impl->disableReadCache();
         }
 
@@ -208,17 +214,22 @@ namespace tuplex {
     int WorkerApp::processJSONMessage(const std::string &message) {
         auto& logger = this->logger();
 
+        // clear response.
+        _response.Clear();
+
         // logger.info("JSON request: " + message);
 
         // parse JSON into protobuf
         tuplex::messages::InvocationRequest req;
         auto rc = google::protobuf::util::JsonStringToMessage(message, &req);
         if(!rc.ok()) {
-            logger.error("could not parse json into protobuf message, bad parse for request - invalid format?");
+            logger.error("Could not parse json into protobuf message, bad parse for request - invalid format?");
+            logger.error("Bad json message:\n" + message);
             return WORKER_ERROR_INVALID_JSON_MESSAGE;
         }
 
         _currentMessage = req;
+        _response.set_originalrequestid(req.id());
 
         // shortcut for special messages
         if(req.type() == messages::MessageType::MT_ENVIRONMENTINFO)
@@ -294,13 +305,17 @@ namespace tuplex {
     }
 
     int64_t WorkerApp::releaseTransformStage(const std::shared_ptr<TransformStage::JITSymbols>& syms) {
+
+        if(!syms)
+            return WORKER_OK;
+
         if(!syms->_fastCodePath.initStageFunctor || !syms->_fastCodePath.releaseStageFunctor) {
             logger().info("skip release trafo stage, b.c. symbols not found");
             return 0;
         }
 
         // call release func for stage globals
-        if(syms->_fastCodePath.releaseStageFunctor() != 0) {
+        if(syms->_fastCodePath.releaseStageFunctor && syms->_fastCodePath.releaseStageFunctor() != 0) {
             logger().error("releaseStage() failed for stage ");
             return WORKER_ERROR_STAGE_CLEANUP;
         }
@@ -348,11 +363,12 @@ namespace tuplex {
     }
 
     int WorkerApp::processEnvironmentInfoMessage() {
+        logger().info("Got Environment information message to process.");
 
-        // query llvm
+        // Query llvm (version etc.).
         auto j = codegen::compileEnvironmentAsJson();
 
-        // add python specific information
+        // Add python specific information
         j["python"] = PY_VERSION;
         std::string version_string = "unknown";
         python::lockGIL();
@@ -360,21 +376,49 @@ namespace tuplex {
         python::unlockGIL();
         j["cloudpickleVersion"] = version_string;
 
+        // Check which serialization mode is used.
+#ifdef BUILD_WITH_CEREAL
+        j["astSerializationFormat"] = "cereal";
+#else
+        j["astSerializationFormat"] = "json";
+#endif
+
+        _response.set_type(messages::MessageType::MT_ENVIRONMENTINFO);
+        _response.set_status(messages::InvocationResponse_Status_SUCCESS);
+
+        // Add to response result as Resource.
+        auto id_gen = _response.resources_size();
+        auto resource = _response.add_resources();
+        if(resource) {
+            resource->set_id(std::to_string(id_gen++));
+            resource->set_payload(j.dump());
+            resource->set_type(static_cast<uint32_t>(ResourceType::ENVIRONMENT_JSON));
+        }
+
+        // Do not call here fill_response_with_state(,,,), no process state needs to be serialized.
+
         return WORKER_OK;
     }
 
-    int WorkerApp::processMessage(const tuplex::messages::InvocationRequest& req) {
-        _messageCount++;
 
-        if(req.type() == messages::MessageType::MT_ENVIRONMENTINFO) {
-            return processEnvironmentInfoMessage();
-        }
+    int WorkerApp::setup_transform_stage(const tuplex::messages::InvocationRequest& req,
+                                         std::shared_ptr<TransformStage>& tstage,
+                                         std::shared_ptr<TransformStage::JITSymbols>& syms) {
+        logger().debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " start setup_transform_stage");
 
         // reset buffers
         resetThreadEnvironments();
 
+        tstage.reset();
+        syms.reset();
+
+        auto parts = partsFromMessage(req);
+
+        logger().debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Decoding transform stage from protobuf.");
+
         // only transform stage yet supported, in the future support other stages as well!
-        auto tstage = TransformStage::from_protobuf(req.stage());
+        tstage = std::move(TransformStage::from_protobuf(req.stage()));
+
         _inputOperatorID = tstage->fileInputOperatorID();
 
         // update initial received schemas for stage
@@ -383,12 +427,6 @@ namespace tuplex {
         _stage_general_input_type = tstage->inputSchema().getRowType();
         _stage_general_output_type = tstage->outputSchema().getRowType();
 
-        URI outputURI = outputURIFromReq(req);
-        auto parts = partsFromMessage(req);
-
-        if(0 != _settings.s3PreCacheSize)
-            preCacheS3(parts);
-
         // reset types
         _normalCaseRowType = tstage->normalCaseInputSchema().getRowType();
         _hyperspecializedNormalCaseRowType = python::Type::UNKNOWN;
@@ -396,10 +434,10 @@ namespace tuplex {
 
         // check settings, pure python mode?
         if(req.settings().has_useinterpreteronly() && req.settings().useinterpreteronly()) {
-            logger().info("WorkerApp is processing everything in single-threaded python/fallback mode.");
-            auto rc = processTransformStageInPythonMode(tstage.get(), parts, outputURI);
-            _lastStat = jsonStat(req, tstage.get()); // generate stats before returning.
-            return rc;
+            logger().debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " interpreter only mode, skip rest of setup.");
+
+            // following code is good for compile only, skip for now.
+            return WORKER_CONTINUE;
         }
 
         // print how code is received
@@ -415,7 +453,9 @@ namespace tuplex {
         }
 
         // using hyper-specialization?
-        if(useHyperSpecialization(req)) {
+        if(useHyperSpecialization(req)  && !(req.requestmode() & REQUEST_MODE_SKIP_COMPILE)) {
+
+            logger().debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " start hyperspecialization.");
 
             // check if encoded AST is compatible...
             if(!astFormatCompatible(req))
@@ -440,6 +480,8 @@ namespace tuplex {
             conf.constantFoldingOptimization = _settings.useConstantFolding;
             conf.exceptionSerializationMode = _settings.exceptionSerializationMode;
             conf.filterPromotion = _settings.useFilterPromotion;
+            conf.sparsifyStructs = _settings.sparsifyStructs;
+            conf.simplifyLargeStructs = _settings.simplifyLargeStructs ? _settings.simplifyLargeStructsThreshold : option<size_t>::none;
 
             // overwrite sampling size using settings
             conf.sampling_size = _settings.samplingSize;
@@ -495,15 +537,9 @@ namespace tuplex {
             logger().info("fast code path size after hyperspecialization: " + sizeToMemString(tstage->fastPathCode().size()));
             markTime("hyperspecialization_time", timer.time());
             if(tstage->fastPathCode().empty()) {
-#ifndef NDEBUG
-                logger().error("there is no fast-code path, need fast code path to parse properly. Erroring out.");
+                fill_response_with_state(_response);
+                logger().error("there is no fast-code path (after hyper-specialization), need fast code path to parse properly. Erroring out.");
                 return WORKER_ERROR_COMPILATION_FAILED;
-#else
-                logger().error("Hyper-specializastion could not produce a fast-path, using interpreter mode as fallback.");
-                auto rc = processTransformStageInPythonMode(tstage.get(), parts, outputURI);
-                _lastStat = jsonStat(req, tstage.get()); // generate stats before returning.
-                return rc;
-#endif
             }
         }
 
@@ -518,13 +554,64 @@ namespace tuplex {
         // if not, compile given code & process using both compile code & fallback
         // optimize via LLVM when in hyper mode.
         Timer compileTimer;
-        auto syms = compileTransformStage(*tstage, useHyperSpecialization(req));
-        if(!syms)
+        if(req.requestmode() & REQUEST_MODE_COMPILE_AND_RETURN_OBJECT_CODE || _settings.useObjectFileAsInterchangeFormat) {
+            std::string target_triple = llvm::sys::getDefaultTargetTriple();
+            std::string cpu = "native"; // <-- native target cpu
+
+            // Check if trace environment variable is active, if so annotate module.
+            if(!getEnv("LLVM_TRACE_IR").empty() && stringToBool(getEnv("LLVM_TRACE_IR"))) {
+                logger().info("Annotating LLVM IR modules with trace before emitting code.");
+                tstage->annotateModulesWithTraceInformation();
+            }
+
+            // internally sets modules from IR/bitcode to object code.
+            tstage->compileToObjectCode(target_triple, cpu);
+
+            assert(tstage->fastPathCodeFormat() == codegen::CodeFormat::OBJECT_CODE);
+            assert(tstage->slowPathCodeFormat() == codegen::CodeFormat::OBJECT_CODE);
+            auto fast_path_message = tstage->fast_path_to_protobuf();
+            auto slow_path_message = tstage->slow_path_to_protobuf();
+
+            // save to response
+            auto id_gen = _response.resources_size();
+            auto resource = _response.add_resources();
+            if(resource) {
+                resource->set_id(std::to_string(id_gen++));
+                resource->set_payload(fast_path_message.SerializeAsString());
+                resource->set_type(static_cast<uint32_t>(ResourceType::OBJECT_CODE_NORMAL_CASE));
+            }
+            // this may be optional.
+            if(!tstage->slowPathCode().empty()) {
+                resource = _response.add_resources();
+                if(resource) {
+                    resource->set_id(std::to_string(id_gen++));
+                    resource->set_payload(slow_path_message.SerializeAsString());
+                    resource->set_type(static_cast<uint32_t>(ResourceType::OBJECT_CODE_GENERAL_CASE));
+                }
+            }
+        }
+
+        syms = compileTransformStage(*tstage, useHyperSpecialization(req));
+        if(!syms) {
+            fill_response_with_state(_response);
             return WORKER_ERROR_COMPILATION_FAILED;
+        }
         markTime("compile_time", compileTimer.time());
+
+        // If desired, return fast-path as object code.
+
 
         // opportune compilation? --> do this here b.c. lljit is not thread-safe yet?
         // kick off general case compile then
+
+        if(_settings.opportuneGeneralPathCompilation) {
+            logger().info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Found opportune compilation enabled, but should be disabled. Too buggy.");
+            return WORKER_ERROR_ENVIRONMENT;
+        }
+
+        // opportune general path compilation is broken, turn off for now.
+        assert(!_settings.opportuneGeneralPathCompilation);
+
         if(_settings.opportuneGeneralPathCompilation && _settings.useCompiledGeneralPath) {
             // create new thread to compile slow path (in parallel to running fast path)
             _resolverCompileThread.reset(new std::thread([this](TransformStage* tstage) {
@@ -535,9 +622,235 @@ namespace tuplex {
             //});
         }
 
-        auto rc = processTransformStage(tstage.get(), syms, parts, outputURI);
+        // Save in codepath stats the (input) types.
+        if(!_settings.useInterpreterOnly) {
+            _codePathStats.normalCaseType = _stage_normal_input_type;
+            if(_settings.useCompiledGeneralPath)
+                _codePathStats.generalCaseType = _stage_general_input_type;
+        }
+
+        // only compile? Do not process, just return compiled object code.
+        if(req.requestmode() & REQUEST_MODE_COMPILE_ONLY) {
+            fill_response_with_state(_response);
+            return WORKER_OK;
+        }
+
+        logger().debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Finished setup_transform_stage");
+
+        return WORKER_CONTINUE;
+    }
+
+    int WorkerApp::processMessage(const tuplex::messages::InvocationRequest& req) {
+
+        // Reset response.
+        _response.Clear();
+        _response.set_type(req.type());
+        _response.set_originalrequestid(req.id());
+
+        _messageCount++;
+
+        // adjust environment
+        if(!req.env().empty()) {
+            if(!adjust_environment({req.env().begin(), req.env().end()}))
+                return WORKER_ERROR_ENVIRONMENT;
+        }
+
+        if(req.type() == messages::MessageType::MT_ENVIRONMENTINFO) {
+            return processEnvironmentInfoMessage();
+        }
+
+        auto parts = partsFromMessage(req);
+
+        // Start S3 pre-caching.
+        if(0 != _settings.s3PreCacheSize) {
+            logger().info("Precache " + pluralize(parts.size(), "object") + " from S3.");
+            preCacheS3(parts);
+        }
+
+        // Setup processing for Transform Stage, early exit if needed.
+        std::shared_ptr<TransformStage::JITSymbols> syms;
+        std::shared_ptr<TransformStage> tstage;
+        auto rc = setup_transform_stage(req, tstage, syms);
+        if(rc != WORKER_CONTINUE)
+            return rc;
+
+
+        // Start processing Transform Stage.
+        URI outputURI = outputURIFromReq(req);
+
+        // Clear fields in response, set input/output uris
+        _response.clear_inputuris();
+        _response.clear_outputuris();
+        for(const auto& in_uri: req.inputuris())
+            _response.add_inputuris(in_uri);
+        _response.add_outputuris(outputURI.toString());
+
+        // So far all of this has been setup.
+        // Does request call for self-invocation?
+        // If so, fire off self-requests (async) and wait for result.
+        if(use_self_invocation(req)) {
+            {
+                std::stringstream ss;
+                ss << "Invoking ";
+                for (auto count: req.stage().invocationcount())
+                    ss << count << ", ";
+                ss << "Lambdas recursively.";
+                logger().info(ss.str());
+            }
+
+
+            // First stage to invoke.
+            int num_to_invoke = req.stage().invocationcount(0);
+            std::string lambda_endpoint;
+            if(req.env().end() != req.env().find(AWS_LAMBDA_ENDPOINT_KEY))
+                lambda_endpoint = req.env().at(AWS_LAMBDA_ENDPOINT_KEY);
+
+
+            // Check how many parts there are, distribute between this worker and the Lambdas to invoke.
+            // This lambda gets the first part.
+            std::stringstream ss;
+            ss<<"Found "<<pluralize(parts.size(), "part")<<" to split between "<<pluralize(1 + num_to_invoke, "worker")<<".";
+            logger().info(ss.str());
+            std::vector<std::vector<FilePart>> worker_parts(num_to_invoke);
+            if(parts.size() == 1 + num_to_invoke) {
+
+                for(unsigned i = 0; i < worker_parts.size(); ++i)
+                    worker_parts[i].push_back(parts[i + 1]);
+
+                // trivial assignment.
+                parts = {parts.front()};
+                // update outputURI to be first part.
+                //outputURI = ge
+            } else {
+                // split up.
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Not yet implemented.");
+            }
+
+            // Prepare message to share (i.e., environment with compiled/not compiled code path).
+            messages::InvocationRequest self_invoke_request = req;
+            self_invoke_request.clear_inputsizes();
+            self_invoke_request.clear_inputuris();
+            self_invoke_request.mutable_stage()->clear_invocationcount();
+
+            // Need to update stage parameters from potentially changed tstage.
+            tstage->fill_schemas_into_protobuf(self_invoke_request.mutable_stage());
+
+            // Disable hyper as well (there's code, no need to respecialize).
+            if(useHyperSpecialization(self_invoke_request))
+                logger().info("Original requests uses hyper-specialization, disabling for recursive, self-invoke requests.");
+            self_invoke_request.mutable_stage()->clear_serializedstage();
+
+            // Check if using object files (instead of IR) are active. If so, modify message.
+            if(_settings.useObjectFileAsInterchangeFormat) {
+                logger().info("Using Object files (.o) to pass code to self-invoked Lambdas.");
+
+                auto current_mode = req.requestmode();
+
+                // No need to recompile AGAIN.
+                self_invoke_request.set_requestmode(current_mode | REQUEST_MODE_SKIP_COMPILE);
+
+                auto object_code_fast_path = find_resources_by_type(_response, ResourceType::OBJECT_CODE_NORMAL_CASE).front().payload();
+                messages::CodePath fast_path_message;
+                fast_path_message.ParseFromString(object_code_fast_path);
+                self_invoke_request.mutable_stage()->mutable_fastpath()->CopyFrom(fast_path_message);
+
+                if(!find_resources_by_type(_response, ResourceType::OBJECT_CODE_GENERAL_CASE).empty()) {
+                    auto object_code_slow_path = find_resources_by_type(_response, ResourceType::OBJECT_CODE_GENERAL_CASE).front().payload();
+                    messages::CodePath slow_path_message;
+                    self_invoke_request.mutable_stage()->mutable_slowpath()->CopyFrom(slow_path_message);
+                }
+            } else {
+                // Take code-paths from stage directly (may be IR or bitcode).
+                if(!tstage->fastPathCode().empty()) {
+                    logger().info("Sending fast path code with format " + codegen::codeFormatToStr(tstage->fastPathCodeFormat()) + " to self-invoke requests.");
+                    auto code_mg = tstage->fast_path_to_protobuf();
+                    self_invoke_request.mutable_stage()->mutable_fastpath()->CopyFrom(code_mg);
+                }
+                if(!tstage->slowPathCode().empty()) {
+                    logger().info("Sending slow path code with format " + codegen::codeFormatToStr(tstage->fastPathCodeFormat()) + " to self-invoke requests.");
+                    auto code_mg = tstage->slow_path_to_protobuf();
+                    self_invoke_request.mutable_stage()->mutable_slowpath()->CopyFrom(code_mg);
+                }
+            }
+
+            // @TODO: pass data / process data and so on.
+            rc = invokeRecursivelyAsync(num_to_invoke, lambda_endpoint, self_invoke_request, worker_parts);
+            if(rc != WORKER_OK) {
+                std::stringstream err;
+                err<<"Recursive async lambda invocation failed with code "
+                   <<rc<<". Aborting request.";
+                auto err_msg = err.str();
+                _response.set_status(messages::InvocationResponse_Status::InvocationResponse_Status_ERROR);
+                _response.set_errormessage(err_msg);
+                logger().error(err_msg);
+                return rc;
+            }
+        }
+
+        // Check whether timeout is happening, if so - return timeout before processing starts.
+        if(aboutToTimeout()) {
+            std::stringstream ss;
+            ss<<"Worker timed out before starting processing.";
+           _response.set_status(messages::InvocationResponse_Status_ERROR);
+           _response.set_errormessage(ss.str());
+           return WORKER_TIMEOUT_BEFORE_PROCESSING_START;
+        }
+
+        // The part number also works as Lambda ID.
+        if(req.has_partnooffset())
+            logger().info("Lambda " + std::to_string(req.partnooffset()) + " writing to " + outputURI.toString());
+
+        // Python mode or compiled mode?
+        if(req.settings().has_useinterpreteronly() && req.settings().useinterpreteronly()) {
+            rc = processTransformStageInPythonMode(tstage.get(), parts, outputURI, req.requestmode() & REQUEST_MODE_NO_OPERATION);
+        } else {
+            rc = processTransformStage(tstage.get(), syms, parts, outputURI, req.requestmode() & REQUEST_MODE_NO_OPERATION);
+        }
+
+        // If timed out or partial result, directly return here. Do not wait for threads to finish.
+        if(rc == WORKER_PARTIAL_RESULT) {
+            return rc;
+        }
+
+        // If using self-invocation, wait for requests to finish.
+        if(use_self_invocation(req)) {
+            rc = waitForInvoker();
+            if(rc != WORKER_OK) {
+                std::stringstream err;
+                err<<"Recursive async lambda invocation failed with code "
+                   <<rc<<" while waiting for requests to finish. Aborting request.";
+                auto err_msg = err.str();
+                _response.set_status(messages::InvocationResponse_Status::InvocationResponse_Status_ERROR);
+                _response.set_errormessage(err_msg);
+                logger().error(err_msg);
+                return rc;
+            }
+
+            // add invoked containers to request.
+            fill_response_with_self_invocation_state(_response);
+        }
+
+        fill_response_with_state(_response);
         _lastStat = jsonStat(req, tstage.get()); // generate stats before returning.
         return rc;
+    }
+
+    int WorkerApp::waitForInvoker() const {
+        return WORKER_OK;
+    }
+
+    void WorkerApp::fill_response_with_self_invocation_state(messages::InvocationResponse &response) const {
+
+    }
+
+    int WorkerApp::invokeRecursivelyAsync(int num_to_invoke,
+                                             const std::string& lambda_endpoint,
+                                             const messages::InvocationRequest& req_template,
+                                             const std::vector<std::vector<FilePart>>& parts) {
+        logger().info("For now recursively invoking " + pluralize(num_to_invoke, "request") + ".");
+        logger().info("Recursive invocation not supported on WorkerBackend yet.");
+
+        return WORKER_OK;
     }
 
     void WorkerApp::preCacheS3(const std::vector<FilePart> &parts) {
@@ -545,8 +858,40 @@ namespace tuplex {
         Timer timer;
         auto& cache = S3FileCache::instance();
         cache.reset(_settings.s3PreCacheSize);
+
+        // Check how large total size of parts compared to cache. If larger than cache-size, cache only first parts.
+        size_t total_cache_size_requested = 0;
+        for(const auto& part : parts)
+            total_cache_size_requested += part.part_size();
+
+        std::vector<FilePart> parts_to_cache = parts;
+        if(total_cache_size_requested >= cache.maxCacheSize()) {
+            // request only some parts, or a part thereof
+            int64_t bytes_remaining = cache.maxCacheSize();
+            parts_to_cache.clear();
+            unsigned part_idx = 0;
+            while(bytes_remaining > 0 && part_idx < parts.size()) {
+                auto part = parts[part_idx++];
+                if(part.part_size() <= bytes_remaining) {
+                    parts_to_cache.push_back(part);
+                    bytes_remaining -= part.part_size();
+                } else {
+                    // partial and end.
+                    part.rangeEnd = part.rangeStart + bytes_remaining;
+                    parts_to_cache.push_back(part);
+
+                    std::stringstream ss;
+                    ss<<"S3 Cache capacity is "<<sizeToMemString(cache.maxCacheSize())<<" but total size requested for precaching is "
+                    <<sizeToMemString(total_cache_size_requested)<<". Caching only "<<parts_to_cache.size()<<"/"<<pluralize(parts.size(), "part")
+                    <<" with caching only first "<<sizeToMemString(part.part_size())<<" for the last part.";
+                    logger().info(ss.str());
+                    bytes_remaining = 0;
+                }
+            }
+        }
+
         std::vector<std::future<size_t>> futures;
-        for(const auto& part : parts) {
+        for(const auto& part : parts_to_cache) {
             if(part.uri.prefix() == "s3://")
                 futures.emplace_back(cache.putAsync(part.uri, part.rangeStart, part.rangeEnd));
         }
@@ -558,13 +903,15 @@ namespace tuplex {
         std::stringstream ss;
         auto cache_time = timer.time();
         double s3ReadSpeed = (total_cached / (1024.0 * 1024.0)) / cache_time;
-        ss<<"Cached "<<total_cached<<" bytes in "<<cache_time<<"s from S3 ( "<<s3ReadSpeed<<" MB/s)";
+        ss<<"Cached "<<total_cached<<" bytes in "<<cache_time<<"s from S3 ("<<s3ReadSpeed<<" MB/s)";
         logger().info(ss.str());
     }
 
     int
     WorkerApp::processTransformStageInPythonMode(const TransformStage *tstage, const std::vector<FilePart> &input_parts,
-                                                 const URI &output_uri) {
+                                                 const URI &output_uri, bool noop) {
+        logger().info("WorkerApp is processing everything in single-threaded python/fallback mode.");
+
         Timer timer;
         // make sure python code exists
         assert(tstage);
@@ -573,7 +920,7 @@ namespace tuplex {
         if(pythonCode.empty() || pythonPipelineName.empty())
             return WORKER_ERROR_MISSING_PYTHON_CODE;
 
-        logger().info("Invoking processTransformStage in Python mode");
+        logger().info("Invoking processTransformStage in Python mode.");
 
         // compile func
         auto pipelineFunctionObj = preparePythonPipeline(pythonCode, pythonPipelineName);
@@ -597,22 +944,27 @@ namespace tuplex {
         // loop over parts & process
         python::lockGIL();
         logger().info("GIL locked, processing " + pluralize(input_parts.size(), "part"));
-        for(const auto& part : input_parts) {
-            size_t inputRowCount = 0;
-            auto rc = processSourceInPython(0, tstage->fileInputOperatorID(),
-                                            part, tstage, pipelineFunctionObj, false, &inputRowCount);
-            logger().info("part processed, rc=" + std::to_string(rc));
-            logger().info("process RSS: " + std::to_string(getCurrentRSS()) + " peak RSS: " + std::to_string(getPeakRSS()) + ", running python gc...");
-            // run garbage collector frequently
-            python::runGC();
-            logger().info("post python gc RSS: " + std::to_string(getCurrentRSS()) + " peak RSS: " + std::to_string(getPeakRSS()));
 
-            numInputRowsProcessed += inputRowCount;
-            if(rc != WORKER_OK) {
-                python::unlockGIL();
-                runtime::releaseRunTimeMemory();
-                return rc;
+        if(!noop) {
+            for(const auto& part : input_parts) {
+                size_t inputRowCount = 0;
+                auto rc = processSourceInPython(0, tstage->fileInputOperatorID(),
+                                                part, tstage, pipelineFunctionObj, false, &inputRowCount);
+                logger().info("part processed, rc=" + std::to_string(rc));
+                logger().info("process RSS: " + std::to_string(getCurrentRSS()) + " peak RSS: " + std::to_string(getPeakRSS()) + ", running python gc...");
+                // run garbage collector frequently
+                python::runGC();
+                logger().info("post python gc RSS: " + std::to_string(getCurrentRSS()) + " peak RSS: " + std::to_string(getPeakRSS()));
+
+                numInputRowsProcessed += inputRowCount;
+                if(rc != WORKER_OK) {
+                    python::unlockGIL();
+                    runtime::releaseRunTimeMemory();
+                    return rc;
+                }
             }
+        } else {
+            logger().info("Worker called with noop, computing as if there was an empty result.");
         }
 
         python::unlockGIL();
@@ -661,18 +1013,20 @@ namespace tuplex {
 
     int WorkerApp::processTransformStage(TransformStage *tstage,
                                          const std::shared_ptr<TransformStage::JITSymbols> &syms,
-                                         const std::vector<FilePart> &input_parts, const URI &output_uri) {
+                                         const std::vector<FilePart> &input_parts, const URI &output_uri, bool noop) {
         Timer timer;
         size_t minimumPartSize = 1024 * 1024; // 1MB.
 
-        // init stage, abort on error
+        // init stage, abort on error (this is fast path only (?))
         auto rc = initTransformStage(tstage->initData(), syms);
         if(rc != WORKER_OK)
             return rc;
 
         size_t numInputRowsProcessed = 0;
         auto numCodes = std::max(1ul, _numThreads);
+        // @TODO: use vector<...> here? Is that thread-safe?
         auto processCodes = new int[numCodes];
+        auto processErrorMessages = new std::string[numCodes];
         memset(processCodes, WORKER_OK, sizeof(int) * numCodes);
         Timer fastPathTimer;
         // process data (single-threaded or via thread pool!)
@@ -683,21 +1037,40 @@ namespace tuplex {
             try {
                 // single-threaded
                 logger().info("Single-threaded worker starting fast-path execution.");
-                for(unsigned i = 0; i < input_parts.size(); ++i) {
-                   const auto& fp = input_parts[i];
-                    size_t inputRowCount = 0;
-                    processCodes[0] = processSource(0, tstage->fileInputOperatorID(), fp, tstage, syms, &inputRowCount);
-                    logger().info("processed file " + std::to_string(i + 1) + "/" + std::to_string(input_parts.size()));
-                    if(processCodes[0] != WORKER_OK)
-                        break;
-                    numInputRowsProcessed += inputRowCount;
+                if(!noop) {
+                    for(unsigned i = 0; i < input_parts.size(); ++i) {
+                        const auto& fp = input_parts[i];
+                        size_t inputRowCount = 0;
+                        processCodes[0] = processSource(0, tstage->fileInputOperatorID(), fp, tstage, syms, &inputRowCount);
+                        logger().info("Processed file " + std::to_string(i + 1) + "/" + std::to_string(input_parts.size()) + " -- " + fp.uri.toString());
+
+                        // ???? code ????
+//                        if(aboutToTimeout() && i != input_parts.size()) {
+//                            logger().info("Not enough time left to process next file, returning partial result.");
+//                            processCodes[0] = WORKER_PARTIAL_RESULT;
+//                        }
+
+                        if(processCodes[0] != WORKER_OK)
+                            break;
+                        numInputRowsProcessed += inputRowCount;
+                    }
+                } else {
+                    logger().info("Worker called with noop, computing as if there was an empty result.");
                 }
+            } catch(const s3exception& e) {
+                auto err_msg = "S3 exception occurred in single-threaded mode: " + std::string(e.what());
+                logger().error(err_msg);
+                processCodes[0] = WORKER_ERROR_S3;
+                processErrorMessages[0] = err_msg;
             } catch(const std::exception& e) {
-                logger().error("exception occurred in single-threaded mode: " + std::string(e.what()));
+                auto err_msg = "exception occurred in single-threaded mode: " + std::string(e.what());
+                logger().error(err_msg);
                 processCodes[0] = WORKER_ERROR_EXCEPTION;
+                processErrorMessages[0] = err_msg;
             } catch(...) {
                 logger().error("unknown exception occurred in single-threaded mode.");
                 processCodes[0] = WORKER_ERROR_EXCEPTION;
+                processErrorMessages[0] = "unknown catch(...) exception.";
             }
             runtime::releaseRunTimeMemory();
 
@@ -731,26 +1104,38 @@ namespace tuplex {
             std::vector<size_t> v_inputRowCount(_numThreads, 0);
 
             for(int i = 1; i < _numThreads; ++i) {
-                threads.emplace_back([this, tstage, &syms, &processCodes, &v_inputRowCount](int threadNo, const std::vector<FilePart>& parts) {
+                threads.emplace_back([this, tstage, &syms, &processCodes, &processErrorMessages, &v_inputRowCount, noop](int threadNo, const std::vector<FilePart>& parts) {
                     logger().debug("thread (" + std::to_string(threadNo) + ") started.");
 
                     runtime::setRunTimeMemory(_settings.runTimeMemory, _settings.runTimeMemoryDefaultBlockSize);
 
                     try {
-                        for(const auto& part : parts) {
-                            logger().debug("thread (" + std::to_string(threadNo) + ") processing part via fast-path");
-                            size_t inputRowCount = 0;
-                            processCodes[threadNo] = processSource(threadNo, tstage->fileInputOperatorID(), part, tstage, syms, &inputRowCount);
-                            if(processCodes[threadNo] != WORKER_OK)
-                                break;
-                            v_inputRowCount[threadNo] += inputRowCount;
+                        if(!noop) {
+                            for(const auto& part : parts) {
+                                logger().debug("thread (" + std::to_string(threadNo) + ") processing part via fast-path");
+                                size_t inputRowCount = 0;
+                                processCodes[threadNo] = processSource(threadNo, tstage->fileInputOperatorID(), part, tstage, syms, &inputRowCount);
+                                if(processCodes[threadNo] != WORKER_OK)
+                                    break;
+                                v_inputRowCount[threadNo] += inputRowCount;
+                            }
+                        } else {
+                            logger().info("Worker called with noop, computing as if there was an empty result.");
                         }
+                    } catch(const s3exception& e) {
+                        auto err_msg = std::string("exception recorded: ") + e.what();
+                        logger().error(err_msg);
+                        processCodes[threadNo] = WORKER_ERROR_S3;
+                        processErrorMessages[threadNo] = err_msg;
                     } catch(const std::exception& e) {
-                        logger().error(std::string("exception recorded: ") + e.what());
+                        auto err_msg = std::string("exception recorded: ") + e.what();
+                        logger().error(err_msg);
                         processCodes[threadNo] = WORKER_ERROR_EXCEPTION;
+                        processErrorMessages[threadNo] = err_msg;
                     } catch(...) {
                         logger().error("unknown exception encountered, abort.");
                         processCodes[threadNo] = WORKER_ERROR_EXCEPTION;
+                        processErrorMessages[threadNo] = "unknown catch(...) exception.";
                     }
 
                     logger().debug("thread (" + std::to_string(threadNo) + ") done.");
@@ -766,13 +1151,17 @@ namespace tuplex {
             runtime::setRunTimeMemory(_settings.runTimeMemory, _settings.runTimeMemoryDefaultBlockSize);
 
             try {
-                for(const auto& part : parts[0]) {
-                    logger().debug("thread (main) processing part");
-                    size_t inputRowCount = 0;
-                    processCodes[0] = processSource(0, tstage->fileInputOperatorID(), part, tstage, syms, &inputRowCount);
-                    if(processCodes[0] != WORKER_OK)
-                        break;
-                    v_inputRowCount[0] += inputRowCount;
+                if(!noop) {
+                    for(const auto& part : parts[0]) {
+                        logger().debug("thread (main) processing part");
+                        size_t inputRowCount = 0;
+                        processCodes[0] = processSource(0, tstage->fileInputOperatorID(), part, tstage, syms, &inputRowCount);
+                        if(processCodes[0] != WORKER_OK)
+                            break;
+                        v_inputRowCount[0] += inputRowCount;
+                    }
+                } else {
+                    logger().info("Worker called with noop, computing as if there was an empty result.");
                 }
             } catch(const std::exception& e) {
                 logger().error(std::string("exception recorded: ") + e.what());
@@ -812,12 +1201,26 @@ namespace tuplex {
             }
         }
         delete [] processCodes;
+
+        // condense error messages if they exist.
+        auto err_msg = condense_err_message(processErrorMessages, numCodes);
+
+        delete [] processErrorMessages;
         if(failed) {
             // save invoke message to scratch
-            storeInvokeRequest();
-
+#ifndef NDEBUG
+             storeInvokeRequest();
+#endif
+            _response.set_status(messages::InvocationResponse_Status::InvocationResponse_Status_ERROR);
+            _response.set_errormessage(err_msg);
             return WORKER_ERROR_PIPELINE_FAILED;
         }
+
+        // release stage (this is fast path only (?))
+        rc = releaseTransformStage(syms);
+        if(rc != WORKER_OK)
+            return rc;
+
         logger().info("fast path took: " + std::to_string(fastPathTimer.time()) + "s");
         markTime("fast_path_execution_time", fastPathTimer.time());
 
@@ -882,7 +1285,11 @@ namespace tuplex {
                 logger().info(ss.str());
             }
 
-            resolveOutOfOrder(i, tstage, syms); // note: this func is NOT thread-safe yet!!!
+            if(!noop) {
+                resolveOutOfOrder(i, tstage, syms); // note: this func is NOT thread-safe yet!!!
+            } else {
+                logger().info("Worker called with noop (resolve), computing as if there was an empty result.");
+            }
         }
 
         {
@@ -912,11 +1319,6 @@ namespace tuplex {
         ss.clear();
 
         rc = writeAllPartsToOutput(output_uri, tstage->outputFormat(), tstage->outputOptions());
-        if(rc != WORKER_OK)
-            return rc;
-
-        // release stage
-        rc = releaseTransformStage(syms);
         if(rc != WORKER_OK)
             return rc;
 
@@ -1075,7 +1477,13 @@ namespace tuplex {
                 file->write(header, header_length);
                 delete [] header; // delete temp buffer.
 
-                std::cout<<"wrote header to: "<<outputURI.toString()<<std::endl;
+#ifndef NDEBUG
+                {
+                    std::stringstream  ss;
+                    ss<<"wrote header to: "<<outputURI.toString();
+                    logger().info(ss.str());
+                }
+#endif
             }
         }
 
@@ -1087,7 +1495,12 @@ namespace tuplex {
                 // -> directly to file!
                 assert(part_info.buf);
 
-                std::cout<<"wrote buf of size "<<part_info.buf_size<<" to "<<outputURI.toString()<<std::endl;
+                {
+                    std::stringstream ss;
+                    ss<<"Wrote buffer of size "<<sizeToMemString(part_info.buf_size)<<" ("<<part_info.buf_size<<"B) to "<<outputURI.toString();
+                    logger().info(ss.str());
+                }
+
                 if(part_info.buf)
                     file->write(part_info.buf, part_info.buf_size);
                 else
@@ -1129,7 +1542,7 @@ namespace tuplex {
         }
 
         file->close();
-        _output_uris.push_back(outputURI.toString());
+        _output_uris.emplace_back(outputURI.toString());
         logger().info("file output done.");
     }
 
@@ -1374,12 +1787,12 @@ namespace tuplex {
                             throw std::runtime_error("not yet supported in pure python mode");
                             // there are three options where to store the result now
 //                            // 1. fits targetOutputSchema (i.e. row becomes normalcase row)
-//                            bool outputAsNormalRow = python::Type::UNKNOWN != unifyTypes(rowType, specialized_target_schema.getRowType(), allowNumericTypeUnification)
-//                                                     && canUpcastToRowType(rowType, specialized_target_schema.getRowType());
+//                            bool outputAsNormalRow = python::Type::UNKNOWN != unifyTypes(rowTypeAsTupleType, specialized_target_schema.getRowType(), allowNumericTypeUnification)
+//                                                     && canUpcastToRowType(rowTypeAsTupleType, specialized_target_schema.getRowType());
 //                            // 2. fits generalCaseOutputSchema (i.e. row becomes generalcase row)
-//                            bool outputAsGeneralRow = python::Type::UNKNOWN != unifyTypes(rowType,
+//                            bool outputAsGeneralRow = python::Type::UNKNOWN != unifyTypes(rowTypeAsTupleType,
 //                                                                                          general_target_schema.getRowType(), allowNumericTypeUnification)
-//                                                      && canUpcastToRowType(rowType, general_target_schema.getRowType());
+//                                                      && canUpcastToRowType(rowTypeAsTupleType, general_target_schema.getRowType());
 
                             // 3. doesn't fit, store as python object. => we should use block storage for this as well. Then data can be shared.
 
@@ -1734,7 +2147,7 @@ namespace tuplex {
 
                 // read assigned file...
                 if(reader)
-                    reader->read(inputURI);
+                    reader->read(inputURI, [this](){ return aboutToTimeout(); });
 
                 // fetch row count
                 if(inputRowCount)
@@ -1743,6 +2156,17 @@ namespace tuplex {
                 // more detailed stats
 
                 runtime::rtfree_all();
+
+                // Check if partial result, if so return with that code.
+                if(reader->isOnlyPartiallyRead()) {
+                    // TODO: set partial result.
+                    auto p = reader->getPartialReadInformation();
+                    std::stringstream ss;
+                    ss<<"Processed uri "<<inputURI.toString()<<" partially: "<<pluralize(p.row_count, "row")<<" offset="<<p.offset;
+                    logger().info(ss.str());
+                    return WORKER_PARTIAL_RESULT;
+                }
+
                 break;
             }
             case EndPointMode::MEMORY: {
@@ -1917,6 +2341,26 @@ namespace tuplex {
             ws.useFilterPromotion = false;
         }
 
+        it = req.settings().other().find("tuplex.optimizer.sparsifyStructs");
+        if(it != req.settings().other().end()) {
+            ws.sparsifyStructs = stringToBool(it->second);
+        } else {
+            ws.sparsifyStructs = false;
+        }
+
+        it = req.settings().other().find("tuplex.optimizer.simplifyLargeStructs");
+        if(it != req.settings().other().end()) {
+            ws.simplifyLargeStructs = stringToBool(it->second);
+        } else {
+            ws.simplifyLargeStructs = false;
+        }
+        it = req.settings().other().find("tuplex.optimizer.simplifyLargeStructs.threshold");
+        if(it != req.settings().other().end()) {
+            ws.simplifyLargeStructsThreshold = std::stoull(it->second);
+        } else {
+            ws.simplifyLargeStructsThreshold = ContextOptions::defaults().OPT_SIMPLIFY_LARGE_STRUCTS_THRESHOLD(); // use default parameter.
+        }
+
         it = req.settings().other().find("tuplex.sample.maxDetectionMemory");
         if(it != req.settings().other().end()) {
             ws.samplingSize = std::stoull(it->second);
@@ -2069,10 +2513,10 @@ namespace tuplex {
 
             // in debug mode, validate module.
 #ifndef NDEBUG
-            if(!stage.fastPathCode().empty() && stage.fastPathCodeFormat() == codegen::CodeFormat::LLVM_IR_BITCODE)
-                validateBitCode(stage.fastPathCode());
             if(!stage.slowPathCode().empty() && stage.slowPathCodeFormat() == codegen::CodeFormat::LLVM_IR_BITCODE)
                 validateBitCode(stage.slowPathCode());
+            if(!stage.fastPathCode().empty() && stage.fastPathCodeFormat() == codegen::CodeFormat::LLVM_IR_BITCODE)
+                validateBitCode(stage.fastPathCode());
 #endif
             // perform actual compilation
             // -> do not compile slow path for now.
@@ -2080,8 +2524,10 @@ namespace tuplex {
 
             LLVMOptimizer opt;
 
-            // for debugging enable tracing for the 2nd invocation!
+            // for debugging, set this to true to enable tracing for the 2nd invocation!
             bool traceExecution = false;
+            if(!getEnv("LLVM_TRACE_IR").empty() && stringToBool(getEnv("LLVM_TRACE_IR")))
+                traceExecution = true;
 
             // uncomment to trace errors on 2nd invocation
             // if(numProcessedMessages() > 1 && _statistics.size() >= 1)
@@ -2110,7 +2556,6 @@ namespace tuplex {
     }
 
     int64_t WorkerApp::writeRow(size_t threadNo, const uint8_t *buf, int64_t bufSize) {
-
         assert(_threadEnvs);
         assert(threadNo < _numThreads);
         // check if enough space is available
@@ -2207,7 +2652,7 @@ namespace tuplex {
         auto rootURI = _settings.spillRootURI.toString().empty() ? "" : _settings.spillRootURI.toString() + "/";
         auto path = URI(rootURI + name + ext);
 
-        logger().info("Spilling " + std::to_string(env->exceptionBuf.size()) + "/" + std::to_string(env->exceptionBuf.capacity()) + " to " + path.toString());
+        logger().info("Spilling " + sizeToMemString(env->exceptionBuf.size()) + "/" + sizeToMemString(env->exceptionBuf.capacity()) +  " (" + std::to_string(env->exceptionBuf.size()) + "/" + std::to_string(env->exceptionBuf.capacity()) + ", size/capacity) to " + path.toString());
 
         // open & write
         auto vfs = VirtualFileSystem::fromURI(path);
@@ -2228,7 +2673,7 @@ namespace tuplex {
             info.isExceptionBuf = true;
             info.num_rows = env->numExceptionRows;
             info.originalPartNo = env->exceptionOriginalPartNo;
-            info.file_size =  env->exceptionBuf.size() + 2 * sizeof(int64_t);
+            info.file_size =  env->exceptionBuf.size() + 2 * sizeof(int64_t); // first two int64_t are n_rows and size.
             env->spillFiles.push_back(info);
             vf->close();
             logger().info("Spilled " + sizeToMemString(info.file_size) + " to " + path.toString());
@@ -2402,8 +2847,7 @@ namespace tuplex {
     }
 
     codegen::resolve_f WorkerApp::getCompiledResolver(const TransformStage* stage) {
-        logger().info("compiling slow code path.");
-
+        // Quick escape hatches depending on settings.
         if(_settings.useInterpreterOnly || stage->slowPathCode().empty())
             return nullptr;
 
@@ -2423,25 +2867,39 @@ namespace tuplex {
         }
 #endif
 
+        // Check whether available or not.
+        {
+            std::lock_guard<std::mutex> lock(_symsMutex);
+            if(_syms->resolveFunctor) {
+                logger().info("Slow-path already compiled, returning functor.");
+                return _syms->resolveFunctor;
+            }
+        }
+
+        logger().info("Slow-path not compiled yet, compiling slow code path to native code.");
+
         // determine which compiler to use based on store instruction threshold ( or general bitcode size?)
         JITCompiler *compiler_to_use = nullptr;
 
         compiler_to_use = _compiler.get();
 
         // this is a hack/magic constant
-        logger().debug("slow path bitcode size: " + sizeToMemString(stage->slowPathCode().size()));
+        logger().info("Slow path size: " + sizeToMemString(stage->slowPathCode().size()) + " (" + codegen::codeFormatToStr(stage->slowPathCodeFormat()) + ")");
 
         // more than 512KB? -> select fast (non-optimizing) compiler
         auto bitcode_threshold_size = 512 * 1024; // 512KB
         if(stage->slowPathCode().size() > bitcode_threshold_size) {
             auto bitcode_size = stage->slowPathCode().size();
-            logger().info("large code " + sizeToMemString(bitcode_size) + " encountered larger than threshold of "
+            logger().info("Large code " + sizeToMemString(bitcode_size) + " encountered larger than threshold of "
             + sizeToMemString(bitcode_threshold_size) + " for slow path, using fast compiler instead of optimizing-one.");
             compiler_to_use = _fastCompiler.get();
         }
 
-        if(!compiler_to_use)
-            throw std::runtime_error("invalid compiler pointer in getCompiledResolver");
+        if(!compiler_to_use) {
+            auto err_msg = "Invalid compiler pointer in getCompiledResolver.";
+            logger().error(err_msg);
+            throw std::runtime_error(err_msg);
+        }
 
         // perform actual compilation.
         Timer timer;
@@ -2495,8 +2953,10 @@ namespace tuplex {
         // --> create a copy of the buffer & spill-files, then empty them!
         Buffer exceptionBuf(1024 * 4);
         if(env->exceptionBuf.size() > 0) {
-            exceptionBuf.provideSpace(env->exceptionBuf.size());
+            // Add padding because simdjson is used for decoding exceptions (64 bytes).
+            exceptionBuf.provideSpace(env->exceptionBuf.size() + simdjson::SIMDJSON_PADDING);
             memcpy(exceptionBuf.ptr(), env->exceptionBuf.buffer(), env->exceptionBuf.size());
+            memset(static_cast<uint8_t*>(exceptionBuf.ptr()) + env->exceptionBuf.size(), 0, simdjson::SIMDJSON_PADDING);
             exceptionBuf.movePtr(env->exceptionBuf.size());
         }
 
@@ -2526,22 +2986,24 @@ namespace tuplex {
 
         // same story with exception spill files. Load them first to the temp buffer, and then resolve...
         if(!exceptFiles.empty()) {
-            logger().info("Processing " + pluralize(exceptFiles.size(), "spilled except file"));
+            logger().info("Processing " + pluralize(exceptFiles.size(), "spilled except file") + ".");
             for(const auto& part_info : exceptFiles) {
 
                 // loading into buffer & resolving it.
-                logger().debug("opening except part file");
+                logger().info("Opening except part file from " + part_info.path + ".");
                 auto part_file = VirtualFileSystem::open_file(part_info.path, VirtualFileMode::VFS_READ);
 
                 if(!part_file) {
-                    auto err_msg = "part file could not be found under " + part_info.path + ", output corrupted.";
+                    auto err_msg = "Part file could not be found under " + part_info.path + ", output corrupted.";
                     logger().error(err_msg);
                     throw std::runtime_error(err_msg);
                 }
 
-                // read contents in from spill file...
+                // Read contents in from spill file...
                 if(part_file->size() != part_info.file_size) {
-                    logger().warn("part_file: " + std::to_string(part_file->size()) + " part_info: " + std::to_string(part_info.file_size));
+                    auto err_message = "Expected size does not match written size, actual size: " + std::to_string(part_file->size()) + " expected size: " + std::to_string(part_info.file_size) + ".";
+                    logger().error(err_message);
+                    return WORKER_ERROR_SPILL_FILE_SIZE_MISMATCH;
                 }
                 // assert(part_file->size() == part_info.spill_info.file_size);
                 assert(part_file->size() >= 2 * sizeof(int64_t));
@@ -2552,14 +3014,13 @@ namespace tuplex {
                 part_buffer.provideSpace(part_buffer_size);
                 size_t bytes_read = 0;
                 part_file->readOnly(part_buffer.ptr(), part_buffer_size, &bytes_read);
-                logger().debug("read from parts file " + sizeToMemString(bytes_read));
+                logger().info("Read from parts file " + sizeToMemString(bytes_read) + ", calling slow path now.");
                 part_file->close();
 
                 // process now...
                 auto rc = resolveBuffer(threadNo, part_buffer, part_info.num_rows, stage, syms);
                 if(rc != WORKER_OK)
                     return rc;
-
             }
             logger().info("except spill files done.");
         }
@@ -2642,8 +3103,11 @@ namespace tuplex {
                 std::lock_guard<std::mutex> lock(_symsMutex);
                 compiledResolver = _syms->resolveFunctor;
             }
-            if(!compiledResolver)
+
+            if(!compiledResolver) {
+                logger().debug("no compiled slow path, retrieving via LLVM");
                 compiledResolver = getCompiledResolver(stage); // syms->resolveFunctor;
+            }
 
             {
                 std::lock_guard<std::mutex> lock(_symsMutex);
@@ -2696,7 +3160,8 @@ namespace tuplex {
 
 
                 // for hyper, force onto general case format.
-                 rc = compiledResolver(env, ecRowNumber, ecCode, ecBuf, ecBufSize);
+                rc = compiledResolver(env, ecRowNumber, ecCode, ecBuf, ecBufSize);
+
                 if(rc != ecToI32(ExceptionCode::SUCCESS)) {
                     // fallback is only required if normalcaseviolation or badparsestringinput, else it's considered a true exception
                     // to force reprocessing always onto fallback path, use rc = -1 here
@@ -2846,6 +3311,11 @@ namespace tuplex {
     URI WorkerApp::outputURIFromReq(const messages::InvocationRequest &request) {
 
         URI baseURI(request.baseoutputuri());
+
+        // Final? then no parts. The baseuri is the final destination output uri.
+        if(request.baseisfinaloutput())
+            return baseURI;
+
         auto output_fmt = proto_toFileFormat(request.stage().outputformat());
         auto ext = defaultFileExtension(output_fmt);
         if(request.has_partnooffset())
@@ -3037,10 +3507,10 @@ namespace tuplex {
 //                            continue;
 //                        }
 //
-//                        auto rowType = python::mapPythonClassToTuplexType(rowObj);
+//                        auto rowTypeAsTupleType = python::mapPythonClassToTuplexType(rowObj);
 //
 //                        // special case output schema is str (fileoutput!)
-//                        if(rowType == python::Type::STRING) {
+//                        if(rowTypeAsTupleType == python::Type::STRING) {
 //                            // write to file, no further type check necessary b.c.
 //                            // if it was the object string it would be within a tuple!
 //                            auto cptr = PyUnicode_AsUTF8(rowObj);
@@ -3056,12 +3526,12 @@ namespace tuplex {
 //
 //                            // there are three options where to store the result now
 //                            // 1. fits targetOutputSchema (i.e. row becomes normalcase row)
-//                            bool outputAsNormalRow = python::Type::UNKNOWN != unifyTypes(rowType, specialized_target_schema.getRowType(), allowNumericTypeUnification)
-//                                                     && canUpcastToRowType(rowType, specialized_target_schema.getRowType());
+//                            bool outputAsNormalRow = python::Type::UNKNOWN != unifyTypes(rowTypeAsTupleType, specialized_target_schema.getRowType(), allowNumericTypeUnification)
+//                                                     && canUpcastToRowType(rowTypeAsTupleType, specialized_target_schema.getRowType());
 //                            // 2. fits generalCaseOutputSchema (i.e. row becomes generalcase row)
-//                            bool outputAsGeneralRow = python::Type::UNKNOWN != unifyTypes(rowType,
+//                            bool outputAsGeneralRow = python::Type::UNKNOWN != unifyTypes(rowTypeAsTupleType,
 //                                                                                          general_target_schema.getRowType(), allowNumericTypeUnification)
-//                                                      && canUpcastToRowType(rowType, general_target_schema.getRowType());
+//                                                      && canUpcastToRowType(rowTypeAsTupleType, general_target_schema.getRowType());
 //
 //                            // 3. doesn't fit, store as python object. => we should use block storage for this as well. Then data can be shared.
 //
@@ -3425,6 +3895,18 @@ namespace tuplex {
         ss<<"\"general\":"<<_codePathStats.rowsOnGeneralPathCount<<",";
         ss<<"\"fallback\":"<<_codePathStats.rowsOnInterpreterPathCount<<",";
         ss<<"\"unresolved\":"<<_codePathStats.unresolvedRowsCount;
+        // encode types (if not pure python mode).
+        if(_codePathStats.normalCaseType != python::Type::UNKNOWN || _codePathStats.generalCaseType != python::Type::UNKNOWN) {
+            ss<<",\"types\":{";
+            if(_codePathStats.normalCaseType != python::Type::UNKNOWN)
+                ss<<"\"normal\":"<<escape_json_string(_codePathStats.normalCaseType.desc());
+            if(_codePathStats.generalCaseType != python::Type::UNKNOWN) {
+                if(_codePathStats.normalCaseType != python::Type::UNKNOWN)
+                    ss<<",";
+                ss<<"\"general\":"<<escape_json_string(_codePathStats.generalCaseType.desc());
+            }
+            ss<<"}";
+        }
         ss<<"}";
 
         auto num_normal_output_rows = 0;
@@ -3483,5 +3965,101 @@ namespace tuplex {
         }
 
         shutdown();
+    }
+
+    void WorkerApp::fill_response_with_state(messages::InvocationResponse &response) {
+        if(!_statistics.empty()) {
+            auto& last = _statistics.back();
+            // set metrics (num rows etc.)
+            response.set_taskexecutiontime(last.totalTime);
+            response.set_numrowswritten(last.numNormalOutputRows);
+            response.set_numexceptions(last.numExceptionOutputRows);
+
+            // set input row statistics
+            auto path_stats = new tuplex::messages::CodePathStats();
+            path_stats->set_normal(last.codePathStats.rowsOnNormalPathCount);
+            path_stats->set_general(last.codePathStats.rowsOnGeneralPathCount);
+            path_stats->set_interpreter(last.codePathStats.rowsOnInterpreterPathCount);
+            path_stats->set_unresolved(last.codePathStats.unresolvedRowsCount);
+            path_stats->set_normal_input_schema(normalCaseInputType().encode());
+            path_stats->set_normal_output_schema(normalCaseOutputType().encode());
+            path_stats->set_general_input_schema(generalCaseInputType().encode());
+            path_stats->set_general_output_schema(generalCaseOutputType().encode());
+            response.set_allocated_rowstats(path_stats);
+        } else {
+            logger().error("No statistics set, can not fill in row stats.");
+        }
+
+        // set exception counts
+        for(const auto& keyval : exception_counts()) {
+            // compress keys
+            assert(std::get<0>(keyval.first) < std::numeric_limits<int32_t>::max() && std::get<1>(keyval.first) < std::numeric_limits<int32_t>::max());
+            auto key = std::get<0>(keyval.first) << 32 | std::get<1>(keyval.first);
+            (*_response.mutable_exceptioncounts())[key] = keyval.second;
+        }
+
+        // save whichever metrics are interesting.
+        for(const auto& keyval : _timeDict) {
+            (*_response.mutable_breakdowntimes())[keyval.first] = keyval.second;
+        }
+    }
+
+    bool WorkerApp::adjust_environment(const std::unordered_map<std::string, std::string> &env) {
+
+        // check if AWS keys are present, then re-register S3 filesystem using new keys.
+        if(env.find("AWS_ENDPOINT_URL_S3") != env.end() && !env.at("AWS_ENDPOINT_URL_S3").empty()) {
+            std::string endpoint, secret_key, access_key;
+            try {
+                // Update registered S3 file system.
+                endpoint = env.at("AWS_ENDPOINT_URL_S3");
+                secret_key = env.at("AWS_SECRET_ACCESS_KEY");
+                access_key = env.at("AWS_ACCESS_KEY_ID");
+            } catch (const std::out_of_range& e) {
+                std::vector<std::string> required_keys{"AWS_ENDPOINT_URL_S3", "AWS_SECRET_ACCESS_KEY", "AWS_ACCESS_KEY_ID"};
+                std::stringstream ss;
+                ss<<"To adjust S3 endpoint, must have following keys present: "<<required_keys<<", got exception: "<<e.what();
+                logger().error(ss.str());
+                return false;
+            }
+
+            // There may be more than one endpoint supplied. Right now mostly for testing purposes.
+            // Find first valid endpoint.
+            if(endpoint.find(";") != std::string::npos) {
+                auto candidates = splitToArray(endpoint, ';');
+                std::stringstream ss;
+                ss<<"Found "<<pluralize(candidates.size(), "candidate endpoint")<<", checking for first valid connection.";
+                for(const auto& ep : candidates) {
+                    if(check_s3_connection(ep, access_key, secret_key, "")) {
+                        endpoint = ep;
+                        break;
+                    }
+                }
+                // failed? -> happens when endpoint wasn't updated.
+                if(endpoint.find(";") != std::string::npos) {
+                    ss<<"Failed to find valid S3 connection.";
+                    logger().error(ss.str());
+                    return false;
+                }
+
+                ss<<"Using endpoint: "<<endpoint;
+                logger().debug(ss.str());
+            }
+
+            VirtualFileSystem::removeS3FileSystem();
+            NetworkSettings ns;
+            ns.endpointOverride = endpoint;
+
+            // Amazon endpoints end with .amazonaws.com.
+            // For a list of available endpoints, cf. https://docs.aws.amazon.com/general/latest/gr/s3.html
+            // For non-Aws endpoints (i.e., local minio) disable SSL.
+            if(endpoint.find(".amazonaws.com") == std::string::npos) {
+                ns.verifySSL = false;
+                ns.useVirtualAddressing = false;
+                ns.signPayloads = false;
+            }
+            VirtualFileSystem::addS3FileSystem(access_key, secret_key, "", "", ns);
+            logger().info("Updated S3 endpoint to " + endpoint + ".");
+        }
+        return true;
     }
 }

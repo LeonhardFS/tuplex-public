@@ -25,7 +25,7 @@ namespace tuplex {
 
         // called before the next retry is issued.
         // original_request, retry_error_code, retry_message, willDecreaseRetryCount
-        std::function<void(const AwsLambdaRequest&, LambdaErrorCode, const std::string&, bool)> _onRetry;
+        std::function<void(const AwsLambdaRequest&, LambdaStatusCode, const std::string&, bool)> _onRetry;
 
         // called when Lambda returns normally
         // original_request, response_received
@@ -33,20 +33,20 @@ namespace tuplex {
 
         // called when retries are exhausted and Lambda fails for good.
         // original_request, final_error_code, error_message
-        std::function<void(const AwsLambdaRequest&, LambdaErrorCode, const std::string&)> _onFailure;
+        std::function<void(const AwsLambdaRequest&, LambdaStatusCode, const std::string&)> _onFailure;
     public:
         AwsLambdaBackendCallerContext() = delete;
 
         AwsLambdaBackendCallerContext(AwsLambdaInvocationService *service,
                                      const AwsLambdaRequest& req,
                                       std::function<void(const AwsLambdaRequest&, const AwsLambdaResponse&)> onSuccess=[](const AwsLambdaRequest& req, const AwsLambdaResponse& resp) {},
-                                      std::function<void(const AwsLambdaRequest&, LambdaErrorCode, const std::string&)> onFailure=[](const AwsLambdaRequest& req,
-                LambdaErrorCode err_code,
-        const std::string& err_msg) {},
-                                      std::function<void(const AwsLambdaRequest&, LambdaErrorCode, const std::string&, bool)> onRetry=[](const AwsLambdaRequest& req,
-                                              LambdaErrorCode retry_code,
-                                              const std::string& retry_reason,
-                                              bool willDecreaseRetryCount) {})
+                                      std::function<void(const AwsLambdaRequest&, LambdaStatusCode, const std::string&)> onFailure=[](const AwsLambdaRequest& req,
+                                                                                                                                      LambdaStatusCode err_code,
+                                                                                                                                      const std::string& err_msg) {},
+                                      std::function<void(const AwsLambdaRequest&, LambdaStatusCode, const std::string&, bool)> onRetry=[](const AwsLambdaRequest& req,
+                                                                                                                                          LambdaStatusCode retry_code,
+                                                                                                                                          const std::string& retry_reason,
+                                                                                                                                          bool willDecreaseRetryCount) {})
                 : _service(service),
                   _ts(std::chrono::high_resolution_clock::now()),
                   _tsUTC(current_utc_timestamp()),
@@ -77,12 +77,12 @@ namespace tuplex {
                 _onSuccess(_original_request, response);
         }
 
-        void retry(const LambdaErrorCode& retry_code, const std::string& retry_message, bool willDecreaseRetryCount) const {
+        void retry(const LambdaStatusCode& retry_code, const std::string& retry_message, bool willDecreaseRetryCount) const {
             if(_onRetry)
                 _onRetry(_original_request, retry_code, retry_message, willDecreaseRetryCount);
         }
 
-        void fail(const LambdaErrorCode& err_code, const std::string& err_message) const {
+        void fail(const LambdaStatusCode& err_code, const std::string& err_message) const {
             if(_onFailure)
                 _onFailure(_original_request, err_code, err_message);
         }
@@ -106,6 +106,7 @@ namespace tuplex {
 
         _numPendingRequests = 0;
         _numRequests = 0;
+        _activeConcurrency = 0;
 
         // reset cost counters as well!
         _mbms = 0;
@@ -122,6 +123,7 @@ namespace tuplex {
         }
 
         _numPendingRequests = 0;
+        _activeConcurrency = 0;
         _client->DisableRequestProcessing();
         if(print)
             logger().info("Shutdown remote execution.");
@@ -133,9 +135,9 @@ namespace tuplex {
     bool AwsLambdaInvocationService::invokeAsync(const AwsLambdaRequest &req,
                                                  std::function<void(const AwsLambdaRequest &,
                                                                     const AwsLambdaResponse &)> onSuccess,
-                                                 std::function<void(const AwsLambdaRequest &, LambdaErrorCode,
+                                                 std::function<void(const AwsLambdaRequest &, LambdaStatusCode,
                                                                     const std::string &)> onFailure,
-                                                 std::function<void(const AwsLambdaRequest &, LambdaErrorCode,
+                                                 std::function<void(const AwsLambdaRequest &, LambdaStatusCode,
                                                                     const std::string &, bool)> onRetry) {
 
         // prepare request
@@ -145,6 +147,9 @@ namespace tuplex {
             std::lock_guard<std::mutex> lock(_mutex);
             _numPendingRequests++;
             _numRequests++;
+
+            // add recursive counts.
+            _activeConcurrency += recursive_invocation_count(req.body) + 1;
 
             // TOOD: change this.
             // _pendingRequests.push_back(req);
@@ -174,18 +179,62 @@ namespace tuplex {
         // invoke_req.SetBody(stringToAWSStream(req.SerializeAsString()));
         // invoke_req.SetContentType("application/x-protobuf");
 
+        auto req_copy = req;
+
         std::string json_buf;
-        google::protobuf::util::MessageToJsonString(req.body, &json_buf);
+        // Does req have id assigned? If not, add new ID.
+        if(req.body.id().empty() || req.body.id() != uuidToString(req.id))
+            req_copy.body.set_id(uuidToString(req.id));
+        auto status = google::protobuf::util::MessageToJsonString(req_copy.body, &json_buf);
+        if(!status.ok())
+            return false;
         invoke_req.SetBody(stringToAWSStream(json_buf));
         invoke_req.SetContentType("application/javascript");
 
         // send to client
         _client->InvokeAsync(invoke_req, AwsLambdaInvocationService::asyncLambdaCallback,
-                             Aws::MakeShared<AwsLambdaBackendCallerContext>("LAMBDA", this, req, onSuccess, onFailure, onRetry));
+                             Aws::MakeShared<AwsLambdaBackendCallerContext>("LAMBDA", this, req_copy, onSuccess, onFailure, onRetry));
 
         return true;
     }
 
+
+    LambdaStatusCode AwsLambdaInvocationService::specialEventHappened(const std::string& log, const messages::InvocationResponse &response, std::string* event_message) {
+        // search in log for timeout info
+        // i.e., string should look something like this: "Task timed out after 15.02 seconds"
+        std::string timeout_info = extractTimeoutStr(log);
+        trim(timeout_info);
+
+        if(!timeout_info.empty()) {
+            if(event_message)
+                *event_message = timeout_info;
+
+            return LambdaStatusCode::ERROR_TIMEOUT;
+        }
+
+        // what error type is it?
+        // could be time out, or Runtime exit error
+        bool exited_with_error = log.find("Error: Runtime exited with error:") != std::string::npos;
+        if(exited_with_error) {
+            std::string exit_code_str = extractExitCodeStr(log);
+            std::stringstream ss;
+            ss<<"LAMBDA task failed with exit code "<<exit_code_str;
+            if(event_message)
+                *event_message = ss.str();
+            return LambdaStatusCode::ERROR_WORKER_DOWN_WITH_EXIT_CODE;
+        }
+
+        // lambda may be shutdown b.c. of previous bad signal, check for string here.
+        // in this case, simply ignore - and reissue query.
+        auto needleI = "Previous invocation recevied unrecoverable signal, shutting down this Lambda container via exit(1)."; // <-- do not correct typo here, this here is correct
+        auto needleII = "Previous invocation received unrecoverable signal, shutting down this Lambda container via exit(1)."; // <-- corrected typo for updated LAMBDA
+        bool previous_failure_and_worker_shutdown = log.find(needleI) != std::string::npos || log.find(needleII) != std::string::npos;
+
+        if(previous_failure_and_worker_shutdown)
+            return LambdaStatusCode::ERROR_WORKER_DOWN_WITH_UNRECOVERABLE_SIGNAL;
+
+        return LambdaStatusCode::OK;
+    }
 
     void AwsLambdaInvocationService::asyncLambdaCallback(const Aws::Lambda::LambdaClient *client,
                                                const Aws::Lambda::Model::InvokeRequest &aws_req,
@@ -212,6 +261,7 @@ namespace tuplex {
 //        AwsLambdaRequest req;
          auto  req = lctx->original_request();
 
+         int32_t req_concurrency = 1 + recursive_invocation_count(req.body);
 
         int statusCode = 0;
         std::string log;
@@ -227,20 +277,22 @@ namespace tuplex {
                 auto retry_message = "LAMBDA task failed (" + req.input_desc() + ") with [" + std::to_string(statusCode) +
                                        "], invoking again.";
 
-                lctx->retry(LambdaErrorCode::ERROR_RATE_LIMIT, retry_message, false);
+                lctx->retry(LambdaStatusCode::ERROR_RATE_LIMIT, retry_message, false);
 
                 // invoke again, do not change retry count - as this was a rate limit.
                 service->invokeAsync(req);
                 service->_numPendingRequests.fetch_add(-1, std::memory_order_release);
+                service->_activeConcurrency.fetch_add(-req_concurrency, std::memory_order_release);
                 return;
             } else {
+
                 // this is a true failure, report as such.
                 ss << "LAMBDA task failed (" + req.input_desc() + ") with [" << statusCode << "]"
                    << aws_outcome.GetError().GetExceptionName().c_str()
                    << aws_outcome.GetError().GetMessage().c_str();
-                lctx->fail(LambdaErrorCode::ERROR_UNKNOWN, ss.str());
-
+                lctx->fail(LambdaStatusCode::ERROR_UNKNOWN, ss.str());
                 service->_numPendingRequests.fetch_add(-1);
+                service->_activeConcurrency.fetch_add(-req_concurrency);
                 return;
             }
         } else {
@@ -251,97 +303,71 @@ namespace tuplex {
             auto response = AwsParseRequestPayload(result);
             string function_error = result.GetFunctionError().c_str();
             log = result.GetLogResult();
+            auto decoded_log = decodeAWSBase64(log);
 
             // extract info
             auto info = RequestInfo::parseFromLog(log);
             info.fillInFromResponse(response);
+
+            // Invalid id? fill in from request, this should not happen.
+            if(info.requestId.empty()) {
+#ifndef NDEBUG
+                std::cerr<<"Setting requestId explicitly from asyncLambdaCallback, better to stem from response. Error in WorkerBackend?"<<std::endl;
+#endif
+                info.requestId = req.body.id();
+            }
+
             // update with timestamp info
             info.tsRequestStart = tsStart;
             info.tsRequestEnd = tsEnd;
             info.containerId = response.container().uuid();
 
             // update cost info
-            lctx->getService()->addCost(info.billedDurationInMs, info.memorySizeInMb);
-
+            lctx->getService()->addCost(info.awsTimings.billedDurationInMs, info.awsTimings.memorySizeInMb);
 
             if (response.status() == messages::InvocationResponse_Status_SUCCESS) {
 
-                // special case: timeout?
-                if (0 == response.taskexecutiontime()) {
+                // Check if special exit codes apply or not
+                // -> i.e. crash, timeout.
+                LambdaStatusCode status = LambdaStatusCode::OK;
+                std::string msg;
+                if((status = specialEventHappened(decoded_log, response, &msg)) != LambdaStatusCode::OK) {
+                    // was it a timeout failure or a restore failure?
+                    if(status == LambdaStatusCode::ERROR_TIMEOUT ) {
+                        // For timeout failures, check if retries are left.
+                        if(req.retriesLeft > 0) {
+                            // call callback
+                            lctx->retry(LambdaStatusCode::ERROR_TIMEOUT, "Lambda timed out after " +msg + " s", true);
 
-                    // timeout in log? if so parse timeout time (and display cost?)
-                    for (const auto &r: response.resources()) {
-                        if (r.type() == static_cast<uint32_t>(ResourceType::LOG)) {
-                            auto stored_log = decompress_string(r.payload());
-                            // search for timeout string in log and stored_log?
-
-                            break;
-                        }
-                    }
-                    auto decoded_log = decodeAWSBase64(log);
-
-                    // search in log for timeout info
-                    // i.e., string should look something like this: "Task timed out after 15.02 seconds"
-                    std::string timeout_info = extractTimeoutStr(decoded_log);
-                    if(timeout_info.empty())
-                        timeout_info = "unknown";
-                    trim(timeout_info);
-
-                    // what error type is it?
-                    // could be time out, or Runtime exit error
-                    bool exited_with_error = decoded_log.find("Error: Runtime exited with error:") != std::string::npos;
-                    std::string exit_code_str = extractExitCodeStr(decoded_log);
-                    std::stringstream msg;
-                    if(!exited_with_error) {
-                        msg<<"LAMBDA task failed ("<<req.input_desc()<<") with TIMEOUT after "<<timeout_info<<" s, need to fix (not invoked again).";
-                    } else {
-                        msg<<"LAMBDA task failed ("<<req.input_desc()<<") with exit code "<<exit_code_str;
-                    }
-
-                    // lambda may be shutdown b.c. of previous bad signal, check for string here.
-                    // in this case, simply ignore - and reissue query.
-                    auto needleI = "Previous invocation recevied unrecoverable signal, shutting down this Lambda container via exit(0)."; // <-- do not correct typo here, this here is correct
-                    auto needleII = "Previous invocation received unrecoverable signal, shutting down this Lambda container via exit(0)."; // <-- corrected typo for updated LAMBDA
-                    bool previous_failure_and_worker_shutdown = decoded_log.find(needleI) != std::string::npos || decoded_log.find(needleII) != std::string::npos;
-
-                    // was it a timeout failure or a restore failure? if so, then invoke again.
-                    if(previous_failure_and_worker_shutdown || timeout_info != "unknown") {
-                        // service->logger().info("Invoking task again");
-                        // chose the right re-invocation strategy.
-
-                        // timeout?
-                        if(!previous_failure_and_worker_shutdown) {
-                            // was it the first time out?
-                            // -> retry again
-
-                            if(req.retriesLeft > 0) {
-                                // call callback
-                                lctx->retry(LambdaErrorCode::ERROR_TIMEOUT, "Lambda timed out after " + timeout_info + " s", true);
-
-                                // modify req and invoke again
-                                req.retriesLeft--;
-                                req.retryErrors.push_back(LambdaErrorCode::ERROR_TIMEOUT);
-
-                                service->invokeAsync(req);
-                                service->_numPendingRequests.fetch_add(-1, std::memory_order_release);
-                            } else {
-                                // no retry left? -> done.
-                                lctx->fail(LambdaErrorCode::ERROR_RETRIES_EXHAUSTED, "Lambda timed out after " + timeout_info + " s, no more retries left.");
-                            }
-
-                        } else {
-                            // just re-invoke, it's a dummy invocation - do not change counts etc.
-                            lctx->retry(LambdaErrorCode::ERROR_TIMEOUT, "Lambda was reset, invoke again.", false);
+                            // modify req and invoke again
+                            req.retriesLeft--;
+                            req.retryErrors.push_back(LambdaStatusCode::ERROR_TIMEOUT);
 
                             service->invokeAsync(req);
                             service->_numPendingRequests.fetch_add(-1, std::memory_order_release);
+                            service->_activeConcurrency.fetch_add(-req_concurrency);
+                            return;
+                        } else {
+                            // no retry left? -> done.
+                            lctx->fail(LambdaStatusCode::ERROR_RETRIES_EXHAUSTED, "Lambda timed out after " + msg + " s, no more retries left.");
                         }
+
+                    } else {
+                        // just re-invoke, it's a dummy invocation - do not change counts etc.
+                        lctx->retry(LambdaStatusCode::ERROR_TIMEOUT, "Lambda was reset server-side, invoke again.", false);
+
+                        service->invokeAsync(req);
+                        service->_numPendingRequests.fetch_add(-1, std::memory_order_release);
+                        service->_activeConcurrency.fetch_add(-req_concurrency);
+                        return;
                     }
                 } else {
+
                     // did request fail on Lambda?
                     if (info.returnCode != 0) {
                         // stop execution
                         service->_numPendingRequests.fetch_add(-1, std::memory_order_release);
+                        service->_activeConcurrency.fetch_add(-req_concurrency);
 
                         // in dev mode, print out details which file caused the failure!
                         std::stringstream err_stream;
@@ -352,13 +378,14 @@ namespace tuplex {
                             err_stream << " " << uri.c_str();
                         auto err_message = err_stream.str();
 
-                        lctx->fail(LambdaErrorCode::ERROR_TASK, err_message);
+                        lctx->fail(LambdaStatusCode::ERROR_TASK, err_message);
 
                         // this here also should go into the backend b.c. it's managing what should happen
                         // // abort the other requests (save the $)
                         // backend->abortRequestsAndFailWith(info.returnCode, info.errorMessage);
                         return;
                     } else {
+
                         // worked, call callback!
                         AwsLambdaResponse full_response;
                         full_response.info = info;
@@ -376,9 +403,10 @@ namespace tuplex {
                 // print out log:
                 ss << "\nLog:\n" << decodeAWSBase64(log);
 
-                lctx->fail(LambdaErrorCode::ERROR_UNKNOWN, ss.str());
+                lctx->fail(LambdaStatusCode::ERROR_UNKNOWN, ss.str());
                 // decrease wait counter
                 service->_numPendingRequests.fetch_add(-1);
+                service->_activeConcurrency.fetch_add(-req_concurrency);
                 return;
             }
         }
@@ -391,23 +419,31 @@ namespace tuplex {
 
         // decrease wait counter
         service->_numPendingRequests.fetch_add(-1);
+        service->_activeConcurrency.fetch_add(-req_concurrency);
     }
 
-    void AwsLambdaInvocationService::waitForRequests(size_t sleepInterval) {
+    void AwsLambdaInvocationService::waitForRequests(std::chrono::duration<double, std::milli> sleep_interval) {
         // wait for requests to be finished & check periodically PyErrCheckSignals for Ctrl+C
 
-        size_t pendingTasks = 0;
+        logger().info("There are currently " + pluralize(_numPendingRequests.load(), "request") + " active.");
+
+        int64_t pendingTasks = 0;
         while ((pendingTasks = _numPendingRequests.load(std::memory_order_acquire)) > 0) {
             // sleep
-            usleep(sleepInterval);
+            std::stringstream ss;
+            ss<<"Currently there are "<<pluralize(pendingTasks, "request")<<", sleeping for "<<sleep_interval.count()<<"ms, checking for signals + pending requests."<<std::endl;
+            logger().debug(ss.str());
+            std::this_thread::sleep_for(sleep_interval);
 
+            logger().debug("Checking for python signals, interpreter active: " + boolToString(python::isInterpreterRunning()));
             python::lockGIL();
-
             if (PyErr_CheckSignals() != 0) {
+                logger().info("Received python signal, setting pending requests to 0.");
                 // stop requests & cleanup @TODO: cleanup on S3 with requests...
                 if (_client)
                     _client->DisableRequestProcessing();
                 _numPendingRequests.store(0); //, std::memory_order_acq_rel);
+                _activeConcurrency.store(0);
             }
 
             python::unlockGIL();

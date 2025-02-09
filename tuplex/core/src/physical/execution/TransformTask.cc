@@ -973,10 +973,10 @@ namespace tuplex {
                                            FileFormat fmt) {
         resetSources();
 
-        assert(rowType.isTupleType());
+        assert(rowType.isTupleType() || rowType.isRowType());
         // this assert fails when selection pushdown is involved...
         // if(!header.empty())
-        //   assert(header.size() == rowType.parameters().size());
+        //   assert(header.size() == rowTypeAsTupleType.parameters().size());
 
         _inputFilePath = inputFile;
         _inputSchema = Schema(Schema::MemoryLayout::ROW, rowType);

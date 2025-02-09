@@ -33,7 +33,7 @@ namespace tuplex {
             std::vector<std::string> _nullValues; /// strings that should be interpreted as null values.
             size_t numCells() const { return _fileInputRowType.parameters().size(); }
 
-            FlattenedTuple cellsToTuple(llvm::IRBuilder<>& builder,
+            FlattenedTuple cellsToTuple(const IRBuilder& builder,
                                         const std::vector<bool> columnsToSerialize,
                                         const python::Type& inputRowType,
                                         llvm::Value* cellsPtr,
@@ -41,42 +41,42 @@ namespace tuplex {
 
             llvm::BasicBlock* _valueErrorBlock;
             llvm::BasicBlock* _nullErrorBlock;
-            llvm::BasicBlock* valueErrorBlock(llvm::IRBuilder<>& builder); // create a value error(conversion failure block lazily)
-            llvm::BasicBlock* nullErrorBlock(llvm::IRBuilder<>& builder); // create an (internal) nullerror (i.e. a non option type was expected, but actually there was a null! Only with active null value optimization...)
+            llvm::BasicBlock* valueErrorBlock(const IRBuilder& builder); // create a value error(conversion failure block lazily)
+            llvm::BasicBlock* nullErrorBlock(const IRBuilder& builder); // create an (internal) nullerror (i.e. a non option type was expected, but actually there was a null! Only with active null value optimization...)
 
-            inline llvm::Value* nullCheck(llvm::IRBuilder<>& builder, llvm::Value* ptr) {
+            inline llvm::Value* nullCheck(const IRBuilder& builder, llvm::Value* ptr) {
                 assert(ptr);
                 // Note: maybe put this into separate function & emit call? ==> might be easier for llvm to optimize!
                 return env().compareToNullValues(builder, ptr, _nullValues, true); // NOTE: ptr must be 0 terminated!
             }
 
-            SerializableValue cachedParse(llvm::IRBuilder<>& builder, const python::Type& type, size_t colNo, llvm::Value* cellsPtr, llvm::Value* sizesPtr);
+            SerializableValue cachedParse(const IRBuilder& builder, const python::Type& type, size_t colNo, llvm::Value* cellsPtr, llvm::Value* sizesPtr);
             std::unordered_map<std::tuple<size_t, python::Type>, SerializableValue> _parseCache; // certain columns may be cached to avoid calling expensive parsing multiple times.
-            void generateChecks(llvm::IRBuilder<>& builder, llvm::Value* userData, llvm::Value* rowNumber, llvm::Value* cellsPtr, llvm::Value* sizesPtr);
+            void generateChecks(const IRBuilder& builder, llvm::Value* userData, llvm::Value* rowNumber, llvm::Value* cellsPtr, llvm::Value* sizesPtr);
 
-            inline FlattenedTuple parseGeneralCaseRow(llvm::IRBuilder<>& builder, llvm::Value* cellsPtr, llvm::Value* sizesPtr) {
+            inline FlattenedTuple parseGeneralCaseRow(const IRBuilder& builder, llvm::Value* cellsPtr, llvm::Value* sizesPtr) {
                 return cellsToTuple(builder, _generalCaseColumnsToSerialize, _fileInputRowTypeGeneralCase, cellsPtr, sizesPtr);
             }
-            inline FlattenedTuple parseNormalCaseRow(llvm::IRBuilder<>& builder, llvm::Value* cellsPtr, llvm::Value* sizesPtr) {
+            inline FlattenedTuple parseNormalCaseRow(const IRBuilder& builder, llvm::Value* cellsPtr, llvm::Value* sizesPtr) {
                 return cellsToTuple(builder, _columnsToSerialize, _fileInputRowType, cellsPtr, sizesPtr);
             }
 
-            SerializableValue serializeFullRowAsBadParseException(llvm::IRBuilder<>& builder, llvm::Value* cellsPtr,
+            SerializableValue serializeFullRowAsBadParseException(const IRBuilder& builder, llvm::Value* cellsPtr,
                                                                   llvm::Value* sizesPtr) const ;
 
-            SerializableValue serializeGeneralColumnsAsBadParseException(llvm::IRBuilder<>& builder, llvm::Value* cellsPtr,
+            SerializableValue serializeGeneralColumnsAsBadParseException(const IRBuilder& builder, llvm::Value* cellsPtr,
                                                                   llvm::Value* sizesPtr) const ;
 
-            SerializableValue serializeBadParseException(llvm::IRBuilder<>& builder, llvm::Value* cellsPtr,
+            SerializableValue serializeBadParseException(const IRBuilder& builder, llvm::Value* cellsPtr,
                                                          llvm::Value* sizesPtr, bool use_dummies,
                                                          bool use_only_projected_general_case_columns) const;
 
-            SerializableValue serializeCellVector(llvm::IRBuilder<>& builder,
+            SerializableValue serializeCellVector(const IRBuilder& builder,
                                                   const std::vector<llvm::Value*>& cells,
                                                   const std::vector<llvm::Value*>& cell_sizes,
                                                   llvm::Value* empty_str=nullptr) const;
 
-            inline void exitWith(llvm::IRBuilder<>& builder, llvm::Value* ecCode) {
+            inline void exitWith(const IRBuilder& builder, llvm::Value* ecCode) {
                 assert(ecCode);
                 if(ecCode->getType() != env().i64Type())
                     ecCode = builder.CreateZExtOrTrunc(ecCode, env().i64Type());
@@ -86,7 +86,7 @@ namespace tuplex {
                 builder.CreateRet(ecCode);
             }
 
-            inline void exitWith(llvm::IRBuilder<>& builder, const ExceptionCode& ec) {
+            inline void exitWith(const IRBuilder& builder, const ExceptionCode& ec) {
                 exitWith(builder, env().i64Const(ecToI64(ec)));
             }
 
@@ -98,7 +98,7 @@ namespace tuplex {
              * @param env CodeEnv where to generate code into
              * @param normalCaseRowType the detected row Type of the file
              * @param restrictedGeneralCaseInputRowType the (restricted) detected general case row type of the file
-             * @param normalCaseColumnsToSerialize if empty vector, all rows get serialized. If not, indicates which columns should be serialized. Length must match rowType.
+             * @param normalCaseColumnsToSerialize if empty vector, all rows get serialized. If not, indicates which columns should be serialized. Length must match rowTypeAsTupleType.
              * @param name Name of the function to generate++
              * @param except_mode specify how exceptions should be serialized.
              * @param operatorID ID of the operator for exception handling.
@@ -171,11 +171,11 @@ namespace tuplex {
         };
 
 
-        extern SerializableValue parse_string_cell(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::BasicBlock* bParseError,
+        extern SerializableValue parse_string_cell(LLVMEnvironment& env, const IRBuilder& builder, llvm::BasicBlock* bParseError,
                                             const python::Type& cell_type, const std::vector<std::string>& null_values,
                                             llvm::Value* cell_str, llvm::Value* cell_size);
 
-        extern SerializableValue serialize_cell_vector(LLVMEnvironment& env, llvm::IRBuilder<>& builder,
+        extern SerializableValue serialize_cell_vector(LLVMEnvironment& env, const IRBuilder& builder,
                                                        const std::vector<llvm::Value *> &cells,
                                                        const std::vector<llvm::Value *> &cell_sizes,
                                                        llvm::Value *empty_str);

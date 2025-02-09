@@ -111,7 +111,7 @@ void global_init() {
     std::string secret_key = Aws::Environment::GetEnv("AWS_SECRET_ACCESS_KEY").c_str();
     std::string session_token = Aws::Environment::GetEnv("AWS_SESSION_TOKEN").c_str();
 
-    Logger::instance().defaultLogger().info("AWS credentials: access key: " + access_key + " secret key: " + secret_key + " session token: " + session_token);
+    // Logger::instance().defaultLogger().info("AWS credentials: access key: " + access_key + " secret key: " + secret_key + " session token: " + session_token);
 
     // get region from AWS_REGION env
     auto region = Aws::Environment::GetEnv("AWS_REGION");
@@ -334,22 +334,36 @@ tuplex::messages::InvocationResponse lambda_main(aws::lambda_runtime::invocation
     if(!app)
         return make_exception("invalid worker app");
 
-    // perform global init (this is a lazy function)
+    // Perform global init (this is a lazy function).
     int rc = app->globalInit(false);
     if(rc != WORKER_OK)
         return make_exception("failed processing with code " + std::to_string(rc));
 
-    // process message
-    rc = app->processJSONMessage(lambda_req.payload.c_str());
-    if(rc != WORKER_OK)
-        return make_exception("failed processing with code " + std::to_string(rc));
+    // Set timeout functor.
+    app->setTimeoutFunctor([]() {
+        return chrono::duration_cast<chrono::milliseconds, long>(g_lambda_req->get_time_remaining()).count() / 1000.0;
+    });
 
-    // get last response/message?
-    // --> what about global stats? @TODO
-    auto ret = app->generateResponse();
+    // Process message.
+    // Surround with try/catch to avoid crashes.
+    try {
+        rc = app->processJSONMessage(lambda_req.payload.c_str());
+        if(rc != WORKER_OK)
+            return make_exception("failed processing with code " + std::to_string(rc));
 
-    // fill in global stats (Lambda specific)
-    fillInGlobals(&ret);
+        // get last response/message?
+        // --> what about global stats? @TODO
+        auto ret = app->response();
 
-    return ret;
+        // fill in global stats (Lambda specific)
+        fillInGlobals(&ret);
+
+        return ret;
+    } catch(const std::exception& e) {
+        return make_exception("Failed processing with top-level exception: " + std::string(e.what()));
+    } catch(...) {
+        return make_exception("Failed processing with unknown top-level exception.");
+    }
+
+    return make_exception("This code should never execute.");
 }
