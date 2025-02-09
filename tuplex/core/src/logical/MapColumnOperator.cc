@@ -40,7 +40,9 @@ namespace tuplex {
 
         assert(parentSchema.getRowType().isTupleType() || parentSchema.getRowType().isRowType());
 
-        auto colTypes = parentSchema.getRowType().isRowType() ? parentSchema.getRowType().get_columns_as_tuple_type().parameters() : parentSchema.getRowType().parameters();
+        auto input_row_type = parentSchema.getRowType();
+
+        auto colTypes = input_row_type.isRowType() ? input_row_type.get_columns_as_tuple_type().parameters() : input_row_type.parameters();
         assert(_columnToMapIndex < colTypes.size());
 
         // exchange at columnToMapIndex type
@@ -77,7 +79,21 @@ namespace tuplex {
             std::exit(1);
         }
 
-        auto retType = python::Type::makeTupleType(colTypes);
+        // input with columns? use row type. Much easier.
+        python::Type retType;
+        if(input_row_type.isRowType()) {
+            // additional column or not?
+            if(_columnToMapIndex < colTypes.size()) {
+                // overwrite
+                retType = python::Type::makeRowType(colTypes, input_row_type.get_column_names());
+            } else {
+                auto columns = input_row_type.get_column_names();
+                columns.push_back(_columnToMap);
+                retType = python::Type::makeRowType(colTypes, columns);
+            }
+        } else {
+            retType = python::Type::makeTupleType(colTypes);
+        }
 
         return Schema(parentSchema.getMemoryLayout(), retType);
     }

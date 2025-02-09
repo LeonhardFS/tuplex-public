@@ -15,6 +15,31 @@
 #include <visitors/ColumnRewriteVisitor.h>
 #include <graphviz/GraphVizGraph.h>
 
+TEST(UDFTyping, StringAttributeFunctionsStrFind) {
+    using namespace tuplex;
+    using namespace std;
+
+    {
+        UDF udf("lambda x: x.find('abc')");
+        auto rc = udf.hintInputSchema(Schema(Schema::MemoryLayout::ROW, python::Type::STRING));
+        EXPECT_TRUE(rc);
+
+        EXPECT_EQ("(i64)", udf.getOutputSchema().getRowType().desc());
+    }
+
+
+
+    {
+        UDF udf("def foo(x):\n"
+                "    y = x\n"
+                "    return y.find('abc')");
+        auto rc = udf.hintInputSchema(Schema(Schema::MemoryLayout::ROW, python::Type::STRING));
+        EXPECT_TRUE(rc);
+
+        EXPECT_EQ("(i64)", udf.getOutputSchema().getRowType().desc());
+    }
+}
+
 //TEST(UDFTyping, IfStatementsReassign) {
 //    using namespace tuplex;
 //    using namespace std;
