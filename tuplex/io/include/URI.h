@@ -124,7 +124,8 @@ namespace tuplex {
             }
         }
 
-        inline std::string basename() const {
+        // Need to name base_name because else it conflicts with basenam define in libgen.h/XDG.
+        inline std::string base_name() const {
             if(_uri.empty())
                 return "";
 

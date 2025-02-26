@@ -11,7 +11,7 @@
 #include <physical/codegen/BlockBasedTaskBuilder.h>
 
 // uncomment to debug code generated code
-//#define TRACE_PARSER
+// #define TRACE_PARSER
 
 namespace tuplex {
     namespace codegen {
@@ -124,7 +124,7 @@ namespace tuplex {
             _intermediateCallbackName = callbackName;
         }
 
-        SerializableValue BlockBasedTaskBuilder::serializedExceptionRow(llvm::IRBuilder<>& builder,
+        SerializableValue BlockBasedTaskBuilder::serializedExceptionRow(const IRBuilder& builder,
                                                                         const FlattenedTuple& ftIn,
                                                                         const ExceptionSerializationFormat& fmt) const {
             auto& logger = Logger::instance().logger("codegen");
@@ -199,11 +199,11 @@ namespace tuplex {
             return {};
         }
 
-        llvm::BasicBlock *BlockBasedTaskBuilder::exceptionBlock(llvm::IRBuilder<> &builder, llvm::Value *userData,
+        llvm::BasicBlock *BlockBasedTaskBuilder::exceptionBlock(const IRBuilder &builder, llvm::Value *userData,
                                                                 llvm::Value *exceptionCode,
                                                                 llvm::Value *exceptionOperatorID,
                                                                 std::function<ExceptionDetails(
-                                                                        llvm::IRBuilder<> &)> lazyExceptFunc) {
+                                                                        const IRBuilder&)> lazyExceptFunc) {
             // creates new exception block w. handlers and so on
             using namespace llvm;
             auto func = builder.GetInsertBlock()->getParent(); assert(func);
@@ -257,7 +257,7 @@ namespace tuplex {
             return block;
         }
 
-        llvm::BasicBlock* BlockBasedTaskBuilder::exceptionBlock(llvm::IRBuilder<>& builder,
+        llvm::BasicBlock* BlockBasedTaskBuilder::exceptionBlock(const IRBuilder& builder,
                 llvm::Value* userData,
                 llvm::Value *exceptionCode,
                 llvm::Value *exceptionOperatorID,
@@ -266,7 +266,7 @@ namespace tuplex {
                 llvm::Value *badDataPtr,
                 llvm::Value *badDataLength) {
             return exceptionBlock(builder, userData, exceptionCode, exceptionOperatorID,
-                                  [=](llvm::IRBuilder<>& builder) {
+                                  [=](const IRBuilder& builder) {
                 ExceptionDetails except_details;
                 except_details.rowNumber = rowNumber;
                 except_details.fmt = fmt;
@@ -276,7 +276,7 @@ namespace tuplex {
             });
         }
 
-        llvm::Value * BlockBasedTaskBuilder::initIntermediate(llvm::IRBuilder<> &builder) {
+        llvm::Value * BlockBasedTaskBuilder::initIntermediate(const IRBuilder& builder) {
             // return nullptr if unspecified (triggers default behavior w/o intermediate for pipeline)
             if(_intermediateType == python::Type::UNKNOWN)
                 return nullptr;
@@ -286,7 +286,7 @@ namespace tuplex {
 
             // initialize lazily
             if(!_intermediate) {
-                auto b = getFirstBlockBuilder(builder);
+                auto b = builder.firstBlockBuilder();
 
                 // now store into var!
                 // @TODO: upcast?
@@ -296,11 +296,10 @@ namespace tuplex {
             }
 
             assert(_intermediate);
-
             return _intermediate;
         }
 
-        void BlockBasedTaskBuilder::writeIntermediate(llvm::IRBuilder<> &builder, llvm::Value* userData,
+        void BlockBasedTaskBuilder::writeIntermediate(const IRBuilder &builder, llvm::Value* userData,
                                                       const std::string &intermediateCallbackName) {
             using namespace llvm;
 
@@ -318,7 +317,7 @@ namespace tuplex {
             auto callbackECVal = builder.CreateCall(callback_func, {userData, serialized_row.val, serialized_row.size});
         }
 
-        void BlockBasedTaskBuilder::generateTerminateEarlyOnCode(llvm::IRBuilder<> &builder, llvm::Value *ecCode,
+        void BlockBasedTaskBuilder::generateTerminateEarlyOnCode(const codegen::IRBuilder &builder, llvm::Value *ecCode,
                                                                  ExceptionCode code) {
             using namespace llvm;
 

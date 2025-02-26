@@ -39,12 +39,16 @@ namespace tuplex {
             size_t field_count = 0, option_count = 0, maybe_count = 0;
 
             for (auto entry: entries) {
-                bool is_always_present = std::get<2>(entry);
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
+                bool is_always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
                 maybe_count += !is_always_present;
                 bool is_value_optional = std::get<1>(entry).isOptionType();
                 option_count += is_value_optional;
 
-                bool is_struct_type = std::get<1>(entry).isStructuredDictionaryType();
+                bool is_struct_type = std::get<1>(entry).isStructuredDictionaryType() || std::get<1>(entry).isSparseStructuredDictionaryType();
                 field_count += !is_struct_type; // only count non-struct dict fields. -> yet the nested struct types may change the maybe count for the bitmap!
             }
 
@@ -81,6 +85,11 @@ namespace tuplex {
                 assert(num_maybe_bitmap_elements > 0 && num_maybe_bitmap_bits > 0);
 #endif
 
+            // round to multiples of 64 to avoid alignment issues in LLVM.
+            assert(core::ceilToMultiple(0, 64) == 0);
+            num_option_bitmap_bits = core::ceilToMultiple(num_option_bitmap_bits, 64);
+            num_maybe_bitmap_bits = core::ceilToMultiple(num_maybe_bitmap_bits, 64);
+
             // i1 logic (similar to flattened tuple)
             if (num_option_bitmap_elements > 0)
                 member_types.push_back(llvm::ArrayType::get(Type::getInt1Ty(ctx), num_option_bitmap_bits));
@@ -95,6 +104,10 @@ namespace tuplex {
             // now add all the elements from the (flattened) struct type (skip lists and other struct entries, i.e. only primitives so far)
             // --> could use a different structure as well! --> which to use?
             for (const auto &entry: entries) {
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
                 // value type
                 auto access_path = std::get<0>(entry);
                 python::Type value_type = std::get<1>(entry);
@@ -108,14 +121,12 @@ namespace tuplex {
                     value_type = value_type.getReturnType(); // option is handled above
 
                 // is it a struct type? => skip.
-                if (value_type.isStructuredDictionaryType())
+                if (value_type.isStructuredDictionaryType() || value_type.isSparseStructuredDictionaryType())
                     continue;
 
                 // // skip list
                 // if (value_type.isListType())
                 //     continue;
-
-
 
                 // do we actually need to serialize the value?
                 // if not, no problem.
@@ -187,10 +198,14 @@ namespace tuplex {
             size_t bitmap_idx = 0;
             if(struct_dict_has_bitmap(dict_type)) {
                 assert(structType->getStructElementType(bitmap_idx)->isArrayTy());
+                // check that alignment doesn't cause issues
+                assert(structType->getStructElementType(bitmap_idx)->getArrayNumElements() % 64 == 0);
                 bitmap_idx++;
             }
             if(struct_dict_has_presence_map(dict_type)) {
                 assert(structType->getStructElementType(bitmap_idx)->isArrayTy());
+                // check that alignment doesn't cause issues
+                assert(structType->getStructElementType(bitmap_idx)->getArrayNumElements() % 64 == 0);
             }
 
             return structType;
@@ -198,7 +213,7 @@ namespace tuplex {
 
 
         // create 64bit bitmap from 1bit vector (ceil!)
-        std::vector<llvm::Value*> create_bitmap(LLVMEnvironment& env, llvm::IRBuilder<>& builder, const std::vector<llvm::Value*>& v) {
+        std::vector<llvm::Value*> create_bitmap(LLVMEnvironment& env, const IRBuilder& builder, const std::vector<llvm::Value*>& v) {
             using namespace std;
 
             auto numBitmapElements = core::ceilToMultiple(v.size(), 64ul) / 64ul; // make 64bit bitmaps
@@ -223,7 +238,7 @@ namespace tuplex {
         }
 
         // load entries to structure
-        SerializableValue struct_dict_load_from_values(LLVMEnvironment& env, llvm::IRBuilder<>& builder, const python::Type& dict_type, flattened_struct_dict_decoded_entry_list_t entries, llvm::Value* ptr) {
+        SerializableValue struct_dict_load_from_values(LLVMEnvironment& env, const IRBuilder& builder, const python::Type& dict_type, flattened_struct_dict_decoded_entry_list_t entries, llvm::Value* ptr) {
             using namespace llvm;
 
             auto& ctx = env.getContext();
@@ -239,12 +254,16 @@ namespace tuplex {
             size_t num_bitmap = 0, num_presence_map = 0;
             flattened_struct_dict_entry_list_t type_entries;
             flatten_recursive_helper(type_entries, dict_type);
-            retrieve_bitmap_counts(type_entries, num_bitmap, num_presence_map);
+            retrieve_bitmap_counts(dict_type, num_bitmap, num_presence_map);
             bool has_bitmap = num_bitmap > 0;
             bool has_presence_map = num_presence_map > 0;
 
             // go over entries and generate code to load them!
             for(const auto& entry : entries) {
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
                 // each item should be access_path | value_type | alwaysPresent |  value : SerializableValue | present : i1
                 access_path_t access_path;
                 python::Type value_type;
@@ -297,13 +316,14 @@ namespace tuplex {
                 // some checks
                 if(field_idx >= 0) {
                     assert(el.val);
-                    auto llvm_idx = CreateStructGEP(builder, ptr, field_idx);
+                    auto llvm_type = env.pythonToLLVMType(value_type);
+                    auto llvm_idx = builder.CreateStructGEP(ptr, llvm_type, field_idx);
                     builder.CreateStore(el.val, llvm_idx);
                 }
 
                 if(size_idx >= 0) {
                     assert(el.size);
-                    auto llvm_idx = CreateStructGEP(builder, ptr, size_idx);
+                    auto llvm_idx = builder.CreateStructGEP(ptr, builder.getInt64Ty(), size_idx);
                     builder.CreateStore(el.size, llvm_idx);
                 }
 
@@ -335,12 +355,14 @@ namespace tuplex {
             //                auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, 0ull, bitmapPos);
             //                builder.CreateStore(value.is_null, bitmapIdx);
 
+            auto llvm_dict_type = env.getOrCreateStructuredDictType(dict_type);
+
             // first comes bitmap, then presence map
             if(has_bitmap) {
                 for(unsigned i = 0; i < bitmap_entries.size(); ++i) {
                     auto bitmapPos = bitmap_entries[i].first;
-                    auto structBitmapIdx = CreateStructGEP(builder, ptr, 0ull); // bitmap comes first!
-                    auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, 0ull, bitmapPos);
+                    auto structBitmapIdx = builder.CreateStructGEP(ptr, env.i8ptrType(), 0ull); // bitmap comes first!
+                    auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, llvm_dict_type->getStructElementType(0), 0ull, bitmapPos);
                     builder.CreateStore(bitmap_entries[i].second, bitmapIdx);
                 }
             }
@@ -348,8 +370,8 @@ namespace tuplex {
             if(has_bitmap) {
                 for(unsigned i = 0; i < presence_entries.size(); ++i) {
                     auto bitmapPos = presence_entries[i].first;
-                    auto structBitmapIdx = CreateStructGEP(builder, ptr, 1ull); // bitmap comes first!
-                    auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, 0ull, bitmapPos);
+                    auto structBitmapIdx = builder.CreateStructGEP(ptr, env.i8ptrType(), 1ull); // bitmap comes first!
+                    auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, llvm_dict_type->getStructElementType(1), 0ull, bitmapPos);
                     builder.CreateStore(presence_entries[i].second, bitmapIdx);
                 }
             }
@@ -370,6 +392,10 @@ namespace tuplex {
             flatten_recursive_helper(entries, dict_type);
 
             for(const auto& entry : entries) {
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
                 access_path_t access_path = std::get<0>(entry);
                 python::Type value_type = std::get<1>(entry);
                 bool always_present = std::get<2>(entry);
@@ -417,7 +443,7 @@ namespace tuplex {
         }
 
         // --- load functions ---
-        llvm::Value* struct_dict_load_present(LLVMEnvironment& env, llvm::IRBuilder<>& builder,
+        llvm::Value* struct_dict_load_present(LLVMEnvironment& env, const IRBuilder& builder,
                                               llvm::Value* ptr, const python::Type& dict_type,
                                               const access_path_t& path) {
 
@@ -456,20 +482,21 @@ namespace tuplex {
 #endif
                     assert(ptr->getType() == llvm_dict_type);
 
-                    auto bitmap = CreateStructLoad(builder, ptr, p_idx);
+                    auto bitmap = builder.CreateStructLoadOrExtract(llvm_dict_type, ptr, p_idx);
                     assert(bitmap->getType()->isArrayTy());
                     assert(bitmapPos < bitmap->getType()->getArrayNumElements());
                     return builder.CreateExtractValue(bitmap, std::vector<unsigned>(1, bitmapPos));
                 } else {
-                    assert(ptr->getType()->isPointerTy() && ptr->getType()->getPointerElementType()->isStructTy());
+                    assert(ptr->getType()->isPointerTy());
+#if LLVM_VERSION_MAJOR < 16
+                    assert(ptr->getType()->getPointerElementType()->isStructTy());
+#endif
+                    auto llvm_dict_type = env.pythonToLLVMType(dict_type.withoutOption()); //ptr->getType()->getPointerElementType();
 
-                    auto llvm_dict_type = ptr->getType()->getPointerElementType();
 
-                    assert(llvm_dict_type == env.getOrCreateStructuredDictType(dict_type));
-
-                     auto structBitmapIdx = CreateStructGEP(builder, ptr, (size_t)p_idx); // bitmap comes first!
-                     auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, 0ull, bitmapPos);
-                     return builder.CreateLoad(bitmapIdx);
+                    auto structBitmapIdx = builder.CreateStructGEP(ptr, llvm_dict_type, (size_t)p_idx); // bitmap comes first!
+                    auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, llvm_dict_type->getStructElementType(p_idx), (uint64_t)0ull, (uint64_t)bitmapPos);
+                    return builder.CreateLoad(builder.getInt1Ty(), bitmapIdx);
                 }
             } else {
                 // always present
@@ -477,8 +504,10 @@ namespace tuplex {
             }
         }
 
-        llvm::Value* struct_dict_load_path_presence(LLVMEnvironment& env, llvm::IRBuilder<>& builder,
-                                                    llvm::Value* ptr, const python::Type& dict_type,
+        llvm::Value* struct_dict_load_path_presence(LLVMEnvironment& env,
+                                                    const IRBuilder& builder,
+                                                    llvm::Value* ptr,
+                                                    const python::Type& dict_type,
                                                     const access_path_t& full_path,
                                                     const access_path_t& ignore_prefix={}) {
             assert(!full_path.empty());
@@ -530,7 +559,7 @@ namespace tuplex {
         }
 
         void struct_dict_store_value(LLVMEnvironment& env,
-                                     llvm::IRBuilder<>& builder,
+                                     const IRBuilder& builder,
                                      const SerializableValue& value,
                                      llvm::Value* dest_ptr,
                                      const python::Type& dest_dict_type,
@@ -582,7 +611,45 @@ namespace tuplex {
             }
         }
 
-        SerializableValue struct_dict_load_value(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* ptr, const python::Type& dict_type, const access_path_t& path) {
+        llvm::Value* struct_dict_load_is_null(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* ptr, const python::Type& dict_type, const access_path_t& path) {
+            auto element_type = struct_dict_type_get_element_type(dict_type, path);
+
+            if(element_type == python::Type::NULLVALUE)
+                return env.i1Const(true);
+            if(element_type.isOptionType()) {
+
+                // need to load via bitmap
+                int bitmap_idx = 0, present_idx =0, field_idx=0, size_idx=0;
+                std::tie(bitmap_idx, present_idx, field_idx, size_idx) = struct_dict_get_indices(dict_type, path);
+
+                assert(bitmap_idx >= 0);
+                auto llvm_dict_type = env.getOrCreateStructuredDictType(dict_type);
+                auto element_type_wo_option = element_type.isOptionType() ? element_type.getReturnType() : element_type;
+                auto llvm_element_type = env.getOrCreateStructuredDictType(element_type_wo_option.makeNonSparse());
+                auto name_wo_option = env.getLLVMTypeName(llvm_element_type);
+
+                // load is_null from original ptr
+                // make sure type has presence map index
+                auto b_idx = bitmap_field_idx(dict_type);
+                assert(b_idx >= 0);
+                // i1 store logic
+                auto bitmapPos = bitmap_idx;
+
+                auto bitmap = builder.CreateStructLoadOrExtract(llvm_dict_type, ptr, b_idx);
+                auto llvm_array_type = llvm_dict_type->getStructElementType(b_idx);
+                assert(llvm_array_type->isArrayTy());
+                //builder.CreateGEP()
+                //auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(bitmap, llvm_array_type, 0ull, bitmapPos);
+//
+  //              auto is_null = builder.CreateLoad(builder.getInt1Ty(), bitmapIdx);
+                auto is_null = builder.CreateExtractValue(bitmap, bitmapPos);
+                return is_null;
+            } else {
+                return env.i1Const(false);
+            }
+        }
+
+        SerializableValue struct_dict_load_value(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* ptr, const python::Type& dict_type, const access_path_t& path) {
             auto& logger = Logger::instance().logger("codegen");
 
             // get element type
@@ -591,38 +658,24 @@ namespace tuplex {
                 throw std::runtime_error("Could not retrieve element type for access path " + access_path_to_str(path));
             }
 
+            auto llvm_dict_type = env.getOrCreateStructuredDictType(dict_type);
+
             // is it not a struct dict? -> trivial, simple lookup.
-            bool is_struct_dict = element_type.isStructuredDictionaryType() || (element_type.isOptionType() && element_type.getReturnType().isStructuredDictionaryType());
+            bool is_struct_dict = element_type.isStructuredDictionaryType() || (element_type.isOptionType() && element_type.getReturnType().isStructuredDictionaryType()) ||
+                    element_type.isSparseStructuredDictionaryType() || (element_type.isOptionType() && element_type.getReturnType().isSparseStructuredDictionaryType());
+
             if(is_struct_dict) {
 
                 // this is a bit more involved. First, need to init new var for the subdict
                 auto element_type_wo_option = element_type.isOptionType() ? element_type.getReturnType() : element_type;
+                element_type_wo_option = element_type_wo_option.makeNonSparse();
                 auto llvm_element_type = env.getOrCreateStructuredDictType(element_type_wo_option);
                 auto element_ptr = env.CreateFirstBlockAlloca(builder, llvm_element_type);
                 struct_dict_mem_zero(env, builder, element_ptr, element_type_wo_option);
 
                 llvm::Value* is_null = env.i1Const(false); // <-- option should decode this.
-
                 if(element_type.isOptionType()) {
-                    // is it not an option? that means resorting indices
-                    // fetch indices
-                    // 1. null bitmap index 2. maybe bitmap index 3. field index 4. size index
-                    int bitmap_idx = 0, present_idx =0, field_idx=0, size_idx=0;
-                    std::tie(bitmap_idx, present_idx, field_idx, size_idx) = struct_dict_get_indices(dict_type, path);
-
-                    assert(bitmap_idx >= 0);
-
-                    // load is_null from original ptr
-                    // make sure type has presence map index
-                    auto b_idx = bitmap_field_idx(dict_type);
-                    assert(b_idx >= 0);
-                    // i1 store logic
-                    auto bitmapPos = bitmap_idx;
-                    auto structBitmapIdx = CreateStructGEP(builder, ptr, (size_t)b_idx); // bitmap comes first!
-                    auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, 0ull, bitmapPos);
-                    is_null = builder.CreateLoad(bitmapIdx);
-
-                    // TODO: now load elements...
+                    is_null = struct_dict_load_is_null(env, builder, ptr, dict_type, path);
                 }
 
                 // go over access paths and access elements.
@@ -671,6 +724,8 @@ namespace tuplex {
                 val.size = env.i64Const(sizeof(int64_t));
                 val.is_null = env.i1Const(false);
 
+                auto llvm_struct_type = env.pythonToLLVMType(dict_type);
+
                 // load only if valid field_idx
                 if(field_idx >= 0) {
                     // env.printValue(builder, value, "storing away value at index " + std::to_string(field_idx));
@@ -678,7 +733,7 @@ namespace tuplex {
                     // // load
                     // auto llvm_idx = CreateStructGEP(builder, ptr, field_idx);
                     // val.val = builder.CreateLoad(llvm_idx);
-                    val.val = CreateStructLoad(builder, ptr, field_idx);
+                    val.val = builder.CreateStructLoadOrExtract(llvm_struct_type, ptr, field_idx);
                 }
 
                 // load only if valid size_idx
@@ -688,7 +743,7 @@ namespace tuplex {
                     // // load
                     // auto llvm_idx = CreateStructGEP(builder, ptr, size_idx);
                     // val.size = builder.CreateLoad(llvm_idx);
-                    val.size = CreateStructLoad(builder, ptr, size_idx);
+                    val.size = builder.CreateStructLoadOrExtract(llvm_struct_type, ptr, size_idx);
                 }
 
                 // load only if valid bitmap_idx
@@ -701,14 +756,14 @@ namespace tuplex {
                     // i1 load logic
                     auto bitmapPos = bitmap_idx;
                     if(ptr->getType()->isStructTy()) {
-                        auto bitmap = CreateStructLoad(builder, ptr, b_idx);
+                        auto bitmap = builder.CreateStructLoadOrExtract(llvm_struct_type, ptr, b_idx);
                         assert(bitmap->getType()->isArrayTy());
                         assert(bitmapPos < bitmap->getType()->getArrayNumElements());
                         val.is_null = builder.CreateExtractValue(bitmap, std::vector<unsigned>(1, bitmapPos));
                     } else {
-                        auto structBitmapIdx = CreateStructGEP(builder, ptr, (size_t)b_idx); // bitmap comes first!
-                        auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, 0ull, bitmapPos);
-                        val.is_null = builder.CreateLoad(bitmapIdx);
+                        auto structBitmapIdx = builder.CreateStructGEP(ptr, llvm_struct_type, (size_t)b_idx); // bitmap comes first!
+                        auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, llvm_struct_type->getStructElementType(0), 0ull, bitmapPos);
+                        val.is_null = builder.CreateLoad(builder.getInt1Ty(), bitmapIdx);
                     }
                 }
 
@@ -717,7 +772,7 @@ namespace tuplex {
         }
 
         // --- store functions ---
-        void struct_dict_store_present(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* ptr, const python::Type& dict_type, const access_path_t& path, llvm::Value* is_present) {
+        void struct_dict_store_present(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* ptr, const python::Type& dict_type, const access_path_t& path, llvm::Value* is_present) {
             // fetch indices
             // 1. null bitmap index 2. maybe bitmap index 3. field index 4. size index
             int bitmap_idx = 0, present_idx =0, field_idx=0, size_idx=0;
@@ -727,19 +782,21 @@ namespace tuplex {
             if(present_idx >= 0) {
                 // env.printValue(builder, is_present, "storing away is_present at index " + std::to_string(present_idx));
 
+                auto llvm_struct_type = env.pythonToLLVMType(dict_type);
+
                 // make sure type has presence map index
                 auto p_idx = presence_map_field_idx(dict_type);
                 assert(p_idx >= 0);
                 assert(is_present && is_present->getType() == env.i1Type());
                 // i1 store logic
                 auto bitmapPos = present_idx;
-                auto structBitmapIdx = CreateStructGEP(builder, ptr, (size_t)p_idx); // bitmap comes first!
-                auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, 0ull, bitmapPos);
+                auto structBitmapIdx = builder.CreateStructGEP(ptr, llvm_struct_type, (size_t)p_idx); // bitmap comes first!
+                auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, llvm_struct_type->getStructElementType(p_idx), 0ull, bitmapPos);
                 builder.CreateStore(is_present, bitmapIdx);
             }
         }
 
-        void struct_dict_store_value(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* ptr, const python::Type& dict_type, const access_path_t& path, llvm::Value* value) {
+        void struct_dict_store_value(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* ptr, const python::Type& dict_type, const access_path_t& path, llvm::Value* value) {
             // fetch indices
             // 1. null bitmap index 2. maybe bitmap index 3. field index 4. size index
             int bitmap_idx = 0, present_idx =0, field_idx=0, size_idx=0;
@@ -749,19 +806,23 @@ namespace tuplex {
             if(field_idx >= 0) {
                 // env.printValue(builder, value, "storing away value at index " + std::to_string(field_idx));
 
-                // store
-                auto llvm_idx = CreateStructGEP(builder, ptr, field_idx);
+                auto llvm_struct_type = env.pythonToLLVMType(dict_type);
+                auto llvm_idx = builder.CreateStructGEP(ptr, llvm_struct_type, field_idx);
 
-                // special case: sometimes storing element type dict or list will be based upon pointer -> load first!
-                if(value->getType() == llvm_idx->getType()) {
-                    value = builder.CreateLoad(value);
+                // special treatment for list & struct dict: Their values could be passed as pointers, load the value here to enable storing it.
+                auto value_type = struct_dict_type_get_element_type(dict_type, path);
+                if(value_type.withoutOption().isStructuredDictionaryType() || value_type.withoutOption().isListType()) {
+                    if(value->getType()->isPointerTy()) {
+                        auto llvm_value_type = env.pythonToLLVMType(value_type.withoutOption());
+                        value = builder.CreateLoad(llvm_value_type, value);
+                    }
                 }
 
                 builder.CreateStore(value, llvm_idx);
             }
         }
 
-        void struct_dict_store_isnull(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* ptr, const python::Type& dict_type, const access_path_t& path, llvm::Value* is_null) {
+        void struct_dict_store_isnull(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* ptr, const python::Type& dict_type, const access_path_t& path, llvm::Value* is_null) {
             // fetch indices
             // 1. null bitmap index 2. maybe bitmap index 3. field index 4. size index
             int bitmap_idx = 0, present_idx =0, field_idx=0, size_idx=0;
@@ -771,19 +832,21 @@ namespace tuplex {
             if(bitmap_idx >= 0) {
                 // env.printValue(builder, is_null, "storing away is_null at index " + std::to_string(bitmap_idx));
 
+                auto llvm_struct_type = env.pythonToLLVMType(dict_type);
+
                 // make sure type has presence map index
                 auto b_idx = bitmap_field_idx(dict_type);
                 assert(b_idx >= 0);
                 assert(is_null && is_null->getType() == env.i1Type());
                 // i1 store logic
                 auto bitmapPos = bitmap_idx;
-                auto structBitmapIdx = CreateStructGEP(builder, ptr, (size_t)b_idx); // bitmap comes first!
-                auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, 0ull, bitmapPos);
+                auto structBitmapIdx = builder.CreateStructGEP(ptr, llvm_struct_type, (size_t)b_idx); // bitmap comes first!
+                auto bitmapIdx = builder.CreateConstInBoundsGEP2_64(structBitmapIdx, llvm_struct_type->getStructElementType(0), 0ull, bitmapPos);
                 builder.CreateStore(is_null, bitmapIdx);
             }
         }
 
-        void struct_dict_store_size(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* ptr, const python::Type& dict_type, const access_path_t& path, llvm::Value* size) {
+        void struct_dict_store_size(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* ptr, const python::Type& dict_type, const access_path_t& path, llvm::Value* size) {
             // fetch indices
             // 1. null bitmap index 2. maybe bitmap index 3. field index 4. size index
             int bitmap_idx = 0, present_idx =0, field_idx=0, size_idx=0;
@@ -793,22 +856,71 @@ namespace tuplex {
             if(size_idx >= 0) {
                 // env.printValue(builder, size, "storing away size at index " + std::to_string(size_idx));
 
+                auto llvm_struct_type = env.pythonToLLVMType(dict_type);
+
                 // store
-                auto llvm_idx = CreateStructGEP(builder, ptr, size_idx);
+                auto llvm_idx = builder.CreateStructGEP(ptr, llvm_struct_type, size_idx);
                 builder.CreateStore(size, llvm_idx);
             }
         }
 
         size_t struct_dict_bitmap_size_in_bytes(const python::Type& dict_type) {
             size_t num_bitmap = 0, num_presence_map = 0;
-            flattened_struct_dict_entry_list_t type_entries;
-            flatten_recursive_helper(type_entries, dict_type);
-            retrieve_bitmap_counts(type_entries, num_bitmap, num_presence_map);
+            retrieve_bitmap_counts(dict_type, num_bitmap, num_presence_map);
 
             return sizeof(int64_t) * num_bitmap + sizeof(int64_t) * num_presence_map;
         }
 
-        SerializableValue struct_dict_serialized_memory_size(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* ptr, const python::Type& dict_type) {
+        llvm::Value* check_whether_any_parent_is_null(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* dict_ptr, const python::Type& dict_type, const access_path_t& path) {
+            // check all parents whether they're null using logical and
+            auto parent_paths = struct_dict_get_optional_nesting_paths_along_path(dict_type, path);
+
+            std::vector<llvm::Value*> v_parent_is_null;
+            for(const auto& parent_path : parent_paths) {
+                // need to deal separately with optional elements on top.
+                auto parent_is_null = struct_dict_load_is_null(env, builder, dict_ptr, dict_type, parent_path);
+                v_parent_is_null.push_back(parent_is_null);
+            }
+
+            auto parent_is_null = v_parent_is_null[0];
+            for(unsigned i = 0; i < v_parent_is_null.size(); ++i) {
+                parent_is_null = builder.CreateOr(parent_is_null, v_parent_is_null[i]);
+            }
+            return parent_is_null;
+        }
+
+        llvm::Value* check_whether_any_parent_is_null_with_bitmap(LLVMEnvironment& env, const IRBuilder& builder, const std::vector<llvm::Value*>& bitmap, const python::Type& dict_type, const access_path_t& path) {
+            // check all parents whether they're null using logical and
+            auto parent_paths = struct_dict_get_optional_nesting_paths_along_path(dict_type, path);
+
+            assert(!bitmap.empty());
+
+            std::vector<llvm::Value*> v_parent_is_null;
+            for(const auto& parent_path : parent_paths) {
+                // need to deal separately with optional elements on top.
+
+                // -> get bitmap_idx for path
+                auto t_indices = struct_dict_get_indices(dict_type, parent_path);
+
+                int bitmap_idx=-1, present_idx=-1, value_idx=-1, size_idx=-1;
+                std::tie(bitmap_idx, present_idx, value_idx, size_idx) = t_indices;
+                if(bitmap_idx >= 0) {
+                    auto block_idx = bitmap_idx / 64;
+                    auto pos = bitmap_idx % 64;
+                    assert(bitmap.size() > block_idx);
+                    auto parent_is_null = env.extractNthBit(builder, bitmap[block_idx], env.i64Const(pos));
+                    v_parent_is_null.push_back(parent_is_null);
+                }
+            }
+            assert(!v_parent_is_null.empty());
+            auto parent_is_null = v_parent_is_null[0];
+            for(unsigned i = 1; i < v_parent_is_null.size(); ++i) {
+                parent_is_null = builder.CreateOr(parent_is_null, v_parent_is_null[i]);
+            }
+            return parent_is_null;
+        }
+
+        SerializableValue struct_dict_serialized_memory_size(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* ptr, const python::Type& dict_type) {
             // get the corresponding type
             auto stype = create_structured_dict_type(env, dict_type);
 
@@ -824,6 +936,8 @@ namespace tuplex {
             // check bitmap size (i.e. multiples of 64bit)
             auto bitmap_size = struct_dict_bitmap_size_in_bytes(dict_type);
 
+            // env.printValue(builder, env.i64Const(bitmap_size), std::string(__FILE__) + ":" + std::to_string(__LINE__) + " bitmap size is");
+
             llvm::Value* size = env.i64Const(bitmap_size);
 
             auto bytes8 = env.i64Const(sizeof(int64_t));
@@ -831,6 +945,10 @@ namespace tuplex {
             // get indices to properly decode
             int pos = -1;
             for(auto entry : entries) {
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
                 pos++;
                 auto access_path = std::get<0>(entry);
                 auto value_type = std::get<1>(entry);
@@ -839,62 +957,114 @@ namespace tuplex {
 
                 auto path_desc = json_access_path_to_string(access_path, value_type, always_present);
 
+                // special case: Check whether the path has any Option[Struct[ in its parents.
+                // then, need to account for the special case where these paths will be invalid because a parent
+                // may be null.
+                bool has_potential_null_parent_paths = struct_dict_access_path_has_optional_nesting(dict_type, access_path);
+                llvm::BasicBlock* bbLastSkipBlock = nullptr;
+                llvm::BasicBlock* bbSubtreeDone = nullptr;
+                llvm::BasicBlock* bbComputeSize = nullptr;
+                llvm::Value* skip_value = nullptr;
+                if(has_potential_null_parent_paths) {
+                    auto parent_is_null = check_whether_any_parent_is_null(env, builder, ptr, dict_type, access_path);
+
+                    // now decide, if parent_is_null, skip.
+                    // if not fetch size using code below.
+                    auto& ctx = builder.GetInsertBlock()->getContext();
+                    bbSubtreeDone = llvm::BasicBlock::Create(ctx, "struct_dict_subtree_done", builder.GetInsertBlock()->getParent()); // <-- continue code gen here after.
+                    bbComputeSize = llvm::BasicBlock::Create(ctx, "struct_dict_subtree_size", builder.GetInsertBlock()->getParent());
+                    bbLastSkipBlock = builder.GetInsertBlock(); // <-- save block to connect phi value later!
+
+                    // always save the 8 bytes, unless it's a single value when skipping logic.
+                    auto skip_value_add = value_type.isSingleValued() ? env.i64Const(0) : bytes8;
+                    skip_value = builder.CreateAdd(size, skip_value_add);
+                    builder.CreateCondBr(parent_is_null, bbSubtreeDone, bbComputeSize);
+
+                    // continue and tie things up later.
+                    builder.SetInsertPoint(bbComputeSize);
+                }
+
                 // special case list: --> needs extra care
                 if(value_type.isOptionType())
                     value_type = value_type.getReturnType();
 
                 // skip nested struct dicts!
-                if(value_type.isStructuredDictionaryType())
-                    continue;
+                if(value_type.isStructuredDictionaryType()) {
+                    // do nothing.
+                } else {
+                    auto llvm_struct_type = env.pythonToLLVMType(dict_type);
 
-                if(python::Type::EMPTYLIST != value_type && value_type.isListType()) {
-                    // call list specific function to determine length.
-                    auto value_idx = std::get<2>(t_indices);
-                    assert(value_idx >= 0);
-                    auto list_ptr = CreateStructLoad(builder, ptr, value_idx);
+                    if(python::Type::EMPTYLIST != value_type && value_type.isListType()) {
 
-                    // is list_ptr a pointer?
-                    if(!list_ptr->getType()->isPointerTy()) {
-                        auto list = list_ptr;
-                        list_ptr = env.CreateFirstBlockAlloca(builder, list_ptr->getType());
-                        builder.CreateStore(list, list_ptr);
-                    }
+                        // call list specific function to determine length.
+                        auto value_idx = std::get<2>(t_indices);
+                        assert(value_idx >= 0);
+                        auto list_ptr = builder.CreateStructLoadOrExtract(llvm_struct_type, ptr, value_idx);
 
-                    auto s = list_serialized_size(env, builder, list_ptr, value_type);
+                        // is list_ptr a pointer?
+                        if(!list_ptr->getType()->isPointerTy()) {
+                            auto list = list_ptr;
+                            list_ptr = env.CreateFirstBlockAlloca(builder, list_ptr->getType());
+                            builder.CreateStore(list, list_ptr);
+                        }
 
-                    // env.printValue(builder, s, "got list size of: ");
+                        auto s = list_serialized_size(env, builder, list_ptr, value_type);
 
-                    assert(s->getType() == env.i64Type());
-                    // add 8 bytes for storing the info
-                    s = builder.CreateAdd(s, env.i64Const(8));
-                    size = builder.CreateAdd(size, s);
-                    continue;
-                }
+                        // env.printValue(builder, s, "got list size of: ");
 
-                // depending on field, add size!
-                auto value_idx = std::get<2>(t_indices);
-                auto size_idx = std::get<3>(t_indices);
-                // how to serialize everything?
-                // -> use again the offset trick!
-                // may serialize a good amount of empty fields... but so be it.
-                if(value_idx >= 0) { // <-- value_idx >= 0 indicates it's a field that may/may not be serialized
-                    // always add 8 bytes per field
-                    size = builder.CreateAdd(size, bytes8, "dict_el_" + std::to_string(pos));
-                    if(size_idx >= 0) { // <-- size_idx >= 0 indicates a variable length field!
-                        // add size field + data
-                        auto value_size = CreateStructLoad(builder, ptr, size_idx);
-                        assert(value_size->getType() == env.i64Type());
+                        assert(s->getType() == env.i64Type());
+                        // add 8 bytes for storing the info
+                        s = builder.CreateAdd(s, env.i64Const(8));
+                        size = builder.CreateAdd(size, s);
+                    } else {
+                        // depending on field, add size!
+                        auto value_idx = std::get<2>(t_indices);
+                        auto size_idx = std::get<3>(t_indices);
+                        // how to serialize everything?
+                        // -> use again the offset trick!
+                        // may serialize a good amount of empty fields... but so be it.
+                        if(value_idx >= 0) { // <-- value_idx >= 0 indicates it's a field that may/may not be serialized
+                            // always add 8 bytes per field
+                            size = builder.CreateAdd(size, bytes8, "dict_el_" + std::to_string(pos));
+                            if(size_idx >= 0) { // <-- size_idx >= 0 indicates a variable length field!
+                                // add size field + data
+                                auto value_size = builder.CreateStructLoadOrExtract(llvm_struct_type, ptr, size_idx);
+                                assert(value_size->getType() == env.i64Type());
+                                // only serialize if parents are present
+                                auto parent_present = struct_dict_load_path_presence(env, builder, ptr, dict_type, access_path);
+
+                                if(!always_present)
+                                    value_size = builder.CreateSelect(parent_present, value_size, env.i64Const(0));
 
 #ifdef TRACE_STRUCT_SERIALIZATION
-                        // only serialize if parents are present
-                        auto parent_present = struct_dict_load_path_presence(env, builder, ptr, dict_type, access_path);
-                        env.printValue(builder, parent_present, "path " + path_desc + " present: ");
+                                env.printValue(builder, parent_present, "path " + path_desc + " present: ");
+                        env.printValue(builder, value_size, "path " + path_desc + " value size: ");
+//                        llvm::Value* t_offset, *t_size;
+//                        std::tie(t_offset, t_size) = unpack_offset_and_size(builder, value_size);
+//                        env.printValue(builder, t_offset, "path " + path_desc + " unpacked offset: ");
+//                        env.printValue(builder, t_size, "path " + path_desc + " unpacked value size: ");
 #endif
 
-                        size = builder.CreateAdd(size, value_size);
+                                size = builder.CreateAdd(size, value_size);
+                            }
+                        }
                     }
                 }
 
+
+                // check now if parent null is a thing for this access path
+                if(has_potential_null_parent_paths && bbSubtreeDone) {
+                    auto bbCurrentBlock = builder.GetInsertBlock();
+                    builder.CreateBr(bbSubtreeDone);
+
+                    // make size new phi node
+                    builder.SetInsertPoint(bbSubtreeDone);
+                    auto phi_size = builder.CreatePHI(builder.getInt64Ty(), 2);
+
+                    phi_size->addIncoming(size, bbCurrentBlock);
+                    phi_size->addIncoming(skip_value, bbLastSkipBlock);
+                    size = phi_size;
+                }
 
 #ifdef TRACE_STRUCT_SERIALIZATION
                 // // debug print
@@ -902,14 +1072,19 @@ namespace tuplex {
 #endif
             }
 
+            // env.printValue(builder, size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " total size is");
+
             return SerializableValue(size, bytes8, nullptr);
         }
 
-        llvm::Value* serializeBitmap(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* bitmap, llvm::Value* dest_ptr) {
+        llvm::Value* serializeBitmap(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* bitmap, llvm::Value* dest_ptr) {
             using namespace std;
 
             assert(bitmap && dest_ptr);
             assert(bitmap->getType()->isArrayTy());
+            auto llvm_array_type = bitmap->getType();
+            if(!llvm_array_type->isArrayTy())
+                throw std::runtime_error("expected array type in serializeBitmap, but got instead " + env.getLLVMTypeName(llvm_array_type));
             auto element_type = bitmap->getType()->getArrayElementType();
             assert(element_type == env.i1Type());
             assert(dest_ptr->getType() == env.i8ptrType());
@@ -931,8 +1106,15 @@ namespace tuplex {
                     builder.CreateStore(bitmap, bitmap_tmp);
                     bitmap = bitmap_tmp;
                 }
-                bitmapIdx = builder.CreateConstInBoundsGEP2_64(bitmap, 0ull, i);
-                auto bit = builder.CreateLoad(bitmapIdx);
+
+                // PointeeType ==
+                //          cast<PointerType>(Ptr->getType()->getScalarType())->getElementType());
+                auto llvm_element_type = env.i1Type();
+                // std::cout<<"PointeeType: "<<env.getLLVMTypeName(llvm_array_type)<<std::endl;
+                // std::cout<<"other: "<<env.getLLVMTypeName(llvm::cast<llvm::PointerType>(bitmap->getType()->getScalarType())->getElementType())<<std::endl;
+
+                bitmapIdx = builder.CreateConstInBoundsGEP2_64(bitmap, llvm_array_type, 0ull, i);
+                auto bit = builder.CreateLoad(llvm_element_type, bitmapIdx);
                 auto bit_ext = builder.CreateShl(builder.CreateZExt(bit, env.i64Type()), env.i64Const(i % 64ul));
                 bitmap_array[i / 64ul] = builder.CreateOr(bitmap_array[i / 64ul], bit_ext);
             }
@@ -940,20 +1122,20 @@ namespace tuplex {
             // write out elements
             for(auto bitmap_element : bitmap_array) {
                 builder.CreateStore(bitmap_element, builder.CreatePointerCast(dest_ptr, env.i64ptrType()));
-                dest_ptr = builder.CreateGEP(dest_ptr, env.i64Const(sizeof(int64_t)));
+                dest_ptr = builder.MovePtrByBytes(dest_ptr, sizeof(int64_t));
             }
 
             return dest_ptr;
         }
 
-        void struct_dict_mem_zero(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* ptr, const python::Type& dict_type) {
+        void struct_dict_mem_zero(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* ptr, const python::Type& dict_type) {
             auto& logger = Logger::instance().logger("codegen");
 
             // get the corresponding type
-            auto stype = create_structured_dict_type(env, dict_type);
+            auto llvm_struct_type = create_structured_dict_type(env, dict_type);
 
-            if(ptr->getType() != stype->getPointerTo())
-                throw std::runtime_error("ptr has not correct type, must be pointer to " + stype->getStructName().str());
+            if(ptr->getType() != llvm_struct_type->getPointerTo())
+                throw std::runtime_error("ptr has not correct type, must be pointer to " + llvm_struct_type->getStructName().str());
 
             // get flattened structure!
             flattened_struct_dict_entry_list_t entries;
@@ -973,6 +1155,10 @@ namespace tuplex {
 //                dest_ptr = serializeBitmap(env, builder, presence_map, dest_ptr);
             }
             for(auto entry : entries) {
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
                 auto access_path = std::get<0>(entry);
                 auto t_indices = struct_dict_get_indices(dict_type, access_path);
                 auto value_idx = std::get<2>(t_indices);
@@ -987,7 +1173,7 @@ namespace tuplex {
                     // special case: use list zero function!
                     assert(value_idx >= 0);
 
-                    auto list_ptr = CreateStructGEP(builder, ptr, value_idx);
+                    auto list_ptr = builder.CreateStructGEP(ptr, llvm_struct_type, value_idx);
                     list_init_empty(env, builder, list_ptr, value_type);
                     continue; // --> done, go to next one.
                 }
@@ -997,7 +1183,7 @@ namespace tuplex {
                     continue;
 
                 if(size_idx >= 0) {
-                    auto llvm_size_idx = CreateStructGEP(builder, ptr, size_idx);
+                    auto llvm_size_idx = builder.CreateStructGEP(ptr, llvm_struct_type, size_idx);
 
                     assert(llvm_size_idx->getType() == env.i64ptrType());
                     // store 0!
@@ -1015,6 +1201,10 @@ namespace tuplex {
             // count how many fields there are => important to compute offsets!
             size_t num_fields = 0;
             for(auto entry : entries) {
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
                 auto access_path = std::get<0>(entry);
                 auto t_indices = struct_dict_get_indices(dict_type, access_path);
                 auto value_idx = std::get<2>(t_indices);
@@ -1034,8 +1224,9 @@ namespace tuplex {
             return num_fields;
         }
 
-        // deserializastion code...
-        SerializableValue struct_dict_deserialize_from_memory(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* ptr, const python::Type& dict_type) {
+
+        // deserialization code...
+        SerializableValue struct_dict_deserialize_from_memory(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* ptr, const python::Type& dict_type, bool heap_alloc, llvm::Value* is_null) {
             auto& logger = Logger::instance().logger("codegen");
             assert(dict_type.isStructuredDictionaryType());
 
@@ -1044,10 +1235,29 @@ namespace tuplex {
 
             SerializableValue v;
             auto stype = env.getOrCreateStructuredDictType(dict_type);
-            v.val = env.CreateFirstBlockAlloca(builder, stype);
+            if(heap_alloc) {
+                const auto& DL = env.getModule()->getDataLayout();
+                auto alloc_size = DL.getTypeAllocSize(stype);
+                v.val = env.malloc(builder, alloc_size);
+                v.val = builder.CreatePointerCast(v.val, stype->getPointerTo());
+            } else {
+                v.val = env.CreateFirstBlockAlloca(builder, stype);
+            }
             struct_dict_mem_zero(env, builder, v.val, dict_type);
             auto dict_ptr = v.val;
             auto original_mem_start_ptr = ptr; // save pointer for memory distance
+
+            // if is_null is valid, do conditional decode - else return value as is
+            auto& ctx = builder.getContext();
+            BasicBlock* bbDone = nullptr;
+
+            if(is_null) {
+                bbDone = BasicBlock::Create(ctx, "struct_dict_decode_done", builder.GetInsertBlock()->getParent());
+                auto bbDecode = BasicBlock::Create(ctx, "struct_dict_decode", builder.GetInsertBlock()->getParent());
+                assert(is_null->getType() == env.i1Type());
+                builder.CreateCondBr(is_null, bbDone, bbDecode);
+                builder.SetInsertPoint(bbDecode);
+            }
 
             // get flattened structure!
             flattened_struct_dict_entry_list_t entries;
@@ -1079,37 +1289,73 @@ namespace tuplex {
 
             size_t field_index = 0; // used in order to compute offsets!
             llvm::Value* varLengthOffset = env.i64Const(0); // current offset from varfieldsstart ptr
-            llvm::Value* varFieldsStartPtr = builder.CreateGEP(ptr, env.i64Const(sizeof(int64_t) * num_fields)); // where in memory the variable field storage starts!
+            llvm::Value* varFieldsStartPtr = builder.MovePtrByBytes(ptr, sizeof(int64_t) * num_fields); // where in memory the variable field storage starts!
+
 
             // get indices to properly decode
             for(auto entry : entries) {
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
                 auto access_path = std::get<0>(entry);
                 auto value_type = std::get<1>(entry);
+                bool is_always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
                 auto t_indices = struct_dict_get_indices(dict_type, access_path);
+
+                int bitmap_idx=-1, present_idx=-1, value_idx=-1, size_idx=-1;
+                std::tie(bitmap_idx, present_idx, value_idx, size_idx) = t_indices;
+
+                // handle decoding of both presence map & option map
+                llvm::Value* is_null = nullptr;
+                llvm::Value* is_present = nullptr;
+                if(value_type.isOptionType()) {
+                    assert(bitmap_idx >= 0);
+                    // decode is_null
+                    is_null = env.extractNthBit(builder, bitmap[bitmap_idx / 64], env.i64Const(bitmap_idx % 64ul));
+                }
+                if(!is_always_present) {
+                    assert(present_idx >= 0);
+                    is_present = env.extractNthBit(builder, presence_map[present_idx / 64], env.i64Const(present_idx % 64ul));
+                }
+
+                // Check whether for this path any of the parents are potentially null.
+                bool has_potential_null_parent_paths = struct_dict_access_path_has_optional_nesting(dict_type, access_path);
+
+                // special case Option[Struct] -> store is_null in ptr.
+                if(value_type.isOptionType() && value_type.withoutOption().isStructuredDictionaryType()) {
+                    struct_dict_store_isnull(env, builder, dict_ptr, dict_type, access_path, is_null);
+                    continue;
+                }
 
                 // special case list: --> needs extra care
                 if(value_type.isOptionType())
                     value_type = value_type.getReturnType();
+
                 if(python::Type::EMPTYLIST != value_type && value_type.isListType()) {
+
+                    // not supported yet.
+                    if(has_potential_null_parent_paths)
+                        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " parent optionally null not yet supported for path " +
+                                                         json_access_path_to_string(access_path, value_type, is_always_present));
 
                     // list is always stored as var-length field, so extract info
                     // load info from ptr & move
-                    auto info = builder.CreateLoad(builder.CreateBitOrPointerCast(ptr, env.i64ptrType()));
+                    auto info = builder.CreateLoad(builder.getInt64Ty(), builder.CreateBitOrPointerCast(ptr, env.i64ptrType()));
 
                     // unpack offset and size from info
                     llvm::Value* offset=nullptr; llvm::Value *size=nullptr;
                     std::tie(offset, size) = unpack_offset_and_size(builder, info);
 
                     // get the pointer to the data
-                    auto data_ptr = builder.CreateGEP(ptr, offset);
+                    auto data_ptr = builder.MovePtrByBytes(ptr, offset);
 
                     // move decode ptr.
-                    ptr = builder.CreateGEP(ptr, env.i64Const(sizeof(int64_t)));
+                    ptr = builder.MovePtrByBytes(ptr, sizeof(int64_t));
 
                     // call list decode and store result in struct!
-                    llvm::Value* end_ptr= nullptr;
-                    SerializableValue list_val;
-                    std::tie(end_ptr, list_val) = list_deserialize_from(env, builder, data_ptr, value_type);
+                    auto list_val = list_deserialize_from(env, builder, data_ptr, value_type);
+                    list_val.is_null = is_null;
 
                     // store value in struct (pointer should be sufficient)
                     struct_dict_store_value(env, builder, list_val, dict_ptr, dict_type, access_path);
@@ -1121,10 +1367,6 @@ namespace tuplex {
                 // skip nested struct dicts! --> they're taken care of.
                 if(value_type.isStructuredDictionaryType())
                     continue;
-
-                // depending on field, add size!
-                auto value_idx = std::get<2>(t_indices);
-                auto size_idx = std::get<3>(t_indices);
 
                 if(value_idx < 0)
                     continue; // can skip field, not necessary to serialize
@@ -1141,14 +1383,24 @@ namespace tuplex {
                     assert(value_type == python::Type::BOOLEAN || value_type == python::Type::I64 || value_type == python::Type::F64);
 
                     llvm::Type* llvm_value_type_ptr = value_type == python::Type::F64 ? env.doublePointerType() : env.i64ptrType();
+                    auto llvm_value_type = value_type == python::Type::F64 ? env.doubleType() : env.i64Type();
 
                     // store with casting
                     auto casted_src_ptr = builder.CreateBitOrPointerCast(ptr, llvm_value_type_ptr);
-                    value = builder.CreateLoad(casted_src_ptr);
+                    value = builder.CreateLoad(llvm_value_type, casted_src_ptr);
+
+                    // special case: potentially parent null -> set to dummy value.
+                    if(has_potential_null_parent_paths) {
+                        auto parent_is_null = check_whether_any_parent_is_null_with_bitmap(env, builder, bitmap, dict_type, access_path);
+                        value = builder.CreateSelect(parent_is_null, env.dummyValue(builder, value_type).val, value);
+                    }
+
+                    // env.printValue(builder, value, "deserialized value for path " + access_path_to_str(access_path) + " from " + dict_type.desc() + ": ");
+
                     // store into struct ptr
-                    struct_dict_store_value(env, builder, dict_ptr, dict_type, access_path, value); // always store value
-                    struct_dict_store_size(env, builder, dict_ptr, dict_type, access_path, env.i64Const(sizeof(int64_t)));
-                    ptr = builder.CreateGEP(ptr, env.i64Const(sizeof(int64_t)));
+                    SerializableValue value_to_store(value, env.i64Const(sizeof(int64_t)), is_null);
+                    struct_dict_store_value(env, builder, value_to_store, dict_ptr, dict_type, access_path);
+                    ptr = builder.MovePtrByBytes(ptr, sizeof(int64_t));
                 } else {
                     // more complex:
                     // for now, only string supported... => load and fix!
@@ -1156,8 +1408,7 @@ namespace tuplex {
                         throw std::runtime_error("unsupported type " + value_type.desc() + " encountered! ");
 
                     // load info from ptr & move
-                    auto info = builder.CreateLoad(builder.CreateBitOrPointerCast(ptr, env.i64ptrType()));
-
+                    auto info = builder.CreateLoad(builder.getInt64Ty(), builder.CreateBitOrPointerCast(ptr, env.i64ptrType()));
 
                     // unpack offset and size from info
                     llvm::Value* offset=nullptr; llvm::Value *size=nullptr;
@@ -1165,14 +1416,24 @@ namespace tuplex {
                     std::tie(offset, size) = unpack_offset_and_size(builder, info);
 
                     // get the pointer to the data
-                    auto data_ptr = builder.CreateGEP(ptr, offset);
+                    auto data_ptr = builder.MovePtrByBytes(ptr, offset);
+
+                    if(has_potential_null_parent_paths) {
+                        // use dummy value
+                        auto dummy = env.dummyValue(builder, value_type);
+                        auto is_parent_null = check_whether_any_parent_is_null_with_bitmap(env, builder, bitmap, dict_type, access_path);
+                        data_ptr = builder.CreateSelect(is_parent_null, dummy.val, data_ptr);
+                        size = builder.CreateSelect(is_parent_null, dummy.size, size);
+                        if(is_null)
+                            is_null = builder.CreateSelect(is_parent_null, dummy.is_null, is_null);
+                    }
 
                     // store (always safe to do)
-                    struct_dict_store_value(env, builder, dict_ptr, dict_type, access_path, data_ptr); // always store value
-                    struct_dict_store_size(env, builder, dict_ptr, dict_type, access_path, size);
+                    SerializableValue value_to_store(data_ptr, size, is_null);
+                    struct_dict_store_value(env, builder, value_to_store, dict_ptr, dict_type, access_path);
 
                     // move decode ptr.
-                    ptr = builder.CreateGEP(ptr, env.i64Const(sizeof(int64_t)));
+                    ptr = builder.MovePtrByBytes(ptr, sizeof(int64_t));
                 }
 
                 // serialized field -> inc index!
@@ -1180,25 +1441,32 @@ namespace tuplex {
             }
 
             // move ptr to end!
-            ptr = builder.CreateGEP(ptr, varLengthOffset);
-            llvm::Value* deserialized_size = builder.CreatePtrDiff(ptr, original_mem_start_ptr);
+            ptr = builder.MovePtrByBytes(ptr, varLengthOffset);
+            llvm::Value* deserialized_size = builder.CreatePtrDiff(builder.getInt8Ty(), ptr, original_mem_start_ptr);
 #ifndef NDEBUG
-            env.printValue(builder, deserialized_size, "deserialized struct_dict from bytes: ");
+            // env.printValue(builder, deserialized_size, "deserialized struct_dict from bytes: ");
 #endif
+
+            if(is_null) {
+                builder.CreateBr(bbDone);
+                builder.SetInsertPoint(bbDone);
+                v.is_null = is_null;
+            }
+
             return v;
         }
 
 
-        SerializableValue struct_dict_serialize_to_memory(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* ptr, const python::Type& dict_type, llvm::Value* dest_ptr) {
+        SerializableValue struct_dict_serialize_to_memory(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* ptr, const python::Type& dict_type, llvm::Value* dest_ptr) {
             auto& logger = Logger::instance().logger("codegen");
 
             llvm::Value* original_dest_ptr = dest_ptr;
 
             // get the corresponding type
-            auto stype = create_structured_dict_type(env, dict_type);
+            auto llvm_struct_type = create_structured_dict_type(env, dict_type);
 
-            // if(ptr->getType() != stype->getPointerTo())
-            //    throw std::runtime_error("ptr has not correct type, must be pointer to " + stype->getStructName().str());
+            // if(ptr->getType() != llvm_struct_type->getPointerTo())
+            //    throw std::runtime_error("ptr has not correct type, must be pointer to " + llvm_struct_type->getStructName().str());
 
             // get flattened structure!
             flattened_struct_dict_entry_list_t entries;
@@ -1215,20 +1483,13 @@ namespace tuplex {
             // 1. null-bitmap
             size_t bitmap_offset = 0;
             if(struct_dict_has_bitmap(dict_type)) {
-                //                llvm::Value* bitmap = nullptr;
-                //                if(ptr->getType()->isPointerTy()) {
-                //                    auto bitmap_idx = CreateStructGEP(builder, ptr, bitmap_offset);
-                //                    bitmap = builder.CreateLoad(bitmap_idx);
-                //                } else {
-                //                    bitmap = builder.CreateExtractValue(ptr, std::vector<unsigned>(1, bitmap_offset));
-                //                }
-                auto bitmap = CreateStructLoad(builder, ptr, bitmap_offset);
+                auto bitmap = builder.CreateStructLoadOrExtract(llvm_struct_type, ptr, bitmap_offset);
                 dest_ptr = serializeBitmap(env, builder, bitmap, dest_ptr);
                 bitmap_offset++;
             }
             // 2. presence-bitmap
             if(struct_dict_has_presence_map(dict_type)) {
-                auto presence_map = CreateStructLoad(builder, ptr, bitmap_offset);
+                auto presence_map = builder.CreateStructLoadOrExtract(llvm_struct_type, ptr, bitmap_offset);
                 dest_ptr = serializeBitmap(env, builder, presence_map, dest_ptr);
                 bitmap_offset++;
             }
@@ -1239,16 +1500,19 @@ namespace tuplex {
 
             size_t field_index = 0; // used in order to compute offsets!
             llvm::Value* varLengthOffset = env.i64Const(0); // current offset from varfieldsstart ptr
-            llvm::Value* varFieldsStartPtr = builder.CreateGEP(dest_ptr, env.i64Const(sizeof(int64_t) * num_fields)); // where in memory the variable field storage starts!
+            llvm::Value* varFieldsStartPtr = builder.MovePtrByBytes(dest_ptr, sizeof(int64_t) * num_fields); // where in memory the variable field storage starts!
 
 //            // print debug info
 //            env.printValue(builder, builder.CreatePtrDiff(varFieldsStartPtr, original_dest_ptr), "var fields begin at byte: ");
 //            env.printValue(builder, builder.CreatePtrDiff(dest_ptr, original_dest_ptr), "current dest_ptr position at byte: ");
 //            env.printValue(builder, varLengthOffset, "var length so far in bytes: ");
 
-//  #define TRACE_STRUCT_SERIALIZATION
             // get indices to properly decode
             for(auto entry : entries) {
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
                 auto access_path = std::get<0>(entry);
                 auto value_type = std::get<1>(entry);
                 auto t_indices = struct_dict_get_indices(dict_type, access_path);
@@ -1276,7 +1540,7 @@ namespace tuplex {
                     auto value_idx = std::get<2>(t_indices);
                     assert(value_idx >= 0);
                     auto list_type = value_type;
-                    auto list_ptr = CreateStructGEP(builder, ptr, value_idx);
+                    auto list_ptr = builder.CreateStructLoadOrExtract(llvm_struct_type, ptr, value_idx); // builder.CreateStructGEP(ptr, llvm_struct_type, value_idx);
                     auto list_size_in_bytes = list_serialized_size(env, builder, list_ptr, list_type);
 
                     // => list is ALWAYS a var length field, serialize like that.
@@ -1285,7 +1549,7 @@ namespace tuplex {
                     size_t cur_to_var_start_offset = (num_fields - field_index) * sizeof(int64_t); // no +1 here b.c. we do not store the varsize length unlike in a tuple.
                     auto offset = builder.CreateAdd(env.i64Const(cur_to_var_start_offset), varLengthOffset);
 
-                    auto varDest = builder.CreateGEP(varFieldsStartPtr, varLengthOffset);
+                    auto varDest = builder.MovePtrByBytes(varFieldsStartPtr, varLengthOffset);
 
                     // env.printValue(builder, builder.CreatePtrDiff(varDest, original_dest_ptr), "list var start from start ptr: ");
                     // env.printValue(builder, builder.CreatePtrDiff(varDest, dest_ptr), "offset (calc) vardest to dest ptr: ");
@@ -1304,7 +1568,7 @@ namespace tuplex {
                     // env.printValue(builder, list_size_in_bytes, "encoding to field " + std::to_string(field_index) + " list of size: ");
                     //  env.debugPrint(builder, path_str + ": encoding to field = " + std::to_string(field_index));
 
-                    dest_ptr = builder.CreateGEP(dest_ptr, env.i64Const(sizeof(int64_t)));
+                    dest_ptr = builder.MovePtrByBytes(dest_ptr, sizeof(int64_t));
                     varLengthOffset = builder.CreateAdd(varLengthOffset, list_size_in_bytes);
                     field_index++;
                     continue;
@@ -1328,8 +1592,8 @@ namespace tuplex {
                 // load value
                 llvm::Value* value = nullptr;
                 if(ptr->getType()->isPointerTy()) {
-                    auto llvm_value_idx = CreateStructGEP(builder, ptr, value_idx);
-                    value = builder.CreateLoad(llvm_value_idx);
+                    auto llvm_value_idx = builder.CreateStructGEP(ptr, llvm_struct_type, value_idx);
+                    value = builder.CreateLoad(llvm_struct_type->getStructElementType(value_idx), llvm_value_idx);
                 } else {
                     value = builder.CreateExtractValue(ptr, std::vector<unsigned>(1, value_idx));
                 }
@@ -1347,9 +1611,11 @@ namespace tuplex {
                     auto casted_dest_ptr = builder.CreateBitOrPointerCast(dest_ptr, value->getType()->getPointerTo());
                     builder.CreateStore(value, casted_dest_ptr);
 
-                    // env.debugPrint(builder, path_str + ": encoding to field = " + std::to_string(field_index));
-
-                    dest_ptr = builder.CreateGEP(dest_ptr, env.i64Const(sizeof(int64_t)));
+#ifdef TRACE_STRUCT_SERIALIZATION
+                     env.debugPrint(builder, path_str + ": encoding to field = " + std::to_string(field_index));
+                     env.printValue(builder, value, "value of type " + value_type.desc() + " serialized is: ");
+#endif
+                    dest_ptr = builder.MovePtrByBytes(dest_ptr, sizeof(int64_t));
                 } else {
                     // more complex:
                     // for now, only string supported... => load and fix!
@@ -1357,15 +1623,17 @@ namespace tuplex {
                         throw std::runtime_error("unsupported type " + value_type.desc() + " encountered! ");
 
                     // add size field + data
-                    auto llvm_size_idx = CreateStructGEP(builder, ptr, size_idx);
-                    auto value_size = llvm_size_idx->getType()->isPointerTy() ? builder.CreateLoad(llvm_size_idx) : llvm_size_idx; // <-- serialized size.
+//                    auto llvm_size_idx = builder.CreateStructGEP(ptr, llvm_struct_type, size_idx);
+//                    auto value_size = llvm_size_idx->getType()->isPointerTy() ? builder.CreateLoad(builder.getInt64Ty(), llvm_size_idx) : llvm_size_idx; // <-- serialized size.
+
+                    auto value_size = builder.CreateStructLoadOrExtract(llvm_struct_type, ptr, size_idx);
 
                     // compute offset
                     // from current field -> varStart + varoffset
                     size_t cur_to_var_start_offset = (num_fields - field_index) * sizeof(int64_t);
                     auto offset = builder.CreateAdd(env.i64Const(cur_to_var_start_offset), varLengthOffset);
 
-                    auto varDest = builder.CreateGEP(varFieldsStartPtr, varLengthOffset);
+                    auto varDest = builder.MovePtrByBytes(varFieldsStartPtr, varLengthOffset);
                     builder.CreateMemCpy(varDest, 0, value, 0, value_size); // for string, simple value copy!
 
                     // pack offset and size into 64bit!
@@ -1375,7 +1643,7 @@ namespace tuplex {
                     auto casted_dest_ptr = builder.CreateBitOrPointerCast(dest_ptr, env.i64ptrType());
                     builder.CreateStore(info, casted_dest_ptr);
                     // env.debugPrint(builder, path_str + ": encoding to field = " + std::to_string(field_index));
-                    dest_ptr = builder.CreateGEP(dest_ptr, env.i64Const(sizeof(int64_t)));
+                    dest_ptr = builder.MovePtrByBytes(dest_ptr, sizeof(int64_t));
 
                     varLengthOffset = builder.CreateAdd(varLengthOffset, value_size);
                 }
@@ -1386,16 +1654,15 @@ namespace tuplex {
 
 #ifdef TRACE_STRUCT_SERIALIZATION
             // print debug info
-            env.printValue(builder, builder.CreatePtrDiff(varFieldsStartPtr, original_dest_ptr), "var fields begin at byte: ");
-            env.printValue(builder, builder.CreatePtrDiff(dest_ptr, original_dest_ptr), "current dest_ptr position at byte: ");
+            env.printValue(builder, builder.CreatePtrDiff(env.i8Type(), varFieldsStartPtr, original_dest_ptr), "var fields begin at byte: ");
+            env.printValue(builder, builder.CreatePtrDiff(env.i8Type(), dest_ptr, original_dest_ptr), "current dest_ptr position at byte: ");
             env.printValue(builder, varLengthOffset, "var length so far in bytes: ");
 #endif
 
             // move dest ptr to end!
-            dest_ptr = builder.CreateGEP(dest_ptr, varLengthOffset);
+            dest_ptr = builder.MovePtrByBytes(dest_ptr, varLengthOffset);
 
-
-            llvm::Value* serialized_size = builder.CreatePtrDiff(dest_ptr, original_dest_ptr);
+            llvm::Value* serialized_size = builder.CreatePtrDiff(builder.getInt8Ty(), dest_ptr, original_dest_ptr);
             return SerializableValue(original_dest_ptr, serialized_size, nullptr);
         }
 
@@ -1489,7 +1756,7 @@ namespace tuplex {
 
 
         SerializableValue struct_dict_get_or_except(LLVMEnvironment& env,
-                                                    llvm::IRBuilder<>& builder,
+                                                    const IRBuilder& builder,
                                                     const python::Type& dict_type,
                                                     const std::string& key,
                                                     const python::Type& key_type,
@@ -1573,13 +1840,12 @@ namespace tuplex {
         // x['b'] = 20
         // ...
         SerializableValue struct_dict_upcast(LLVMEnvironment& env,
-                                             llvm::IRBuilder<>& builder,
+                                             const IRBuilder& builder,
                                              const SerializableValue& src,
                                              const python::Type& src_type,
                                              const python::Type& dest_type) {
             // make sure scenario is supported
             assert((src_type == python::Type::EMPTYDICT || src_type.isStructuredDictionaryType()) && dest_type.isStructuredDictionaryType());
-
 
             // special case empty dict -> struct dict
             if(src_type == python::Type::EMPTYDICT) {
@@ -1615,6 +1881,9 @@ namespace tuplex {
             auto dest_ptr = env.CreateFirstBlockAlloca(builder, llvm_type);
             struct_dict_mem_zero(env, builder, dest_ptr, dest_type);
 
+            // auto empty_size_dbg = struct_dict_serialized_memory_size(env, builder, dest_ptr, dest_type);
+            // env.printValue(builder, empty_size_dbg.val, "initialized empty dict in struct_dict_upcast, serialization size is: ");
+
             // more complex case: Basically insert all the data from the other dict while upcasting values.
             // for this, access paths are required of both types.
             flattened_struct_dict_entry_list_t src_paths;
@@ -1647,35 +1916,85 @@ namespace tuplex {
                     auto src_value_type = std::get<0>(it->second);
                     auto src_always_present = std::get<1>(it->second);
 
-                    BasicBlock* bNext = nullptr;
-                    // load and store value iff present
-                    if(!src_always_present) {
-                        // need to create basic blocks: I.e., store only if present...
-                        auto& ctx = env.getContext();
-                        BasicBlock* bStore = BasicBlock::Create(ctx, "store_from_src", builder.GetInsertBlock()->getParent());
-                        bNext = BasicBlock::Create(ctx, "next_element", builder.GetInsertBlock()->getParent());
+                    // // skip lists for now? --> looks like list upcast is the issue!!!
+                    // if(src_value_type.isListType() && src_value_type != dst_value_type)
+                    //     continue;
 
-                        auto is_present = struct_dict_load_present(env, builder, src.val, src_type, dst_access_path);
-                        builder.CreateCondBr(is_present, bStore, bNext);
-                        builder.SetInsertPoint(bStore);
-                        // store (same code as below)
+
+#warning "TODO: need to fix this similar to list of lists!"
+                    // skip for list of struct -> is buggy too?
+                    if(src_value_type.isListType() && src_value_type.elementType().isStructuredDictionaryType())
+                        continue;
+
+
+                    if(src_always_present) {
+                        auto src_element = struct_dict_load_value(env, builder, src.val, src_type, dst_access_path);
+
+//                        if(src_value_type.isListType()) {
+////                            auto llvm_list_type = env.pythonToLLVMType(src_value_type);
+////                            auto list_ptr = env.CreateFirstBlockAlloca(builder, llvm_list_type);
+////                            builder.CreateStore(src_element.val, list_ptr);
+////                            src_element.val = list_ptr;
+//
+//
+//                            auto len = list_length(env, builder, src_element.val, src_value_type);
+//                            env.printValue(builder, len, "loaded list " + src_value_type.desc() + " with n elements=");
+//                            auto l_serialized = list_serialized_size(env, builder, src_element.val, src_value_type);
+//                            env.printValue(builder, l_serialized, "serialized size of list " + src_value_type.desc() + " is: ");
+////                            if(src_value_type.elementType().isListType()) {
+////                                // extract first element
+////                                auto first_element = list_load_value(env, builder, src_element.val, src_value_type, env.i64Const(0));
+////
+////                                auto f_len = list_length(env, builder, first_element.val, src_value_type.elementType());
+////                                env.printValue(builder, f_len, "loaded list " + src_value_type.elementType().desc() + " with n elements=");
+////                                auto f_serialized = list_serialized_size(env, builder, first_element.val, src_value_type.elementType());
+////                                env.printValue(builder, f_serialized, "serialized size of list " + src_value_type.elementType().desc() + " is: ");
+////                            }
+//                        }
+
+                        // type upcast necessary?
+                        if(src_value_type != dst_value_type)
+                            src_element = env.upcastValue(builder, src_element, src_value_type, dst_value_type);
+
+                        struct_dict_store_value(env, builder, src_element, dest_ptr, dest_type, dst_access_path);
+                        struct_dict_store_present(env, builder, dest_ptr, dest_type, dst_access_path, env.i1Const(true));
+                    } else {
+                        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented");
                     }
 
-                    // Store & upcast
-                    // always present, no check necessary.
-                    auto src_element = struct_dict_load_value(env, builder, src.val, src_type, dst_access_path);
-                    // type upcast necessary?
-                    if(src_value_type != dst_value_type)
-                        src_element = env.upcastValue(builder, src_element, src_value_type, dst_value_type);
-                    struct_dict_store_value(env, builder, src_element, dest_ptr, dest_type, dst_access_path);
-                    struct_dict_store_present(env, builder, dest_ptr, dest_type, dst_access_path, env.i1Const(true));
-
-                    // connect blocks from presence test
-                    if(!src_always_present) {
-                        assert(bNext);
-                        builder.CreateBr(bNext);
-                        builder.SetInsertPoint(bNext);
-                    }
+                    // old
+//                    auto src_value_type = std::get<0>(it->second);
+//                    auto src_always_present = std::get<1>(it->second);
+//
+//                    BasicBlock* bNext = nullptr;
+//                    // load and store value iff present
+//                    if(!src_always_present) {
+//                        // need to create basic blocks: I.e., store only if present...
+//                        auto& ctx = env.getContext();
+//                        BasicBlock* bStore = BasicBlock::Create(ctx, "store_from_src", builder.GetInsertBlock()->getParent());
+//                        bNext = BasicBlock::Create(ctx, "next_element", builder.GetInsertBlock()->getParent());
+//
+//                        auto is_present = struct_dict_load_present(env, builder, src.val, src_type, dst_access_path);
+//                        builder.CreateCondBr(is_present, bStore, bNext);
+//                        builder.SetInsertPoint(bStore);
+//                        // store (same code as below)
+//                    }
+//
+//                    // Store & upcast
+//                    // always present, no check necessary.
+//                    auto src_element = struct_dict_load_value(env, builder, src.val, src_type, dst_access_path);
+//                    // type upcast necessary?
+//                    if(src_value_type != dst_value_type)
+//                        src_element = env.upcastValue(builder, src_element, src_value_type, dst_value_type);
+//                    struct_dict_store_value(env, builder, src_element, dest_ptr, dest_type, dst_access_path);
+//                    struct_dict_store_present(env, builder, dest_ptr, dest_type, dst_access_path, env.i1Const(true));
+//
+//                    // connect blocks from presence test
+//                    if(!src_always_present) {
+//                        assert(bNext);
+//                        builder.CreateBr(bNext);
+//                        builder.SetInsertPoint(bNext);
+//                    }
                 } else {
                     // should be maybe... -> else warn?
                     if(dst_always_present) {
@@ -1685,7 +2004,87 @@ namespace tuplex {
                 }
             }
 
+            // auto after_size_dbg = struct_dict_serialized_memory_size(env, builder, dest_ptr, dest_type);
+            // env.printValue(builder, after_size_dbg.val, "after upcast for dict in struct_dict_upcast, serialization size is: ");
+
+
             return SerializableValue(dest_ptr, nullptr, nullptr);
+        }
+
+        void struct_dict_print(LLVMEnvironment& env, const IRBuilder& builder, const SerializableValue& v, const python::Type& dict_type) {
+            assert(dict_type.isStructuredDictionaryType());
+
+            // iterate over access paths
+            flattened_struct_dict_entry_list_t entries;
+            flatten_recursive_helper(entries, dict_type, {});
+            auto indices = struct_dict_load_indices(dict_type);
+
+            env.debugPrint(builder, "Printing contents of value of type " + dict_type.desc() + " (" + pluralize(entries.size(), "field") + "):");
+            for (auto entry: entries) {
+                // skip not present
+                if(std::get<2>(entry) == python::NOT_PRESENT)
+                    continue;
+
+                auto access_path = std::get<0>(entry);
+                auto value_type = std::get<1>(entry);
+
+                bool is_always_present = std::get<2>(entry) == python::ALWAYS_PRESENT;
+                bool is_struct_type = value_type.isStructuredDictionaryType();
+
+                // skip nested entries
+                if(is_struct_type)
+                    continue;
+
+                // load value if present
+                llvm::BasicBlock* bbPresenceDone = nullptr;
+                llvm::BasicBlock* bbShow = nullptr;
+                if(!is_always_present) {
+                    auto item_present = struct_dict_load_present(env, builder, v.val, dict_type, access_path);
+                    env.printValue(builder, item_present, "  -- " + json_access_path_to_string(access_path, value_type, is_always_present) + " is present: ");
+
+                    auto& ctx = builder.GetInsertBlock()->getContext();
+                    bbPresenceDone = llvm::BasicBlock::Create(ctx, "struct_dict_presence_done", builder.GetInsertBlock()->getParent());
+                    bbShow = llvm::BasicBlock::Create(ctx, "struct_dict_show", builder.GetInsertBlock()->getParent());
+
+                    builder.CreateCondBr(item_present, bbShow, bbPresenceDone);
+                    builder.SetInsertPoint(bbShow);
+                }
+
+                auto el = struct_dict_load_value(env, builder, v.val, dict_type, access_path);
+
+                // print now depending on what is set.
+                if(el.val)
+                    env.printValue(builder, el.val, json_access_path_to_string(access_path, value_type, is_always_present) + " value is: ");
+                if(el.size)
+                    env.printValue(builder, el.size, json_access_path_to_string(access_path, value_type, is_always_present) + " size is: ");
+                if(el.is_null)
+                    env.printValue(builder, el.is_null, json_access_path_to_string(access_path, value_type, is_always_present) + " is_null is: ");
+
+                if(!is_always_present) {
+                    builder.CreateBr(bbPresenceDone);
+                    builder.SetInsertPoint(bbPresenceDone);
+                }
+            }
+        }
+
+        // do not call on elements that are not present. failure!
+        llvm::Value* struct_pair_keys_equal(LLVMEnvironment& env,
+                                            const IRBuilder& builder,
+                                            const python::StructEntry& entry,
+                                            const SerializableValue& key,
+                                            const python::Type& key_type) {
+            // check key equality
+            if(entry.keyType != key_type)
+                return env.i1Const(false);
+
+            if(key_type == python::Type::STRING) {
+                auto key_value = str_value_from_python_raw_value(entry.key); // the actual value\
+                assert(key.val);
+                assert(key.val->getType() == env.i8ptrType());
+                return env.fixedSizeStringCompare(builder, key.val, key_value);
+            } else {
+                throw std::runtime_error("unsupported key type comparison for key type=" + key_type.desc());
+            }
         }
     }
 }

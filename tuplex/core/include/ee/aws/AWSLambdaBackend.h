@@ -13,7 +13,7 @@
 #ifndef TUPLEX_AWSLAMBDABACKEND_H
 #define TUPLEX_AWSLAMBDABACKEND_H
 
-#include "../IBackend.h"
+#include "../IRequestBackend.h"
 #include <vector>
 #include <physical/execution/TransformStage.h>
 #include <physical/execution/HashJoinStage.h>
@@ -28,7 +28,7 @@
 
 #include "AWSCommon.h"
 #include "ContainerInfo.h"
-#include "RequestInfo.h"
+#include "../RequestInfo.h"
 #include "AWSLambdaInvocationService.h"
 #include <aws/core/Aws.h>
 #include <aws/core/utils/Outcome.h>
@@ -73,12 +73,12 @@ namespace tuplex {
 
 
 
-    class AwsLambdaBackend : public IBackend {
+    class AwsLambdaBackend : public IRequestBackend {
     public:
         AwsLambdaBackend() = delete;
         ~AwsLambdaBackend() override;
 
-        AwsLambdaBackend(const Context& context, const AWSCredentials& credentials, const std::string& functionName);
+        AwsLambdaBackend(Context& context, const AWSCredentials& credentials, const std::string& functionName);
 
         Executor* driver() override { return _driver.get(); }
         void execute(PhysicalStage* stage) override;
@@ -104,22 +104,10 @@ namespace tuplex {
         uint64_t _startTimestamp;
         uint64_t _endTimestamp;
 
-        // statistics/info
-        struct JobInfo {
-            size_t total_input_normal_path;
-            size_t total_input_general_path;
-            size_t total_input_fallback_path;
-            size_t total_input_unresolved;
-
-            size_t total_output_rows;
-            size_t total_output_exceptions;
-
-            double cost;
-
-            JobInfo() {}
-        };
-
         JobInfo _info;
+
+        std::vector<std::tuple<LambdaStatusCode, std::string, AwsLambdaRequest>> _failedRequests;
+        std::unordered_map<std::string, AwsLambdaRequest> _invokedRequests; // for easier lookup.
 
         // mapping of remote to local paths for result collection.
         std::unordered_map<URI, URI> _remoteToLocalURIMapping;
@@ -129,7 +117,6 @@ namespace tuplex {
         std::shared_ptr<HistoryServerConnector> _historyServer;
 
         void reset();
-
         void checkAndUpdateFunctionConcurrency(const std::shared_ptr<Aws::Lambda::LambdaClient>& client,
                                                size_t concurrency,
                                                const std::string& functionName,
@@ -177,8 +164,8 @@ namespace tuplex {
 
         // Lambda request callbacks
         void onLambdaSuccess(const AwsLambdaRequest& req, const AwsLambdaResponse& resp);
-        void onLambdaFailure(const AwsLambdaRequest& req, LambdaErrorCode err_code, const std::string& err_msg);
-        void onLambdaRetry(const AwsLambdaRequest& req, LambdaErrorCode retry_code, const std::string& retry_msg, bool decreasesRetryCount);
+        void onLambdaFailure(const AwsLambdaRequest& req, LambdaStatusCode err_code, const std::string& err_msg);
+        void onLambdaRetry(const AwsLambdaRequest& req, LambdaStatusCode retry_code, const std::string& retry_msg, bool decreasesRetryCount);
 
         URI _scratchDir;
         bool _deleteScratchDirOnShutdown;
@@ -210,6 +197,10 @@ namespace tuplex {
          */
         void gatherStatistics();
 
+
+        std::vector<URI> thread_safe_get_input_uris();
+        std::vector<URI> thread_safe_get_output_uris();
+
         /*!
          * outputs all the stats etc. as json file for analysis
          * @param json_path
@@ -218,10 +209,28 @@ namespace tuplex {
 
         std::string csvPerFileInfo();
 
-        size_t getMB100Ms();
-        size_t getMBMs();
 
-        double usedGBSeconds() {
+        std::atomic<size_t> _total_mbms;
+        std::atomic<size_t> _total_requests;
+
+        inline size_t getMBMs() const { return _total_mbms; }
+
+        inline void resetBilling() {
+            _total_mbms = 0;
+            _total_requests = 0;
+        }
+
+        /*!
+         * add incurred costs to calculations.
+         * @param mbms
+         * @param n_requests
+         */
+        inline void addBilling(size_t mbms, size_t n_requests=1) {
+            _total_mbms += mbms;
+            _total_requests += n_requests;
+        }
+
+        inline double usedGBSeconds() const {
             // 1ms = 0.001s
             // 1mb = 0.001Gb
             return (double)getMBMs() / 1000000.0;
@@ -229,11 +238,9 @@ namespace tuplex {
             // old: Before Dec 2020, now costs changed.
             // return (double)getMB100Ms() / 10000.0;
         }
-        size_t numRequests() { assert(_service); return _service->numRequests(); }
+        inline size_t numRequests() const { return _total_requests; }
 
-        inline double lambdaCost() const {
-            double cost_per_request = 0.0000002;
-
+        inline double costPerGBSecond() const {
             // depends on ARM or x86 architecture
             // values from https://aws.amazon.com/lambda/pricing/ (Nov 2021)
             double cost_per_gb_second_x86 = 0.0000166667;
@@ -244,9 +251,16 @@ namespace tuplex {
             // check architecture, else assume x86 cost
             if(_functionArchitecture == "arm64")
                 cost_per_gb_second = cost_per_gb_second_arm;
+            return cost_per_gb_second;
+        }
 
-            auto usedGBSeconds = _service->usedGBSeconds();
-            auto numRequests = _service->numRequests();
+        inline double lambdaCost() const {
+            double cost_per_request = 0.0000002;
+
+            auto cost_per_gb_second = costPerGBSecond();
+
+            auto usedGBSeconds = this->usedGBSeconds();
+            auto numRequests = this->numRequests();
 
             return usedGBSeconds * cost_per_gb_second + (double)numRequests * cost_per_request;
         }
@@ -259,7 +273,95 @@ namespace tuplex {
         inline URI tempStageURI(int stageNo) const {
             return URI(_options.AWS_SCRATCH_DIR() + "/temporary_stage_output/" + "stage_" + std::to_string(stageNo));
         }
+
+        void fill_output_uris(std::vector<AwsLambdaRequest> &requests, const TransformStage* tstage, int num_digits, int numThreads);
+
+        inline void fill_with_transform_stage(messages::InvocationRequest& req, const TransformStage* tstage) const;
+        inline void fill_with_worker_config(messages::InvocationRequest& req,
+                    const std::string& worker_spill_uri,
+                    int numThreads) const;
+
+        inline size_t compute_buf_spill_size(int numThreads) const {
+            // at least 1 thread.
+            numThreads = std::max(numThreads, 1);
+
+            // perhaps also use:  - 64 * numThreads ==> smarter buffer scaling necessary.
+            size_t buf_spill_size = (_options.AWS_LAMBDA_MEMORY() - 256) / numThreads * 1000 * 1024;
+
+            // limit to 128mb each
+            if (buf_spill_size > 128 * 1000 * 1024)
+                buf_spill_size = 128 * 1000 * 1024;
+
+            return buf_spill_size;
+        }
+
+        inline std::string spillURI() const {
+            auto scratchDir = _options.AWS_SCRATCH_DIR();
+            if(scratchDir.empty())
+                scratchDir = _options.SCRATCH_DIR().toPath();
+            return scratchDir + "/spill_folder";
+        }
+
+        inline void fill_specialization_unit(messages::SpecializationUnit& m,
+                                             const std::vector<std::tuple<URI,size_t>>& uri_infos,
+                                             const SamplingMode& sampling_mode);
+
+        // this may internally modify the remote mapping.
+        URI generate_output_base_uri(const TransformStage* tstage, int taskNo, int num_digits=-1, int part_no=-1, int num_digits_part=-1);
+
+        void validate_requests_can_be_served_with_concurrency_limit(const std::vector<AwsLambdaRequest>& requests,
+                                                               size_t concurrency_limit);
+
+
+        void perform_requests(const std::vector<AwsLambdaRequest>& requests, size_t concurrency_limit);
+
+        void fill_with_stage(std::vector<AwsLambdaRequest> &requests, TransformStage *tstage, size_t numThreads,
+                             size_t max_retries);
+
+        std::vector<AwsLambdaRequest>
+        create_specializing_requests_with_multiple_files(const TransformStage* tstage,
+                                                         int numThreads,
+                                                         const std::vector<std::tuple<std::string, size_t>>& uri_infos, MessageHandler& logger,
+                                                         std::function<std::string(int n, int n_digits)> generate_output_base_uri=[](int n, int n_digits) {
+                                                             return "part" + fixedLength(n, n_digits); });
     };
+
+
+    // Helper functions (helpful when splitting up requests into recursive ones)
+    // this here splits by size.
+    extern std::vector<AwsLambdaRequest> create_specializing_recursive_requests(const std::vector<std::tuple<URI, std::size_t>> &uri_infos,
+                                                                         size_t minimum_chunk_size,
+                                                                         size_t maximum_chunk_size,
+                                                                         MessageHandler& logger,
+                                                                         std::function<std::string(int n, int n_digits)> generate_output_base_uri=[](int n, int n_digits) {
+                                                                             return "part" + fixedLength(n, n_digits); });
+
+    // Helper when not URIs but strings.
+    inline std::vector<AwsLambdaRequest> create_specializing_recursive_requests(const std::vector<std::tuple<std::string, std::size_t>> &uri_infos,
+                                                                                size_t minimum_chunk_size,
+                                                                                size_t maximum_chunk_size,
+                                                                                MessageHandler& logger,
+                                                                                std::function<std::string(int n, int n_digits)> generate_output_base_uri=[](int n, int n_digits) {
+                                                                                    return "part" + fixedLength(n, n_digits); }) {
+        using namespace std;
+        vector<tuple<URI, size_t>> v;
+        for(const auto& t : uri_infos)
+            v.emplace_back(make_tuple(URI(get<0>(t)), get<1>(t)));
+        return create_specializing_recursive_requests(v, minimum_chunk_size, maximum_chunk_size, logger, generate_output_base_uri);
+    }
+
+
+    // Helper functions to distribute workload between lambdas.
+
+    /*!
+     * binary search based solver to find suitable maximum chunk size given input parameters.
+     * @param sizes vector of file sizes
+     * @param c_min minimum chunk size.
+     * @param parallelism desired parallelism. Ideally, maximum chunk size c_max will be calculated that per-file specialization will result in parallelism requests.
+     * @return c_max, maximum chunk size.
+     */
+    extern size_t find_max_chunk_size(std::vector<size_t> sizes, size_t c_min, size_t parallelism);
+
 }
 
 #endif //TUPLEX_AWSLAMBDABACKEND_H

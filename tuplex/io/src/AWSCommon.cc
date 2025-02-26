@@ -64,7 +64,7 @@ private:
 
 namespace tuplex {
 
-    bool initAWSSDK() {
+    bool initAWSSDK(Aws::Utils::Logging::LogLevel log_level) {
         if(!isAWSInitialized) {
 
 //        // hookup to Tuplex logger...
@@ -74,8 +74,8 @@ namespace tuplex {
             // @TODO: add tuplex loggers
             // => https://sdk.amazonaws.com/cpp/api/LATEST/class_aws_1_1_utils_1_1_logging_1_1_log_system_interface.html
 
-        // note: AWSSDk uses curl by default, can disable curl init here via https://sdk.amazonaws.com/cpp/api/LATEST/struct_aws_1_1_http_options.html
-        Aws::InitAPI(aws_options);
+            // note: AWSSDk uses curl by default, can disable curl init here via https://sdk.amazonaws.com/cpp/api/LATEST/struct_aws_1_1_http_options.html
+            Aws::InitAPI(aws_options);
 
             // init logging
 //        Aws::Utils::Logging::InitializeAWSLogging(
@@ -84,8 +84,6 @@ namespace tuplex {
 //                    Aws::Utils::Logging::LogLevel::Trace,
 //                    "aws sdk"));
 #ifndef NDEBUG
-        auto log_level = Aws::Utils::Logging::LogLevel::Trace;
-        log_level = Aws::Utils::Logging::LogLevel::Info;
         auto log_system = Aws::MakeShared<Aws::Utils::Logging::ConsoleLogSystem>("tuplex", log_level);
         Aws::Utils::Logging::InitializeAWSLogging(log_system);
 #endif
@@ -198,8 +196,7 @@ namespace tuplex {
     }
 
     void shutdownAWS() {
-
-        // remove S3 File System
+        // Removes S3 File System.
         VirtualFileSystem::removeS3FileSystem();
         if(isAWSInitialized)
             Aws::ShutdownAPI(aws_options);
@@ -240,8 +237,37 @@ namespace tuplex {
         config.caFile = ns.caFile.c_str();
         config.caPath = ns.caPath.c_str();
         config.verifySSL = ns.verifySSL;
+
+        if(!ns.endpointOverride.empty()) {
+
+            // disable discovery
+            config.enableEndpointDiscovery = false;
+
+            if(strStartsWith(ns.endpointOverride, "http://")) {
+                config.endpointOverride = ns.endpointOverride.substr(std::string("http://").size());
+                config.scheme = Aws::Http::Scheme::HTTP;
+            } else if(strStartsWith(ns.endpointOverride, "https://")) {
+                config.endpointOverride = ns.endpointOverride.substr(std::string("https://").size());
+                config.scheme = Aws::Http::Scheme::HTTPS;
+            } else {
+                config.endpointOverride = ns.endpointOverride;
+            }
+        }
     }
 
+    bool ModifiedRetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors> &error,
+                                            long attemptedRetries) const {
+        auto base_should_retry = Aws::Client::DefaultRetryStrategy::ShouldRetry(error, attemptedRetries);
+        if(!base_should_retry)
+            return false;
+
+        // Check now what the error code is, is there a curl code?
+        std::string error_message = error.GetMessage().c_str();
+        if(error_message.find("Couldn't resolve host name") != std::string::npos && attemptedRetries >= 2)
+            return false;
+
+        return true;
+    }
 }
 
 #endif

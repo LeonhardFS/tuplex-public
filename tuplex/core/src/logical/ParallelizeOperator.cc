@@ -18,7 +18,19 @@ namespace tuplex {
                                                  _columnNames(columns),
                                                  _samplingMode(sampling_mode) {
 
-        setOutputSchema(schema);
+        auto output_schema = schema;
+        // Use row type as output schema if columns are given.
+        if(!columns.empty() && schema.getRowType().isTupleType()) {
+            if(columns.size() != schema.getRowType().parameters().size()) {
+                std::stringstream ss;
+                ss<<__FILE__<<":"<<__LINE__<<" "<<name()<<" operator got "<<pluralize(columns.size(), "column name")<<" but given tuple schema has "<<schema.getRowType().parameters().size()<<" entries.";
+                throw std::runtime_error(ss.str());
+            }
+
+            output_schema = Schema(schema.getMemoryLayout(), python::Type::makeRowType(schema.getRowType().parameters(), columns));
+        }
+
+        setOutputSchema(output_schema);
 
         // parallelize operator holds data in memory for infinite lifetime.
         // => make partitions immortal

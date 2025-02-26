@@ -237,6 +237,8 @@ namespace python {
      */
     extern PythonCallResult callFunctionEx(PyObject* pFunc, PyObject* pArgs, PyObject* kwargs=nullptr);
 
+    extern PythonCallResult callFunctionWithTraceObject(PyObject* function, PyObject* trace_oject);
+
     /*!
      * call function with dictionary input, record exceptions
      * @param pFunc

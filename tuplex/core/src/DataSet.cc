@@ -78,6 +78,12 @@ namespace tuplex {
         if (numElements < 0)
             numElements = std::numeric_limits<int64_t>::max();
 
+        // empty resultset or null?
+        if(!rs) {
+            Logger::instance().defaultLogger().debug("No resultset found, returning empty vector of rows.");
+            return {};
+        }
+
         // std::vector<Row> v;
         // while (rs->hasNextRow() && v.size() < numElements) {
         //     v.push_back(rs->getNextRow());
@@ -133,6 +139,10 @@ namespace tuplex {
                 throw std::runtime_error("tofile file format not yet supported!");
         }
 
+
+        // auto& logger = Logger::instance().logger("logical plan");
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Adding file output operator: " + name);
+
         auto op = _context->addOperator(
                 std::shared_ptr<LogicalOperator>(new FileOutputOperator(_operator, uri, udf.withCompilePolicy(_context->compilePolicy()), name, fmt, outputOptions,
                                        fileCount, shardSize, limit)));
@@ -180,6 +190,9 @@ namespace tuplex {
 #endif
             return _context->makeError("job aborted (signal received)");
         }
+
+        // auto& logger = Logger::instance().logger("logical plan");
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " added map operator (name: " + op->name() + ")");
 
         // !!! never return the pointer above
         return *op->getDataSet();
@@ -338,6 +351,9 @@ namespace tuplex {
         // now it is a simple map operator
         DataSet &ds = map(UDF(code).withCompilePolicy(_context->compilePolicy()));
 
+        // auto& logger = Logger::instance().logger("logical plan");
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " created map operator for selectColumns / integer indices");
+
         // check if cols exist & update them
         auto columns = _operator->columns();
         if (!columns.empty()) {
@@ -362,6 +378,8 @@ namespace tuplex {
 #endif
             return _context->makeError("job aborted (signal received)");
         }
+
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " selectColumns done.");
 
         return ds;
     }
@@ -501,7 +519,7 @@ namespace tuplex {
             return _context->makeError(ss.str());
         }
 
-#warning"use here dict syntax to overcome selection problem, i.e. when doing selection pushdown - need to also change code. => that's difficult, hence simply use dict syntax here."
+#warning "use here dict syntax to overcome selection problem, i.e. when doing selection pushdown - need to also change code. => that's difficult, hence simply use dict syntax here."
         // no missing cols, hence one can do selection.
         // for this, create a simple UDF
         std::string code;
@@ -528,6 +546,9 @@ namespace tuplex {
         // now it is a simple map operator
         DataSet &ds = map(UDF(code).withCompilePolicy(_context->compilePolicy()));
 
+        auto& logger = Logger::instance().logger("logical plan");
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " added selectColumns / string keys");
+
         // set columns to restricted cols
         ds.setColumns(columnNames);
 
@@ -542,6 +563,9 @@ namespace tuplex {
 #endif
             return _context->makeError("job aborted (signal received)");
         }
+
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " added map operator (name: " + ds._operator->name() + ")");
+
         return ds;
     }
 

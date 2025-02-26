@@ -49,7 +49,7 @@ namespace tuplex {
          * read the contents of an Orc file into Tuplex memory
          * @param inputFilePath
          */
-        void read(const URI& inputFilePath) override {
+        void read(const URI& inputFilePath, const std::function<bool()>& blockFunctor) override {
             Timer timer;
 
             using namespace ::orc;

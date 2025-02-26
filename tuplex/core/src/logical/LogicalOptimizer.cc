@@ -132,7 +132,7 @@ namespace tuplex {
         }
 
         if(!root->isActionable()) {
-            logger().error("given root is not actionable, skip optimization.");
+            logger().error("Given root is not actionable, skip optimization.");
             return root;
         }
 
@@ -622,7 +622,7 @@ namespace tuplex {
         {
             std::stringstream ss;
             if(outputRowType.isRowType()) {
-                auto column_names =outputRowType.get_column_names();
+                auto column_names = outputRowType.get_column_names();
                 std::vector<std::string> req_column_names;
                 for(auto col_idx : requiredCols) {
                     if(col_idx < column_names.size())
@@ -805,7 +805,6 @@ namespace tuplex {
                 set<size_t> reqLeft;
                 set<size_t> reqRight;
 
-
 #ifdef TRACE_LOGICAL_OPTIMIZATION
                 cout<<"join requires columns: "<<endl;
                 for(auto idx : requiredCols) {
@@ -938,8 +937,8 @@ namespace tuplex {
 
 #ifdef TRACE_LOGICAL_OPTIMIZATION
                 // info on columns + their types
-                cout<<"rewrite csv here with "<<ret<<endl;
-                cout<<"CSV columns before pushdown: "<<endl;
+                cout<<"rewrite "<<input_op->name()<<" here with "<<ret<<endl;
+                cout<<input_op->name()<<" columns before pushdown: "<<endl;
                 cout <<"names: " << input_op->columns() << endl;
                 cout <<"type: " << input_op->getOutputSchema().getRowType().desc() << endl;
 
@@ -977,8 +976,8 @@ namespace tuplex {
                 }
 
                 vector<size_t> colsToSerialize;
-                assert(rowtype.isTupleType());
-                for(auto i = 0; i < rowtype.parameters().size(); ++i)
+                assert(rowtype.isTupleType() || rowtype.isRowType());
+                for(auto i = 0; i < extract_columns_from_type(rowtype); ++i)
                     colsToSerialize.emplace_back(i);
 
                 return colsToSerialize;
@@ -1054,7 +1053,7 @@ namespace tuplex {
                     cout<<"And MAP type is: "<<mop->getInputSchema().getRowType().desc()<<endl;
 #endif
                     if(isMapSelect(mop.get())) {
-                        throw std::runtime_error("not yet implemented");
+                        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented");
                     } else {
                         mop->rewriteParametersInAST(rewriteMap);
                     }
@@ -1096,7 +1095,7 @@ namespace tuplex {
                 // rewrite all resolvers which follow
                 rewriteAllFollowingResolvers(op, rewriteMap);
 #ifdef TRACE_LOGICAL_OPTIMIZATION
-                cout<<"AFTER R "<<op->name()<<" input type: "<<op->getInputSchema().getRowType().desc()<<endl;
+                cout<<"AFTER "<<op->name()<<" input type: "<<op->getInputSchema().getRowType().desc()<<endl;
 #endif
                 return ret;
             }
@@ -1524,22 +1523,22 @@ namespace tuplex {
                 // Note: this requires adjustment of getting rid of unused params in UDFs when
                 //       multi-param syntax is used...
                 // @TODO: fix this.
-                // // new code:
-                // // withcolumn adds values based on all other columns. Thus, it's safe to pushdown a filter
-                // // if the newly added column is not part of the columns the filter requires
-                // auto it = std::find(accessedColumns.begin(), accessedColumns.end(), idx);
-                // return it != accessedColumns.end();
+                 // new code:
+                 // withcolumn adds values based on all other columns. Thus, it's safe to pushdown a filter
+                 // if the newly added column is not part of the columns the filter requires
+                 auto it = std::find(accessedColumns.begin(), accessedColumns.end(), idx);
+                 return it != accessedColumns.end();
 
-                // old code:
-                // check whether sets are disjoint and also index not used
-                parentColsAccessed.push_back(idx); // just add to set for check
-
-                std::vector<size_t> commonCols;
-                std::set_intersection(accessedColumns.begin(), accessedColumns.end(), parentColsAccessed.begin(),
-                                      parentColsAccessed.end(), std::back_inserter(commonCols));
-
-                // if intersection is empty, then no dependence. Else, dependence
-                return !commonCols.empty();
+//                // old code:
+//                // check whether sets are disjoint and also index not used
+//                parentColsAccessed.push_back(idx); // just add to set for check
+//
+//                std::vector<size_t> commonCols;
+//                std::set_intersection(accessedColumns.begin(), accessedColumns.end(), parentColsAccessed.begin(),
+//                                      parentColsAccessed.end(), std::back_inserter(commonCols));
+//
+//                // if intersection is empty, then no dependence. Else, dependence
+//                return !commonCols.empty();
             }
 
             case LogicalOperatorType::JOIN: {
@@ -1594,6 +1593,241 @@ namespace tuplex {
                 return true;
         }
         return true;
+    }
+
+
+    struct DictTreeNode {
+        std::vector<std::unique_ptr<DictTreeNode>> children;
+        // leaf nodes
+        bool always_present;
+        python::Type value_type;
+        python::Type key_type;
+        std::string key;
+
+        DictTreeNode() : value_type(python::Type::UNKNOWN), key_type(python::Type::UNKNOWN) {}
+
+        DictTreeNode(const std::string _key, const python::Type& _key_type,
+                     const python::Type& _value_type, bool _always_present) : key(_key), key_type(_key_type), value_type(_value_type), always_present(_always_present) {}
+    };
+
+    void insert_into_tree(DictTreeNode* node, access_path_t path, python::Type value_type, bool always_present) {
+
+        if(path.empty())
+            return;
+
+        // check whether path exists within children or not, if not add!
+        auto key = path.front().first;
+        auto key_type = path.front().second;
+
+        auto it = std::find_if(node->children.begin(), node->children.end(), [=](const std::unique_ptr<DictTreeNode>& other) {
+            return other->key == key && other->key_type == key_type;
+        });
+
+        if(it == node->children.end()) {
+            node->children.push_back(std::make_unique<DictTreeNode>(key, key_type, value_type, always_present));
+            // recurse
+            insert_into_tree(node->children.front().get(), access_path_t(path.begin() + 1, path.end()), value_type, always_present);
+        } else {
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented");
+        }
+    }
+
+    python::Type dict_tree_to_sparse_type(DictTreeNode* node) {
+        if(!node)
+            return python::Type::UNKNOWN;
+
+        if(node->children.empty())
+            return node->value_type;
+        else {
+            std::vector<python::StructEntry> entries;
+            for(const auto& c : node->children) {
+                auto value_type = dict_tree_to_sparse_type(c.get());
+                python::StructEntry entry;
+                entry.key = c->key;
+                entry.keyType = c->key_type;
+                entry.valueType = value_type;
+                // entry.alwaysPresent = c->always_present;
+                entry.presence = c->always_present ? python::ALWAYS_PRESENT : python::MAYBE_PRESENT;
+
+                // skip UNKNOWN types, this means that info is not available in value_type
+                // or there is a case of two structs.
+                if(value_type == python::Type::UNKNOWN)
+                    continue;
+
+                entries.push_back(entry);
+            }
+            return python::Type::makeStructuredDictType(entries, true);
+        }
+    }
+
+    python::Type access_paths_to_sparse_dict(const std::vector<access_path_t>& access_paths,
+                                             const std::vector<python::Type>& value_types,
+                                             const std::vector<bool>& always_present) {
+        using namespace std;
+
+        assert(access_paths.size() == value_types.size());
+        std::vector<python::StructEntry> entries;
+
+        assert(access_paths.size() == always_present.size());
+
+        // recursive function:
+        // cluster access paths by size
+
+        auto node = std::make_unique<DictTreeNode>();
+
+        for(unsigned i = 0; i < access_paths.size(); ++i) {
+            auto path = access_paths[i];
+            auto value_type = value_types[i];
+            auto is_present = always_present[i];
+
+            // skip UNKNOWN types, this means that info is not available in value_types
+            // or there is a case of two structs.
+            if(value_type.isIllDefined())
+                continue;
+
+#ifndef NDEBUG
+            cout<<"path: "<<access_path_to_str(path)<<" present: "<<std::boolalpha<<is_present<<" value_type: "<<value_type.desc()<<endl;
+#endif
+            insert_into_tree(node.get(), path, value_type, is_present);
+        }
+
+        // empty node?
+        if(node->children.empty() && node->value_type.isIllDefined())
+            return python::Type::UNKNOWN;
+
+        // generate type from tree.
+        return dict_tree_to_sparse_type(node.get());
+    }
+
+    python::Type negate_struct_pairs(const python::Type& type) {
+        if(!type.isStructuredDictionaryType() && !type.isSparseStructuredDictionaryType())
+            return type;
+
+        auto is_sparse = type.isSparseStructuredDictionaryType();
+
+        static std::unordered_map<python::StructPresence, python::StructPresence> presence_mapper{{python::ALWAYS_PRESENT, python::NOT_PRESENT},
+                                                                                  {python::MAYBE_PRESENT, python::MAYBE_PRESENT},
+                                                                                  {python::NOT_PRESENT, python::ALWAYS_PRESENT}};
+
+        // get pairs
+        auto kv_pairs = type.get_struct_pairs();
+        for(auto& p : kv_pairs) {
+            p = python::StructEntry(p.key, p.keyType, p.valueType, presence_mapper[p.presence]);
+        }
+        return python::Type::makeStructuredDictType(kv_pairs, is_sparse);
+    }
+
+    python::Type sparsify_and_project_row_type(const python::Type& row_type,
+                                               const std::vector<std::vector<access_path_t>>& column_access_paths) {
+
+        using namespace std;
+
+        auto& logger = Logger::instance().logger("optimizer");
+
+        if(!row_type.isTupleType() && !row_type.isRowType())
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " invalid row type.");
+
+        auto col_types = row_type.isRowType() ? row_type.get_column_types() : row_type.parameters();
+        auto columns = row_type.isRowType() ? row_type.get_column_names() : std::vector<std::string>();
+
+        if(col_types.size() != column_access_paths.size())
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " non-matching number of columns.");
+
+        std::vector<python::Type> reduced_types;
+        std::vector<std::string> reduced_columns;
+
+        // now check which columns are required
+        for(unsigned i = 0; i < col_types.size(); ++i) {
+            if (!column_access_paths[i].empty()) {
+
+                std::string current_column_name = "unknown";
+
+                if(!columns.empty()) {
+                    reduced_columns.push_back(columns[i]);
+                    current_column_name = columns[i];
+                }
+                auto type = col_types[i];
+
+                bool is_option = type.isOptionType();
+                type = type.withoutOption();
+
+                // dict or sparse dict?
+//                if(type.isStructuredDictionaryType() || type.isSparseStructuredDictionaryType())
+//                    type = type.makeNonSparse(true);
+                if(type.isStructuredDictionaryType()) {
+                    std::stringstream ss;
+                    ss<<"column "<<current_column_name<<": "<<"sparsifying dictionary of type " + type.desc() + ": ";
+                    // create sparse struct type.
+                    logger.debug(ss.str());
+
+                    // for each access path, check whether it's present and what its value type is.
+                    // TODO: if information about this is coming from trace, can also sparsify general dicts.
+                    std::vector<bool> presence;
+                    std::vector<python::Type> value_types;
+                    for(const auto& path : column_access_paths[i]) {
+
+                        // TODO: if path is present, but result is unknown -> thin existing struct to sparsestructs but do NOT remove.
+                        auto value_type = struct_dict_type_get_element_type(type, path);
+                        presence.push_back(value_type != python::Type::UNKNOWN);
+                        value_types.push_back(value_type);
+                    }
+
+                    type = access_paths_to_sparse_dict(column_access_paths[i], value_types, presence);
+
+#ifndef NDEBUG
+                     cout<<"Sparsified type for column #"<<i<<"/"<<current_column_name<<": "<<type.desc()<<endl;
+#endif
+                }
+
+                // restore if UNKNOWN/ill defined
+                if(type.isIllDefined()) {
+                    type = col_types[i];
+
+                    // special case: col_types[i] is a struct dict.
+                    // -> can sparsify to SparseStruct[], basically in the sample the recorded path was not hit (i.e., because of filter promot)
+                    // therefore sparsify to have not always present (done above with presence.push_back(value_type != python::Type::UNKNOWN)), and
+                    // in case there is an access the sparsestruct[] will error out.
+
+                    // @TODO: fix this here, because else fallback...
+                    if(type.isStructuredDictionaryType()) {
+                        if(column_access_paths[i].empty() || column_access_paths[i].front().empty())
+                            type = python::Type::makeStructuredDictType(std::vector<python::StructEntry>(), true); // empty sparse.
+                        else {
+                            // i.e. create sparse dict with NOT entry for all paths (as they weren't attained!) --> could also do this partial.
+                            // need to adjust parser (JSON) + processing for dict.get for this.
+                            auto this_column_paths = column_access_paths[i];
+                            auto dummy_type = access_paths_to_sparse_dict(this_column_paths,
+                                                                     std::vector<python::Type>(this_column_paths.size(), python::Type::PYOBJECT),
+                                                                             std::vector<bool>(this_column_paths.size(), true));
+                            // recursively mark as NOT_PRESENT
+#ifndef NDEBUG
+                            cout<<"dummy is: "<<dummy_type.desc()<<endl;
+#endif
+                            dummy_type = negate_struct_pairs(dummy_type);
+#ifndef NDEBUG
+                            cout<<"negated dummy is: "<<dummy_type.desc()<<endl;
+#endif
+                            type = dummy_type; // override with negated type.
+                        }
+                    }
+
+                }
+
+                // restore option.
+                if(is_option)
+                    type = python::Type::makeOptionType(type);
+
+#ifndef NDEBUG
+                cout<<"Adding type for column #"<<i<<": "<<type.desc()<<endl;
+#endif
+                reduced_types.push_back(type);
+            }
+        }
+
+        if(row_type.isTupleType())
+            return python::Type::makeTupleType(reduced_types);
+        else
+            return python::Type::makeRowType(reduced_types, reduced_columns);
     }
 
 }

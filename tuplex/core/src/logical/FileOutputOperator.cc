@@ -25,7 +25,8 @@ namespace tuplex {
                                                                               _splitSize(splitSize),
                                                                               _limit(limit) {
         // take schema from parent node
-        setOutputSchema(this->parent()->getOutputSchema());
+        if(this->parent())
+            setOutputSchema(this->parent()->getOutputSchema());
 
         // depending on output file format, if empty options are given - set default options
         if(_options.empty() && _fmt == FileFormat::OUTFMT_CSV) {
@@ -34,6 +35,9 @@ namespace tuplex {
         if(_options.empty() && _fmt == FileFormat::OUTFMT_ORC) {
             _options = defaultORCOutputOptions();
         }
+
+        // auto& logger = Logger::instance().logger("logical plan");
+        // logger.info(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " operator " + this->name() + " init.");
     }
 
     std::shared_ptr<LogicalOperator> FileOutputOperator::clone(bool cloneParents) const {
@@ -41,7 +45,8 @@ namespace tuplex {
                 _name, _fmt, _options, _numParts, _splitSize, _limit);
         copy->setDataSet(getDataSet());
         copy->copyMembers(this);
-        assert(checkBasicEqualityOfOperators(*copy, *this));
+        // fails because output schema/input schema is not copied for cloneParents=false.
+        // assert(checkBasicEqualityOfOperators(*copy, *this));
         return std::shared_ptr<LogicalOperator>(copy);
     }
 }

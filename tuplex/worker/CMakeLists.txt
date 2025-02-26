@@ -5,7 +5,7 @@ if(NOT WORKER_NAME OR WORKER_NAME STREQUAL "")
     message(FATAL_ERROR "need to set CMake variable WORKER_NAME to build worker")
 endif()
 
-# enable c++14
+# enable c++17
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 

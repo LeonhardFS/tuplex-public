@@ -59,7 +59,7 @@ namespace tuplex {
         /*!
          * add S3 file system, must be called after AWSSDK was initialized
          * @param access_key  AWS_ACCESS_KEY
-         * @param secret_key  AWS_SECRET_ACCESS_KET
+         * @param secret_key  AWS_SECRET_ACCESS_KEY
          * @param session_token AWS_SESSION_TOKEN, used together with temporary credentials (as provided via a role)
          * @param region AWS_REGION, e.g. us-east-1
          * @param ns helper struct holding various network settings

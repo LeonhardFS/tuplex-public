@@ -56,7 +56,7 @@ namespace tuplex {
             // this is row specific -> should be handled separately.
             llvm::Value* _row_object_var;
 
-            void initVars(llvm::IRBuilder<>& builder);
+            void initVars(const IRBuilder& builder);
 
             /*!
              * generate parse loop and return number of parsed bytes.
@@ -65,14 +65,14 @@ namespace tuplex {
              * @param bufSize
              * @return
              */
-            llvm::Value* generateParseLoop(llvm::IRBuilder<>& builder, llvm::Value* bufPtr, llvm::Value* bufSize,
+            llvm::Value* generateParseLoop(const IRBuilder& builder, llvm::Value* bufPtr, llvm::Value* bufSize,
                                            llvm::Value *userData,
                                            const std::vector<std::string>& normal_case_columns,
                                            const std::vector<std::string>& general_case_columns,
                                            bool unwrap_first_level,
                                            bool terminateEarlyOnLimitCode);
 
-            void generateChecks(llvm::IRBuilder<>& builder,
+            void generateChecks(const IRBuilder& builder,
                                 llvm::Value* userData,
                                 llvm::Value* rowNumber,
                                 llvm::Value* parser,
@@ -81,35 +81,35 @@ namespace tuplex {
 
             std::vector<int> columns_required_for_checks(const std::vector<NormalCaseCheck>& checks) const;
 
-            std::tuple<FlattenedTuple, std::unordered_map<int, int>> parse_selected_columns(llvm::IRBuilder<>& builder,
-                                                                                            const std::vector<int>& columns_to_parse,
-                                                                                            llvm::Value* parser,
-                                                                                            llvm::BasicBlock* bbBadParse) const;
+            std::tuple<FlattenedTuple, std::unordered_map<int, int>> parse_selected_columns_for_checks(const IRBuilder& builder,
+                                                                                                       const std::vector<int>& columns_to_parse,
+                                                                                                       llvm::Value* parser,
+                                                                                                       llvm::BasicBlock* bbBadParse) const;
 
-            inline llvm::Value* incVar(llvm::IRBuilder<>& builder, llvm::Value* var, llvm::Value* what_to_add) {
-                llvm::Value* val = builder.CreateLoad(var);
+            inline llvm::Value* incVar(const IRBuilder& builder, llvm::Value* var, llvm::Value* what_to_add) {
+                llvm::Value* val = builder.CreateLoad(builder.getInt64Ty(), var);
                 val = builder.CreateAdd(val, what_to_add);
                 builder.CreateStore(val, var);
                 return val;
             }
 
-            inline llvm::Value* incVar(llvm::IRBuilder<>& builder, llvm::Value* var, int64_t delta=1) {
+            inline llvm::Value* incVar(const IRBuilder& builder, llvm::Value* var, int64_t delta=1) {
                 return incVar(builder, var, _env->i64Const(delta));
             }
 
-            inline llvm::Value *rowNumber(llvm::IRBuilder<> &builder) {
+            inline llvm::Value *rowNumber(const IRBuilder& builder) {
                 assert(_rowNumberVar);
                 assert(_rowNumberVar->getType() == _env->i64ptrType());
-                return builder.CreateLoad(_rowNumberVar);
+                return builder.CreateLoad(builder.getInt64Ty(), _rowNumberVar);
             }
 
-            llvm::Value* parsedBytes(llvm::IRBuilder<>& builder, llvm::Value* parser, llvm::Value* buf_size);
+            llvm::Value* parsedBytes(const IRBuilder& builder, llvm::Value* parser, llvm::Value* buf_size);
 
-            llvm::Value *isDocumentOfObjectType(llvm::IRBuilder<> &builder, llvm::Value *j);
-            llvm::Value* parseRowAsStructuredDict(llvm::IRBuilder<> &builder, const python::Type& dict_type, llvm::Value *j,
+            llvm::Value *isDocumentOfObjectType(const IRBuilder& builder, llvm::Value *j);
+            llvm::Value* parseRowAsStructuredDict(const IRBuilder& builder, const python::Type& dict_type, llvm::Value *j,
                                                   llvm::BasicBlock *bbSchemaMismatch);
 
-            FlattenedTuple parseRow(llvm::IRBuilder<>& builder, const python::Type& row_type,
+            FlattenedTuple parseRow(const IRBuilder& builder, const python::Type& row_type,
                                     const std::vector<std::string>& columns,
                                     bool unwrap_first_level,
                                     llvm::Value* parser,
@@ -120,7 +120,7 @@ namespace tuplex {
                                                      const std::vector<std::string>& columns,
                                                      bool unwrap_first_level);
 
-            FlattenedTuple generateAndCallParseRowFunction(llvm::IRBuilder<>& parent_builder,
+            FlattenedTuple generateAndCallParseRowFunction(const IRBuilder& parent_builder,
                                                            const std::string& name,
                                                            const python::Type& row_type,
                                                            const std::vector<std::string>& columns,
@@ -128,29 +128,32 @@ namespace tuplex {
                                                            llvm::Value* parser,
                                                            llvm::BasicBlock *bbSchemaMismatch);
 
-            llvm::Value *initJsonParser(llvm::IRBuilder<> &builder);
-            void freeJsonParse(llvm::IRBuilder<> &builder, llvm::Value *j);
-            llvm::Value *openJsonBuf(llvm::IRBuilder<> &builder, llvm::Value *j, llvm::Value *buf, llvm::Value *buf_size);
-            void exitMainFunctionWithError(llvm::IRBuilder<> &builder, llvm::Value *exitCondition, llvm::Value *exitCode);
-            llvm::Value *hasNextRow(llvm::IRBuilder<> &builder, llvm::Value *j);
-            void moveToNextRow(llvm::IRBuilder<> &builder, llvm::Value *j);
+            llvm::Value *initJsonParser(const IRBuilder& builder);
+            void freeJsonParse(const IRBuilder& builder, llvm::Value *j);
+            llvm::Value *openJsonBuf(const IRBuilder& builder, llvm::Value *j, llvm::Value *buf, llvm::Value *buf_size);
+            void exitMainFunctionWithError(const IRBuilder& builder, llvm::Value *exitCondition, llvm::Value *exitCode);
+            llvm::Value *hasNextRow(const IRBuilder& builder, llvm::Value *j);
+            void moveToNextRow(const IRBuilder& builder, llvm::Value *j);
 
             // serialize bad parse exception
-            void serializeBadParseException(llvm::IRBuilder<> &builder,
+            void serializeBadParseException(const IRBuilder& builder,
                                             llvm::Value* userData,
                                             int64_t operatorID,
                                             llvm::Value *row_no,
                                             llvm::Value *str,
                                             llvm::Value *str_size);
 
-            void serializeAsNormalCaseException(llvm::IRBuilder<>& builder,
+            void serializeAsNormalCaseException(const IRBuilder& builder,
                                                 llvm::Value* userData,
                                                 int64_t operatorID,
                                                 llvm::Value* row_no,
                                                 const FlattenedTuple& general_case_row);
 
             std::tuple<std::vector<python::Type>, std::vector<std::string>>
-            get_column_types_and_names(const std::vector<size_t> &acc_cols) const;
+            get_column_types_and_names(const std::vector<size_t> &acc_cols, bool return_with_optimized_types=false) const;
+
+            std::tuple<std::vector<python::Type>, std::vector<std::string>>
+            get_column_types_and_names(const std::vector<std::string> &acc_names, bool return_with_optimized_types=false) const;
         };
 
 
@@ -167,7 +170,7 @@ namespace tuplex {
          * @param bbSchemaMismatch
          * @return
          */
-        extern FlattenedTuple json_parseRow(LLVMEnvironment& env, llvm::IRBuilder<>& builder, const python::Type& row_type,
+        extern FlattenedTuple json_parseRow(LLVMEnvironment& env, const IRBuilder& builder, const python::Type& row_type,
                                             const std::vector<std::string>& columns,
                                             bool unwrap_first_level,
                                             bool fill_missing_first_level_with_null,

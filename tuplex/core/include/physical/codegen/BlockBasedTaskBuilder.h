@@ -60,9 +60,9 @@ namespace tuplex {
             Row _intermediateInitialValue;
             python::Type _intermediateType;
 
-            llvm::Value *initIntermediate(llvm::IRBuilder<> &builder);
+            llvm::Value *initIntermediate(const IRBuilder& builder);
 
-            void writeIntermediate(llvm::IRBuilder<> &builder,
+            void writeIntermediate(const IRBuilder& builder,
                                    llvm::Value* userData,
                                    const std::string &intermediateCallbackName);
 
@@ -73,7 +73,7 @@ namespace tuplex {
              * @param fmt in which format to serialize exceptions.
              * @return a rtmalloc'ed representation of the exception row
              */
-            SerializableValue serializedExceptionRow(llvm::IRBuilder<>& builder,
+            SerializableValue serializedExceptionRow(const IRBuilder& builder,
                                                      const FlattenedTuple& ftIn,
                                                      const ExceptionSerializationFormat& fmt) const;
 
@@ -92,7 +92,7 @@ namespace tuplex {
             /*!
              * creates a new exception block. Builder will be set to last block (i.e. where to continue logic)
              */
-            llvm::BasicBlock *exceptionBlock(llvm::IRBuilder<> &builder,
+            llvm::BasicBlock *exceptionBlock(const IRBuilder& builder,
                                              llvm::Value *userData,
                                              llvm::Value *exceptionCode,
                                              llvm::Value *exceptionOperatorID,
@@ -117,13 +117,13 @@ namespace tuplex {
              * @param lazyExceptFunc
              * @return new except basic block to link to.
              */
-            llvm::BasicBlock *exceptionBlock(llvm::IRBuilder<>& builder,
+            llvm::BasicBlock *exceptionBlock(const IRBuilder& builder,
                                              llvm::Value* userData,
                                              llvm::Value* exceptionCode,
                                              llvm::Value* exceptionOperatorID,
-                                             std::function<ExceptionDetails(llvm::IRBuilder<>& builder)> lazyExceptFunc);
+                                             std::function<ExceptionDetails(const IRBuilder& builder)> lazyExceptFunc);
 
-            inline void callExceptHandler(llvm::IRBuilder<> &builder,
+            inline void callExceptHandler(const IRBuilder &builder,
                                              llvm::Value *userData,
                                              llvm::Value *exceptionCode,
                                              llvm::Value *exceptionOperatorID,
@@ -150,7 +150,7 @@ namespace tuplex {
 
             bool hasExceptionHandler() const { return !_exceptionHandlerName.empty(); }
             std::string exception_handler() const { return _exceptionHandlerName; }
-            void generateTerminateEarlyOnCode(llvm::IRBuilder<>& builder,
+            void generateTerminateEarlyOnCode(const IRBuilder& builder,
                                               llvm::Value* ecCode,
                                               ExceptionCode code = ExceptionCode::OUTPUT_LIMIT_REACHED);
 
@@ -206,6 +206,7 @@ namespace tuplex {
                                                              _normalAndGeneralCompatible(false),
                                                             _exceptionSerializationMode(except_mode),
                                                             _checks(checks) {
+
                 // check that upcasting is true or there is a valid mapping when sizes differ!
 //                assert((_inputRowType.parameters().size() != _inputRowTypeGeneralCase.parameters().size()
 //                && !_normalToGeneralMapping.empty() && _normalToGeneralMapping.size() == _inputRowType.parameters().size()) ||
@@ -253,7 +254,7 @@ namespace tuplex {
 
             LLVMEnvironment &env() { return *_env; }
 
-            std::string getTaskFuncName() const { return _func->getName(); }
+            std::string getTaskFuncName() const { return _func->getName().str(); }
 
             /*!
              * set internal processing pipeline

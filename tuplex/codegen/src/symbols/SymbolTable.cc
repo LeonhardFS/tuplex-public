@@ -59,6 +59,9 @@ namespace tuplex {
 
     void SymbolTable::addBuiltins() {
 
+        // first, add builtin exceptions
+        addBuiltinExceptionHierarchy();
+
         // add here types for functions that are known
 
         // builtin functions
@@ -92,6 +95,9 @@ namespace tuplex {
         //    t = str
         //    return t(x)
 
+        auto type_error_type = python::TypeFactory::instance().getByName("TypeError");
+        assert(type_error_type.isExceptionType());
+
         // global functions
         addSymbol("dict", python::Type::makeFunctionType(python::Type::EMPTYTUPLE, python::Type::GENERICDICT));
 
@@ -112,6 +118,12 @@ namespace tuplex {
         addSymbol("bool", python::Type::makeFunctionType(python::Type::I64, python::Type::BOOLEAN));
         addSymbol("bool", python::Type::makeFunctionType(python::Type::F64, python::Type::BOOLEAN));
         addSymbol("bool", python::Type::makeFunctionType(python::Type::STRING, python::Type::BOOLEAN));
+
+
+        // add explicit type errors for None to cover primitive
+        addSymbol("bool", python::Type::makeFunctionType(python::Type::NULLVALUE, type_error_type));
+        addSymbol("int", python::Type::makeFunctionType(python::Type::NULLVALUE, type_error_type));
+        addSymbol("float", python::Type::makeFunctionType(python::Type::NULLVALUE, type_error_type));
 
         addSymbol("str", python::Type::makeFunctionType(python::Type::NULLVALUE, python::Type::STRING));
         addSymbol("str", python::Type::makeFunctionType(python::Type::makeTupleType({python::Type::EMPTYTUPLE}),
@@ -143,11 +155,30 @@ namespace tuplex {
         addSymbol("str", python::Type::makeFunctionType(python::Type::makeOptionType(python::Type::STRING),
                                                         python::Type::STRING));
 
-        addSymbol("len", python::Type::makeFunctionType(python::Type::STRING, python::Type::I64));
-        auto n = findSymbol(std::string("len"))->fullyQualifiedName();
-        addSymbol("len", python::Type::makeFunctionType(python::Type::makeTupleType({python::Type::GENERICTUPLE}), python::Type::I64));
-        addSymbol("len", python::Type::makeFunctionType(python::Type::makeTupleType({python::Type::GENERICDICT}), python::Type::I64));
-        addSymbol("len", python::Type::makeFunctionType(python::Type::makeTupleType({python::Type::GENERICLIST}), python::Type::I64));
+//        addSymbol("len", python::Type::makeFunctionType(python::Type::STRING, python::Type::I64));
+//        auto n = findSymbol(std::string("len"))->fullyQualifiedName();
+//        addSymbol("len", python::Type::makeFunctionType(python::Type::makeTupleType({python::Type::GENERICTUPLE}), python::Type::I64));
+//        addSymbol("len", python::Type::makeFunctionType(python::Type::makeTupleType({python::Type::GENERICDICT}), python::Type::I64));
+//        addSymbol("len", python::Type::makeFunctionType(python::Type::makeTupleType({python::Type::GENERICLIST}), python::Type::I64));
+
+        // add symbol with typer for len.
+        // TODO: Use python protocols.
+        auto lenFunctionTyper = [this](const python::Type& parameterType) {
+
+            if(parameterType.parameters().size() != 1) {
+                // len() supports single parameter only.
+                return python::Type::makeFunctionType(parameterType, python::Type::UNKNOWN);
+            }
+
+            auto iterableType = parameterType.parameters().front();
+
+            if(iterableType == python::Type::STRING ||
+            iterableType.isListType() || iterableType.isDictionaryType() || iterableType.isTupleType())
+                return python::Type::makeFunctionType(parameterType, python::Type::I64);
+
+            return python::Type::UNKNOWN;
+        };
+        addSymbol(make_shared<Symbol>("len", lenFunctionTyper));
 
         addSymbol("abs", python::Type::makeFunctionType(python::Type::BOOLEAN,
                                                         python::Type::I64)); // note that abs converts to i64
@@ -188,6 +219,7 @@ namespace tuplex {
             }
 
             if(iterableType == python::Type::RANGE) {
+                // hack: could be float as well...
                 return python::Type::makeFunctionType(parameterType, python::Type::makeIteratorType(python::Type::I64));
             }
 
@@ -364,7 +396,7 @@ namespace tuplex {
                 }
             }
 
-            return python::Type::makeFunctionType(parameterType, python::Type::UNKNOWN);
+            return python::Type::UNKNOWN; // no typing possible for next(...), e.g. next(range(...))
         };
 
         addSymbol(make_shared<Symbol>("iter", iterFunctionTyper));
@@ -538,7 +570,7 @@ namespace tuplex {
                 // if parameter type is not compatible with callerType.elementType(), this should result automatically
                 // in a ValueError
 
-                return python::Type::makeFunctionType(callerType.elementType(), python::Type::I64);
+                return python::Type::makeFunctionType(parameterType, python::Type::I64);
             }, SymbolType::FUNCTION);
         }
 
@@ -554,7 +586,7 @@ namespace tuplex {
                 // dict_view is always based on dictionary type
                 auto view_type = python::Type::makeDictKeysViewType(callerType);
 
-                return python::Type::makeFunctionType(callerType, view_type);
+                return python::Type::makeFunctionType(parameterType, view_type);
             }, SymbolType::FUNCTION);
 
             addBuiltinTypeAttribute(python::Type::GENERICDICT, "values", [](const python::Type& callerType,
@@ -564,16 +596,18 @@ namespace tuplex {
                 // dict_view is always based on dictionary type
                 auto values_type = python::Type::makeDictValuesViewType(callerType);
 
-                return python::Type::makeFunctionType(callerType, values_type);
+                return python::Type::makeFunctionType(parameterType, values_type);
             }, SymbolType::FUNCTION);
 
             addBuiltinTypeAttribute(python::Type::GENERICDICT, "get", [](const python::Type& callerType,
                     const python::Type& parameterType) {
 
+                // for attribute, use
+
                 // handle generic dict type, requires always tracing.
                 if(python::Type::GENERICDICT == callerType)
-                    return python::Type::makeFunctionType(callerType, python::Type::UNKNOWN); // <-- unknown forces tracing.
-//                    return python::Type::makeFunctionType(callerType, python::Type::PYOBJECT);
+                    return python::Type::makeFunctionType(parameterType, python::Type::UNKNOWN); // <-- unknown forces tracing.
+//                    return python::Type::makeFunctionType(parameterType, python::Type::PYOBJECT);
 
                 assert(callerType.isDictionaryType() && callerType != python::Type::GENERICDICT);
 
@@ -581,17 +615,69 @@ namespace tuplex {
                 auto key_type = parameterType.parameters().front();
                 auto value_type = python::Type::UNKNOWN;
 
-                // check if return type can be determiend
-                if(callerType.isDictionaryType() && !callerType.isStructuredDictionaryType()) {
+                // check if return type can be determined
+                if(callerType.isDictionaryType() && !callerType.isStructuredDictionaryType() && !callerType.isSparseStructuredDictionaryType()) {
                     // compatible?
                     if(python::canUpcastType(key_type, callerType.keyType()))
                         value_type = callerType.valueType();
                 }
 
                 // struct dict? => check if constant type is used, if so lookup!
-                if(callerType.isStructuredDictionaryType() && key_type.isConstantValued()) {
+                if((callerType.isStructuredDictionaryType() || callerType.isSparseStructuredDictionaryType()) && key_type.isConstantValued()) {
                     // todo, lookup const value
                     // -> get first tracing version going, then fix this here.
+
+#ifndef NDEBUG
+                    {
+                        std::stringstream ss;
+                        ss<<"dict.get with key="<<key_type.desc()<<" for callerType="<<callerType.desc()<<std::endl;
+                        auto& logger = Logger::instance().logger("codegen");
+                        logger.debug(ss.str());
+                    }
+#endif
+
+                    auto lookup_key = key_type.constant();
+
+                    auto kv_pairs = callerType.makeNonSparse().get_struct_pairs();
+                    auto it = std::find_if(kv_pairs.begin(), kv_pairs.end(), [&lookup_key](const python::StructEntry& entry) {
+                        return entry.key == escape_to_python_str(lookup_key);
+                    });
+
+                    auto default_value_type = python::Type::NULLVALUE;
+
+                    if(parameterType.parameters().size() == 2)
+                        default_value_type = parameterType.parameters()[1];
+
+                    if(it == kv_pairs.end()) {
+                        if(callerType.isStructuredDictionaryType()) {
+                            // not found -> hence return NULL or default value
+                            return python::Type::makeFunctionType(parameterType, default_value_type);
+                        } else {
+                            // can not decide for sparse struct whether element is contained or not, i.e. this would be normal-case violation.
+                            // to continue typing, return default type.
+                            return python::Type::makeFunctionType(parameterType, default_value_type);
+
+                            // auto normal_case_except_type = python::TypeFactory::instance().getByName(
+                            //        exceptionCodeToPythonClass(ExceptionCode::NORMALCASEVIOLATION));
+                            // assert(normal_case_except_type != python::Type::UNKNOWN);
+                            // return python::Type::makeFunctionType(parameterType, normal_case_except_type);
+                        }
+                    } else {
+                        // found type, return now depending on whether entry is present or not.
+                        const auto& entry = *it;
+                        auto ret_type = entry.valueType; // --> ALWAYS_PRESENT
+
+                        // check other presence options here.
+                        if(entry.presence == python::MAYBE_PRESENT) {
+                            ret_type = unifyTypes(ret_type, default_value_type);
+                            if(ret_type == python::Type::UNKNOWN)
+                                ret_type = entry.valueType;
+                        } else if(entry.presence == python::NOT_PRESENT) {
+                            ret_type = default_value_type;
+                        }
+
+                        return python::Type::makeFunctionType(parameterType, ret_type);
+                    }
                 }
 
                 // multiple options: was a default argument provided or not?
@@ -609,7 +695,7 @@ namespace tuplex {
                 }
 
                 auto ret_type = value_type; // unknown if anything fails...
-                return python::Type::makeFunctionType(callerType, ret_type);
+                return python::Type::makeFunctionType(parameterType, ret_type);
             });
         }
 
@@ -632,7 +718,7 @@ namespace tuplex {
 
             // check if empty row, then always default type if available
             if(callerType == python::Type::EMPTYROW && parameterType.parameters().size() == 2)
-                return python::Type::makeFunctionType(callerType, parameterType.parameters()[1]);
+                return python::Type::makeFunctionType(parameterType, parameterType.parameters()[1]);
 
             // check if return type can be determined if key_type is a constant.
             if(key_type.isConstantValued()) {
@@ -642,27 +728,27 @@ namespace tuplex {
                     if(idx < 0)
                         idx += callerType.get_column_count();
                     if(idx < 0 || idx >= callerType.get_column_count())
-                        return python::Type::makeFunctionType(callerType, /*python::TypeFactory::instance().getByName("IndexError")*/value_type); // <-- builtin exception
-                    return python::Type::makeFunctionType(callerType, callerType.get_column_type(idx));
+                        return python::Type::makeFunctionType(parameterType, /*python::TypeFactory::instance().getByName("IndexError")*/value_type); // <-- builtin exception
+                    return python::Type::makeFunctionType(parameterType, callerType.get_column_type(idx));
                 }
 
                 // string?
                 if(key_type.underlying() == python::Type::STRING) {
                     auto idx = indexInVector(key_type.constant(), callerType.get_column_names());
                     if(idx < 0)
-                        return python::Type::makeFunctionType(callerType, /*python::TypeFactory::instance().getByName("KeyError")*/value_type);
+                        return python::Type::makeFunctionType(parameterType, /*python::TypeFactory::instance().getByName("KeyError")*/value_type);
                     else
-                        return python::Type::makeFunctionType(callerType, callerType.get_column_type(idx));
+                        return python::Type::makeFunctionType(parameterType, callerType.get_column_type(idx));
                 }
 
                 // always KeyError
-                return python::Type::makeFunctionType(callerType, /*python::TypeFactory::instance().getByName("KeyError")*/value_type);
+                return python::Type::makeFunctionType(parameterType, /*python::TypeFactory::instance().getByName("KeyError")*/value_type);
             }
 
             // if not int or string type (or options thereof) always return key error
             if(key_type.withoutOption() != python::Type::STRING && key_type.withoutOption() != python::Type::I64)
                 // always KeyError
-                return python::Type::makeFunctionType(callerType, /*python::TypeFactory::instance().getByName("KeyError")*/value_type);
+                return python::Type::makeFunctionType(parameterType, /*python::TypeFactory::instance().getByName("KeyError")*/value_type);
 
             // Note: for special case of all columns being the same type, the return type could be determined!
             // @TODO
@@ -757,9 +843,6 @@ namespace tuplex {
         // @TODO: is this wise?
 
         addBuiltinTypes();
-
-
-        addBuiltinExceptionHierarchy();
     }
 
 

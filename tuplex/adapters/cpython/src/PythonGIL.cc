@@ -30,11 +30,10 @@ namespace python {
         ss.flush();
         auto thread_id = ss.str();
         int64_t id = -1;
-#ifndef LINUX
-        sscanf(thread_id.c_str(), "%lld", &id);
-#else
-        sscanf(thread_id.c_str(), "%ld", &id);
-#endif
+
+        // use macro for portable way to scan %lld.
+        sscanf(thread_id.c_str(), "%" PRId64, &id);
+
         return id;
     }
 
@@ -95,6 +94,11 @@ namespace python {
         if(std::this_thread::get_id() == gil_main_thread_id) {
             if(!gilState)
                 gilState = PyGILState_GetThisThreadState();
+
+            // check gil state again, if not valid - is interpreter even initialized?
+            if(!gilState && !interpreterInitialized) {
+                throw std::runtime_error("failed to set valid gilState in lockGIL, interpreter not initialized");
+            }
             assert(gilState);
             PyEval_RestoreThread(gilState); // acquires GIL!
             gilState = nullptr;
@@ -138,6 +142,11 @@ namespace python {
         if(!Py_IsInitialized()) {
             Py_InitializeEx(0); // 0 to skip initialization of signal handlers, 1 would register them.
 
+
+        if(PyErr_Occurred()) {
+            PyErr_Print();
+            PyErr_Clear();
+        }
 #if (PY_MAJOR_VERSION >= 3 && PY_MINOR_VERSION < 7)
             // init threads (not necessary from Python 3.7 onwards)
             PyEval_InitThreads();
@@ -158,6 +167,40 @@ namespace python {
         gil_id = std::this_thread::get_id();
         gilMutex.lock();
         interpreterInitialized = true;
+
+
+        // With .pyenv, there may be an issue with the lib-dynload folder.
+        // If error happens for cloudpickle that _struct is not found, this means
+        // something is wrong with the module search path.
+        // Need to make sure lib-dynload is set as well (if it exists).
+        // -> have here small routine to fix up path.
+        // Another fix is to pass explicitly: PYTHON_HOME=/home/leonhards/.pyenv/versions/3.11.6 or so.
+        auto path_object = PySys_GetObject("path");
+        assert(PyList_Check(path_object));
+
+        // Convert to vector of strings.
+        std::vector<std::string> module_search_paths;
+        for(unsigned i = 0; i < PyList_Size(path_object); ++i) {
+            auto item = PyList_GET_ITEM(path_object, i);
+            Py_XINCREF(item);
+            module_search_paths.emplace_back(python::PyString_AsString(item));
+        }
+
+        // Now, append fixed lib-dynload path. This is a hotfix... TODO: make this better.
+        PyList_Append(path_object, python::PyString_FromString("/home/leonhards/.pyenv/versions/3.11.6/lib/python3.11/lib-dynload/"));
+
+        // debug print important python variables
+#ifndef NDEBUG
+        {
+            std::cout<<"Initialized embedded Python "<<PY_MAJOR_VERSION<<"."<<PY_MINOR_VERSION<<"."<<PY_MICRO_VERSION<<std::endl;
+            std::cout<<"Python home: "<<Py_GetPythonHome()<<std::endl;
+
+             // get sys path and print it
+             auto path_object = PySys_GetObject("path");
+             PyObject_Print(path_object, stdout, 0);
+             std::cout<<std::endl;
+        }
+#endif
     }
 
     void closeInterpreter() {

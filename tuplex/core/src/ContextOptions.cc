@@ -240,8 +240,13 @@ namespace tuplex {
                      {"tuplex.optimizer.sharedObjectPropagation", "true"},
                      {"tuplex.optimizer.mergeExceptionsInOrder", "true"},
                      {"tuplex.optimizer.filterPromotion", "true"},
+                     {"tuplex.optimizer.sparsifyStructs", "false"},
+                     {"tuplex.optimizer.simplifyLargeStructs", "true"},
+                     {"tuplex.optimizer.simplifyLargeStructs.threshold", "20"},
                      {"tuplex.interleaveIO", "true"},
                      {"tuplex.aws.scratchDir", ""},
+                     {"tuplex.aws.name", "tuplex-lambda-runner"},
+                     {"tuplex.aws.endpoint", ""},
                      {"tuplex.aws.requestTimeout", "600"},
                      {"tuplex.aws.connectTimeout", "1"},
                      {"tuplex.aws.maxConcurrency", "100"},
@@ -264,12 +269,15 @@ namespace tuplex {
                      {"tuplex.experimental.interchangeWithObjectFiles", "false"},
                      {"tuplex.experimental.specializationUnitSize", "0"},
                      {"tuplex.experimental.minimumSizeToSpecialize", "128MB"},
-                     {"tuplex.experimental.opportuneCompilation", "true"},
+                     {"tuplex.experimental.opportuneCompilation", "false"}, // buggy, set to false for now.
                      {"tuplex.experimental.forceBadParseExceptFormat", "false"},
                      {"tuplex.experimental.s3PreCacheSize", "0"},
                      {"tuplex.experimental.worker.numWorkers", "0"},
                      {"tuplex.experimental.worker.workerPath", ""},
-                     {"tuplex.experimental.worker.workerBufferSize", "256MB"}};
+                     {"tuplex.experimental.worker.workerBufferSize", "256MB"},
+                     {"tuplex.experimental.traceExecution", "false"},
+                     {"tuplex.experimental.useGenericDicts", "false"},
+                     {"tuplex.experimental.aws.minimumInputSizePerLambda", "128MB"}};
 #else
         // DEBUG options
         co._store = {{"tuplex.useLLVMOptimizer", "false"},
@@ -317,8 +325,13 @@ namespace tuplex {
                      {"tuplex.optimizer.operatorReordering", "false"},
                      {"tuplex.optimizer.sharedObjectPropagation", "true"},
                      {"tuplex.optimizer.mergeExceptionsInOrder", "false"},
+                     {"tuplex.optimizer.sparsifyStructs", "false"},
+                     {"tuplex.optimizer.simplifyLargeStructs", "true"},
+                     {"tuplex.optimizer.simplifyLargeStructs.threshold", "20"},
                      {"tuplex.interleaveIO", "true"},
                      {"tuplex.aws.scratchDir", ""},
+                     {"tuplex.aws.name", "tuplex-lambda-runner"},
+                     {"tuplex.aws.endpoint", ""},
                      {"tuplex.aws.requestTimeout", "600"},
                      {"tuplex.aws.connectTimeout", "1"},
                      {"tuplex.aws.maxConcurrency", "100"},
@@ -341,12 +354,15 @@ namespace tuplex {
                      {"tuplex.experimental.interchangeWithObjectFiles", "false"},
                      {"tuplex.experimental.specializationUnitSize", "0"},
                      {"tuplex.experimental.minimumSizeToSpecialize", "128MB"},
-                     {"tuplex.experimental.opportuneCompilation", "true"},
+                     {"tuplex.experimental.opportuneCompilation", "false"}, // buggy, set to false for now.
                      {"tuplex.experimental.forceBadParseExceptFormat", "false"},
                      {"tuplex.experimental.s3PreCacheSize", "0"},
                      {"tuplex.experimental.worker.numWorkers", "0"},
                      {"tuplex.experimental.worker.workerPath", ""},
-                     {"tuplex.experimental.worker.workerBufferSize", "256MB"}}; // experimental feature, deactivate for now.
+                     {"tuplex.experimental.worker.workerBufferSize", "256MB"},
+                     {"tuplex.experimental.traceExecution", "false"},
+                     {"tuplex.experimental.useGenericDicts", "false"},
+                     {"tuplex.experimental.aws.minimumInputSizePerLambda", "128MB"}}; // experimental feature, deactivate for now.
 #endif
 
         // update with tuplex env
@@ -623,7 +639,7 @@ namespace tuplex {
         // check first with pathParent, then PATH
         std::vector<std::string> failedPaths;
         for(const auto& c : candidates) {
-            URI p = URI(pathParent.empty() ? c : pathParent + "/" + c);
+            URI p = !pathParent.empty() ? URI(pathParent.empty() ? c : pathParent + "/" + c) : URI(c);
             if(p.exists() && p.isFile())
                 return p;
             else

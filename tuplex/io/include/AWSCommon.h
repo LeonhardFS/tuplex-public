@@ -22,6 +22,11 @@
 #include <aws/core/utils/json/JsonSerializer.h>
 #include <aws/core/utils/memory/stl/AWSStringStream.h>
 #include <aws/core/utils/HashingUtils.h>
+#include <aws/core/utils/logging/LogLevel.h>
+#include <aws/core/auth/AWSCredentials.h>
+#include <aws/core/client/DefaultRetryStrategy.h>
+#include <aws/s3/S3Client.h>
+#include "nlohmann/json.hpp"
 
 namespace tuplex {
 
@@ -54,7 +59,7 @@ namespace tuplex {
     /*!
     calls Aws::InitAPI()
     */
-    extern bool initAWSSDK();
+    extern bool initAWSSDK(Aws::Utils::Logging::LogLevel log_level=Aws::Utils::Logging::LogLevel::Warn);
 
     /*!
      * initializes AWS SDK globally (lazy) and add S3 FileSystem.
@@ -63,7 +68,7 @@ namespace tuplex {
     extern bool initAWS(const AWSCredentials& credentials=AWSCredentials::get(), const NetworkSettings& ns=NetworkSettings(), bool requesterPay=false);
 
     /*!
-     * shuts down AWS SDK (freeing resourced).
+     * shuts down AWS SDK (freeing resources).
      */
     extern void shutdownAWS();
 
@@ -74,7 +79,6 @@ namespace tuplex {
      */
     extern bool isValidAWSZone(const std::string& zone);
 
-
     inline std::string decodeAWSBase64(const std::string& log) {
         std::stringstream ss;
         // Decode the result header to see requested log information
@@ -84,6 +88,71 @@ namespace tuplex {
         auto logTail =  ss.str();
         return logTail;
     }
+
+    inline std::string encodeAWSBase64(const std::string& data) {
+        // TODO: Use simdutf https://github.com/simdutf/simdutf?tab=readme-ov-file#base64 in the future.
+        return Aws::Utils::HashingUtils::Base64Encode(Aws::Utils::ByteBuffer(
+                reinterpret_cast<const unsigned char *>(data.c_str()), data.size())).c_str();
+    }
+
+    inline std::shared_ptr<Aws::S3::S3Client> s3_client_from_credentials_and_config(const Aws::Auth::AWSCredentials& credentials=Aws::Auth::AWSCredentials(),
+                                                                                    const Aws::Client::ClientConfiguration& config=Aws::Client::ClientConfiguration()) {
+#if AWS_SDK_VERSION_MINOR <= 9
+        // AWS SDK sometimes has changes to constructors, fix that here.
+        return std::make_shared<Aws::S3::S3Client>(credentials, config);
+#else
+        // No endpoint provider.
+         return std::make_shared<Aws::S3::S3Client>(credentials, nullptr, config);
+#endif
+    }
+
+
+    inline std::ostream& operator<<(std::ostream &os, const Aws::Client::ClientConfiguration& config) {
+        nlohmann::json j;
+        j["userAgent"] = config.userAgent;
+        j["scheme"] = config.scheme == Aws::Http::Scheme::HTTP ? "http" : "https";
+        j["useDualStack"] = config.useDualStack;
+        // j["useFIPS"] = config.
+        j["maxConnections"] = config.maxConnections;
+        j["httpRequestTimeoutMs"] = config.httpRequestTimeoutMs;
+        j["requestTimeoutMs"] = config.requestTimeoutMs;
+        j["connectTimeoutMs"] = config.connectTimeoutMs;
+        j["enableTcpKeepAlive"] = config.enableTcpKeepAlive;
+        j["tcpKeepAliveIntervalMs"] = config.tcpKeepAliveIntervalMs;
+        j["lowSpeedLimit"] = config.lowSpeedLimit;
+        j["retryStrategy"] = !config.retryStrategy ? "null" : "<unknown>";
+        j["endpointOverride"] = config.endpointOverride;
+        //  j["allowSystemProxy"] = config.allowSystemProxy;
+        j["proxyScheme"] = config.proxyScheme == Aws::Http::Scheme::HTTP ? "http" : "https";
+        j["proxyHost"] = config.proxyHost;
+        j["proxyPort"] = config.proxyPort;
+        j["proxyUserName"] = config.proxyUserName;
+        j["proxyPassword"] = config.proxyPassword;
+        j["proxySSLCertPath"] = config.proxySSLCertPath;
+        j["proxySSLCertType"] = config.proxySSLCertType;
+        j["proxySSLKeyPath"] = config.proxySSLKeyPath;
+        j["proxySSLKeyType"] = config.proxySSLKeyType;
+        j["proxySSLKeyPassword"] = config.proxySSLKeyPassword;
+        // j["nonProxyHosts"] = std::vector<std::string>{config.nonProxyHosts;
+        j["verifySSL"] = config.verifySSL;
+        j["caPath"] = config.caPath;
+        j["caFile"] = config.caFile;
+        // j["proxyCaFile"] = config.proxyCaFile;
+        os << j.dump(2); // print as JSON
+        return os;
+    }
+
+    static const std::string AWS_LAMBDA_ENDPOINT_KEY = "AWS_ENDPOINT_URL_LAMBDA";
+
+    // cf. src/aws-cpp-sdk-core/source/client/DefaultRetryStrategy.cpp
+    // A lot of straightforward codes get retried for no reason, i.e. Curl code 6: Couldn't resolve host name
+    // Handle these better here.
+    class ModifiedRetryStrategy : public Aws::Client::DefaultRetryStrategy {
+    public:
+
+        bool ShouldRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error, long attemptedRetries) const override;
+
+    };
 }
 
 // Amazon frequently changes the parameters of lambda functions,

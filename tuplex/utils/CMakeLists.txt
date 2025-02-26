@@ -1,9 +1,13 @@
 # (c) 2018 L.Spiegelberg
 # contains util classes + definitions
+
+cmake_minimum_required(VERSION 3.16)
+cmake_policy(SET CMP0097 NEW)
+
 file(GLOB_RECURSE SOURCES src/*.cc src/*.c)
 file(GLOB_RECURSE INCLUDES include/*.h)
 
-include_directories("include")
+#include_directories("include")
 
 # find zlib
 find_package(ZLIB REQUIRED)
@@ -30,7 +34,7 @@ set(fmt_INCLUDE_DIR ${source_dir}/include)
 set(EXTERNAL_INSTALL_LOCATION ${CMAKE_BINARY_DIR}/third_party)
 ExternalProject_Add(spdlog
         GIT_REPOSITORY https://github.com/gabime/spdlog.git
-        GIT_TAG v1.10.0
+        GIT_TAG v1.15.0
         GIT_CONFIG advice.detachedHead=false
         TIMEOUT 5
         CMAKE_ARGS -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS} #-DSPDLOG_BUILD_BENCH=OFF
@@ -48,8 +52,6 @@ set(spdlog_INCLUDE_DIR ${source_dir}/include)
 # Add cJSON ==> newer AWS SDKs ship it, so exclude it then...
 # AWS SDK defined cjson since v1.5
 if(NOT BUILD_WITH_AWS)
-    include(FetchContent)
-    set(FETCHCONTENT_BASE_DIR ${CMAKE_BINARY_DIR}/third_party/src)
     FetchContent_Declare(cJSON
         GIT_REPOSITORY https://github.com/DaveGamble/cJSON.git
         GIT_TAG        v1.7.15
@@ -75,17 +77,6 @@ else()
     # Note: alternative is to use CJSON_HIDE_SYMBOLS IWTH AWS SDK.
 endif()
 
-# include simdjson, tutorial here https://github.com/simdjson/cmake_demo_single_file/blob/master/CMakeLists.txt
-include(FetchContent)
-FetchContent_Declare(
-        simdjson
-        GIT_REPOSITORY https://github.com/simdjson/simdjson.git
-        GIT_SHALLOW TRUE
-        GIT_TAG tags/v2.0.4
-)
-
-FetchContent_MakeAvailable(simdjson)
-
 # AWS SDK defines cjson since v1.5, yet if using BUILD_WITH_AWS=OFF make sure to add cJSON symbols...
 if(NOT BUILD_WITH_AWS)
     list(APPEND SOURCES ${cjson_SOURCE_DIR}/cJSON.c)
@@ -98,7 +89,7 @@ set_target_properties(libutils PROPERTIES PREFIX "")
 ### include nlohmann/json
 ExternalProject_Add(json
         GIT_REPOSITORY https://github.com/nlohmann/json.git
-        GIT_TAG v3.5.0
+        GIT_TAG v3.11.2
         GIT_CONFIG advice.detachedHead=false
         TIMEOUT 5
         CMAKE_ARGS -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}
@@ -110,7 +101,7 @@ ExternalProject_Add(json
         )
 ExternalProject_Get_Property(json source_dir)
 set(json_INCLUDE_DIR ${source_dir}/include)
-include_directories(${json_INCLUDE_DIR})
+#include_directories(${json_INCLUDE_DIR})
 
 if(BUILD_WITH_CEREAL)
 ExternalProject_Add(cereal
@@ -133,9 +124,9 @@ endif()
 
 # set here dependencies, include_targets, link_targets
 if(BUILD_WITH_CEREAL)
-    set(UTILS_DEPENDENCIES fmt spdlog json cereal)
+    set(UTILS_DEPENDENCIES fmt spdlog json cereal simdjson)
 else()
-    set(UTILS_DEPENDENCIES fmt spdlog json)
+    set(UTILS_DEPENDENCIES fmt spdlog json simdjson)
 endif()
 
 set(UTILS_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -147,10 +138,12 @@ set(UTILS_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${cereal_INCLUDE_DIR}
         ${Boost_INCLUDE_DIR}
         ${AWSSDK_INCLUDE_DIR}
-        ${ZLIB_INCLUDE_DIRS})
-set(UTILS_LIBRARIES Boost::filesystem Boost::thread Boost::system Boost::system Boost::iostreams ${ZLIB_LIBRARIES} ${AWSSDK_LINK_LIBRARIES} simdjson)
+        ${ZLIB_INCLUDE_DIRS}
+        ${simdjson_INCLUDE_DIRS})
+set(UTILS_LIBRARIES Boost::filesystem Boost::thread Boost::system
+        Boost::system Boost::iostreams ${ZLIB_LIBRARIES} ${AWSSDK_LINK_LIBRARIES} simdjson::simdjson yyjson)
 
 # object library
 add_dependencies(libutils ${UTILS_DEPENDENCIES})
 target_include_directories(libutils PUBLIC ${UTILS_INCLUDE_DIRS})
-target_link_libraries(libutils ${UTILS_LIBRARIES})
+target_link_libraries(libutils PUBLIC ${UTILS_LIBRARIES})

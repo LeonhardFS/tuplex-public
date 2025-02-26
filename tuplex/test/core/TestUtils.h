@@ -68,6 +68,14 @@ inline void compareStrArrays(std::vector<std::string> arr_A, std::vector<std::st
     ASSERT_EQ(arr_A.size(), arr_B.size());
 }
 
+inline void compare_rows(const std::vector<tuplex::Row>& ans, const std::vector<tuplex::Row>& ref) {
+    EXPECT_EQ(ans.size(), ref.size());
+
+    for(unsigned i = 0; i < std::min(ans.size(), ref.size()); ++i) {
+        EXPECT_EQ(ans[i].toPythonString(), ref[i].toPythonString());
+    }
+}
+
 class TuplexTest : public ::testing::Test {
 protected:
     std::string testName;
@@ -212,14 +220,20 @@ protected:
 /// a simple wrapper class to call closeInterpreter on destruction
 class PyInterpreterGuard {
 public:
-    PyInterpreterGuard() {
+    PyInterpreterGuard(bool unlock=false) : _unlock(unlock) {
         python::initInterpreter();
         printf("*** CALLED initInterpreter ***\n");
+        if(_unlock)
+            python::unlockGIL();
     }
     ~PyInterpreterGuard() {
+        if(_unlock)
+            python::lockGIL();
         printf("*** CALLED closeInterpreter ***\n");
         python::closeInterpreter();
     }
+private:
+    bool _unlock;
 };
 
 

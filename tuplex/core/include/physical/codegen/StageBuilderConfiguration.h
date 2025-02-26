@@ -23,10 +23,15 @@ namespace tuplex {
             bool updateInputExceptions; // whether input exceptions indices need to be updated (change for experimental incremental exception handling)
             bool generateSpecializedNormalCaseCodePath; // whether to emit specialized normal case code path or not
             bool filterPromotion; // whether to propagate filters to become checks, i.e. manipulate the sample to be only rows that pass the filter.
+            bool sparsifyStructs; // whether to sparsify struct dicts.
+
+            option<size_t> simplifyLargeStructs; // if not ::none, then use this threshold and enable optimization
 
             bool pure_python_mode; // whether to generate only python code
 
             size_t sampling_size; // re-sampling sample size
+
+            bool use_sample; // whether to use a sample, if false deactivates automatically any detection for filterPromotion / constantFolding.
 
             ExceptionSerializationMode exceptionSerializationMode;
 
@@ -38,10 +43,13 @@ namespace tuplex {
                                           constantFoldingOptimization(true),
                                           updateInputExceptions(false),
                                           generateSpecializedNormalCaseCodePath(true),
+                                          sparsifyStructs(true),
                                           filterPromotion(false),
                                           pure_python_mode(false),
                                           exceptionSerializationMode(ExceptionSerializationMode::SERIALIZE_AS_GENERAL_CASE),
-                                          sampling_size(0) {}
+                                          sampling_size(0),
+                                          simplifyLargeStructs(option<size_t>::none),
+                                          use_sample(true) {}
 
             // update with context option object
             inline void applyOptions(const ContextOptions& co) {
@@ -54,6 +62,13 @@ namespace tuplex {
                 filterPromotion = co.OPT_FILTER_PROMOTION();
                 pure_python_mode = co.PURE_PYTHON_MODE();
                 sampling_size = co.SAMPLE_MAX_DETECTION_MEMORY();
+                sparsifyStructs = co.OPT_SPARSIFY_STRUCTS();
+
+                if(co.OPT_SIMPLIFY_LARGE_STRUCTS()) {
+                    simplifyLargeStructs = co.OPT_SIMPLIFY_LARGE_STRUCTS_THRESHOLD();
+                } else {
+                    simplifyLargeStructs = option<size_t>::none;
+                }
 
                 // from options, infer
                 if(co.EXPERIMENTAL_FORCE_BAD_PARSE_EXCEPT_FORMAT())

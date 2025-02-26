@@ -36,7 +36,7 @@ namespace tuplex {
                     if(policy.unifyMissingDictKeys) {
                         auto pairs = aUnderlyingType.get_struct_pairs();
                         for(auto& p : pairs) {
-                            p.alwaysPresent = false;
+                            p.presence = python::MAYBE_PRESENT; // alwaysPresent = false;
                         }
                         return python::Type::makeStructuredDictType(pairs);
                     }
@@ -100,7 +100,9 @@ namespace tuplex {
 
                         // if either is maybe present -> result is a maybe present
                         // but dicts can be always unified this way!
-                        uni.alwaysPresent = a_pair.alwaysPresent && b_pair.alwaysPresent;
+                        // uni.alwaysPresent = a_pair.alwaysPresent && b_pair.alwaysPresent;
+                        uni.presence = a_pair.presence == python::ALWAYS_PRESENT && b_pair.presence == python::ALWAYS_PRESENT ? python::ALWAYS_PRESENT : python::MAYBE_PRESENT;
+
 
                         uni.keyType = unifyTypes(a_pair.keyType, b_pair.keyType, policy);
                         if(uni.keyType == python::Type::UNKNOWN)
@@ -116,7 +118,8 @@ namespace tuplex {
                             auto b_pair = b_lookup[key];
                             // if either is maybe present -> result is a maybe present
                             // but dicts can be always unified this way!
-                            uni.alwaysPresent = a_pair.alwaysPresent && b_pair.alwaysPresent;
+                            //uni.alwaysPresent = a_pair.alwaysPresent && b_pair.alwaysPresent;
+                            uni.presence = a_pair.presence == python::ALWAYS_PRESENT && b_pair.presence == python::ALWAYS_PRESENT ? python::ALWAYS_PRESENT : python::MAYBE_PRESENT;
 
                             uni.keyType = unifyTypes(a_pair.keyType, b_pair.keyType, policy);
                             if(uni.keyType == python::Type::UNKNOWN)
@@ -127,13 +130,15 @@ namespace tuplex {
                         } else if(a_lookup.find(key) != a_lookup.end()) {
                             // only a is present
                             uni = a_lookup[key];
-                            uni.alwaysPresent = false; // set to maybe
+                            // uni.alwaysPresent = false; // set to maybe
+                            uni.presence = python::MAYBE_PRESENT;
                         } else {
                             // b must be present
                             assert(b_lookup.find(key) != b_lookup.end());
                             // only b is present
                             uni = b_lookup[key];
-                            uni.alwaysPresent = false; // set to maybe
+                            // uni.alwaysPresent = false; // set to maybe
+                            uni.presence = python::MAYBE_PRESENT;
                         }
                     }
 
@@ -173,7 +178,8 @@ namespace tuplex {
                         auto b_pair = b_it->second;
                         // if either is maybe present -> result is a maybe present
                         // but dicts can be always unified this way!
-                        uni.alwaysPresent = a_pair.alwaysPresent && b_pair.alwaysPresent;
+                        //uni.alwaysPresent = a_pair.alwaysPresent && b_pair.alwaysPresent;
+                        uni.presence = a_pair.presence == python::ALWAYS_PRESENT && b_pair.presence == python::ALWAYS_PRESENT ? python::ALWAYS_PRESENT : python::MAYBE_PRESENT;
 
                         uni.keyType = unifyTypes(a_pair.keyType, b_pair.keyType, policy);
                         if(uni.keyType == python::Type::UNKNOWN)
@@ -185,7 +191,8 @@ namespace tuplex {
                         // only a is present
                         if(!policy.unifyMissingDictKeys)
                             return python::Type::UNKNOWN;
-                        uni.alwaysPresent = false;
+                        //uni.alwaysPresent = false;
+                        uni.presence = python::MAYBE_PRESENT;
                         uni.keyType = a_it->second.keyType;
                         uni.valueType = a_it->second.valueType;
                     } else {
@@ -193,7 +200,8 @@ namespace tuplex {
                         // only b is present
                         if(!policy.unifyMissingDictKeys)
                             return python::Type::UNKNOWN;
-                        uni.alwaysPresent = false;
+                        //uni.alwaysPresent = false;
+                        uni.presence = python::MAYBE_PRESENT;
                         uni.keyType = b_it->second.keyType;
                         uni.valueType = b_it->second.valueType;
                     }
@@ -279,7 +287,8 @@ namespace tuplex {
 
                         // if either is maybe present -> result is a maybe present
                         // but dicts can be always unified this way!
-                        uni.alwaysPresent = a_pair.alwaysPresent && b_pair.alwaysPresent;
+                       // uni.alwaysPresent = a_pair.alwaysPresent && b_pair.alwaysPresent;
+                        uni.presence = a_pair.presence == python::ALWAYS_PRESENT && b_pair.presence == python::ALWAYS_PRESENT ? python::ALWAYS_PRESENT : python::MAYBE_PRESENT;
 
                         uni.keyType = unifyTypesEx(a_pair.keyType, b_pair.keyType, policy, os);
                         if(uni.keyType == python::Type::UNKNOWN) {
@@ -300,7 +309,8 @@ namespace tuplex {
                             auto b_pair = b_lookup[key];
                             // if either is maybe present -> result is a maybe present
                             // but dicts can be always unified this way!
-                            uni.alwaysPresent = a_pair.alwaysPresent && b_pair.alwaysPresent;
+                            //uni.alwaysPresent = a_pair.alwaysPresent && b_pair.alwaysPresent;
+                            uni.presence = a_pair.presence == python::ALWAYS_PRESENT && b_pair.presence == python::ALWAYS_PRESENT ? python::ALWAYS_PRESENT : python::MAYBE_PRESENT;
 
                             uni.keyType = unifyTypesEx(a_pair.keyType, b_pair.keyType, policy, os);
                             if(uni.keyType == python::Type::UNKNOWN) {
@@ -315,13 +325,15 @@ namespace tuplex {
                         } else if(a_lookup.find(key) != a_lookup.end()) {
                             // only a is present
                             uni = a_lookup[key];
-                            uni.alwaysPresent = false; // set to maybe
+                            //uni.alwaysPresent = false; // set to maybe
+                            uni.presence = python::MAYBE_PRESENT;
                         } else {
                             // b must be present
                             assert(b_lookup.find(key) != b_lookup.end());
                             // only b is present
                             uni = b_lookup[key];
-                            uni.alwaysPresent = false; // set to maybe
+                            //uni.alwaysPresent = false; // set to maybe
+                            uni.presence = python::MAYBE_PRESENT;
                         }
                     }
 
@@ -361,7 +373,8 @@ namespace tuplex {
                         auto b_pair = b_it->second;
                         // if either is maybe present -> result is a maybe present
                         // but dicts can be always unified this way!
-                        uni.alwaysPresent = a_pair.alwaysPresent && b_pair.alwaysPresent;
+                        // uni.alwaysPresent = a_pair.alwaysPresent && b_pair.alwaysPresent;
+                        uni.presence = a_pair.presence == python::ALWAYS_PRESENT && b_pair.presence == python::ALWAYS_PRESENT ? python::ALWAYS_PRESENT : python::MAYBE_PRESENT;
 
                         uni.keyType = unifyTypesEx(a_pair.keyType, b_pair.keyType, policy, os);
                         if(uni.keyType == python::Type::UNKNOWN) {
@@ -377,7 +390,8 @@ namespace tuplex {
                         // only a is present
                         if(!policy.unifyMissingDictKeys)
                             return python::Type::UNKNOWN;
-                        uni.alwaysPresent = false;
+                        // uni.alwaysPresent = false;
+                        uni.presence = python::MAYBE_PRESENT;
                         uni.keyType = a_it->second.keyType;
                         uni.valueType = a_it->second.valueType;
                     } else {
@@ -385,7 +399,8 @@ namespace tuplex {
                         // only b is present
                         if(!policy.unifyMissingDictKeys)
                             return python::Type::UNKNOWN;
-                        uni.alwaysPresent = false;
+                        //uni.alwaysPresent = false;
+                        uni.presence = python::MAYBE_PRESENT;
                         uni.keyType = b_it->second.keyType;
                         uni.valueType = b_it->second.valueType;
                     }
@@ -713,10 +728,21 @@ namespace tuplex {
 
         // ---
         // structured dicts:
-        if(aUnderlyingType.isStructuredDictionaryType() && bUnderlyingType.isDictionaryType())
-            return unifyStructuredDictTypes(aUnderlyingType, bUnderlyingType, policy);
-        if(aUnderlyingType.isDictionaryType() && bUnderlyingType.isStructuredDictionaryType())
-            return unifyStructuredDictTypes(bUnderlyingType, aUnderlyingType, policy);
+        if(aUnderlyingType.isStructuredDictionaryType() && bUnderlyingType.isDictionaryType()) {
+            auto ans = unifyStructuredDictTypes(aUnderlyingType, bUnderlyingType, policy);
+            // if ans is not option type but a or b is option type -> make optional!
+            if(!ans.isOptionType() && (a.isOptionType() || b.isOptionType()))
+                ans = python::Type::makeOptionType(ans);
+            return ans;
+        }
+
+        if(aUnderlyingType.isDictionaryType() && bUnderlyingType.isStructuredDictionaryType()) {
+            auto ans = unifyStructuredDictTypes(bUnderlyingType, aUnderlyingType, policy);
+            // if ans is not option type but a or b is option type -> make optional!
+            if(!ans.isOptionType() && (a.isOptionType() || b.isOptionType()))
+                ans = python::Type::makeOptionType(ans);
+            return ans;
+        }
 
         // other dictionary types
         if(aUnderlyingType.isDictionaryType() && bUnderlyingType.isDictionaryType()) {

@@ -129,8 +129,9 @@ namespace tuplex {
             StagePlanner(const std::shared_ptr<LogicalOperator>& inputNode,
                          const std::vector<std::shared_ptr<LogicalOperator>>& operators,
                          double nc_threshold) : _inputNode(inputNode),
-                         _operators(operators), _nc_threshold(nc_threshold),
-                         _useNVO(false), _useConstantFolding(false), _useDelayedParsing(false) {
+                                                _operators(operators), _nc_threshold(nc_threshold),
+                                                _useNVO(false), _useConstantFolding(false), _useDelayedParsing(false),
+                                                _useSparsifyStructs(false), _simplifyLargeStructs(false), _largeStructThreshold(0) {
                 assert(inputNode);
                 for(auto op : operators)
                     assert(op);
@@ -146,12 +147,13 @@ namespace tuplex {
                 }
             }
 
-            /*!
+             /*!
              * create optimized, specialized pipeline, i.e. first operator returned is the input operator.
              * The others are (possibly rearranged) operators. Operators are clones/copies of original operators. I.e.
              * planner is non-destructive.
+             * @param use_sample if true, then sample is used to carry out optimizations. Else, relies on the type of the first operator given (which may be a normal-case type).
              */
-            void optimize();
+            void optimize(bool use_sample=true);
 
             std::vector<NormalCaseCheck> checks() const {
                 return _checks;
@@ -173,6 +175,8 @@ namespace tuplex {
                 enableConstantFoldingOptimization();
                 enableDelayedParsingOptimization();
                 enableFilterPromoOptimization();
+                enableSparsifyStructsOptimization();
+                enableSimplifyLargeStructs(20);
             }
 
             void disableAll() {
@@ -180,15 +184,45 @@ namespace tuplex {
                 _useConstantFolding = false;
                 _useDelayedParsing = false;
                 _useFilterPromo = false;
+                _useSparsifyStructs = false;
+                _simplifyLargeStructs = false;
+                _largeStructThreshold = 0;
             }
 
             void enableNullValueOptimization() { _useNVO = true; }
             void enableConstantFoldingOptimization() { _useConstantFolding = true; }
             void enableDelayedParsingOptimization() { _useDelayedParsing = true; }
             void enableFilterPromoOptimization() { _useFilterPromo = true; }
+            void enableSparsifyStructsOptimization() { _useSparsifyStructs = true; }
+            void enableSimplifyLargeStructs(size_t threshold) {
+                if(threshold == 0) {
+                    throw std::runtime_error("Invalid threshold of 0 submitted, set at least to 1.");
+                }
+                _simplifyLargeStructs = true;
+                _largeStructThreshold = threshold;
+            }
 
             std::map<int, int> normalToGeneralMapping() const { return _normalToGeneralMapping; }
 
+            inline std::string info_string() const {
+                std::stringstream ss;
+                ss<<"Stage Planner active optimizations:\n";
+                std::vector<std::string> opt_names;
+                if(_useNVO)
+                    opt_names.push_back("null-value optimization");
+                if(_useConstantFolding)
+                    opt_names.push_back("constant-folding");
+                if(_useDelayedParsing)
+                    opt_names.push_back("delayed-parsing");
+                if(_useFilterPromo)
+                    opt_names.push_back("filter-promotion");
+                if(_useSparsifyStructs)
+                    opt_names.push_back("struct-sparsification");
+                if(_simplifyLargeStructs)
+                    opt_names.push_back("simplify-large-structs[th=" + std::to_string(_largeStructThreshold) + "]");
+                ss<<opt_names;
+                return ss.str();
+            }
 
             // helper functions regarding row types
             /*!
@@ -241,7 +275,7 @@ namespace tuplex {
                 }
             }
 
-            void promoteFilters();
+            bool promoteFilters(std::vector<Row>* filtered_sample=nullptr);
 
         private:
             std::shared_ptr<LogicalOperator> _inputNode;
@@ -255,6 +289,9 @@ namespace tuplex {
             bool _useConstantFolding;
             bool _useDelayedParsing;
             bool _useFilterPromo;
+            bool _useSparsifyStructs;
+            bool _simplifyLargeStructs;
+            size_t _largeStructThreshold;
 
             // helper when normal-case is specialized to yield less rows than general case
             std::map<int, int> _normalToGeneralMapping;
@@ -272,12 +309,39 @@ namespace tuplex {
                                                                                           const std::vector<std::string>& input_column_names);
 
             /*!
-             * perform constant folding optimization using sample
+             * perform constant folding optimization using sample.
              */
-            std::vector<std::shared_ptr<LogicalOperator>> constantFoldingOptimization(const std::vector<Row>& sample);
+            std::vector<std::shared_ptr<LogicalOperator>> constantFoldingOptimization(const std::vector<Row>& sample,
+                                                                                      const std::vector<std::string>& sample_columns);
+
+            /*!
+             * perform sparsification of structured dictionaries.
+             * @param sample sample to use for tracing sparse accesses
+             * @param sample_columns optional column description for sample, best to pass
+             * @param relax_for_sample it could happen that not all samples will work with the sparse type detected.
+             * To avoid overfitting, relax the type to adjust top-level struct paths to maybe_present from not_present/always_present.
+             * @return retyped & reoptimized operators.
+             */
+            std::vector<std::shared_ptr<LogicalOperator>> sparsifyStructs(std::vector<Row> sample,
+                    const option<std::vector<std::string>>& sample_columns=tuplex::option<std::vector<std::string>>::none,
+                    bool relax_for_sample = true);
+
+            /*!
+             * optimization pass to convert very large struct / sparse struct to generic dict if (nested) max_field count is exceeded.
+             * @param max_field_count
+             * @return retyped & reoptimized operators.
+             */
+            std::vector<std::shared_ptr<LogicalOperator>> simplifyLargeStructs(size_t max_field_count);
+
+            /*!
+             * optimization pass to apply the Tuplex logical optimizer to the current state. Only applicable if inputNode is data source.
+             * @return optimized operators.
+             */
+            std::vector<std::shared_ptr<LogicalOperator>> applyLogicalOptimizer();
 
             bool retypeOperators(const std::vector<Row>& sample,
-                                 const std::vector<std::string>& sample_columns);
+                                 const std::vector<std::string>& sample_columns,
+                                 bool use_sample);
 
             python::Type get_specialized_row_type(const std::shared_ptr<LogicalOperator>& inputNode, const DetectionStats& ds) const;
 
@@ -303,7 +367,7 @@ namespace tuplex {
                 opt.set("tuplex.optimizer.operatorReordering", "true");
                 opt.set("tuplex.optimizer.selectionPushdown", "true");
                 opt.set("tuplex.optimizer.constantFoldingOptimization", "true");
-
+                opt.set("tuplex.optimizer.sparsifyStructs", "true");
                 return opt;
             }
 
@@ -312,6 +376,8 @@ namespace tuplex {
             static std::vector<size_t> get_accessed_columns(const std::vector<std::shared_ptr<LogicalOperator>>& ops);
 
             bool validatePipeline();
+
+            bool input_schema_contains_structs(const Schema& schema);
         };
     }
 
@@ -324,6 +390,29 @@ namespace tuplex {
                                 size_t strata_size,
                                 size_t samples_per_strata,
                                 const codegen::StageBuilderConfiguration& conf);
+
+    inline RetypeConfiguration retype_configuration_from(const python::Type& projected_row_type, const std::vector<std::string>& projected_columns) {
+        // need to restrict potentially?
+        RetypeConfiguration r_conf;
+        r_conf.is_projected = true;
+        r_conf.row_type = projected_row_type;
+        r_conf.columns = projected_columns;
+        r_conf.remove_existing_annotations = true; // remove all annotations (except the column restore ones?)
+
+        if(extract_columns_from_type(r_conf.row_type) != r_conf.columns.size() && r_conf.row_type.isRowType() && !r_conf.row_type.get_column_names().empty())
+            r_conf.columns = r_conf.row_type.get_column_names();
+
+        // make sure all existing columns get a type, if the given columns are less than the current ones -> expand the column + type description.
+        //if(extract_columns_from_type())
+
+        // perform quick sanity check
+        if(!r_conf.columns.empty()) {
+            auto n_cols_row_type = extract_columns_from_type(r_conf.row_type);
+            auto n_cols_count = r_conf.columns.size();
+            assert(n_cols_row_type == n_cols_count);
+        }
+        return r_conf;
+    }
 }
 
 #endif

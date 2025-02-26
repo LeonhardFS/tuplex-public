@@ -23,6 +23,7 @@
 #include <TTuple.h>
 #include <limits>
 #include <unordered_map>
+#include <sstream>
 
 #include <boost/any.hpp>
 
@@ -36,14 +37,40 @@
 #include "cereal/types/string.hpp"
 #include "cereal/types/common.hpp"
 #include "cereal/archives/binary.hpp"
+
+#include "CustomArchive.h"
+
 #endif
 
+// use absl flat hash map instead to speed up type system?
+#include <absl/container/flat_hash_map.h>
+
 namespace python {
+
+    // which hashes < this to consider
+    static const size_t N_PREREGISTERED_TYPES = 25;
 
     class Type;
     class TypeFactory;
 
     struct StructEntry;
+
+
+//    // GCC workaround for template specialization
+//    namespace detail {
+//        template <typename Archive> void save(Archive& ar, const Type& t) {
+//            //            // @TODO: this seems wrong, better: need to encode type as string and THEN decode!
+////            // that would avoid the remapping problem...!
+////            archive(_hash, TypeFactory::instance()._typeMap[_hash]);
+//            auto encoded_str = t.encode();
+//            archive(encoded_str);
+//        }
+//        template <> void save(tuplex::BinaryOutputArchive& ar, const Type& t) {
+//            ar.saveType(t.hash());
+//        }
+//    }
+
+    template<typename T> struct identity { typedef T type; };
 
     class Type {
         friend class TypeFactory;
@@ -54,7 +81,38 @@ namespace python {
         // id / hash of this type for type comparison
         // -1 is reserved for undefined type
         int _hash;
+
+#ifdef BUILD_WITH_CEREAL
+        template<typename Archive> void save(Archive& ar, identity<Archive> id) const {
+            auto encoded_str = encode();
+            ar(encoded_str);
+        }
+
+        void save(tuplex::BinaryOutputArchive& ar, identity<tuplex::BinaryOutputArchive> id) const {
+            ar.saveType(hash());
+        }
+
+        template<class Archive>
+        void load(Archive &ar, identity<Archive> id) {
+            // simply encode/decode type
+            std::string encoded_str = "";
+            ar(encoded_str);
+            auto t = Type::decode(encoded_str);
+            _hash = t._hash; // using hash works...
+        }
+
+        void load(tuplex::BinaryInputArchive& ar, identity<tuplex::BinaryInputArchive> id) {
+            int encoded_hash = 0;
+            ar(encoded_hash);
+            _hash = ar.loadTypeHash(encoded_hash);
+        }
+#endif
+
     public:
+
+        // Precomputed size table for fast access of sizes of special hashes.
+        static size_t PRECOMPUTED_SIZE_TABLE[16];
+
         static const Type UNKNOWN; //! dummy for unknown type
         static const Type VOID; //! ??
         static const Type I64; //! a 64 bit integer value
@@ -63,6 +121,7 @@ namespace python {
         static const Type BOOLEAN; //! a boolean
         static const Type EMPTYTUPLE; //! special type for an empty tuple
         static const Type EMPTYDICT; //! special type for empty dict
+        static const Type EMPTYSPARSEDICT; // special type for empty sparse dict
         static const Type EMPTYLIST; //! special type for empty list
         static const Type EMPTYSET; //! special type for empty set
         static const Type NULLVALUE; //! special type for a nullvalue / None
@@ -123,6 +182,7 @@ namespace python {
         bool isFunctionType() const;
         bool isDictionaryType() const;
         bool isStructuredDictionaryType() const;
+        bool isSparseStructuredDictionaryType() const;
         bool isListType() const;
         bool isNumericType() const;
         bool isOptionType() const;
@@ -196,6 +256,8 @@ namespace python {
         Type elementType() const;
         Type underlying() const;
 
+        Type makeNonSparse(bool recurse=true) const;
+
         /*!
          * returns the underlying value of a constant type. Note that this the actual value (not a python string!)
          * @return the value as string.
@@ -233,6 +295,12 @@ namespace python {
         bool isPrimitiveType() const;
 
         /*!
+         * whether in type system this is registered as primitive type.
+         * @return
+         */
+        bool isAbstractPrimitiveType() const;
+
+        /*!
          * check whether a given type is iterable. Currently true for iterator, list, tuple, string, range, dictionary, dict_keys, and dict_values.
          * @return
          */
@@ -245,6 +313,12 @@ namespace python {
          * @return
          */
         bool isSubclass(const Type& derived) const;
+
+        /*!
+         * whether type is immutable or not. If immutable, no assignment possible and values can be passed by value.
+         * @return
+         */
+        bool isImmutable() const;
 
         /*!
          * retrieves a vector of all types which are base classes of this type
@@ -381,14 +455,14 @@ namespace python {
          * @param kv_pairs
          * @return type created
          */
-        static Type makeStructuredDictType(const std::vector<std::pair<boost::any, python::Type>>& kv_pairs);
+        static Type makeStructuredDictType(const std::vector<std::pair<boost::any, python::Type>>& kv_pairs, bool is_sparse=false);
 
         /*!
         * creates a (structured) dictionary with known keys.
         * @param kv_pairs
         * @return type created
         */
-        static Type makeStructuredDictType(const std::vector<StructEntry>& kv_pairs);
+        static Type makeStructuredDictType(const std::vector<StructEntry>& kv_pairs, bool is_sparse=false);
 
         /*!
          * enclose type as tuple if it is a primitive type, if it is a tuple type, return the type itself
@@ -422,86 +496,69 @@ namespace python {
         static Type decode(const std::string& s);
         std::string encode() const;
 
+        // //! More compact encoding/decoding format. --> optimize using this as well.
+        // std::string compactEncode() const;
+        // static Type compactDecode(const std::string& s);
+
 #ifdef BUILD_WITH_CEREAL
         // cereal serialization functions
         template<class Archive>
         inline void load(Archive &archive) {
-
-            // simply encode/decode type
-            std::string encoded_str = "";
-            archive(encoded_str);
-            auto t = Type::decode(encoded_str);
-            _hash = t._hash; // using hash works...
-
-//            TypeFactory::TypeEntry type_entry;
-//            archive(_hash, type_entry);
-//
-//            // @TODO: this here is dangerous!
-//            // => i.e. leads to TypeSystem out of sync!
-//            // imagine a type system being out of sync with the one on a host machine. Now, any type needs to
-//            // remap etc. -> difficult.
-//            // better idea: simply overwrite map here
-//
-//            // Type registerOrGetType(const std::string& name,
-//            //                               const AbstractType at,
-//            //                               const std::vector<Type>& params = std::vector<Type>(),
-//            //                               const python::Type& retval=python::Type::VOID,
-//            //                               const std::vector<Type>& baseClasses = std::vector<Type>(),
-//            //                               bool isVarLen=false,
-//            //                               int64_t lower_bound=std::numeric_limits<int64_t>::min(),
-//            //                               int64_t upper_bound=std::numeric_limits<int64_t>::max(),
-//            //                               const std::string& constant="");
-//            // !!! warning !!!
-//            TypeFactory::instance()._typeMap[_hash] = TypeFactory::TypeEntry(type_entry._desc, type_entry._type, type_entry._params,
-//                                                                             type_entry._ret, type_entry._baseClasses, type_entry._isVarLen,
-//                                                                             type_entry._lower_bound,
-//                                                                             type_entry._upper_bound,
-//                                                                             type_entry._constant_value);
-//
-////        // register the type again
-////        TypeFactory::instance().registerOrGetType(type_entry._desc, type_entry._type, type_entry._params,
-////                                                  type_entry._ret, type_entry._baseClasses, type_entry._isVarLen,
-////                                                  type_entry._lower_bound,
-////                                                  type_entry._upper_bound,
-////                                                  type_entry._constant_value);
+            load(archive, identity<Archive>());
         }
-
 
         template<class Archive>
         inline void save(Archive &archive) const {
-//            // @TODO: this seems wrong, better: need to encode type as string and THEN decode!
-//            // that would avoid the remapping problem...!
-//            archive(_hash, TypeFactory::instance()._typeMap[_hash]);
-            auto encoded_str = encode();
-            archive(encoded_str);
+            // indirection because of GCC bug.
+            // cf. https://stackoverflow.com/questions/3052579/explicit-specialization-in-non-namespace-scope
+            save(archive, identity<Archive>());
         }
 #endif
 
         bool all_struct_pairs_optional() const;
         bool all_struct_pairs_always_present() const;
+        bool has_not_presence() const;
 
         size_t get_column_count() const;
     };
 
+    enum StructPresence {
+        UNKNOWN=0,
+        ALWAYS_PRESENT=1,
+        MAYBE_PRESENT=2,
+        NOT_PRESENT=3
+    };
+
      struct StructEntry { // an entry of a structured dict
+
         std::string key; // the value of the key, represented as string
         Type keyType; // type required to decode the string key
         Type valueType; // type what to store under key
-        bool alwaysPresent; // whether this (key,value) pair is always present or not. if true, use ->, else use =>
+        StructPresence presence; // whether this (key,value) pair is always present or not. if true, use ->, else use =>
+
+         StructEntry(const std::string &_key, const Type& _key_type,
+                     const Type _value_type, StructPresence _presence=ALWAYS_PRESENT):key(_key), keyType(_key_type), valueType(_value_type), presence(_presence) {
+
+         }
+
+         StructEntry(const std::string &_key, const Type& _key_type,
+                     const Type _value_type, bool always_present):key(_key), keyType(_key_type), valueType(_value_type), presence(always_present ? ALWAYS_PRESENT : MAYBE_PRESENT) {
+
+         }
 
         inline bool isUndefined() const {
             return key.empty() && keyType == Type() && valueType == Type();
         }
 
-        StructEntry() : alwaysPresent(true) {}
+        StructEntry() : presence(ALWAYS_PRESENT) {}
 
-        StructEntry(const StructEntry& other) : key(other.key), keyType(other.keyType), valueType(other.valueType), alwaysPresent(other.alwaysPresent) {}
-        StructEntry(StructEntry&& other) : key(other.key), keyType(other.keyType), valueType(other.valueType), alwaysPresent(other.alwaysPresent) {}
+        StructEntry(const StructEntry& other) : key(other.key), keyType(other.keyType), valueType(other.valueType), presence(other.presence) {}
+        StructEntry(StructEntry&& other) : key(other.key), keyType(other.keyType), valueType(other.valueType), presence(other.presence) {}
         StructEntry& operator = (const StructEntry& other) {
             key = other.key;
             keyType = other.keyType;
             valueType = other.valueType;
-            alwaysPresent = other.alwaysPresent;
+            presence = other.presence;
             return *this;
         }
     };
@@ -525,6 +582,7 @@ namespace python {
             DICT_KEYS,
             DICT_VALUES,
             STRUCTURED_DICTIONARY,
+            SPARSE_STRUCTURED_DICTIONARY,
             LIST,
             CLASS,
             OPTION, // for nullable
@@ -585,8 +643,10 @@ namespace python {
         // need threadsafe hashmap here...
         // either tbb's or the one from folly...
         std::vector<TypeEntry> _typeVec;
-        std::unordered_map<int, unsigned> _typeMap; // points to typeVec
-        std::unordered_map<std::string, unsigned> _typeMapByName; // points to typeVec
+        //std::unordered_map<int, unsigned> _typeMap; // points to typeVec
+        //std::unordered_map<std::string, unsigned> _typeMapByName; // points to typeVec
+        absl::flat_hash_map<int, unsigned> _typeMap; // points to typeVec
+        absl::flat_hash_map<std::string, unsigned> _typeMapByName; // points to typeVec
         mutable std::mutex _typeMapMutex;
 
         TypeFactory() : _hash_generator(0)  { _typeVec.reserve(256); }
@@ -631,7 +691,8 @@ namespace python {
          * returns a lookup map of all registered primitive type keywords (they can be created dynamically...)
          * @return map of keywords -> type.
          */
-        std::unordered_map<std::string, Type> get_primitive_keywords() const;
+        // std::unordered_map<std::string, Type> get_primitive_keywords() const;
+        absl::flat_hash_map<std::string, Type> get_primitive_keywords() const;
 
         Type createOrGetPrimitiveType(const std::string& name, const std::vector<Type>& baseClasses=std::vector<Type>{});
 
@@ -642,8 +703,8 @@ namespace python {
         Type createOrGetDictValuesViewType(const Type& val);
         Type createOrGetListType(const Type& val);
 
-        Type createOrGetStructuredDictType(const std::vector<std::pair<boost::any, python::Type>>& kv_pairs);
-        Type createOrGetStructuredDictType(const std::vector<StructEntry>& kv_pairs);
+        Type createOrGetStructuredDictType(const std::vector<std::pair<boost::any, python::Type>>& kv_pairs, bool is_sparse);
+        Type createOrGetStructuredDictType(const std::vector<StructEntry>& kv_pairs, bool is_sparse);
 
         Type createOrGetTupleType(const std::initializer_list<Type> args);
         Type createOrGetTupleType(const TTuple<Type>& args);
@@ -677,6 +738,8 @@ namespace python {
         }
 
         std::string printAllTypes();
+
+        bool isSparseStructuredDictionaryType(const Type &type);
     };
 
 
@@ -957,6 +1020,17 @@ namespace tuplex {
         std::string name = "Exception";
         name = exceptionCodeToPythonClass(ec);
         auto t = python::TypeFactory::instance().getByName(name);
+
+        if(t == python::Type::UNKNOWN) {
+            // register new exception type (based on Exception)
+            auto base_type = python::TypeFactory::instance().getByName("Exception");
+            assert(base_type != python::Type::UNKNOWN);
+
+            std::vector<python::Type> baseTypes(1, base_type);
+
+            t = python::TypeFactory::instance().createOrGetPrimitiveType(name, baseTypes);
+        }
+
         assert(t != python::Type::UNKNOWN);
         return t;
     }
@@ -974,6 +1048,87 @@ namespace tuplex {
             return row_type.get_column_count();
         throw std::runtime_error("can not extract number of columns from type " + row_type.desc());
     }
+
+    // Custom binary stream for types to store data efficiently.
+    // Also helps to decode.
+    class BinaryOutputStream {
+    public:
+        BinaryOutputStream() {}
+
+        inline std::string str() const {
+            return _stream.str();
+        }
+
+        inline BinaryOutputStream& operator << (int i) {
+            _stream.write(reinterpret_cast<const char*>(&i), sizeof(int));
+            return *this;
+        }
+
+        inline BinaryOutputStream& operator << (std::string s) {
+            int size = s.size(); // cast.
+            _stream.write(reinterpret_cast<const char*>(&size), sizeof(int));
+            _stream.write(s.data(), size);
+            return *this;
+        }
+
+        inline BinaryOutputStream& operator << (const char c) {
+            _stream<<c;
+            return *this;
+        }
+
+        inline BinaryOutputStream& operator << (bool b) {
+            // use 1 byte, could use a bit as well...
+            if(b)
+                _stream<<"T";
+            else
+                _stream<<"F";
+            return *this;
+        }
+
+    private:
+        std::ostringstream _stream;
+    };
+
+    class BinaryInputStream {
+    public:
+        BinaryInputStream(const std::string& data) : _stream(data) {}
+
+        inline std::string str() const {
+            return _stream.str();
+        }
+
+        inline BinaryInputStream& operator >> (int& i) {
+            _stream.read(reinterpret_cast<char*>(&i), sizeof(int));
+            return *this;
+        }
+
+        inline BinaryInputStream& operator >> (std::string& s) {
+            int size = 0; // cast.
+            _stream.read(reinterpret_cast<char*>(&size), sizeof(int));
+            s = std::string(size, '\0');
+            _stream.read(s.data(), s.size());
+            return *this;
+        }
+
+        inline BinaryInputStream& operator >> (char& c) {
+            _stream>>c;
+            return *this;
+        }
+
+        inline BinaryInputStream& operator << (bool& b) {
+            // use 1 byte, could use a bit as well...
+            char c;
+            _stream>>c;
+            b = c == 'T';
+            return *this;
+        }
+
+    private:
+        std::istringstream _stream;
+    };
+
+    extern std::string compact_type_encode(const python::Type& t);
+    extern python::Type compact_type_decode(const std::string& s);
 }
 
 

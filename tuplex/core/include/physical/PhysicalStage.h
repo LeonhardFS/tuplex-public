@@ -134,6 +134,8 @@ namespace tuplex {
          * name of the action who triggers this stage
          */
         virtual std::string actionName() const { return ""; }
+
+        virtual SamplingMode samplingMode() const;
     };
 }
 #endif //TUPLEX_PHYSICALSTAGE_H

@@ -14,6 +14,7 @@
 #include <visitors/ApplyVisitor.h>
 #include <ast/ASTHelpers.h>
 #include <visitors/type_deopt.h>
+#include "JSONUtils.h"
 
 namespace tuplex {
     bool isPythonIntegerType(const python::Type& t ) {
@@ -47,41 +48,64 @@ namespace tuplex {
 
     void TypeAnnotatorVisitor::visit(NSuite *suite) {
 
+        bool has_speculative_statements = has_any_statement_positive_visits(suite);
+
+        // hack: Not sure why this is needed.
+        // basically, for whichever reason - some statements may be missing num visited.
+        // if there are speculative statements. check till first stmt with counts is encountered.
+        bool first_stmt_with_counts_already_seen = false;
+
         // visit statements until the first return is encountered!!!
         // => note: clean ast visitor could remove anything that comes after return!
         for (auto & stmt : suite->_statements) {
+
+            if(stmt->hasAnnotation() && stmt->annotation().numTimesVisited > 0)
+                first_stmt_with_counts_already_seen = true;
+
+            // does suite have speculative statements? If so, stop when visited count is 0 or no annotation.
+            // This if check needs to come first.
+            if(has_speculative_statements && first_stmt_with_counts_already_seen) {
+                if(!stmt->hasAnnotation() || stmt->annotation().numTimesVisited == 0)
+                    return;
+            }
+
             // check whether statement can be optimized. Can be optimized iff result of optimizeNext is a different
             // memory address
             setLastParent(suite);
             stmt->accept(*this);
-            // do not process statements after return (early exit suite)
-            if(stmt->type() == ASTNodeType::Return) {
-                suite->setInferredType(stmt->getInferredType());
-                return;
-            }
 
-            // similarly, stop at a raise statement
-            if(stmt->type() == ASTNodeType::Raise) {
-                // set type of suite to exception being raised...
-                // special case: if left side is NOT an exception, then set to TypeError
-                // i.e. something like raise 20 produces a type error...
-                // >>> raise 20
-                //Traceback (most recent call last):
-                //  File "<stdin>", line 1, in <module>
-                //TypeError: exceptions must derive from BaseException
-                auto raise = (NRaise*)stmt.get();
-                if(!raise->_expression->getInferredType().isExceptionType()) {
-                    suite->setInferredType(_symbolTable.lookupType("TypeError"));
-                } else {
-                    suite->setInferredType(raise->_expression->getInferredType());
+            switch(stmt->type()) {
+                case ASTNodeType::Return: {
+                    // do not process statements after return (early exit suite)
+                    suite->setInferredType(stmt->getInferredType());
+                    return;
                 }
-                return;
-            }
-
-            if(stmt->type() == ASTNodeType::Break || stmt->type() == ASTNodeType::Continue) {
-                // skip statements after break or continue
-                suite->setInferredType(stmt->getInferredType());
-                return;
+                case ASTNodeType::Raise: {
+                    // similarly, stop at a raise statement
+                    // set type of suite to exception being raised...
+                    // special case: if left side is NOT an exception, then set to TypeError
+                    // i.e. something like raise 20 produces a type error...
+                    // >>> raise 20
+                    //Traceback (most recent call last):
+                    //  File "<stdin>", line 1, in <module>
+                    //TypeError: exceptions must derive from BaseException
+                    auto raise = (NRaise*)stmt.get();
+                    if(!raise->_expression->getInferredType().isExceptionType()) {
+                        suite->setInferredType(_symbolTable.lookupType("TypeError"));
+                    } else {
+                        suite->setInferredType(raise->_expression->getInferredType());
+                    }
+                    return;
+                }
+                case ASTNodeType::Break:
+                case ASTNodeType::Continue: {
+                    // skip statements after break or continue
+                    suite->setInferredType(stmt->getInferredType());
+                    return;
+                }
+                default: {
+                    // nothing todo.
+                }
             }
         }
 
@@ -112,10 +136,23 @@ namespace tuplex {
             // try to combine return types (i.e. for none, this works!)
             // ==> if it fails, display err message.
 
+            // get return types, but ignore exceptions - if all are exceptions, warn. User should fix
+            std::vector<python::Type> return_types;
+            std::copy_if(_funcReturnTypes.begin(), _funcReturnTypes.end(), std::back_inserter(return_types), [](const python::Type& t) {
+                return !t.isExceptionType();
+            });
+
+            if(return_types.empty()) {
+                fatal_error("All return code paths produce exceptions");
+                return;
+            }
+
+
+
             // go through all func types, and check whether they can be unified.
-            auto combined_ret_type = _funcReturnTypes.front();
-            for(int i = 1; i < _funcReturnTypes.size(); ++i)
-                combined_ret_type = unifyTypes(combined_ret_type, _funcReturnTypes[i],
+            auto combined_ret_type = return_types.front();
+            for(int i = 1; i < return_types.size(); ++i)
+                combined_ret_type = unifyTypes(combined_ret_type, return_types[i],
                                                _typeUnificationPolicy);
 
             if(combined_ret_type == python::Type::UNKNOWN) {
@@ -144,8 +181,22 @@ namespace tuplex {
                         return std::get<1>(a) > std::get<1>(b);
                     });
 
+                    return_types.clear();
+                    // copy out non-exception types
+                    for(auto count_tuple : v) {
+                        auto type = std::get<0>(count_tuple);
+                        if(!type.isExceptionType())
+                            return_types.push_back(type);
+                    }
+
+                    if(return_types.empty()) {
+                        fatal_error("All return code paths despite speculation produce exceptions");
+                        return;
+                    }
+                    assert(!return_types.empty());
+
                     // top element?
-                    auto best_so_far = std::get<0>(v.front());
+                    auto best_so_far = return_types.front();
 
                     for(int i = 1; i < v.size(); ++i) {
                         auto cur_type = std::get<0>(v[i]);
@@ -165,7 +216,7 @@ namespace tuplex {
                     combined_ret_type = best_so_far;
                 } else {
                     // check that all return values are the same, if not: error!!!
-                    std::set<python::Type> unique_types(_funcReturnTypes.begin(), _funcReturnTypes.end());
+                    std::set<python::Type> unique_types(return_types.begin(), return_types.end());
                     std::vector<std::string> type_names;
                     for(const auto& t : unique_types)
                         type_names.emplace_back(t.desc());
@@ -175,6 +226,12 @@ namespace tuplex {
                     error(ss.str());
                     return;
                 }
+            }
+
+            // check that a valid type can be created, else abort.
+            if(combined_ret_type == python::Type::UNKNOWN) {
+                fatal_error("can not create combined return type for function " + func->_name->_name);
+                return;
             }
 
             assert(combined_ret_type != python::Type::UNKNOWN); // make sure control flow does not else hit this!
@@ -191,6 +248,10 @@ namespace tuplex {
 
                                         // can upcast? => only then set. This allows in Blockgenerator to detect deviating return statements!
                                         if(n.getInferredType() == python::Type::UNKNOWN) // i.e. code that is never visited
+                                            return;
+
+                                        // keep exception types as they are
+                                        if(n.getInferredType().isExceptionType())
                                             return;
 
                                         auto uni_type = unifyTypes(n.getInferredType(), combined_ret_type,
@@ -982,12 +1043,12 @@ namespace tuplex {
             for(unsigned i = 1; i < list->_elements.size(); ++i) {
                 auto& el = list->_elements[i];
 
-                // list of lists is an unsupported feature right now, defer for now...
-                if(el->getInferredType().isListType() && el->getInferredType() != python::Type::EMPTYLIST) {
-                    list->setInferredType(python::Type::makeListType(python::Type::PYOBJECT));
-                    addCompileError(CompileError::TYPE_ERROR_LIST_OF_LISTS);
-                    return;
-                }
+                // // list of lists is an unsupported feature right now, defer for now...
+                // if(el->getInferredType().isListType() && el->getInferredType() != python::Type::EMPTYLIST) {
+                //     list->setInferredType(python::Type::makeListType(python::Type::PYOBJECT));
+                //     addCompileError(CompileError::TYPE_ERROR_LIST_OF_LISTS);
+                //     return;
+                // }
 
                 // check whether type unification is possible, if so -> ok.
                 auto uni_type = unifyTypes(el->getInferredType(), elementType, _policy.allowNumericTypeUnification);
@@ -1165,13 +1226,6 @@ namespace tuplex {
 
     void TypeAnnotatorVisitor::typeStructuredDictSubscription(tuplex::NSubscription *sub, const python::Type &type) {
         assert(type.isStructuredDictionaryType());
-
-        // index by literal (or future: constant value?)
-#ifndef NDEBUG
-        Logger::instance().defaultLogger().info("add support for constant-valued types here as well...");
-        // maybe also normal-case speculation on struct type??
-        // --> could be done as well...
-#endif
 
         sub->setInferredType(python::Type::UNKNOWN);
 
@@ -1420,6 +1474,15 @@ namespace tuplex {
         } else if(python::Type::GENERICDICT == type) {
             // TODO: GENERICDICT TO ALLOW DICT OUTPUT
             sub->setInferredType(python::Type::PYOBJECT);
+
+            // is there an annotation? -> use that then.
+            if(sub->hasAnnotation() && sub->annotation().numTimesVisited > 0)
+                sub->setInferredType(sub->annotation().majorityType());
+            else {
+                // no annotation, terminate with CompileError. Do not allow for undetermined GENERIC DICT return type.
+                addCompileError(CompileError::TYPE_ERROR_GENERIC_DICT_SUBSCRIPT);
+                error(compileErrorToStr(CompileError::TYPE_ERROR_GENERIC_DICT_SUBSCRIPT)); // error out to trigger sampling.
+            }
         } else if(python::Type::EMPTYDICT == type) {
             // subscripting an empty dict will always yield a KeyError. I.e. warn and set generic object
             // error("subscripting an empty dictionary will always yield a KeyError. Please fix code");
@@ -1429,6 +1492,12 @@ namespace tuplex {
             // special case: structured dict
             if(type.isStructuredDictionaryType()) {
                 typeStructuredDictSubscription(sub, type);
+            } else if(type.isSparseStructuredDictionaryType()) {
+                // special case: this here is similar to a StructDict. However, if key is not found emit NORMALCASEERROR instead of KeyError, because
+                // due to sparseness can't know whether not in deoptimized version the key was present.
+                typeStructuredDictSubscription(sub, type.makeNonSparse());
+                if(sub->getInferredType() == get_exception_type(ExceptionCode::KEYERROR))
+                    sub->setInferredType(get_exception_type(ExceptionCode::NORMALCASEVIOLATION));
             } else {
                 sub->setInferredType(type.valueType());
             }
@@ -1456,14 +1525,27 @@ namespace tuplex {
                 if(index < 0 || index >= type.get_column_count()) {
                     auto ec_code = rc_integer ? ExceptionCode::INDEXERROR : ExceptionCode::KEYERROR;
                     sub->setInferredType(get_exception_type(ec_code)); // should be
-                    error("Index error: tried to access row element at position " + std::to_string(index));
+
+                    // get more context:
+                    std::stringstream ss;
+                    ss<<"Index error: tried to access row element at position " + std::to_string(index);
+                    ss<<"\nrc_integer: "<<std::boolalpha<<rc_integer<<" rc_string: "<<std::boolalpha<<rc_string;
+                    ss<<"\nnum columns: "<<type.get_column_count();
+                    ss<<"\nexpression: "<<astToString(sub->_expression.get());
+                    ss<<"\ncolumn names: "<<type.get_column_names();
+                    error(ss.str());
                 } else {
                     sub->setInferredType(type.get_column_type(index));
                 }
             }
             // [2] index via dynamic expression -> requires tracing
             else {
-                fatal_error("no support for dynamic row type expression indexing yet.");
+                if(sub->hasAnnotation() && sub->annotation().numTimesVisited > 0) {
+                    auto maj_ret_type = sub->annotation().majorityType();
+                    sub->setInferredType(maj_ret_type);
+                } else {
+                    fatal_error("no support for dynamic row type expression indexing yet.");
+                }
             }
         } else {
 
@@ -1795,9 +1877,15 @@ namespace tuplex {
         }
     }
 
-    void TypeAnnotatorVisitor::resolveNamesForIfStatement(std::unordered_map<std::string, python::Type> &if_table,
+    bool TypeAnnotatorVisitor::resolveNamesForIfStatement(std::unordered_map<std::string, python::Type> &if_table,
                                                           std::unordered_map<std::string, python::Type> &else_table) {
         using namespace std;
+
+
+        // backup tables
+        auto if_table_backup = if_table;
+        auto else_table_backup = else_table;
+        auto name_table_backup = _nameTable;
 
         // resolve conflicts between if and else table!
         set<std::string> ifelse_names;
@@ -1824,6 +1912,14 @@ namespace tuplex {
                         error("need to speculate, because can't unify variable " + name +
                               " type " + if_type.desc() + " in if branch with its type " +
                               else_type.desc() + " in else branch.");
+
+                        // restore tables, and abort
+                        _nameTable = name_table_backup;
+                        if_table = if_table_backup;
+                        else_table = else_table_backup;
+
+                        // return false.
+                        return false;
                     }
                 } else {
                     // same type, simply assign!
@@ -1835,6 +1931,8 @@ namespace tuplex {
         // resolve conflicts from if/else with before table
         resolveNameConflicts(if_table);
         resolveNameConflicts(else_table);
+
+        return true;
     }
 
     void TypeAnnotatorVisitor::visit(NIfElse* ifelse) {
@@ -1845,16 +1943,36 @@ namespace tuplex {
         auto visit_if = std::get<1>(visit_t);
         auto visit_else = std::get<2>(visit_t);
 
+
+        auto dbg_cond = astToString(ifelse->_expression.get());
+
         // in speculation mode?
         bool speculate = ifelse->annotation().numTimesVisited > 0 || (ifelse->_else && ifelse->_else->annotation().numTimesVisited > 0);
+
+#ifdef NDEBUG
+        if("'FollowEvent' == row['type']" == dbg_cond && speculate) {
+            std::cout<<"test found"<<std::endl;
+        }
+#endif
 
         // backup name table, this is required to then deduce type conflicts:
         auto nameTable_before = _nameTable;
         unordered_map<string, python::Type> if_table;
         unordered_map<string, python::Type> else_table;
 
+        auto current_return_types = _funcReturnTypes;
+        auto curremt_return_type_counts = _returnTypeCounts;
+        std::vector<std::pair<python::Type, int>> if_return_types;
+        std::vector<std::pair<python::Type, int>> else_return_types;
+
+//#error "deal here also with unifying return types to determine whether speculation ACTUALLY is required or not. E.g., for 'FollowEvent' == row['type']"
+
         // manually visit (from ApatheticVisitor but accounting for annotations)
         if(visit_ifelse) {
+
+            // reset counts
+            _funcReturnTypes.clear();
+            _returnTypeCounts.clear();
 
             // first expression
             ifelse->_expression->accept(*this); // this wont' create a new scope b.c. := not yet supported!
@@ -1863,16 +1981,50 @@ namespace tuplex {
             if(visit_if) {
                 ifelse->_then->accept(*this);
                 if_table = _nameTable;
+
+                // update returns
+                assert(_funcReturnTypes.size() == _returnTypeCounts.size());
+                for(unsigned i = 0; i < _funcReturnTypes.size(); ++i) {
+                    if_return_types.push_back(make_pair(_funcReturnTypes[i], _returnTypeCounts[i]));
+                }
             }
 
             // reset name table
             _nameTable = nameTable_before;
 
+            // reset counts
+            _funcReturnTypes.clear();
+            _returnTypeCounts.clear();
+
             if(visit_else) {
                 ifelse->_else->accept(*this);
                 else_table = _nameTable;
+
+                // update returns
+                assert(_funcReturnTypes.size() == _returnTypeCounts.size());
+                for(unsigned i = 0; i < _funcReturnTypes.size(); ++i) {
+                    else_return_types.push_back(make_pair(_funcReturnTypes[i], _returnTypeCounts[i]));
+                }
             }
+
+            // reset counts
+            _funcReturnTypes = current_return_types;
+            _returnTypeCounts = curremt_return_type_counts;
+
+            // add from saved ones
+            for(auto p : if_return_types) {
+                _funcReturnTypes.push_back(p.first);
+                _returnTypeCounts.push_back(p.second);
+            }
+            for(auto p : else_return_types) {
+                _funcReturnTypes.push_back(p.first);
+                _returnTypeCounts.push_back(p.second);
+            }
+
         } else return;
+
+
+        // TODO: add counts...
 
         // update scopes, i.e. unifying or exception check via annotation!
         // only if?
@@ -1900,45 +2052,79 @@ namespace tuplex {
                 // for else, if else branch exists, take that annotation number. Else, simply check how often if is not visited.
                 auto numTimesElseVisited = ifelse->_else ? ifelse->_else->annotation().numTimesVisited : ifelse->annotation().numTimesVisited - numTimesIfVisited;
 
-                if(numTimesIfVisited >= numTimesElseVisited) {
-                    visit_if = true;
-                    visit_else = false;
-                    // every sample that takes else branch is now a normal case violation
-                    if(_normalCaseViolationSampleIndices.size() < _totalSampleCount && ifelse->_else) {
-                        auto currNormalCaseViolationSampleIndices = ifelse->_else->annotation().branchTakenSampleIndices;
-                        std::copy(currNormalCaseViolationSampleIndices.begin(), currNormalCaseViolationSampleIndices.end(),
-                                  std::inserter(_normalCaseViolationSampleIndices, _normalCaseViolationSampleIndices.end()));
-                        if(_normalCaseViolationSampleIndices.size() == _totalSampleCount) {
-                            // every sample will end up raising normal case violation, no point to compile the udf
-                            addCompileError(CompileError::COMPILE_ERROR_ALL_SAMPLES_PRODUCE_NORMALCASEVIOLATION);
+//                // new: if both branches are visited -> if mode for not simplifying branches is true/normal-case threshold, try to visit both and see whether tables can be unified. If not, need to forcefully speculate.
+//                if(ifelse->_else && numTimesIfVisited > 0 && numTimesElseVisited > 0) {
+//                    auto& logger = Logger::instance().logger("type annotator");
+//                    logger.debug("Visiting ifelse statement with " + pluralize(numTimesIfVisited, "sample") + " taking if branch, " +
+//                                         pluralize(numTimesElseVisited, "sample") + " taking else branch. Check if types can be unified.");
+//
+//                    // attempt type unification
+//                    if(!resolveNamesForIfStatement(if_table, else_table)) {
+//                        logger.debug("resolution of names in if table failed.");
+//                    } else {
+//                        logger.debug("ifelse resolution worked.");
+//                    }
+//
+//                    // result:
+//                }
+
+
+                // store table
+                auto name_table_backup = _nameTable;
+                bool can_resolve_name_conflicts = resolveNamesForIfStatement(if_table, else_table); // <-- this modifies iftable, elsetable and name table.
+
+                // does resolution fail?
+                if(!can_resolve_name_conflicts) {
+                    if(numTimesIfVisited >= numTimesElseVisited) {
+                        visit_if = true;
+                        visit_else = false;
+                        // every sample that takes else branch is now a normal case violation
+                        if(_normalCaseViolationSampleIndices.size() < _totalSampleCount && ifelse->_else) {
+                            auto currNormalCaseViolationSampleIndices = ifelse->_else->annotation().branchTakenSampleIndices;
+                            std::copy(currNormalCaseViolationSampleIndices.begin(), currNormalCaseViolationSampleIndices.end(),
+                                      std::inserter(_normalCaseViolationSampleIndices, _normalCaseViolationSampleIndices.end()));
+                            if(_normalCaseViolationSampleIndices.size() == _totalSampleCount) {
+                                // every sample will end up raising normal case violation, no point to compile the udf
+                                addCompileError(CompileError::COMPILE_ERROR_ALL_SAMPLES_PRODUCE_NORMALCASEVIOLATION);
+                            }
+                        }
+                    } else {
+                        visit_if = false;
+                        visit_else = ifelse->_else != nullptr; // can be also it's a single if statement!
+                        // every sample that takes then branch is now a normal case violation
+                        if(_normalCaseViolationSampleIndices.size() < _totalSampleCount) {
+                            auto currNormalCaseViolationSampleIndices = ifelse->_then->annotation().branchTakenSampleIndices;
+                            std::copy(currNormalCaseViolationSampleIndices.begin(), currNormalCaseViolationSampleIndices.end(),
+                                      std::inserter(_normalCaseViolationSampleIndices, _normalCaseViolationSampleIndices.end()));
+                            if(_normalCaseViolationSampleIndices.size() == _totalSampleCount) {
+                                // every sample will end up raising normal case violation, no point to compile the udf
+                                addCompileError(CompileError::COMPILE_ERROR_ALL_SAMPLES_PRODUCE_NORMALCASEVIOLATION);
+                            }
+                        }
+                    }
+
+                    // Note: also both can be false in the case of a single if!
+
+                    // => just take the updates from the branch that gets executed
+                    if(visit_if) {
+                        _nameTable = name_table_backup;
+                        for(const auto& kv : if_table) {
+                            _nameTable[kv.first] = kv.second;
+                        }
+                    }
+
+                    if(visit_else) {
+                        _nameTable = name_table_backup;
+                        for(const auto& kv : else_table) {
+                            _nameTable[kv.first] = kv.second;
                         }
                     }
                 } else {
-                    visit_if = false;
-                    visit_else = ifelse->_else != nullptr; // can be also it's a single if statement!
-                    // every sample that takes then branch is now a normal case violation
-                    if(_normalCaseViolationSampleIndices.size() < _totalSampleCount) {
-                        auto currNormalCaseViolationSampleIndices = ifelse->_then->annotation().branchTakenSampleIndices;
-                        std::copy(currNormalCaseViolationSampleIndices.begin(), currNormalCaseViolationSampleIndices.end(),
-                                  std::inserter(_normalCaseViolationSampleIndices, _normalCaseViolationSampleIndices.end()));
-                        if(_normalCaseViolationSampleIndices.size() == _totalSampleCount) {
-                            // every sample will end up raising normal case violation, no point to compile the udf
-                            addCompileError(CompileError::COMPILE_ERROR_ALL_SAMPLES_PRODUCE_NORMALCASEVIOLATION);
-                        }
-                    }
+                    // all good, generate code for both!
+                    // --> adjust counts.
+                    visit_if = true;
+                    visit_else = true;
                 }
-
-                // Note: also both can be false in the case of a single if!
-
-                // => just take the updates from the branch that gets executed
-                if(visit_if)
-                    for(const auto& kv : if_table) {
-                        _nameTable[kv.first] = kv.second;
-                    }
-                if(visit_else)
-                    for(const auto& kv : else_table) {
-                        _nameTable[kv.first] = kv.second;
-                    }
             } else {
                 // attempt type unification
                 resolveNamesForIfStatement(if_table, else_table);
@@ -1947,6 +2133,17 @@ namespace tuplex {
 
         assert(ifelse->_then && ifelse->_expression);
         // @Todo: make this work using the normal/exception case model.
+
+        // update annotation
+        if(ifelse->hasAnnotation()) {
+            FollowBranch follow_branch =  FollowBranch::NONE;
+            if(visit_if)
+                follow_branch = follow_branch | FollowBranch::IF;
+            if(visit_else)
+                follow_branch = follow_branch | FollowBranch::ELSE;
+            ifelse->annotation().follow_branch = follow_branch;
+        }
+
 
         // both branches visited?
         if(visit_if && visit_else) {

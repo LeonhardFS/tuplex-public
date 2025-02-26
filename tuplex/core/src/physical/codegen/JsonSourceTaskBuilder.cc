@@ -8,6 +8,10 @@
 #include <physical/experimental/JSONParseRowGenerator.h>
 #include <logical/FilterOperator.h>
 
+#ifdef BUILD_WITH_CEREAL
+#include "CustomArchive.h"
+#endif
+
 namespace tuplex {
     namespace codegen {
         JsonSourceTaskBuilder::JsonSourceTaskBuilder(const std::shared_ptr<LLVMEnvironment> &env,
@@ -54,7 +58,7 @@ namespace tuplex {
             auto args = mapLLVMFunctionArgs(func, {"userData", "inPtr", "inSize", "outNormalRowCount", "outBadRowCount", "ignoreLastRow"});
 
             BasicBlock* bbEntry = BasicBlock::Create(env().getContext(), "entry", func);
-            IRBuilder<> builder(bbEntry);
+            IRBuilder builder(bbEntry);
 
             auto bufPtr = args["inPtr"];
             auto bufSize = args["inSize"];
@@ -78,14 +82,17 @@ namespace tuplex {
             //  env().debugPrint(builder, "---");
 
             // store in output var info
-            llvm::Value* normalRowCount = builder.CreateLoad(_normalRowCountVar);
-            normalRowCount = builder.CreateSub(normalRowCount, builder.CreateLoad(_badNormalRowCountVar));
+            llvm::Value* normalRowCount = builder.CreateLoad(builder.getInt64Ty(), _normalRowCountVar);
+            normalRowCount = builder.CreateSub(normalRowCount, builder.CreateLoad(builder.getInt64Ty(), _badNormalRowCountVar));
             env().storeIfNotNull(builder, normalRowCount, args["outNormalRowCount"]);
-            llvm::Value* badRowCount = builder.CreateAdd(builder.CreateLoad(_generalRowCountVar), builder.CreateLoad(_fallbackRowCountVar));
-            badRowCount = builder.CreateAdd(builder.CreateLoad(_badNormalRowCountVar), badRowCount);
+            llvm::Value* badRowCount = builder.CreateAdd(builder.CreateLoad(builder.getInt64Ty(), _generalRowCountVar), builder.CreateLoad(builder.getInt64Ty(), _fallbackRowCountVar));
+            badRowCount = builder.CreateAdd(builder.CreateLoad(builder.getInt64Ty(), _badNormalRowCountVar), badRowCount);
             env().storeIfNotNull(builder, badRowCount, args["outBadRowCount"]); // <-- i.e. exceptions
 
             builder.CreateRet(parsed_bytes);
+
+            // make sure freeEnd is terminated.
+            assert(!blockOpen(_freeEnd));
 
             return func;
         }
@@ -93,25 +100,45 @@ namespace tuplex {
         std::vector<int>
         JsonSourceTaskBuilder::columns_required_for_checks(const std::vector<NormalCaseCheck> &checks) const {
             std::set<int> columns;
-            for(const auto& check : checks) {
-                switch(check.type) {
-                    case CheckType::CHECK_CONSTANT: {
-                        if(!check.isSingleColCheck())
-                            throw std::runtime_error("only single col constant check yet supported.");
 
-                        std::stringstream ss;
-                        ss<<"Found normal case check (constant) for column "<<check.colNo();
-                        logger().debug(ss.str());
-                        columns.insert(check.colNo());
-                        break;
+            auto columns_to_read = _normal_case_columns; // ? is this correct ?
+
+            for(const auto& check : checks) {
+
+                // see whether names are available, if so index using names. Much better.
+                if(!check.colNames.empty()) {
+                    for(auto name : check.colNames) {
+                        auto idx = indexInVector(name, columns_to_read);
+                        if(idx < 0) {
+                            std::stringstream ss;
+                            ss<<__FILE__<<":"<<__LINE__<<" can not find column required by check "<<check.to_string()<<" "<<name<<" in columns to read "<<columns_to_read;
+                            throw std::runtime_error(ss.str());
+                        }
+
+                        columns.insert(idx);
                     }
-                    case CheckType::CHECK_FILTER: {
-                        throw std::runtime_error("not yet implemented");
-                        break;
-                    }
-                    default:
-                        throw std::runtime_error("Found check " + check.to_string() + " for which columns required can't be determined.");
                 }
+
+//                switch(check.type) {
+//                    case CheckType::CHECK_CONSTANT: {
+//                        if(!check.isSingleColCheck())
+//                            throw std::runtime_error("only single col constant check yet supported.");
+//
+//                        std::stringstream ss;
+//                        ss<<"Found normal case check (constant) for column "<<check.colNo();
+//                        logger().debug(ss.str());
+//                        columns.insert(check.colNo());
+//                        break;
+//                    }
+//                    case CheckType::CHECK_FILTER: {
+//                        // deserialize filter and access its columns
+//                        for(const auto& col_no: check.colNos)
+//                            columns.insert(col_no);
+//                        break;
+//                    }
+//                    default:
+//                        throw std::runtime_error("Found check " + check.to_string() + " for which columns required can't be determined.");
+//                }
             }
 
             auto ret = std::vector<int>{columns.begin(), columns.end()};
@@ -119,10 +146,19 @@ namespace tuplex {
             return ret;
         }
 
+        static python::Type remove_constant_types(const python::Type& tuple_type) {
+            assert(tuple_type.isTupleType());
+            auto col_types = tuple_type.parameters();
+            for(auto& type: col_types)
+                if(type.isConstantValued())
+                    type = type.underlying();
+            return python::Type::makeTupleType(col_types);
+        }
+
         std::tuple<FlattenedTuple, std::unordered_map<int, int>>
-        JsonSourceTaskBuilder::parse_selected_columns(llvm::IRBuilder<> &builder,
-                                                      const std::vector<int> &columns_to_parse, llvm::Value *parser,
-                                                      llvm::BasicBlock *bbBadParse) const {
+        JsonSourceTaskBuilder::parse_selected_columns_for_checks(const IRBuilder &builder,
+                                                                 const std::vector<int> &columns_to_parse, llvm::Value *parser,
+                                                                 llvm::BasicBlock *bbBadParse) const {
             using namespace llvm;
             assert(parser);
             assert(bbBadParse);
@@ -137,8 +173,11 @@ namespace tuplex {
 
             auto tuple_row_type = row_type.isRowType() ? row_type.get_columns_as_tuple_type() : row_type;
             assert(row_type_compatible_with_columns(tuple_row_type, col_names_to_parse));
-            auto ft = json_parseRow(*_env.get(), builder, tuple_row_type, col_names_to_parse, true, false, parser, bbBadParse);
 
+            // rRemove constant type or other optimized types from input row type.
+            // the input/output type may be configured to yield _Constant[...] types. However, these are the results
+            // of the checks passing - if a check is a constant check, parse it here.
+            auto ft = json_parseRow(*_env.get(), builder, remove_constant_types(tuple_row_type), col_names_to_parse, true, false, parser, bbBadParse);
 
             std::unordered_map<int, int> m;
             for(unsigned i = 0; i < columns_to_parse.size(); ++i) {
@@ -149,18 +188,18 @@ namespace tuplex {
         }
 
         void
-        JsonSourceTaskBuilder::generateChecks(llvm::IRBuilder<> &builder,
+        JsonSourceTaskBuilder::generateChecks(const IRBuilder &builder,
                                               llvm::Value *userData,
                                               llvm::Value *rowNumber,
-                                              llvm::Value* parser,
-                                              llvm::BasicBlock* bbSkipRow,
-                                              llvm::BasicBlock* bbBadRow) {
+                                              llvm::Value *parser,
+                                              llvm::BasicBlock *bbSkipRow,
+                                              llvm::BasicBlock *bbBadRow) {
             using namespace llvm;
 
             assert(rowNumber && rowNumber->getType() == _env->i64Type());
             assert(parser && parser->getType() == _env->i8ptrType());
 
-            // _env->printValue(builder, rowNumber, "normal-case check for row=");
+            // _env->printValue(builder, rowNumber, "normal-case check(s) for row=");
 
             // which checks are available?
             auto checks = this->checks();
@@ -172,25 +211,33 @@ namespace tuplex {
             {
                 std::stringstream ss;
                 std::vector<std::string> required_column_names;
-                for(auto i : required_cols_for_check)
-                    if(_normal_case_columns.empty())
+                for (auto i: required_cols_for_check)
+                    if (_normal_case_columns.empty())
                         required_column_names.push_back("<no name>");
                     else {
+                        if (i >= _normal_case_columns.size()) {
+                            throw std::runtime_error(
+                                    "Invalid check column index " + std::to_string(i) + ", there are only " +
+                                    pluralize(_normal_case_columns.size(), "normal case column"));
+                        }
                         required_column_names.push_back(_normal_case_columns[i]);
                     }
-                ss<<"Following columns are to be parsed for checks: "<<required_cols_for_check<<" ("<<required_column_names<<")";
-                logger().debug(ss.str());
+                ss << "Following columns are to be parsed for checks: " << required_cols_for_check << " ("
+                   << required_column_names << ")";
+                logger().info(ss.str());
             }
 
             // parse here into single flattened tuple & map
             FlattenedTuple ft_for_checks(_env.get());
             std::unordered_map<int, int> col_to_check_col_map;
-            std::tie(ft_for_checks, col_to_check_col_map) = parse_selected_columns(builder, required_cols_for_check, parser, bbBadRow);
+            std::tie(ft_for_checks, col_to_check_col_map) = parse_selected_columns_for_checks(builder,
+                                                                                              required_cols_for_check,
+                                                                                              parser, bbBadRow);
 
-            for(const auto& check : checks) {
-                if(check.type == CheckType::CHECK_FILTER) {
+            for (const auto &check: checks) {
+                if (check.type == CheckType::CHECK_FILTER) {
                     // ok, this is supported
-                    logger().debug("found filter check, emitting code");
+                    logger().info("Found filter check, emitting code.");
 
                     // deserialize filter operator in order to generate check properly
                     std::shared_ptr<FilterOperator> fop = nullptr;
@@ -198,41 +245,58 @@ namespace tuplex {
                     // use cereal deserialization
                     {
                         std::istringstream iss(check.data());
+                        // Use here regular encoding (change filterToCheck function else!).
                         cereal::BinaryInputArchive ar(iss);
+
+                        // BinaryInputArchive ar(iss);
                         ar(fop);
                     }
 #else
-                    fop = FilterOperator::from_json(nullptr, check.data());
+                    auto j = nlohmann::json::parse(check.data());
+                    fop = FilterOperator::from_json(nullptr, j);
 #endif
-                    logger().debug("deserialized operator " + fop->name());
-
-                    // which columns does filter operator require?
-                    // -> perform struct type rewrite specific for THIS filter
-                    auto acc_cols = fop->getUDF().getAccessedColumns(false);
-                    std::stringstream ss;
-                    ss<<"filter accesses following columns: "<<acc_cols<<"\n";
-                    ss<<"input row type: "<<_inputRowType.desc()<<"\n";
-                    ss<<"input columns: "<<_normal_case_columns<<"\n";
-                    // // these are empty b.c. no parent operator for check
-                    // ss<<"filter input columns: "<<fop->inputColumns()<<"\n";
-                    // ss<<"filter input schema: "<<fop->getInputSchema().getRowType().desc()<<"\n";
-
-                    // retype filter operator
+                    logger().info("Deserialized operator " + fop->name() + " for check.");
 
                     std::vector<std::string> acc_column_names;
                     std::vector<python::Type> acc_col_types;
-                    std::tie(acc_col_types, acc_column_names) = get_column_types_and_names(acc_cols);
+
+                    // which columns does filter operator require?
+                    // -> perform struct type rewrite specific for THIS filter
+                    if(!check.colNames.empty()) {
+                        //#warning "shortcut here for JSON mode. Other mode should use correct getUDF->getAccessedColumns, tbd."
+                        auto acc_cols = check.colNames;
+                        std::stringstream ss;
+                        ss << "filter accesses following columns: " << acc_cols << "\n";
+                        ss << "input row type: " << _inputRowType.desc() << "\n";
+                        ss << "input columns: " << _normal_case_columns << "\n";
+                        // // these are empty b.c. no parent operator for check
+                        // ss << "filter input columns: " << fop->inputColumns() << "\n";
+                        // ss << "filter input schema: " << fop->getInputSchema().getRowType().desc() << "\n";
+                        logger().info(ss.str());
+
+                        // retype filter operator
+                        std::tie(acc_col_types, acc_column_names) = get_column_types_and_names(acc_cols);
+                    } else {
+                        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Not yet implemented.");
+                    }
+
+                    // This is a check, there should be NO optimized types.
+                    // Optimized types are the result of passing checks of (unoptimized) types.
+                    for (const auto &col_type: acc_col_types) {
+                        assert(!col_type.isOptimizedType());
+                    }
 
                     // however, these here should show correct columns/types.
-                    ss<<"filter input columns: "<<acc_column_names<<"\n";
-                    ss<<"filter input schema: "<<python::Type::makeTupleType(acc_col_types).desc()<<"\n";
+                    std::stringstream ss;
+                    ss << "filter input columns: " << acc_column_names << "\n";
+                    ss << "filter input schema: " << python::Type::makeTupleType(acc_col_types).desc() << "\n";
 
                     RetypeConfiguration conf;
                     // @TODO: when always switching over to row type, can remove the column names here.
                     conf.columns = acc_column_names;
                     conf.row_type = python::Type::makeTupleType(acc_col_types);
 
-                    if(PARAM_USE_ROW_TYPE)
+                    if (PARAM_USE_ROW_TYPE)
                         conf.row_type = python::Type::makeRowType(acc_col_types, acc_column_names);
 
                     conf.is_projected = true;
@@ -243,8 +307,9 @@ namespace tuplex {
                                   fop->getUDF().getAnnotatedAST().globals(),
                                   fop->getUDF().compilePolicy());
                     fop = FilterOperator::from_udf(plain_udf, conf.row_type, conf.columns);
-                    if(!fop)
-                        throw std::runtime_error("failed to create filter operator properly!");
+                    if (!fop)
+                        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) +
+                                                 " failed to create filter operator properly when generating checks for JSON source.");
 
                     // auto ret = fop->retype(conf);
                     // if(!ret) {
@@ -257,21 +322,30 @@ namespace tuplex {
 
 
                     // create two basic blocks: -> check passed, check failed
-                    auto& ctx = builder.getContext();
-                    BasicBlock* bbCheckPassed = BasicBlock::Create(ctx, "filter_check_" + std::to_string(fop->getID()) + "_passed", builder.GetInsertBlock()->getParent());
-                    BasicBlock* bbCheckFailed = BasicBlock::Create(ctx, "filter_check_" + std::to_string(fop->getID()) + "_failed", builder.GetInsertBlock()->getParent());
+                    auto &ctx = builder.getContext();
+                    BasicBlock *bbCheckPassed = BasicBlock::Create(ctx, "filter_check_" + std::to_string(fop->getID()) +
+                                                                        "_passed",
+                                                                   builder.GetInsertBlock()->getParent());
+                    BasicBlock *bbCheckFailed = BasicBlock::Create(ctx, "filter_check_" + std::to_string(fop->getID()) +
+                                                                        "_failed",
+                                                                   builder.GetInsertBlock()->getParent());
 
-                    if(_unwrap_first_level) {
+                    if (_unwrap_first_level) {
                         // first level are columns:
                         // i.e., detect which columns are necessary and prune accordingly!
                         // => only filter specific paths should be parsed!
                         ss.str("");
-                        ss<<"filter requires "<<pluralize(conf.columns.size(), "column")<<": "<<conf.columns;
+                        ss << "filter requires " << pluralize(conf.columns.size(), "column") << ": " << conf.columns;
                         logger().debug(ss.str());
-                        BasicBlock* bbFilterBadParse = BasicBlock::Create(ctx, "filter_" + std::to_string(fop->getID()) + "_bad_parse", builder.GetInsertBlock()->getParent());
-                        auto tuple_row_type = conf.row_type.isRowType() ? conf.row_type.get_columns_as_tuple_type() : conf.row_type;
+                        BasicBlock *bbFilterBadParse = BasicBlock::Create(ctx,
+                                                                          "filter_" + std::to_string(fop->getID()) +
+                                                                          "_bad_parse",
+                                                                          builder.GetInsertBlock()->getParent());
+                        auto tuple_row_type = conf.row_type.isRowType() ? conf.row_type.get_columns_as_tuple_type()
+                                                                        : conf.row_type;
                         assert(row_type_compatible_with_columns(tuple_row_type, conf.columns));
-                        auto ft_filter = json_parseRow(env(), builder, tuple_row_type, conf.columns, true, false, parser, bbFilterBadParse);
+                        auto ft_filter = json_parseRow(env(), builder, tuple_row_type, conf.columns, true, false,
+                                                       parser, bbFilterBadParse);
 
                         // debug print:
 #ifndef NDEBUG
@@ -287,35 +361,39 @@ namespace tuplex {
                         }
 #endif
                         // now call filter & determine whether good or bad
-                        if(!fop->getUDF().isCompiled())
+                        if (!fop->getUDF().isCompiled())
                             throw std::runtime_error("only compilable UDFs here supported!");
-                        auto cf = const_cast<UDF&>(fop->getUDF()).compile(env());
-                        if(!cf.good())
+                        auto cf = const_cast<UDF &>(fop->getUDF()).compile(env());
+                        if (!cf.good())
                             throw std::runtime_error("failed compiling UDF for filter check");
 
-                        if(python::Type::BOOLEAN != cf.output_python_type)
-                            throw std::runtime_error("only filter with boolean output type yet supported in filter check");
+                        if (python::Type::BOOLEAN != cf.output_python_type)
+                            throw std::runtime_error(
+                                    "only filter with boolean output type yet supported in filter check");
 
                         auto resVal = env().CreateFirstBlockAlloca(builder, cf.getLLVMResultType(env()));
 
-                        auto exceptionBlock = BasicBlock::Create(ctx, "filter_" + std::to_string(fop->getID()) + "_except", builder.GetInsertBlock()->getParent());
+                        auto exceptionBlock = BasicBlock::Create(ctx,
+                                                                 "filter_" + std::to_string(fop->getID()) + "_except",
+                                                                 builder.GetInsertBlock()->getParent());
                         auto ecVar = env().CreateFirstBlockAlloca(builder, env().i64Type(), "ecVar_filter");
                         auto ft = cf.callWithExceptionHandler(builder, ft_filter, resVal, exceptionBlock, ecVar);
                         // check type is correct
                         auto expectedType = python::Type::BOOLEAN;
-                        llvm::Value* filterCond = nullptr; // i1 filter condition
-                        if(ft.getTupleType() != expectedType) {
+                        llvm::Value *filterCond = nullptr; // i1 filter condition
+                        if (ft.getTupleType() != expectedType) {
                             // perform truthValueTest on result
                             // is it a tuple type?
                             // keep everything!
-                            if(ft.numElements() > 1)
+                            if (ft.numElements() > 1)
                                 filterCond = env().i1Const(true);
-                            else{
-                                auto ret_val = SerializableValue(ft.get(0), ft.getSize(0), ft.getIsNull(0)); // single value?
+                            else {
+                                auto ret_val = SerializableValue(ft.get(0), ft.getSize(0),
+                                                                 ft.getIsNull(0)); // single value?
                                 filterCond = env().truthValueTest(builder, ret_val, cf.output_python_type);
                             }
                         } else {
-                            assert(ft.numElements() ==  1);
+                            assert(ft.numElements() == 1);
                             auto compareVal = ft.get(0);
                             assert(compareVal->getType() == env().getBooleanType());
                             filterCond = builder.CreateICmpEQ(compareVal, env().boolConst(true));
@@ -325,7 +403,7 @@ namespace tuplex {
                         builder.CreateCondBr(filterCond, bbCheckPassed, bbSkipRow);
 
                         builder.SetInsertPoint(exceptionBlock);
-                        // env().printValue(builder, builder.CreateLoad(ecVar), "filter check failed with exception of ec=");
+                        // env().printValue(builder, builder.CreateLoad(_env->i64Type(), ecVar), "filter check failed with exception of ec=");
                         builder.CreateBr(bbCheckFailed);
 
                         builder.SetInsertPoint(bbFilterBadParse);
@@ -341,22 +419,36 @@ namespace tuplex {
 
                     builder.SetInsertPoint(bbCheckFailed);
                     // env().debugPrint(builder, "promoted filter check failed.");
+
+                    {
+                        // std::stringstream ss;
+                        // ss<<"Check "<<check.to_string()<<" colunms: "<<check.colNames<<" passed: ";
+                        // _env->printValue(builder, _env->i1Const(false), ss.str());
+                    }
+
                     builder.CreateBr(bbBadRow);
 
                     // continue on normal case path!
                     builder.SetInsertPoint(bbCheckPassed);
+
+                    {
+                        // std::stringstream ss;
+                        // ss<<"Check "<<check.to_string()<<" colunms: "<<check.colNames<<" passed: ";
+                        // _env->printValue(builder, _env->i1Const(true), ss.str());
+                    }
+
                     // env().debugPrint(builder, "promoted filter check passed.");
 
                     // create reduced input type for quick parsing
                     assert(_inputRowType.isTupleType() || _inputRowType.isRowType());
-                } else if(check.type == CheckType::CHECK_CONSTANT && check.isSingleColCheck()) {
+                } else if (check.type == CheckType::CHECK_CONSTANT && check.isSingleColCheck()) {
                     // is column being serialized? If so - emit check.
 
                     {
                         std::stringstream ss;
-                        ss<<"general-case requires column, emit code for constant check == "
-                          <<check.constant_type().constant()
-                          <<" for column "<<check.colNo();
+                        ss << "general-case requires column, emit code for constant check == "
+                           << check.constant_type().constant()
+                           << " for column " << check.colNo();
                         logger().info(ss.str());
                     }
 
@@ -364,19 +456,35 @@ namespace tuplex {
                     auto val = ft_for_checks.getLoad(builder, {col_to_check_col_map[check.colNo()]});
 
                     python::Type elementType;
-                    std::string  constant_value;
+                    std::string constant_value;
                     std::tie(elementType, constant_value) = extract_type_and_value_from_constant_check(check);
-                    llvm::Value* check_cond = nullptr;
-                    if(python::Type::BOOLEAN == elementType) {
+                    llvm::Value *check_cond = nullptr;
+                    if (python::Type::BOOLEAN == elementType) {
                         // compare value
                         auto c_val = parseBoolString(constant_value);
                         check_cond = builder.CreateICmpEQ(_env->boolConst(c_val), val.val);
+                    } else if (python::Type::STRING == elementType) {
+                        assert(val.size);
+                        auto str_value_to_compare_against = str_value_from_python_raw_value(constant_value);
+
+                        // direct compare (size + content)
+                        check_cond = builder.CreateICmpEQ(val.size,
+                                                          _env->i64Const(str_value_to_compare_against.size() + 1));
+                        check_cond = builder.CreateAnd(check_cond, _env->fixedSizeStringCompare(builder, val.val,
+                                                                                                str_value_to_compare_against));
+
+                        // std::stringstream ss;
+                        // ss<<"Check "<<check.to_string()<<" colunms: "<<check.colNames<<" passed: ";
+                        // _env->printValue(builder, check_cond, ss.str());
                     } else {
-                        throw std::runtime_error("Check with type " + check.constant_type().desc() + " not yet supported");
+                        throw std::runtime_error(
+                                "Check with type " + check.constant_type().desc() + " not yet supported");
                     }
 
-                    auto& ctx = builder.getContext();
-                    BasicBlock* bbCheckPassed = BasicBlock::Create(ctx, "constant_check_" + std::to_string(check.colNo()) + "_passed", builder.GetInsertBlock()->getParent());
+                    auto &ctx = builder.getContext();
+                    BasicBlock *bbCheckPassed = BasicBlock::Create(ctx,
+                                                                   "constant_check_" + std::to_string(check.colNo()) +
+                                                                   "_passed", builder.GetInsertBlock()->getParent());
 
                     // if cond is met, proceed - else go to bad parse
                     builder.CreateCondBr(check_cond, bbCheckPassed, bbBadRow);
@@ -388,13 +496,64 @@ namespace tuplex {
                     throw std::runtime_error("Check " + check.to_string() + " not supported for JsonSourceTaskBuilder");
                 }
             }
+
+            // _env->debugPrint(builder, "normal checks done. Continue processing row. ");
         }
 
         std::tuple<std::vector<python::Type>, std::vector<std::string>>
-        JsonSourceTaskBuilder::get_column_types_and_names(const std::vector<size_t> &acc_cols) const {
+        JsonSourceTaskBuilder::get_column_types_and_names(const std::vector<std::string> &acc_names,
+                                                          bool return_with_optimized_types) const {
+            std::vector<std::string> acc_column_names;
+            std::vector<python::Type> acc_col_types;
+            for(auto name : acc_names) {
+
+                // find in names
+                if(_inputRowType.isRowType()) {
+                    auto t = _inputRowType.get_column_type(name);
+                    if(t.isExceptionType())
+                        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " can not extract type from " + _inputRowType.desc() + " with name: " +
+                                                         escape_to_python_str(name));
+                    acc_column_names.push_back(name);
+                    acc_col_types.push_back(t);
+                } else {
+                    assert(_normal_case_columns.size() == _inputRowType.parameters().size());
+                    auto idx = indexInVector(name, _normal_case_columns);
+                    // check if valid, if not error out.
+                    if(idx < 0) {
+                        std::stringstream ss;
+                        ss<<std::string(__FILE__) + ":" + std::to_string(__LINE__) + " can not extract type from " + _inputRowType.desc() + " with name: " +
+                            escape_to_python_str(name);
+                        ss<<" from columns: "<<_normal_case_columns;
+                        throw std::runtime_error(ss.str());
+                    }
+
+                    auto t = _inputRowType.parameters()[idx];
+                    acc_column_names.push_back(name);
+                    acc_col_types.push_back(t);
+                }
+            }
+
+            // deoptimize
+            if(!return_with_optimized_types) {
+                for(auto& type : acc_col_types) {
+                    type = deoptimizedType(type);
+                }
+            }
+
+            return std::make_tuple(acc_col_types, acc_column_names);
+        }
+
+        std::tuple<std::vector<python::Type>, std::vector<std::string>>
+        JsonSourceTaskBuilder::get_column_types_and_names(const std::vector<size_t> &acc_cols, bool return_with_optimized_types) const {
             std::vector<std::string> acc_column_names;
             std::vector<python::Type> acc_col_types;
             for(auto idx : acc_cols) {
+
+                // check if valid, if not error out.
+                if(idx >= extract_columns_from_type(_inputRowType)) {
+                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " can not extract type from " + _inputRowType.desc() +" with column index " + std::to_string(idx));
+                }
+
                 if(_inputRowType.isRowType()) {
                     assert(vec_equal(_normal_case_columns, _inputRowType.get_column_names()));
                     acc_column_names.push_back(_inputRowType.get_column_name(idx));
@@ -405,10 +564,17 @@ namespace tuplex {
                 }
             }
 
+            // deoptimize
+            if(!return_with_optimized_types) {
+                for(auto& type : acc_col_types) {
+                    type = deoptimizedType(type);
+                }
+            }
+
             return std::make_tuple(acc_col_types, acc_column_names);
         }
 
-        void JsonSourceTaskBuilder::initVars(llvm::IRBuilder<> &builder) {
+        void JsonSourceTaskBuilder::initVars(const IRBuilder& builder) {
             // input vars (read from reader)
             _normalRowCountVar = _env->CreateFirstBlockVariable(builder, _env->i64Const(0));
             _generalRowCountVar = _env->CreateFirstBlockVariable(builder, _env->i64Const(0));
@@ -429,7 +595,7 @@ namespace tuplex {
              _row_object_var = _env->CreateFirstBlockVariable(builder, _env->i8nullptr(), "row_object");
         }
 
-        llvm::Value *JsonSourceTaskBuilder::generateParseLoop(llvm::IRBuilder<> &builder,
+        llvm::Value *JsonSourceTaskBuilder::generateParseLoop(const IRBuilder &builder,
                                                               llvm::Value *bufPtr,
                                                               llvm::Value *bufSize,
                                                               llvm::Value *userData,
@@ -467,7 +633,7 @@ namespace tuplex {
 
             {
                 // create here free obj block.
-                llvm::IRBuilder<> b(_freeStart);
+                IRBuilder b(_freeStart);
 
                 // _env->printValue(b, rowNumber(b), "entered free row objects for row no=");
 
@@ -500,9 +666,6 @@ namespace tuplex {
             // _env->debugPrint(builder, "parsed row");
 
 
-
-
-
 #ifdef JSON_PARSER_TRACE_MEMORY
              _env->printValue(builder, rowNumber(builder), "row no= ");
 #endif
@@ -515,7 +678,7 @@ namespace tuplex {
 
             BasicBlock* bbParseAsGeneralCaseRow = BasicBlock::Create(_env->getContext(), "parse_as_general_row", builder.GetInsertBlock()->getParent());
             BasicBlock* bbNormalCaseSuccess = BasicBlock::Create(_env->getContext(), "normal_row_found", builder.GetInsertBlock()->getParent());
-            BasicBlock* bbGeneralCaseSuccess = BasicBlock::Create(_env->getContext(), "general_row_found", builder.GetInsertBlock()->getParent());
+            BasicBlock* bbGeneralCaseSuccess = nullptr;
             BasicBlock* bbFallback = BasicBlock::Create(_env->getContext(), "fallback_row_found", builder.GetInsertBlock()->getParent());
 
             // // filter promotion? -> happens here.
@@ -537,7 +700,7 @@ namespace tuplex {
             if(!checks().empty()) {
                 BasicBlock* bbSkipRow = BasicBlock::Create(_env->getContext(), "normal_row_skip", builder.GetInsertBlock()->getParent());
                 {
-                    llvm::IRBuilder<> builder(bbSkipRow);
+                    IRBuilder builder(bbSkipRow);
 
                     // env().debugPrint(builder, "skip row b.c. of promoted filter");
 
@@ -553,13 +716,16 @@ namespace tuplex {
 #ifdef JSON_PARSER_TRACE_MEMORY
             _env->debugPrint(builder, "try parsing as normal row...");
 #endif
+            // _env->debugPrint(builder, "parse normal case row");
+
             // new: within its own LLVM function
             // parse here as normal row
             auto normal_case_row = generateAndCallParseRowFunction(builder, "parse_normal_row_internal",
                                                                    _normalCaseRowType, normal_case_columns,
                                                                    unwrap_first_level, parser, bbParseAsGeneralCaseRow);
-#ifdef JSON_PARSER_TRACE_MEMORY
-            _env->printValue(builder, rc, "normal row parsed.");
+
+#ifdef PRINT_JSON_TRACE_DETAILS
+            _env->printValue(builder, rc,  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " normal row successfully parsed.");
 #endif
             builder.CreateBr(bbNormalCaseSuccess);
 
@@ -590,6 +756,10 @@ namespace tuplex {
 #ifdef JSON_PARSER_TRACE_MEMORY
                     _env->printValue(builder, rc, "general row parsed.");
 #endif
+
+                    // create general case parse block:
+                    bbGeneralCaseSuccess = BasicBlock::Create(_env->getContext(), "general_row_found", builder.GetInsertBlock()->getParent());
+
                     builder.CreateBr(bbGeneralCaseSuccess);
 
                     // // old, but correct with long compile times:
@@ -650,7 +820,13 @@ namespace tuplex {
                         builder.CreateCondBr(bad_row_cond, bNotOK, bNext);
                         builder.SetInsertPoint(bNotOK);
 
-                        // _env->debugPrint(builder, "found row to serialize as exception in normal-case handler");
+#ifndef NDEBUG
+                        // _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " found row to serialize as exception in normal-case handler.");
+#endif
+                         // print out original row:
+                         //_env->debugPrint(builder, "original normal-case row is: ");
+                         //normal_case_row.print(builder);
+                        // _env->printValue(builder, normal_case_row.getSize(builder), "SERIALIZED SIZE OF ROW:: ");
 
                         // normal case row is parsed - can it be converted to general case row?
                         // if so emit directly, if not emit fallback row.
@@ -662,9 +838,15 @@ namespace tuplex {
 //                        // Yet in decodeFallbackRow, the decode is done using normal-case schema?
 //                        serializeAsNormalCaseException(builder, userData, _inputOperatorID, rowNumber(builder), normal_case_row);
 
-
                         if(python::canUpcastType(normal_case_row_type, general_case_row_type)) {
                             logger().debug("found exception handler in JSON source task builder, serializing exceptions in general case format.");
+
+                            std::stringstream ss;
+                            ss<<"upcast is possible from normal -> general row type, emitting code for this with:\n";
+                            ss<<"normal row type:  "<<normal_case_row_type.desc()<<"\n";
+                            ss<<"general row type: "<<general_case_row_type.desc()<<"\n";
+
+                            logger().debug(ss.str());
 
                             FlattenedTuple upcasted_row(_env.get());
 
@@ -672,14 +854,28 @@ namespace tuplex {
                             // tuple type, convert general case to tuple type.
                             if(normal_case_row_type.isRowType() && general_case_row_type.isRowType()) {
                                 if(!vec_equal(normal_case_row_type.get_column_names(), general_case_row_type.get_column_names())) {
+                                    logger().debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " upcast and reorder row");
                                     upcasted_row = upcast_row_and_reorder(builder, normal_case_row, normal_case_row_type, general_case_row_type);
                                     general_case_row_type = general_case_row_type.get_columns_as_tuple_type();
                                 } else {
+                                    logger().debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " upcastTo (Row)");
                                     general_case_row_type = general_case_row_type.get_columns_as_tuple_type();
                                     upcasted_row = normal_case_row.upcastTo(builder, general_case_row_type);
                                 }
                             } else {
+                                logger().debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " upcastTo (tuple)");
                                 upcasted_row = normal_case_row.upcastTo(builder, general_case_row_type);
+                            }
+
+
+                            // auto upcasted_row_serialized_size = upcasted_row.getSize(builder);
+                            // _env->printValue(builder, upcasted_row_serialized_size, "serialized size of row AFTER UPCAST AND REORDER::");
+
+                            logger().debug("Serializing general case row as normal-case exception.");
+
+                            if(!upcasted_row.checkLLVMTypes()) {
+                                logger().error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " type issue within upcasted_row");
+                                exit(1);
                             }
 
                             // serialize as exception --> this connects already to freeStart.
@@ -697,12 +893,24 @@ namespace tuplex {
 
                         // pipeline ok, continue with normal processing
                         builder.SetInsertPoint(bNext);
+#ifndef NDEBUG
+                        // _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Pipeline returned successfully, processing next row.");
+#endif
                     }
                 }
 
-                // serialized size (as is)
-                auto normal_size = normal_case_row.getSize(builder);
-                incVar(builder, _normalMemorySizeVar, normal_size);
+                 // serialized size (as is)
+#ifndef NDEBUG
+                //_env->printValue(builder, builder.CreateLoad(builder.getInt64Ty(), _normalRowCountVar),
+                //                 std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Computing size of current normal_case_row, row number: ");
+#endif
+
+                 auto normal_size = normal_case_row.getSize(builder);
+                 incVar(builder, _normalMemorySizeVar, normal_size);
+
+#ifndef NDEBUG
+                 // _env->printValue(builder, normal_size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " normal rows has size: ");
+#endif
 
                 // _env->debugPrint(builder, "got normal-case row!");
 
@@ -711,8 +919,9 @@ namespace tuplex {
                 builder.CreateBr(_freeStart);
             }
 
-            {
-                // 2. general case
+            if(bbGeneralCaseSuccess) {
+                // 2. general case (if desired)
+                logger().debug("Generating general-case row block");
                 builder.SetInsertPoint(bbGeneralCaseSuccess);
 
 #ifdef JSON_PARSER_TRACE_MEMORY
@@ -727,7 +936,7 @@ namespace tuplex {
 #endif
                 // in order to store an exception, need 8 bytes for each: rowNumber, ecCode, opID, eSize + the size of the row
                 general_size = builder.CreateAdd(general_size, _env->i64Const(4 * sizeof(int64_t)));
-
+                assert(general_case_row.flattenedTupleType().hash() >= 0); // capture that type has been defined.
                 serializeAsNormalCaseException(builder, userData, _inputOperatorID, rowNumber(builder), general_case_row);
 
                 incVar(builder, _generalMemorySizeVar, general_size);
@@ -754,9 +963,13 @@ namespace tuplex {
                 auto size_var = _env->CreateFirstBlockAlloca(builder, _env->i64Type());
                 auto line = builder.CreateCall(Frow, {parser, size_var});
 
+#ifdef JSON_PARSER_TRACE_MEMORY
+                _env->printValue(builder, line, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " serializing row as bad parse exception: ");
+#endif
+
                 // create badParse exception
                 // @TODO: throughput can be improved by using a single C++ function for all of this!
-                serializeBadParseException(builder, userData, _inputOperatorID, rowNumber(builder), line, builder.CreateLoad(size_var));
+                serializeBadParseException(builder, userData, _inputOperatorID, rowNumber(builder), line, builder.CreateLoad(builder.getInt64Ty(), size_var));
 #ifdef JSON_PARSER_TRACE_MEMORY
                  _env->debugPrint(builder, "got fallback-case row!");
 #endif
@@ -767,7 +980,7 @@ namespace tuplex {
                     // note: line could be empty line -> check whether to skip or not!
                     auto Fws = getOrInsertFunction(_env->getModule().get(), "Json_is_whitespace", ctypeToLLVM<bool>(_env->getContext()),
                                                    _env->i8ptrType(), _env->i64Type());
-                    auto ws_rc = builder.CreateCall(Fws, {line, builder.CreateLoad(size_var)});
+                    auto ws_rc = builder.CreateCall(Fws, {line, builder.CreateLoad(builder.getInt64Ty(), size_var)});
                     auto is_ws = builder.CreateICmpEQ(ws_rc, cbool_const(_env->getContext(), true));
 
 
@@ -782,14 +995,14 @@ namespace tuplex {
 
                     // only inc for non whitespace (would serialize here!)
                     builder.SetInsertPoint(bIsNotWhitespace);
-                    incVar(builder, _fallbackMemorySizeVar, builder.CreateLoad(size_var));
+                    incVar(builder, _fallbackMemorySizeVar, builder.CreateLoad(builder.getInt64Ty(), size_var));
                     incVar(builder, _fallbackRowCountVar);
                     incVar(builder, _rowNumberVar); // --> trick, else the white line is counted as row!
                     builder.CreateBr(bFallbackDone);
                     builder.SetInsertPoint(bFallbackDone);
                 }
                 else {
-                    incVar(builder, _fallbackMemorySizeVar, builder.CreateLoad(size_var));
+                    incVar(builder, _fallbackMemorySizeVar, builder.CreateLoad(builder.getInt64Ty(), size_var));
                     incVar(builder, _fallbackRowCountVar);
                 }
 
@@ -849,10 +1062,10 @@ namespace tuplex {
             // free JSON parse (global object)
             freeJsonParse(builder, parser);
 
-            return builder.CreateLoad(_parsedBytesVar);
+            return builder.CreateLoad(builder.getInt64Ty(), _parsedBytesVar);
         }
 
-        llvm::Value* json_parseRowAsStructuredDict(LLVMEnvironment& env, llvm::IRBuilder<> &builder, const python::Type &dict_type,
+        llvm::Value* json_parseRowAsStructuredDict(LLVMEnvironment& env, const IRBuilder& builder, const python::Type &dict_type,
                 llvm::Value *j, llvm::BasicBlock *bbSchemaMismatch) {
             assert(j);
             using namespace llvm;
@@ -885,7 +1098,7 @@ namespace tuplex {
 #ifdef JSON_PARSER_TRACE_MEMORY
             env.debugPrint(builder, "parsing data to row var");
 #endif
-            gen.parseToVariable(builder, builder.CreateLoad(obj_var), row_var);
+            gen.parseToVariable(builder, builder.CreateLoad(env.i8ptrType(), obj_var), row_var);
 
             // create new block (post - parse)
             BasicBlock *bPostParse = BasicBlock::Create(ctx, "post_parse", builder.GetInsertBlock()->getParent());
@@ -898,6 +1111,9 @@ namespace tuplex {
             // free obj_var...
             json_release_object(env, builder, obj_var);
         #ifndef NDEBUG
+            if(builder.GetInsertBlock()->getName().str() == "null_object") {
+                std::cout<<"found";
+            }
             builder.CreateStore(env.i8nullptr(), obj_var);
         #endif
 #ifdef JSON_PARSER_TRACE_MEMORY
@@ -906,7 +1122,7 @@ namespace tuplex {
             return row_var;
         }
 
-        FlattenedTuple json_parseRow(LLVMEnvironment& env, llvm::IRBuilder<>& builder, const python::Type& row_type,
+        FlattenedTuple json_parseRow(LLVMEnvironment& env, const IRBuilder& builder, const python::Type& row_type,
                                 const std::vector<std::string>& columns,
                                 bool unwrap_first_level,
                                 bool fill_missing_first_level_with_null,
@@ -933,6 +1149,9 @@ namespace tuplex {
                 std::vector<python::StructEntry> entries;
                 auto num_entries = std::min(columns.size(), row_type.parameters().size());
 
+#ifdef PRINT_JSON_TRACE_DETAILS
+                env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" parsing " + pluralize(num_entries, "column") + " from JSON.");
+#endif
                 for(unsigned i = 0; i < num_entries; ++i) {
                     python::StructEntry entry;
                     entry.keyType = python::Type::STRING;
@@ -942,16 +1161,20 @@ namespace tuplex {
                     // if value type is option[...] (or null) and fill missing flag is set,
                     // then make it a maybe present element.
                     if((python::Type::NULLVALUE == entry.valueType || entry.valueType.isOptionType()) && fill_missing_first_level_with_null)
-                        entry.alwaysPresent = false;
+                        //entry.alwaysPresent = false;
+                        entry.presence = python::MAYBE_PRESENT;
 
                     entries.push_back(entry);
                 }
                 auto dict_type = python::Type::makeStructuredDictType(entries);
 
+#ifdef PRINT_JSON_TRACE_DETAILS
+                env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" start parsing row into dictionary:");
+#endif
                 // parse dictionary
                 auto dict = json_parseRowAsStructuredDict(env, builder, dict_type, parser, bbSchemaMismatch);
 
-                // env.debugPrint(builder, "-> start parse:");
+                // env.debugPrint(builder, "-> Loading dict elements:");
 
                 // fetch columns from dict and assign to tuple!
                 for(int i = 0; i < num_entries; ++i) {
@@ -970,6 +1193,10 @@ namespace tuplex {
                         access_path.push_back(std::make_pair(escape_to_python_str(columns[i]), python::Type::STRING));
                         auto is_present = struct_dict_load_present(env, builder, dict, dict_type, access_path);
 
+#ifdef JSON_PARSER_TRACE_MEMORY
+                        env.printValue(builder, is_present, columns[i] + " is_present: ");
+#endif
+
                         llvm::BasicBlock* bColumnPresent = llvm::BasicBlock::Create(env.getContext(), "column" + std::to_string(i) + "_present", builder.GetInsertBlock()->getParent());
                         llvm::BasicBlock* bColumnDone = llvm::BasicBlock::Create(env.getContext(), "column" + std::to_string(i) + "_done", builder.GetInsertBlock()->getParent());
 
@@ -979,6 +1206,9 @@ namespace tuplex {
                         // fetch value from dict!
                         value = struct_dict_get_or_except(env, builder, dict_type, escape_to_python_str(columns[i]),
                                                           python::Type::STRING, dict, bbSchemaMismatch);
+
+
+
                         auto bLastColumnDone = builder.GetInsertBlock();
                         builder.CreateBr(bColumnDone);
 
@@ -1029,8 +1259,13 @@ namespace tuplex {
                         value = struct_dict_get_or_except(env, builder, dict_type, escape_to_python_str(columns[i]),
                                                           python::Type::STRING, dict, bbSchemaMismatch);
 #ifdef JSON_PARSER_TRACE_MEMORY
+                        if(value.is_null)
+                            env.printValue(builder, value.is_null, "got entry " + std::to_string(i + 1) + " with is_null: ");
+                        // this here causes issue...!
+                        if(value.val)
+                            env.printValue(builder, value.val, "got entry " + std::to_string(i + 1) + " with value: ");
                         if(value.size)
-                        env.printValue(builder, value.size, "got entry " + std::to_string(i + 1) + " with size: ");
+                            env.printValue(builder, value.size, "got entry " + std::to_string(i + 1) + " with size: ");
 #endif
                         ft.set(builder, {i}, value.val, value.size, value.is_null);
                     }
@@ -1067,7 +1302,16 @@ namespace tuplex {
 
             auto& logger = Logger::instance().logger("codegen");
 
+            {
+                std::stringstream ss;
+                ss<<std::string(__FILE__) + ":" + std::to_string(__LINE__)<<" ";
+                ss<<"Generating json_generateParseRowFunction name="<<name<<" for row_type="<<row_type.desc()<<" and columns="<<columns;
+                logger.debug(ss.str());
+            }
+
+
             FlattenedTuple ft(&env);
+            assert(row_type.isTupleType());
             ft.init(row_type);
             auto tuple_llvm_type = ft.getLLVMType();
 
@@ -1077,10 +1321,13 @@ namespace tuplex {
 
             BasicBlock* bEntry = BasicBlock::Create(env.getContext(), "entry", F); // <-- call first!
             BasicBlock* bMismatch = BasicBlock::Create(env.getContext(), "mismatch", F);
-            IRBuilder<> builder(bMismatch);
+            IRBuilder builder(bMismatch);
             // free objects here
-
-            builder.CreateRet(env.i64Const(ecToI64(ExceptionCode::BADPARSE_STRING_INPUT)));
+            auto rc_mismatch = env.i64Const(ecToI64(ExceptionCode::BADPARSE_STRING_INPUT));
+#ifdef PRINT_JSON_TRACE_DETAILS
+            env.printValue(builder, rc_mismatch, std::string(__FILE__) + ":" + std::to_string(__LINE__) +" mismatch in json_parse_row for row type " + row_type.desc());
+#endif
+            builder.CreateRet(rc_mismatch);
 
             // main and entry block.
             builder.SetInsertPoint(bEntry);
@@ -1097,10 +1344,14 @@ namespace tuplex {
 
             auto tuple_row_type = row_type.isRowType() ? row_type.get_columns_as_tuple_type() : row_type;
             assert(row_type_compatible_with_columns(tuple_row_type, columns));
-            auto ft_parsed = json_parseRow(env, builder, tuple_row_type, columns, unwrap_first_level, true, parser, bMismatch);
+            assert(tuple_row_type.isTupleType());
+
+            auto ft_parsed = json_parseRow(env, builder, tuple_row_type, columns,
+                                           unwrap_first_level, true, parser, bMismatch);
+
             ft_parsed.storeTo(builder, args["out_tuple"]);
 #ifdef JSON_PARSER_TRACE_MEMORY
-            _env->debugPrint(builder, "tuple store to output ptr done.");
+            env.debugPrint(builder, "tuple store to output ptr done.");
 #endif
 
             // free temp objects here...
@@ -1108,7 +1359,7 @@ namespace tuplex {
             return F;
         }
 
-        void json_freeParser(LLVMEnvironment& env, llvm::IRBuilder<>& builder, llvm::Value* parser) {
+        void json_freeParser(LLVMEnvironment& env, const IRBuilder& builder, llvm::Value* parser) {
             auto &ctx = env.getContext();
             auto F = getOrInsertFunction(env.getModule().get(), "JsonParser_Free", llvm::Type::getVoidTy(ctx),
                                          env.i8ptrType());
@@ -1116,7 +1367,7 @@ namespace tuplex {
         }
 
         // chain for initializing parser (incl. go to code)
-        llvm::Value* json_retrieveParser(LLVMEnvironment& env, llvm::IRBuilder<>& builder,
+        llvm::Value* json_retrieveParser(LLVMEnvironment& env, const IRBuilder& builder,
                                          llvm::Value* str, llvm::Value* str_size, llvm::BasicBlock* bError) {
             using namespace llvm;
 
@@ -1135,6 +1386,7 @@ namespace tuplex {
             // now open buffer (i.e., parse)
             auto F_parse = getOrInsertFunction(env.getModule().get(), "JsonParser_open", env.i64Type(), env.i8ptrType(),
                                          env.i8ptrType(), env.i64Type());
+
             auto parse_code =  builder.CreateCall(F_parse, {parser, str, str_size});
 
             // check if ok
@@ -1159,7 +1411,9 @@ namespace tuplex {
 
             using namespace llvm;
 
-            FlattenedTuple ft(&env); ft.init(row_type);
+            auto tuple_row_type = row_type.isRowType() ? row_type.get_columns_as_tuple_type() : row_type;
+
+            FlattenedTuple ft(&env); ft.init(tuple_row_type);
             auto llvm_tuple_type = ft.getLLVMType();
 
             // create new func
@@ -1167,7 +1421,7 @@ namespace tuplex {
 
             auto func = getOrInsertFunction(env.getModule().get(), name, FT);
             BasicBlock* bEntry = BasicBlock::Create(env.getContext(), "entry", func);
-            IRBuilder<> builder(bEntry);
+            IRBuilder builder(bEntry);
 
 
             auto args = mapLLVMFunctionArgs(func, std::vector<std::string>({"tuple_out", "str", "str_size"}));
@@ -1181,7 +1435,7 @@ namespace tuplex {
             auto parser = json_retrieveParser(env, builder, input_str, input_str_size, bError);
 
             // now check that it is doc & row present
-            auto F_parse = json_generateParseRowFunction(env, name + "_parse_row", row_type, columns, true);
+            auto F_parse = json_generateParseRowFunction(env, name + "_parse_row", tuple_row_type, columns, true);
 
             // call and check error code
             auto rc = builder.CreateCall(F_parse, {parser, args["tuple_out"]});
@@ -1204,7 +1458,7 @@ namespace tuplex {
             return json_generateParseRowFunction(*_env.get(), name, row_type, columns, unwrap_first_level);
         }
 
-        FlattenedTuple JsonSourceTaskBuilder::generateAndCallParseRowFunction(llvm::IRBuilder<> &parent_builder,
+        FlattenedTuple JsonSourceTaskBuilder::generateAndCallParseRowFunction(const IRBuilder& parent_builder,
                                                                               const std::string& name,
                                                                               const python::Type &row_type,
                                                                               const std::vector<std::string> &columns,
@@ -1222,9 +1476,14 @@ namespace tuplex {
             }
 #endif
 
-            auto F = generateParseRowFunction(name, row_type, columns, unwrap_first_level);
+            // convert to tuple type
+            auto tuple_row_type = row_type;
+            if(tuple_row_type.isRowType())
+                tuple_row_type = row_type.get_columns_as_tuple_type();
+
+            auto F = generateParseRowFunction(name, tuple_row_type, columns, unwrap_first_level);
             FlattenedTuple ft(_env.get());
-            ft.init(row_type);
+            ft.init(tuple_row_type);
 
             BasicBlock *bbOK = BasicBlock::Create(_env->getContext(), "parse_row_ok", parent_builder.GetInsertBlock()->getParent());
 
@@ -1244,11 +1503,11 @@ namespace tuplex {
             _env->printValue(parent_builder, rc, "parse ok, loading flattened tuple from struct val...");
 #endif
 
-            return FlattenedTuple::fromLLVMStructVal(_env.get(), parent_builder, res_ptr, row_type);
+            return FlattenedTuple::fromLLVMStructVal(_env.get(), parent_builder, res_ptr, tuple_row_type);
         }
 
         llvm::Value *
-        JsonSourceTaskBuilder::parsedBytes(llvm::IRBuilder<> &builder, llvm::Value *parser, llvm::Value *buf_size) {
+        JsonSourceTaskBuilder::parsedBytes(const IRBuilder& builder, llvm::Value *parser, llvm::Value *buf_size) {
             using namespace llvm;
             // call func
             auto F = getOrInsertFunction(_env->getModule().get(), "JsonParser_TruncatedBytes", _env->i64Type(), _env->i8ptrType());
@@ -1259,7 +1518,7 @@ namespace tuplex {
         }
 
         // json helper funcs
-        llvm::Value *JsonSourceTaskBuilder::initJsonParser(llvm::IRBuilder<> &builder) {
+        llvm::Value *JsonSourceTaskBuilder::initJsonParser(const IRBuilder& builder) {
 
             auto F = getOrInsertFunction(_env->getModule().get(), "JsonParser_Init", _env->i8ptrType());
 
@@ -1269,7 +1528,7 @@ namespace tuplex {
             return j;
         }
 
-        llvm::Value *JsonSourceTaskBuilder::openJsonBuf(llvm::IRBuilder<> &builder, llvm::Value *j, llvm::Value *buf,
+        llvm::Value *JsonSourceTaskBuilder::openJsonBuf(const IRBuilder& builder, llvm::Value *j, llvm::Value *buf,
                                                      llvm::Value *buf_size) {
             assert(j);
             auto F = getOrInsertFunction(_env->getModule().get(), "JsonParser_open", _env->i64Type(), _env->i8ptrType(),
@@ -1277,14 +1536,14 @@ namespace tuplex {
             return builder.CreateCall(F, {j, buf, buf_size});
         }
 
-        void JsonSourceTaskBuilder::freeJsonParse(llvm::IRBuilder<> &builder, llvm::Value *j) {
+        void JsonSourceTaskBuilder::freeJsonParse(const IRBuilder& builder, llvm::Value *j) {
             auto &ctx = _env->getContext();
             auto F = getOrInsertFunction(_env->getModule().get(), "JsonParser_Free", llvm::Type::getVoidTy(ctx),
                                          _env->i8ptrType());
             builder.CreateCall(F, j);
         }
 
-        void JsonSourceTaskBuilder::exitMainFunctionWithError(llvm::IRBuilder<> &builder, llvm::Value *exitCondition,
+        void JsonSourceTaskBuilder::exitMainFunctionWithError(const IRBuilder& builder, llvm::Value *exitCondition,
                                                               llvm::Value *exitCode) {
             using namespace llvm;
             auto &ctx = _env->getContext();
@@ -1302,7 +1561,7 @@ namespace tuplex {
             builder.SetInsertPoint(bbContinue);
         }
 
-        llvm::Value *JsonSourceTaskBuilder::hasNextRow(llvm::IRBuilder<> &builder, llvm::Value *j) {
+        llvm::Value *JsonSourceTaskBuilder::hasNextRow(const IRBuilder& builder, llvm::Value *j) {
             auto &ctx = _env->getContext();
             auto F = getOrInsertFunction(_env->getModule().get(), "JsonParser_hasNextRow", ctypeToLLVM<bool>(ctx),
                                          _env->i8ptrType());
@@ -1312,7 +1571,7 @@ namespace tuplex {
                     llvm::Type::getIntNTy(ctx, ctypeToLLVM<bool>(ctx)->getIntegerBitWidth()), 1));
         }
 
-        void JsonSourceTaskBuilder::moveToNextRow(llvm::IRBuilder<> &builder, llvm::Value *j) {
+        void JsonSourceTaskBuilder::moveToNextRow(const IRBuilder& builder, llvm::Value *j) {
             // move
             using namespace llvm;
             auto &ctx = _env->getContext();
@@ -1329,7 +1588,7 @@ namespace tuplex {
         }
 
         llvm::Value *
-        JsonSourceTaskBuilder::parseRowAsStructuredDict(llvm::IRBuilder<> &builder, const python::Type &dict_type,
+        JsonSourceTaskBuilder::parseRowAsStructuredDict(const IRBuilder& builder, const python::Type &dict_type,
                                                         llvm::Value *j, llvm::BasicBlock *bbSchemaMismatch) {
             assert(j);
             using namespace llvm;
@@ -1359,7 +1618,7 @@ namespace tuplex {
 
             // create dict parser and store to row_var
             JSONParseRowGenerator gen(*_env.get(), dict_type, bbSchemaMismatch);
-            gen.parseToVariable(builder, builder.CreateLoad(obj_var), row_var);
+            gen.parseToVariable(builder, builder.CreateLoad(env().i8ptrType(), obj_var), row_var);
 //            // update free end
 //            auto bParseFreeStart = bParseFree;
 //            bParseFree = gen.generateFreeAllVars(bParseFree);
@@ -1384,7 +1643,7 @@ namespace tuplex {
             return row_var;
         }
 
-        llvm::Value *JsonSourceTaskBuilder::isDocumentOfObjectType(llvm::IRBuilder<> &builder, llvm::Value *j) {
+        llvm::Value *JsonSourceTaskBuilder::isDocumentOfObjectType(const IRBuilder& builder, llvm::Value *j) {
             using namespace llvm;
             auto &ctx = _env->getContext();
             auto F = getOrInsertFunction(_env->getModule().get(), "JsonParser_getDocType", _env->i64Type(),
@@ -1394,7 +1653,7 @@ namespace tuplex {
             return cond;
         }
 
-        FlattenedTuple JsonSourceTaskBuilder::parseRow(llvm::IRBuilder<> &builder, const python::Type &row_type,
+        FlattenedTuple JsonSourceTaskBuilder::parseRow(const IRBuilder& builder, const python::Type &row_type,
                                                        const std::vector<std::string>& columns,
                                                        bool unwrap_first_level, llvm::Value *parser,
                                                        llvm::BasicBlock *bbSchemaMismatch) {
@@ -1478,12 +1737,21 @@ namespace tuplex {
             return ft;
         }
 
-        void JsonSourceTaskBuilder::serializeAsNormalCaseException(llvm::IRBuilder<> &builder, llvm::Value *userData,
+        void JsonSourceTaskBuilder::serializeAsNormalCaseException(const IRBuilder& builder, llvm::Value *userData,
                                                                    int64_t operatorID, llvm::Value *row_no,
                                                                    const tuplex::codegen::FlattenedTuple &general_case_row) {
             // checks
             assert(row_no);
             assert(row_no->getType() == _env->i64Type());
+
+            auto expected_general_case_row_tuple_type = _generalCaseRowType.isTupleType() ? _generalCaseRowType : _generalCaseRowType.get_columns_as_tuple_type();
+
+            if(general_case_row.getTupleType() != expected_general_case_row_tuple_type) {
+                logger().error("Attempting to serialize normal case exception row, however row is"
+                               " not in general case row format.\nExpected general case row format: " + expected_general_case_row_tuple_type.desc() +
+                               "\nActual general case row format: " + general_case_row.getTupleType().desc());
+            }
+            assert(general_case_row.getTupleType() == expected_general_case_row_tuple_type);
 
 #ifdef JSON_PARSER_TRACE_MEMORY
             _env->printValue(builder, row_no, "row number: ");
@@ -1509,7 +1777,7 @@ namespace tuplex {
             builder.CreateCall(eh_func, {userData, ecCode, ecOpID, row_no, buf, buf_size});
         }
 
-        void JsonSourceTaskBuilder::serializeBadParseException(llvm::IRBuilder<> &builder,
+        void JsonSourceTaskBuilder::serializeBadParseException(const IRBuilder& builder,
                                                                llvm::Value* userData,
                                                                int64_t operatorID,
                                                                llvm::Value *row_no,
@@ -1533,12 +1801,12 @@ namespace tuplex {
 
             // write first number of cells to serialize. ( = 1)
             builder.CreateStore(_env->i64Const(1), builder.CreatePointerCast(ptr, _env->i64ptrType()));
-            ptr = builder.CreateGEP(ptr, _env->i64Const(sizeof(int64_t)));
+            ptr = builder.MovePtrByBytes(ptr, sizeof(int64_t));
             // write str info (size + offset)
             size_t offset = sizeof(int64_t); // trivial offset
             auto info = pack_offset_and_size(builder, _env->i64Const(offset), str_size);
             builder.CreateStore(info, builder.CreatePointerCast(ptr, _env->i64ptrType()));
-            ptr = builder.CreateGEP(ptr, _env->i64Const(sizeof(int64_t)));
+            ptr = builder.MovePtrByBytes(ptr, sizeof(int64_t));
             // memcpy string
             builder.CreateMemCpy(ptr, 0, str, 0, str_size);
 

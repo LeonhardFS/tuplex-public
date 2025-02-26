@@ -83,6 +83,9 @@ std::string IFailable::compileErrorToStr(const CompileError &err) {
         case CompileError::TYPE_ERROR_INCOMPATIBLE_TYPES_FOR_IS_COMPARISON:
             errMsg = "use of is comparison only supported with types boolean and null";
             break;
+        case CompileError::TYPE_ERROR_GENERIC_DICT_SUBSCRIPT:
+            errMsg = "subscript [] on generic dict";
+            break;
         default:
             break;
     }

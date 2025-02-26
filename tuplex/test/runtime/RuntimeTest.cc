@@ -293,6 +293,37 @@ TEST(Runtime, Capwords) {
     EXPECT_EQ(strlen("") + 1, res_size);
 }
 
+TEST(Runtime, AllocLargerThanDefaultBlock) {
+    using namespace std;
+    setRunTimeMemory(128 * 1024 * 1024, 0); // Use 128MB at most.
+
+    cout<<"Default runtime block size is: "<<getDefaultHeapBlockSize()/1024<<"KB"<<endl;
+
+    // Test case I:
+    // allocate first block larger than default block.
+    cout<<"Test case I: allocate larger than default block"<<endl;
+    auto buf = rtmalloc(getDefaultHeapBlockSize() + 200);
+    ASSERT_TRUE(buf);
+    memset(buf, 42, getDefaultHeapBlockSize() + 200);
+    rtfree_all();
+    freeRunTimeMemory();
+
+    // Test case II:
+    // allocate first block, then memory that doesn't fit into standard block.
+    cout<<"Test case II: allocate tiny block, then larger than default block"<<endl;
+    buf = rtmalloc(1024);
+    ASSERT_TRUE(buf);
+    memset(buf, 42, 1024);
+
+    buf = rtmalloc(getDefaultHeapBlockSize() + 200);
+    ASSERT_TRUE(buf);
+    memset(buf, 42, getDefaultHeapBlockSize() + 200);
+
+    rtfree_all();
+    freeRunTimeMemory();
+    cout<<"All ok."<<endl;
+}
+
 TEST(Runtime, strCenter) {
     using namespace std;
     setRunTimeMemory(1024 * 1024, 0); // use 1MB
@@ -421,6 +452,7 @@ std::string gen_random_string(int length) {
     s[length - 1] = 0;
     return s;
 }
+
 
 
 // does not work in CI, probably misaligned

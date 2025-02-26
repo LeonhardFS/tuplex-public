@@ -17,7 +17,7 @@ namespace tuplex {
 
         // use this for the future to trace exceptions properly.
         extern void traceExceptionOrigin(LLVMEnvironment& env,
-                                  llvm::IRBuilder<>& builder,
+                                  const IRBuilder& builder,
                                   const ExceptionCode& ec,
                                   const CodePathIdentifier& code_path,
                                   const std::string& function,

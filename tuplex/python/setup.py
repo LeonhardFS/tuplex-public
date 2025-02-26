@@ -74,7 +74,7 @@ setup(
         'astor',
         'prompt_toolkit>=2.0.7',
         'jedi>=0.13.2',
-        'cloudpickle>=0.6.1,<2.0.0', # cloudpickle 2.x is too buggy to use yet
+        'cloudpickle>=0.6.1',
         'PyYAML>=3.13',
         'psutil',
         'pymongo',

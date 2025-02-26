@@ -14,7 +14,7 @@
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1297397
 
 # select here which curl version to use
-CURL_VERSION=7.80.0
+CURL_VERSION=8.10.1
 
 # Alternative could be to also just install via cmake, i.e. from repo https://github.com/curl/curl.
 
@@ -24,6 +24,17 @@ CURL_VERSION=7.80.0
 
 NUM_PROCS=$(( 1 * $( egrep '^processor[[:space:]]+:' /proc/cpuinfo | wc -l ) ))
 
-cd /tmp && yum update -y && yum install wget gcc openssl-devel -y && rm -rf /usr/lib64/libcurl* && \
+# Need to run this before??
+yum update -y && yum install wget gcc vim -y
+
+# openssl will be installed to /usr/local/lib64
+
+cd /tmp && rm -rf /usr/lib64/libcurl* && \
 wget --no-check-certificate https://curl.se/download/curl-${CURL_VERSION}.tar.gz && tar xf curl-${CURL_VERSION}.tar.gz && \
-cd curl-${CURL_VERSION} && ./configure --with-openssl --without-nss --prefix=/usr/ --libdir=/usr/lib64 && make -j ${NUM_PROCS} && make install && ldconfig
+cd curl-${CURL_VERSION} && LDFLAGS="-L/usr/local/lib64" ./configure --without-libpsl --with-openssl && make -j ${NUM_PROCS} && make install && ldconfig
+
+# Fix yum by pointing to recent python.
+ln -sf /usr/local/bin/python3 /usr/bin/python
+
+# cat `which yum`
+# Need to fix yum script.

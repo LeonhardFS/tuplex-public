@@ -13,8 +13,11 @@ namespace tuplex {
     struct NetworkSettings {
         std::string caFile;
         std::string caPath;
+        std::string endpointOverride;
         bool verifySSL;
-        NetworkSettings() : verifySSL(false) {}
+        bool signPayloads; // use v4 payload signing policy.
+        bool useVirtualAddressing; // whether to use http{s}://<bucket>.endpoint.com or not. When using AWS services, this should be true.
+        NetworkSettings() : verifySSL(false), signPayloads(true), useVirtualAddressing(true) {}
     };
 }
 

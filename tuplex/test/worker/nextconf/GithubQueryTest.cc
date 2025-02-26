@@ -8,6 +8,9 @@
 //  License: Apache 2.0                                                                                               //
 //--------------------------------------------------------------------------------------------------------------------//
 #include "TestUtils.h"
+#include "JsonStatistic.h"
+
+#include <simdjson.h>
 
 // fetch github data via:
 // aws s3 cp s3://tuplex-public/data/github_daily ./github_daily --recursive
@@ -140,26 +143,47 @@ namespace tuplex {
         using namespace std;
 
 
+        {
+            using namespace simdjson;
+            // check simdjson details, want to avoid fallback.
+            // cf. for details on how runtime version can be selected
+            // https://github.com/simdjson/simdjson/blob/master/doc/implementation-selection.md
+            cout << "simdjson v" << SIMDJSON_VERSION << endl;
+            cout << "Detected the best implementation for your machine: " << simdjson::get_active_implementation()->name();
+            cout << "(" << simdjson::get_active_implementation()->description() << ")" << endl;
+
+
+            // // Use the fallback implementation, even though my machine is fast enough for anything
+            // simdjson::get_active_implementation() = simdjson::get_available_implementations()["fallback"];
+        }
+
         // @TODO: non-hyper mode doesn't work yet ??
         // hyper-moder returns empty files ??
-        auto use_hyper = false; //true; // should work for both true/false.
+        auto use_hyper = false;//true; // should work for both true/false.
 
         // set input/output paths
         // auto exp_settings = lambdaSettings(true);
         auto exp_settings = localWorkerSettings(use_hyper); //
         auto input_pattern = exp_settings["input_path"];
+
+        // local test files
+        // input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
+
         auto output_path = exp_settings["output_path"];
         SamplingMode sm = static_cast<SamplingMode>(stoi(exp_settings["sampling_mode"]));
+        sm = sm | SamplingMode::SINGLETHREADED;
         ContextOptions co = ContextOptions::defaults();
         for(const auto& kv : exp_settings)
             if(startsWith(kv.first, "tuplex."))
                 co.set(kv.first, kv.second);
 
+        // disable optimizer
+        co.set("tuplex.useLLVMOptimizer", "false");
 
-            // test: focus on single file
-            // input_pattern = "/hot/data/github_daily/2011-10-15.json";
-            // correct data should be:
-            // "num_input_rows": 48899, "num_output_rows": 1418
+        // test: focus on single file
+        // input_pattern = "/hot/data/github_daily/2011-10-15.json";
+        // correct data should be:
+        // "num_input_rows": 48899, "num_output_rows": 1418
 
         // --> slow path is SUPER SLOW to compile. need to improve, use this here to make testing faster.
         // make testing faster...
@@ -206,6 +230,227 @@ namespace tuplex {
                 .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
                 .selectColumns(vector<string>{"type", "repo_id", "year", "number_of_commits"})
                 .tocsv(output_path);
+    }
+
+    bool check_row_types_compatible(python::Type from, python::Type to, bool extend_with_nulls) {
+
+        assert(from.isRowType());
+        assert(to.isRowType());
+
+        if(extend_with_nulls && from.get_column_count() != to.get_column_count()) {
+            // make sure that all columns of from are contained within to.
+            // if not, return false
+            for(auto name : from.get_column_names()) {
+                if(indexInVector(name, to.get_column_names()) < 0)
+                    return false;
+            }
+
+            // now extend, find columns of to which arent present in from
+            std::vector<python::Type> col_types;
+            for(auto name : to.get_column_names()) {
+                if(indexInVector(name, from.get_column_names()) >= 0)
+                    col_types.push_back(from.get_column_type(name));
+                else
+                    col_types.push_back(python::Type::NULLVALUE);
+            }
+
+            from = python::Type::makeRowType(col_types, to.get_column_names());
+        }
+
+        return python::canUpcastType(from, to);
+    }
+
+    TEST_F(GithubQuery, CheckSingleFileUpcastType) {
+        // input_pattern = "../resources/hyperspecialization/github_daily/2011-10-15.json.sample"
+
+        using namespace tuplex;
+
+        // TODO:
+        // load lines of file, for each line with given type explain reason why line can't get parsed.
+        std::string input_pattern = "../resources/hyperspecialization/github_daily/2011-10-15.json.sample";
+
+        // this type is detected, but it is not general enough.
+        // need to either null extent or use =>
+        // auto encoded_input_row_type = "Row['type'->Option[str],'public'->Option[bool],'actor'->Option[Struct[(str,'gravatar_id'=>str),(str,'url'=>str),(str,'avatar_url'=>str),(str,'id'=>i64),(str,'login'=>str)]],'created_at'->Option[str],'payload'->Option[Struct[(str,'action'=>str),(str,'comment'=>Struct[(str,'created_at'=>str),(str,'body'=>str),(str,'updated_at'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'user'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)])]),(str,'commits'=>List[Struct[(str,'sha'->str),(str,'author'->Struct[(str,'name'->str),(str,'email'->str)]),(str,'url'->str),(str,'message'->str)]]),(str,'description'=>str),(str,'head'=>str),(str,'issue'=>Struct[(str,'number'=>i64),(str,'created_at'=>str),(str,'pull_request'=>Struct[(str,'diff_url'=>null),(str,'patch_url'=>null),(str,'html_url'=>null)]),(str,'body'=>str),(str,'comments'=>i64),(str,'title'=>str),(str,'updated_at'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'assignee'=>null),(str,'milestone'=>Struct[(str,'number'=>i64),(str,'created_at'=>str),(str,'due_on'=>str),(str,'title'=>str),(str,'creator'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)]),(str,'url'=>str),(str,'open_issues'=>i64),(str,'closed_issues'=>i64),(str,'description'=>str),(str,'state'=>str)]),(str,'closed_at'=>str),(str,'user'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)]),(str,'html_url'=>str),(str,'labels'=>List[Struct[(str,'name'->str),(str,'url'->str),(str,'color'->str)]]),(str,'state'=>str)]),(str,'legacy'=>Struct[(str,'comment_id'=>i64),(str,'head'=>str),(str,'issue_id'=>i64),(str,'push_id'=>i64),(str,'ref'=>str),(str,'shas'=>List[List[str]]),(str,'size'=>i64)]),(str,'master_branch'=>str),(str,'push_id'=>i64),(str,'ref'=>Option[str]),(str,'ref_type'=>str),(str,'size'=>i64)]],'id'->Option[str],'repo'->Option[Struct[(str,'url'=>str),(str,'id'=>i64),(str,'name'=>str)]],'org'->null]";
+
+        // fixed org to have option
+        // this gives 923/1200 ok.
+        auto encoded_input_row_type = "Row['type'->Option[str],'public'->Option[bool],'actor'->Option[Struct[(str,'gravatar_id'=>str),(str,'url'=>str),(str,'avatar_url'=>str),(str,'id'=>i64),(str,'login'=>str)]],'created_at'->Option[str],'payload'->Option[Struct[(str,'action'=>str),(str,'comment'=>Struct[(str,'created_at'=>str),(str,'body'=>str),(str,'updated_at'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'user'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)])]),(str,'commits'=>List[Struct[(str,'sha'->str),(str,'author'->Struct[(str,'name'->str),(str,'email'->str)]),(str,'url'->str),(str,'message'->str)]]),(str,'description'=>str),(str,'head'=>str),(str,'issue'=>Struct[(str,'number'=>i64),(str,'created_at'=>str),(str,'pull_request'=>Struct[(str,'diff_url'=>null),(str,'patch_url'=>null),(str,'html_url'=>null)]),(str,'body'=>str),(str,'comments'=>i64),(str,'title'=>str),(str,'updated_at'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'assignee'=>null),(str,'milestone'=>Struct[(str,'number'=>i64),(str,'created_at'=>str),(str,'due_on'=>str),(str,'title'=>str),(str,'creator'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)]),(str,'url'=>str),(str,'open_issues'=>i64),(str,'closed_issues'=>i64),(str,'description'=>str),(str,'state'=>str)]),(str,'closed_at'=>str),(str,'user'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)]),(str,'html_url'=>str),(str,'labels'=>List[Struct[(str,'name'->str),(str,'url'->str),(str,'color'->str)]]),(str,'state'=>str)]),(str,'legacy'=>Struct[(str,'comment_id'=>i64),(str,'head'=>str),(str,'issue_id'=>i64),(str,'push_id'=>i64),(str,'ref'=>str),(str,'shas'=>List[List[str]]),(str,'size'=>i64)]),(str,'master_branch'=>str),(str,'push_id'=>i64),(str,'ref'=>Option[str]),(str,'ref_type'=>str),(str,'size'=>i64)]],'id'->Option[str],'repo'->Option[Struct[(str,'url'=>str),(str,'id'=>i64),(str,'name'=>str)]],'org'->Option[Struct[(str,'gravatar_id'->str),(str,'url'->str),(str,'avatar_url'->str),(str,'id'->i64),(str,'login'->str)]]]";
+
+
+        // manually fixed with presence map ??
+        // auto encoded_input_row_type = "Row['type'->Option[str],'public'->Option[bool],'actor'->Option[Struct[(str,'gravatar_id'=>str),(str,'url'=>str),(str,'avatar_url'=>str),(str,'id'=>i64),(str,'login'=>str)]],'created_at'->Option[str],'payload'->Option[Struct[(str,'action'=>str),(str,'comment'=>Struct[(str,'created_at'=>str),(str,'body'=>str),(str,'updated_at'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'user'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)])]),(str,'commits'=>List[Struct[(str,'sha'->str),(str,'author'->Struct[(str,'name'->str),(str,'email'->str)]),(str,'url'->str),(str,'message'->str)]]),(str,'description'=>str),(str,'head'=>str),(str,'issue'=>Struct[(str,'number'=>i64),(str,'created_at'=>str),(str,'pull_request'=>Struct[(str,'diff_url'=>null),(str,'patch_url'=>null),(str,'html_url'=>null)]),(str,'body'=>str),(str,'comments'=>i64),(str,'title'=>str),(str,'updated_at'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'assignee'=>null),(str,'milestone'=>Struct[(str,'number'=>i64),(str,'created_at'=>str),(str,'due_on'=>str),(str,'title'=>str),(str,'creator'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)]),(str,'url'=>str),(str,'open_issues'=>i64),(str,'closed_issues'=>i64),(str,'description'=>str),(str,'state'=>str)]),(str,'closed_at'=>str),(str,'user'=>Struct[(str,'gravatar_id'=>str),(str,'avatar_url'=>str),(str,'url'=>str),(str,'id'=>i64),(str,'login'=>str)]),(str,'html_url'=>str),(str,'labels'=>List[Struct[(str,'name'->str),(str,'url'->str),(str,'color'->str)]]),(str,'state'=>str)]),(str,'legacy'=>Struct[(str,'comment_id'=>i64),(str,'head'=>str),(str,'issue_id'=>i64),(str,'push_id'=>i64),(str,'ref'=>str),(str,'shas'=>List[List[str]]),(str,'size'=>i64)]),(str,'master_branch'=>str),(str,'push_id'=>i64),(str,'ref'=>Option[str]),(str,'ref_type'=>str),(str,'size'=>i64)]],'id'->Option[str],'repo'->Option[Struct[(str,'url'=>str),(str,'id'=>i64),(str,'name'=>str)]],'org'=>null]";
+
+        auto data = fileToString(input_pattern);
+        std::vector<std::vector<std::string>> column_names_per_row;
+        auto rows = parseRowsFromJSONStratified(data.c_str(), data.size(), &column_names_per_row, true, true, 100000, 1, 1, 0, {}, false);
+
+
+        std::cout<<"parsed "<<pluralize(rows.size(), "row")<<" from "<<input_pattern<<std::endl;
+        ASSERT_EQ(rows.size(), 1200);
+
+        auto desired_row_type = python::Type::decode(encoded_input_row_type);
+
+        int num_fitting = 0;
+        for(unsigned i = 0; i < rows.size(); ++i) {
+            auto row_type_as_tuple = rows[i].getRowType();
+            auto columns = column_names_per_row[i];
+            auto row_type = python::Type::makeRowType(row_type_as_tuple.parameters(), columns);
+            bool can_upcast = check_row_types_compatible(row_type, desired_row_type, true);
+            num_fitting += can_upcast;
+            std::cout<<"row #"<<i<<" can upcast: "<<std::boolalpha<<can_upcast<<std::endl;
+        }
+
+        std::cout<<num_fitting<<"/"<<rows.size()<<" rows fit type"<<std::endl;
+    }
+
+    TEST_F(GithubQuery, ForkEventsExtendedLLVM16Debug) {
+
+        // Notes: slow path compilation seems to be a problem, fix by using
+        // https://en.cppreference.com/w/cpp/thread/future
+        // and https://en.cppreference.com/w/cpp/thread/future to wait for compile-thread for slow code to finish?
+        // if it doesn't finish in time, use interpreter only?
+        // or is there a way to reduce complexity of slow code? E.g., cJSON dict instead of struct dict?
+        // -> this could be faster...
+
+        using namespace std;
+
+
+        {
+            using namespace simdjson;
+            // check simdjson details, want to avoid fallback.
+            // cf. for details on how runtime version can be selected
+            // https://github.com/simdjson/simdjson/blob/master/doc/implementation-selection.md
+            cout << "simdjson v" << SIMDJSON_VERSION << endl;
+            cout << "Detected the best implementation for your machine: " << simdjson::get_active_implementation()->name();
+            cout << "(" << simdjson::get_active_implementation()->description() << ")" << endl;
+
+
+            // // Use the fallback implementation, even though my machine is fast enough for anything
+            // simdjson::get_active_implementation() = simdjson::get_available_implementations()["fallback"];
+        }
+
+        // @TODO: non-hyper mode doesn't work yet ??
+        // hyper-moder returns empty files ??
+        auto use_hyper = false; // true; // false;//true; // should work for both true/false.
+
+        // set input/output paths
+        // auto exp_settings = lambdaSettings(true);
+        auto exp_settings = localWorkerSettings(use_hyper); //
+        auto input_pattern = exp_settings["input_path"];
+
+        // // local test files
+        input_pattern = "../resources/hyperspecialization/github_daily/*.json.sample";
+
+        // this should be 100% fitting?
+        input_pattern = "../resources/hyperspecialization/github_daily/2011-10-15.json.sample";
+
+        // test file
+        auto tmp_path = testName + "_sample.json";
+        auto data = fileToString(input_pattern);
+        auto lines = splitToLines(data);
+        EXPECT_EQ(lines.size(), 1200);
+
+        // now write N lines to tmp_path
+        auto N = 50;
+        lines = std::vector<std::string>(lines.begin(), lines.begin() + N);
+        auto sample = mkString(lines.begin(), lines.end(), "\n");
+        stringToFile(tmp_path, sample);
+        input_pattern = tmp_path;
+
+        auto output_path = exp_settings["output_path"];
+        SamplingMode sm = static_cast<SamplingMode>(stoi(exp_settings["sampling_mode"]));
+        sm = sm | SamplingMode::SINGLETHREADED;
+        ContextOptions co = ContextOptions::defaults();
+        for(const auto& kv : exp_settings)
+            if(startsWith(kv.first, "tuplex."))
+                co.set(kv.first, kv.second);
+
+        // enable/disable optimizer
+        co.set("tuplex.useLLVMOptimizer", "true");
+
+        co.set("tuplex.executorCount", "0"); // <-- uncomment if there are any multi-threading issues
+
+        // test: focus on single file
+        // input_pattern = "/hot/data/github_daily/2011-10-15.json";
+        // correct data should be:
+        // "num_input_rows": 48899, "num_output_rows": 1418
+
+        // --> slow path is SUPER SLOW to compile. need to improve, use this here to make testing faster.
+        // make testing faster...
+        // co.set("tuplex.resolveWithInterpreterOnly", "true");
+
+        // let's iterate over a few split sizes
+        // co.set("tuplex.inputSplitSize", "32M");
+
+        co.set("tuplex.inputSplitSize", "20G");
+        co.set("tuplex.experimental.worker.workerBufferSize", "12G"); // each normal, exception buffer in worker get 3G before they start spilling to disk!
+
+        // bug in opportune compilation, when same compiler is used??
+        co.set("tuplex.experimental.opportuneCompilation", "false");
+
+        // do not use compiled resolver...
+        // co.set("tuplex.resolveWithInterpreterOnly", "true");
+
+        // ASAN options:
+        // ASAN_OPTIONS=verbosity=1:malloc_context_size=20:strict_string_checks=true:halt_on_error=false
+
+
+        // test single file, and check why it's processing via fallback (?)
+//        input_pattern = "/home/leonhards/projects/playground/test-data/test2012.json";
+////        input_pattern = "/home/leonhards/projects/playground/test-data/test2012-small.json";
+//        co.set("tuplex.inputSplitSize", "128MB");
+//        co.set("tuplex.experimental.worker.workerBufferSize", "128MB");
+         // input_pattern = "/hot/data/github_daily/2012-10-15.json";
+
+
+
+        // creater context according to settings
+        Context ctx(co);
+
+        runtime::init(co.RUNTIME_LIBRARY().toPath());
+
+        // dump settings
+        stringToFile("context_settings.json", ctx.getOptions().toString());
+
+
+        // start pipeline incl. output
+        auto repo_id_code = "def extract_repo_id(row):\n"
+                            "    if 2012 <= row['year'] <= 2014:\n"
+                            "        \n"
+                            "        if row['type'] == 'FollowEvent':\n"
+                            "            return row['payload']['target']['id']\n"
+                            "        \n"
+                            "        if row['type'] == 'GistEvent':\n"
+                            "            return row['payload']['id']\n"
+                            "        \n"
+                            "        repo = row.get('repository')\n"
+                            "        \n"
+                            "        if repo is None:\n"
+                            "            return None\n"
+                            "        return repo.get('id')\n"
+                            "    else:\n"
+                            "        return row['repo'].get('id')";
+        ctx.json(input_pattern, true, true, sm)
+                        // .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // workaround for filter promo.
+                .withColumn("year", UDF("lambda x: int(x['created_at'].split('-')[0])"))
+                .withColumn("repo_id", UDF(repo_id_code))
+                .filter(UDF("lambda x: x['type'] == 'ForkEvent'")) // <-- this is challenging to push down.
+                .withColumn("commits", UDF("lambda row: row['payload'].get('commits')"))
+                .withColumn("number_of_commits", UDF("lambda row: len(row['commits']) if row['commits'] else 0"))
+                .selectColumns(vector<string>{"type", "repo_id", "year", "number_of_commits"})
+                .tocsv(output_path);
+
+        // @TODO: mock sparse parsing, i.e. parse only with manual type required
+        // -> for Row['created_at'->str,
+        // 'type'->str,
+        // 'payload'->Struct['commits'->List[...], 'target'->Struct['id'->int64],'id'->int64],
+        // 'id'->Option[int64],
+        // 'repo'->Struct['id'->Option[int64]]]
+        // --> check all files whether this partial match works or not.
+        // if any path outside of this is accessed, abort.
+
+        std::cout<<"TEST DONE."<<std::endl;
     }
 
     TEST_F(GithubQuery, ForkEventsFilterPromoForEachFile) {
@@ -560,7 +805,7 @@ namespace tuplex {
                               "    if 2011 == row['year']:\n"
                               "        return row['actor']['login']\n"
                               "    else:\n"
-                              "        return row['actor']\n";
+                              "        return row['actor']\n"; // <-- This doesn't look right... -> This should be dictionary I assume? Is the condition maybe the other way round??
 
         auto extract_forkee_url = "def extract_forkee_url(row):\n"
                                   "    if 2011 == row['year']:\n"
@@ -572,7 +817,7 @@ namespace tuplex {
         auto extract_watchers = "def extract_watchers(row):\n"
                                 "    # before 2012-08-06 watchers are stargazers, and no stat about watchers is available!\n"
                                 "    month = int(row['created_at'].split('-')[1])\n"
-                                "    day = int(row['created_at'].split('-')[1])\n"
+                                "    day = int(row['created_at'].split('-')[2])\n"
                                 "        \n"
                                 "    if 2011 == row['year']:\n"
                                 "        return None\n"
@@ -801,6 +1046,11 @@ namespace tuplex {
 
         path = "/home/leonhards/projects/tuplex-public/tuplex/cmake-build-debug-w-cereal/dist/bin/request_200.json";
         path = "/home/leonhards/projects/tuplex-public/benchmarks/nextconf/hyperspecialization/flights/request_200.json";
+
+        path= "/home/leonhards/projects/2nd-copy/benchmarks/nextconf/hyperspecialization/github/request_2.json";
+
+
+        path = "/home/leonhards/projects/2nd-copy/benchmarks/nextconf/hyperspecialization/flights/failed_requests/request0.json";
 
         auto json_message = fileToString(path);
         ASSERT_FALSE(json_message.empty());

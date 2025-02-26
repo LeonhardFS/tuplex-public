@@ -17,8 +17,16 @@ namespace tuplex {
     void TraceVisitor::recordTrace(ASTNode *node, PyObject *args, const std::vector<std::string>& columns) {
         assert(node && args);
         _args = args;
+
+        // is this not the first trace? check columns are in same order/identical to existing ones.
+        if(!_colTypes.empty() && !columns.empty()) {
+            assert(!_argsColumns.empty());
+            assert(vec_equal(_argsColumns, columns));
+        }
+
         _argsColumns = columns;
         _functionSeen = false;
+        _functionReturned = false; // no return executed yet.
         _evalStack.clear();
         _symbols.clear();
 
@@ -36,6 +44,7 @@ namespace tuplex {
 
         // inc. counter
         _numSamplesProcessed++;
+        _currentTraceId++; // increase, because new trace is now being recorded.
     }
 
     void TraceVisitor::fetchAndStoreError() {
@@ -91,7 +100,7 @@ namespace tuplex {
 
     // leaf nodes
     void TraceVisitor::visit(NNone *node) {
-        addTraceResult(node, TraceItem(python::none()));
+        addTraceResult(node, TraceItem(next_object_id(), python::none()));
     }
 
     void TraceVisitor::visit(NNumber *node) {
@@ -101,9 +110,9 @@ namespace tuplex {
 
         // leaf node, check string then issue python type
         if(type == python::Type::I64)
-            addTraceResult(node, TraceItem(PyLong_FromLongLong(node->getI64())));
+            addTraceResult(node, TraceItem(next_object_id(), PyLong_FromLongLong(node->getI64())));
         else if(type == python::Type::F64)
-            addTraceResult(node, TraceItem(PyFloat_FromDouble(node->getF64())));
+            addTraceResult(node, TraceItem(next_object_id(), PyFloat_FromDouble(node->getF64())));
         else throw std::runtime_error("weird, Number node type " + type.desc() + " not defined");
     }
 
@@ -132,7 +141,7 @@ namespace tuplex {
 
             if(sym) {
                 Py_XINCREF(sym);
-                addTraceResult(node, TraceItem(sym, node->_name));
+                addTraceResult(node, TraceItem(next_object_id(), sym, node->_name));
             } else {
 
                 // check builtins
@@ -142,7 +151,7 @@ namespace tuplex {
                 sym = PyDict_GetItemString(builtinDict, node->_name.c_str());
                 if(sym) {
                     Py_XINCREF(sym);
-                    addTraceResult(node, TraceItem(sym, node->_name));
+                    addTraceResult(node, TraceItem(next_object_id(), sym, node->_name));
                 } else {
                     PyErr_SetString(PyExc_NameError, ("could not find identifier " + node->_name).c_str());
 
@@ -156,7 +165,7 @@ namespace tuplex {
     }
 
     void TraceVisitor::visit(NBoolean *node) {
-       addTraceResult(node, TraceItem(python::boolToPython(node->_value)));
+       addTraceResult(node, TraceItem(next_object_id(), python::boolToPython(node->_value)));
     }
 
     void TraceVisitor::visit(NString *node) {
@@ -165,7 +174,7 @@ namespace tuplex {
         auto val = node->value();
 
         // super simple, just push string node to stack!
-        addTraceResult(node, TraceItem(python::PyString_FromString(val.c_str())));
+        addTraceResult(node, TraceItem(next_object_id(), python::PyString_FromString(val.c_str())));
     }
 
     // non-leaf nodes, recursive calls are carried out for these
@@ -211,7 +220,7 @@ namespace tuplex {
             int rc = PyObject_IsTrue(left.value);
             if(0 == rc) {
                 // object false -> simply return value, do not bother visiting right.
-                addTraceResult(node, TraceItem(left.value));
+                addTraceResult(node, TraceItem(next_object_id(), left.value));
             } else if(1 == rc) {
                 // Py_XDECREF(left.value);
                 // object true -> visit right and return result!
@@ -219,7 +228,7 @@ namespace tuplex {
                 assert(_evalStack.size() >= 1);
                 auto right = _evalStack.back();
                 _evalStack.pop_back();
-                addTraceResult(node, TraceItem(right.value));
+                addTraceResult(node, TraceItem(next_object_id(), right.value));
             } else {
                 // Py_XDECREF(left.value);
                 // error!
@@ -239,7 +248,7 @@ namespace tuplex {
             int rc = PyObject_IsTrue(left.value);
             if(1 == rc) {
                 // object false -> simply return value, do not bother visiting right.
-                addTraceResult(node, TraceItem(left.value));
+                addTraceResult(node, TraceItem(next_object_id(), left.value));
             } else if(0 == rc) {
                 // Py_XDECREF(left.value);
                 // object true -> visit right and return result!
@@ -247,7 +256,7 @@ namespace tuplex {
                 assert(_evalStack.size() >= 1);
                 auto right = _evalStack.back();
                 _evalStack.pop_back();
-                addTraceResult(node, TraceItem(right.value));
+                addTraceResult(node, TraceItem(next_object_id(), right.value));
             } else {
                 // Py_XDECREF(left.value);
                 // error!
@@ -307,7 +316,7 @@ namespace tuplex {
                 errCheck();
 
                 // only add trace result if no err happened.
-                addTraceResult(node, TraceItem(ret_obj));
+                addTraceResult(node, TraceItem(next_object_id(), ret_obj));
             }
         }
     }
@@ -346,7 +355,7 @@ namespace tuplex {
         auto func = PyDict_GetItemString(opModDict, op_name.c_str());
         assert(func);
         auto args = PyTuple_Pack(1, item.value);
-        addTraceResult(node, TraceItem(PyObject_Call(func, args, nullptr)));
+        addTraceResult(node, TraceItem(next_object_id(), PyObject_Call(func, args, nullptr)));
 
         // perform python operation & check for errors
         // confer https://docs.python.org/3/library/operator.html
@@ -359,13 +368,26 @@ namespace tuplex {
             // check whether statement can be optimized. Can be optimized iff result of optimizeNext is a different
             // memory address
             setLastParent(node);
+
+            // Avoid counting visits twice, hence check count here
+            auto visit_count = stmt->annotation().numTimesVisited;
+
             stmt->accept(*this);
+
+            // add annotation and mark as visited. This is important when early return is used.
+            if(stmt->annotation().numTimesVisited != visit_count + 1)
+                stmt->annotation().numTimesVisited++;
 
             if(stmt->type() == ASTNodeType::Break) {
                 _loopBreakStack.back() = true;
                 break;
             }
             if(stmt->type() == ASTNodeType::Continue) {
+                break;
+            }
+
+            // Did function return? -> Stop executing function altogether.
+            if(_functionReturned) {
                 break;
             }
         }
@@ -413,8 +435,8 @@ namespace tuplex {
                 } else {
                     // keep it as it is
                 }
-
-                _symbols.emplace_back(TraceItem::param(_args, id->_name));
+                auto sym_id = next_object_id(); _inputParamIds[sym_id] = id->_name;
+                _symbols.emplace_back(TraceItem::param(sym_id, _args, id->_name));
                 extractedArgs.push_back(_args);
             } else {
                 assert(PyTuple_Check(_args));
@@ -423,7 +445,8 @@ namespace tuplex {
                 for(int i = 0; i < std::min(numProvidedArgs, astArgs.size()); ++i) {
                     auto id = dynamic_cast<NIdentifier*>(dynamic_cast<NParameter*>(astArgs[i])->_identifier.get());
                     auto arg = PyTuple_GetItem(_args, i);
-                    _symbols.emplace_back(TraceItem::param(arg, id->_name));
+                    auto sym_id = next_object_id(); _inputParamIds[sym_id] = id->_name;
+                    _symbols.emplace_back(TraceItem::param(sym_id, arg, id->_name));
                     extractedArgs.push_back(arg);
                 }
             }
@@ -433,6 +456,7 @@ namespace tuplex {
             for(auto a : extractedArgs) {
                 types.emplace_back(mapPythonToTuplexType(a, false));
             }
+
             _colTypes.emplace_back(types);
         } else throw std::runtime_error("no nested functions supported in tracer yet!");
 
@@ -659,7 +683,7 @@ namespace tuplex {
         for(int i = 0; i < elements.size(); ++i)
             PyTuple_SET_ITEM(tupleObj, i, elements[i].value);
 
-        TraceItem ti(tupleObj);
+        TraceItem ti(next_object_id(), tupleObj);
         addTraceResult(node, ti);
     }
 
@@ -684,6 +708,7 @@ namespace tuplex {
         // cout<<endl;
 #endif
 
+        // TODO: remove this, superseded by events.
         // special case: ti_value is input parameter! mark access path.
         if(ti_value.flags & TI_FLAGS_INPUT_PARAMETER) {
             assert(!ti_value.name.empty());
@@ -699,7 +724,20 @@ namespace tuplex {
 
         if(!res)
            errCheck();
-        addTraceResult(node, TraceItem(res));
+
+        auto ti_res = TraceItem(next_object_id(), res);
+
+        // successful, mark access path:
+        SubscriptEvent event;
+        event.traceId = _currentTraceId;
+        event.valueType = ti_value.type();
+        event.key = ti_index.as_field();
+        event.valueObjectId = ti_value.id;
+        event.resultObjectId = ti_res.id;
+        event.on_input_param = event.on_input_param = _inputParamIds.find(event.valueObjectId) != _inputParamIds.end();
+        _subscriptEvents.push_back(event);
+
+        addTraceResult(node, ti_res);
     }
 
     void TraceVisitor::visit(NReturn *node) {
@@ -723,6 +761,8 @@ namespace tuplex {
         } else {
             _retColTypes.emplace_back(std::vector<python::Type>{retType});
         }
+
+        _functionReturned = true; // TODO: same will be true for raise statement!
     }
 
     void TraceVisitor::visit(NAssign *node) {
@@ -745,7 +785,8 @@ namespace tuplex {
             return ti.name == id->_name;
         });
         if(it == _symbols.end()) {
-            _symbols.push_back(TraceItem(ti.value, id->_name));
+            // reuse id, for deep-copy the call in e.g. dict.copy() should generate a new id (not yet supported).
+            _symbols.push_back(TraceItem(ti.id, ti.value, id->_name));
         } else {
             // check if there is type change in loop
             for (auto & el : _symbolsTypeChangeStack) {
@@ -760,6 +801,8 @@ namespace tuplex {
 
             it->value = ti.value; // update value of symbol!
         }
+
+        node->annotation().numTimesVisited++;
     }
 
     void TraceVisitor::visit(NCall *node) {
@@ -808,7 +851,7 @@ namespace tuplex {
         // only add trace result if call succeeded.
         if(!res)
             errCheck(); // jumps out of control flow
-        auto res_item = TraceItem(res);
+        auto res_item = TraceItem(next_object_id(), res);
         addTraceResult(node, res_item);
 
         // because this is a call, edit the type of func to reflect params type -> ret type
@@ -818,6 +861,19 @@ namespace tuplex {
         // edit?
         assert(!node->_func->annotation().types.empty());
         node->_func->annotation().types.back() = func_type;
+
+        // special case: If this is a row.get or dict.get -> emit SubscriptEvent.
+        if(node->_func->type() == ASTNodeType::Attribute && ((NAttribute*)node->_func.get())->_attribute->_name == "get") {
+            // special case:
+            SubscriptEvent event;
+            event.traceId = _currentTraceId;
+            event.valueType = func_type; // --> use the function type here.
+            event.key = ti_args.front().as_field();
+            event.valueObjectId = ti_func.id; // --> attribute reuses the id of the owning object.
+            event.resultObjectId = res_item.id;
+            event.on_input_param = _inputParamIds.find(event.valueObjectId) != _inputParamIds.end();
+            _subscriptEvents.push_back(event);
+        }
     }
 
     void TraceVisitor::visit(NAttribute *node) {
@@ -869,7 +925,9 @@ namespace tuplex {
         }
         // push
 
-        addTraceResult(node, TraceItem(res));
+        // reuse here the value if of the object on which the attribute has been requested.
+        // If the attribute is called, then a new Id will be generated.
+        addTraceResult(node, TraceItem(ti_value.id, res));
     }
 
     void TraceVisitor::visit(NSlice *node) {
@@ -896,7 +954,7 @@ namespace tuplex {
         // @TODO: error??
         assert(res);
 
-        addTraceResult(node, TraceItem(res));
+        addTraceResult(node, TraceItem(next_object_id(), res));
     }
 
     void TraceVisitor::visit(NSliceItem *slicingItem) {
@@ -924,7 +982,7 @@ namespace tuplex {
         }
 
         // create slice item
-        addTraceResult(slicingItem, TraceItem(PySlice_New(start, stop, step)));
+        addTraceResult(slicingItem, TraceItem(next_object_id(), PySlice_New(start, stop, step)));
     }
 
     python::Type TraceVisitor::majorityInputType() const {
@@ -1241,7 +1299,7 @@ namespace tuplex {
                         return ti.name == id->_name;
                     });
                     if (it == _symbols.end()) {
-                        _symbols.emplace_back(PyList_GET_ITEM(item, i), id->_name);
+                        _symbols.emplace_back(next_object_id(), PyList_GET_ITEM(item, i), id->_name);
                     } else {
                         it->value = PyList_GET_ITEM(item, i);
                     }
@@ -1257,7 +1315,7 @@ namespace tuplex {
                         return ti.name == id->_name;
                     });
                     if (it == _symbols.end()) {
-                        _symbols.emplace_back(PyTuple_GET_ITEM(item, i), id->_name);
+                        _symbols.emplace_back(next_object_id(), PyTuple_GET_ITEM(item, i), id->_name);
                     } else {
                         it->value = PyList_GET_ITEM(item, i);
                     }
@@ -1268,7 +1326,7 @@ namespace tuplex {
                     return ti.name == id->_name;
                 });
                 if (it == _symbols.end()) {
-                    _symbols.emplace_back(item, id->_name);
+                    _symbols.emplace_back(next_object_id(), item, id->_name);
                 } else {
                     it->value = item;
                 }
@@ -1427,7 +1485,7 @@ namespace tuplex {
         auto rangeFunction = PyDict_GetItemString(opModDict, "range");
         auto rangeObject = PyObject_Call(rangeFunction, argsTuple, nullptr);
 
-        addTraceResult(node, TraceItem(rangeObject));
+        addTraceResult(node, TraceItem(next_object_id(), rangeObject));
     }
 
     void TraceVisitor::visit(NList *node) {
@@ -1443,7 +1501,7 @@ namespace tuplex {
             _evalStack.pop_back();
         }
 
-        addTraceResult(node, TraceItem(list));
+        addTraceResult(node, TraceItem(next_object_id(), list));
     }
 
     std::vector<size_t> TraceVisitor::columnAccesses() const {
@@ -1508,7 +1566,7 @@ namespace tuplex {
 
         // special case, is TraceRowObject?
         if(0 == strcmp(obj->ob_type->tp_name, "internal.TraceRow")) {
-            return ((TraceRowObject*)obj)->rowType(autoUpcast);
+            return ((TraceRowObject *) obj)->rowTypeAsTupleType(autoUpcast);
         }
 
         // original: holds struct dict as well (always mapping to most specific types)
@@ -1519,5 +1577,124 @@ namespace tuplex {
         // @TODO: use threshold for this function!
         auto type = replace_struct_dict_with_generic_dict(specific_type);
         return type;
+    }
+
+    python::Type TraceVisitor::TraceItem::type() const {
+        if(!value)
+            return python::Type::UNKNOWN;
+
+        // special case: Row -> return as tuple.
+        if(0 == strcmp(value->ob_type->tp_name, "internal.TraceRow")) {
+            return ((TraceRowObject*)value)->rowType();
+        }
+
+        return as_field().getType();
+    }
+
+    Field TraceVisitor::TraceItem::as_field() const {
+        if(!value)
+            return Field::null();
+
+        // special case: Row -> return as tuple.
+        if(0 == strcmp(value->ob_type->tp_name, "internal.TraceRow")) {
+            return Field(((TraceRowObject*)value)->rowAsTuple());
+        }
+
+        Py_XINCREF(value);
+        return python::pythonToField(value);
+    }
+
+    void TraceVisitor::process_access_path_batch(std::vector<std::vector<access_path_t>> &paths,
+                                                 const std::vector<SubscriptEvent> &batch) const {
+
+        // create chains of events and turn them then into access paths.
+        std::vector<std::vector<SubscriptEvent>> subscript_chains;
+
+        // Note: record order guarantees that parent events are always seen first.
+        for(const auto& event : batch) {
+            if(subscript_chains.empty())
+                subscript_chains.push_back({event});
+            else {
+                // does any chain exist which ends with the id?
+                bool chain_found = false;
+                for(auto& chain : subscript_chains) {
+                    if(chain.back().resultObjectId == event.valueObjectId) {
+                        chain.push_back(event);
+                        chain_found = true;
+                        break;
+                    }
+                }
+                if(!chain_found)
+                    subscript_chains.push_back({event});
+            }
+        }
+
+        // convert chains into access paths.
+        for(const auto& chain : subscript_chains) {
+            access_path_t path;
+            for(const auto& event : chain)
+                path.push_back(make_pair(event.key.toPythonString(), event.key.getType()));
+
+            // check where this paths belongs to:
+            auto target_idx = 0;
+            if(_argsColumns.size() != _columnNames.size() && _columnNames.size() == 1) {
+                // unrolled argument / tuple / row argument: --> unroll first parameter
+                assert(path.size() >= 1);
+                assert(path.front().second == python::Type::I64 || path.front().second == python::Type::STRING);
+                auto key_type = path.front().second;
+                if(key_type == python::Type::I64)
+                    target_idx = std::stoi(path.front().first);
+                else if(key_type == python::Type::STRING)
+                    target_idx = indexInVector(str_value_from_python_raw_value(path.front().first), _argsColumns);
+                else
+                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " other key type not yet supported.");
+
+                path = std::vector(path.begin() + 1, path.end()); // remove first argument.
+            } else {
+                // directly link:
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented");
+            }
+
+            // check
+            if(target_idx < 0 || target_idx >= paths.size())
+                continue;
+                // throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " invalid target_idx");
+            else {
+                if(paths[target_idx].empty()) {
+                    paths[target_idx].push_back(path);
+                } else {
+                    // search if already exists, if so - do not add.
+                    if(indexInVector(path, paths[target_idx]) < 0)
+                        paths[target_idx].push_back(path);
+                }
+            }
+        }
+    }
+
+    std::vector<std::vector<access_path_t>> TraceVisitor::columnAccessPaths() const {
+
+        std::vector<std::vector<access_path_t>> paths(_argsColumns.size());
+
+        // assume that subscript events are sorted by trace id.
+        if(_subscriptEvents.empty())
+            return paths;
+
+        // go through events, trick is to create chains of indexing based on object ids.
+        std::vector<SubscriptEvent> batch;
+        for(auto event : _subscriptEvents) {
+            // create batch
+            if(batch.empty() || event.traceId == batch.back().traceId)
+                batch.push_back(event);
+            else {
+                // process batch & clear
+                process_access_path_batch(paths, batch);
+                batch.clear();
+            }
+        }
+
+        if(!batch.empty())
+            process_access_path_batch(paths, batch);
+
+        return paths;
     }
 }

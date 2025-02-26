@@ -262,69 +262,89 @@ def upload_lambda(iam_client, lambda_client, lambda_function_name, lambda_role,
     DEPLOY_MESSAGE = "Auto-deployed Tuplex Lambda Runner function." \
                      " Uploaded by {} from {} on {}".format(user, host, datetime.datetime.now())
 
-    if b64_file_size < ZIP_UPLOAD_LIMIT_SIZE:
-        logging.info('Found packaged lambda ({})'.format(sizeof_fmt(file_size)))
+    max_retries = 5
+    retries_left = max_retries
+    base_delay = 100 # 100ms base delay
+    while retries_left > 0:
+        if b64_file_size < ZIP_UPLOAD_LIMIT_SIZE:
+            logging.info('Found packaged lambda ({})'.format(sizeof_fmt(file_size)))
+            logging.info('Loading local zipped lambda...')
+            logging.info('Uploading Lambda to AWS ({})'.format(sizeof_fmt(file_size)))
 
-        logging.info('Loading local zipped lambda...')
+            try:
+                # upload directly, we use Custom
+                response = lambda_client.create_function(FunctionName=lambda_function_name,
+                                                         Runtime=RUNTIME,
+                                                         Handler=HANDLER,
+                                                         Role=lambda_role_arn,
+                                                         Code={'ZipFile': CODE},
+                                                         Description=DEPLOY_MESSAGE,
+                                                         PackageType='Zip',
+                                                         MemorySize=DEFAULT_MEMORY_SIZE,
+                                                         Timeout=DEFAULT_TIMEOUT)
+                retries_left = 0
+                break
+            except Exception as exc:
+                logging.info(f"Got exception: {exc}.")
+                if isinstance(exc, lambda_client.exceptions.InvalidParameterValueException):
+                    current_delay = 2 ** (max_retries - retries_left) * base_delay
+                    logging.info(f"Role defined could not yet be assumed by Lambda, retrying upload after delay of {current_delay}ms.")
+                    time.sleep(current_delay / 1000.0)
+                    retries_left -= 1
+                else:
+                    logging.error('Failed with: {}'.format(type(e)))
+                    logging.error('Details: {}'.format(str(e)[:2048]))
+                    raise exc
+        else:
+            if s3_client is None or s3_scratch_space is None:
+                raise Exception("Local packaged lambda to large to upload directly, " \
+                                "need S3. Please specify S3 client + scratch space")
+            logging.info("Lambda function is larger than current limit ({}) AWS allows, " \
+                         " deploying via S3...".format(sizeof_fmt(ZIP_UPLOAD_LIMIT_SIZE)))
 
-        logging.info('Uploading Lambda to AWS ({})'.format(sizeof_fmt(file_size)))
-        try:
-            # upload directly, we use Custom
-            response = lambda_client.create_function(FunctionName=lambda_function_name,
-                                                     Runtime=RUNTIME,
-                                                     Handler=HANDLER,
-                                                     Role=lambda_role_arn,
-                                                     Code={'ZipFile': CODE},
-                                                     Description=DEPLOY_MESSAGE,
-                                                     PackageType='Zip',
-                                                     MemorySize=DEFAULT_MEMORY_SIZE,
-                                                     Timeout=DEFAULT_TIMEOUT)
-        except Exception as e:
-            logging.error('Failed with: {}'.format(type(e)))
-            logging.error('Details: {}'.format(str(e)[:2048]))
-            raise e
-    else:
-        if s3_client is None or s3_scratch_space is None:
-            raise Exception("Local packaged lambda to large to upload directly, " \
-                            "need S3. Please specify S3 client + scratch space")
-        logging.info("Lambda function is larger than current limit ({}) AWS allows, " \
-                     " deploying via S3...".format(sizeof_fmt(ZIP_UPLOAD_LIMIT_SIZE)))
+            # upload to s3 temporarily
+            s3_bucket, s3_key = s3_split_uri(s3_scratch_space)
 
-        # upload to s3 temporarily
-        s3_bucket, s3_key = s3_split_uri(s3_scratch_space)
+            # scratch space, so naming doesn't matter
+            TEMP_NAME = 'lambda-deploy.zip'
+            s3_key_obj = s3_key + '/' + TEMP_NAME
+            s3_target_uri = 's3://' + s3_bucket + '/' + s3_key + '/' + TEMP_NAME
+            callback = ProgressPercentage(lambda_zip_file) if not quiet else None
+            s3_client.upload_file(lambda_zip_file, s3_bucket, s3_key_obj, Callback=callback)
+            logging.info('Deploying Lambda from S3 ({})'.format(s3_target_uri))
 
-        # scratch space, so naming doesn't matter
-        TEMP_NAME = 'lambda-deploy.zip'
-        s3_key_obj = s3_key + '/' + TEMP_NAME
-        s3_target_uri = 's3://' + s3_bucket + '/' + s3_key + '/' + TEMP_NAME
-        callback = ProgressPercentage(lambda_zip_file) if not quiet else None
-        s3_client.upload_file(lambda_zip_file, s3_bucket, s3_key_obj, Callback=callback)
-        logging.info('Deploying Lambda from S3 ({})'.format(s3_target_uri))
+            try:
+                # upload directly, we use Custom
+                response = lambda_client.create_function(FunctionName=lambda_function_name,
+                                                         Runtime=RUNTIME,
+                                                         Handler=HANDLER,
+                                                         Role=lambda_role_arn,
+                                                         Code={'S3Bucket': s3_bucket, 'S3Key': s3_key_obj},
+                                                         Description=DEPLOY_MESSAGE,
+                                                         PackageType='Zip',
+                                                         MemorySize=DEFAULT_MEMORY_SIZE,
+                                                         Timeout=DEFAULT_TIMEOUT)
+                retries_left = 0
+                break
+            except Exception as exc:
+                if isinstance(exc, lambda_client.exceptions.InvalidParameterValueException):
+                    current_delay = 2 ** (max_retries - retries_left) * base_delay
+                    logging.info(f"Role defined could not yet be assumed by Lambda, retrying upload to/from S3 after delay of {current_delay}ms.")
+                    time.sleep(current_delay / 1000.0)
+                    retries_left -= 1
+                    continue
+                else:
+                    logging.error('Failed with: {}'.format(type(e)))
+                    logging.error('Details: {}'.format(str(e)[:2048]))
 
-        try:
-            # upload directly, we use Custom
-            response = lambda_client.create_function(FunctionName=lambda_function_name,
-                                                     Runtime=RUNTIME,
-                                                     Handler=HANDLER,
-                                                     Role=lambda_role_arn,
-                                                     Code={'S3Bucket': s3_bucket, 'S3Key': s3_key_obj},
-                                                     Description=DEPLOY_MESSAGE,
-                                                     PackageType='Zip',
-                                                     MemorySize=DEFAULT_MEMORY_SIZE,
-                                                     Timeout=DEFAULT_TIMEOUT)
-        except Exception as e:
-            logging.error('Failed with: {}'.format(type(e)))
-            logging.error('Details: {}'.format(str(e)[:2048]))
-
-            # delete S3 file from scratch
-            s3_client.delete_object(Bucket=s3_bucket, Key=s3_key_obj)
-            logging.info('Removed {} from S3'.format(s3_target_uri))
-
-            raise e
-
-        # delete S3 file from scratch
-        s3_client.delete_object(Bucket=s3_bucket, Key=s3_key_obj)
-        logging.info('Removed {} from S3'.format(s3_target_uri))
+                    # delete S3 file from scratch
+                    s3_client.delete_object(Bucket=s3_bucket, Key=s3_key_obj)
+                    logging.info('Removed {} from S3'.format(s3_target_uri))
+                    raise exc
+            finally:
+                # delete S3 file from scratch
+                s3_client.delete_object(Bucket=s3_bucket, Key=s3_key_obj)
+                logging.info('Removed {} from S3'.format(s3_target_uri))
 
     # print out deployment details
     logging.info('Lambda function {} deployed (MemorySize={}MB, Timeout={}).'.format(response['FunctionName'],

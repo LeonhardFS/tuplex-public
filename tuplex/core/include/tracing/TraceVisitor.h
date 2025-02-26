@@ -21,6 +21,7 @@
 #include <symbols/ClosureEnvironment.h>
 #include <ast/ASTHelpers.h>
 #include <codegen/CodegenHelper.h>
+#include "StructCommon.h"
 
 #define TI_FLAGS_NONE 0x0
 #define TI_FLAGS_INPUT_PARAMETER 0x1
@@ -33,21 +34,40 @@ namespace tuplex {
         bool _functionSeen;
         size_t _numSamplesProcessed;
         struct TraceItem {
+            int id;
             PyObject* value;
             std::string name;
             size_t flags;
 
-            explicit TraceItem(PyObject* obj) : value(obj), name(""), flags(0)   {}
+            explicit TraceItem(int _id, PyObject* obj) : id(_id), value(obj), name(""), flags(0)   {}
 
-            TraceItem(PyObject* obj, std::string n) : value(obj), name(std::move(n)), flags(0) {}
+            TraceItem(int _id, PyObject* obj, std::string n) : id(_id), value(obj), name(std::move(n)), flags(0) {}
 
-            static TraceItem param(PyObject* obj, const std::string n="") {
-                TraceItem ti(obj, n);
+            static TraceItem param(int _id, PyObject* obj, const std::string n="") {
+                TraceItem ti(_id, obj, n);
                 static_assert(TI_FLAGS_INPUT_PARAMETER != 0, "flag must not be 0");
                 ti.flags = TI_FLAGS_INPUT_PARAMETER;
                 return ti;
             }
+
+            python::Type type() const;
+            Field as_field() const;
         };
+
+        struct SubscriptEvent {
+            int traceId;
+            python::Type valueType;
+            Field key;
+            int valueObjectId; // <-- track by object Id.
+            int resultObjectId; // <-- track by object Id.
+            bool on_input_param;
+        };
+
+        // current trace id (to store to which trace something belongs)
+        int _currentTraceId;
+        int _currentObjectId; // <-- assign to traceitem whenever created!
+        std::vector<SubscriptEvent> _subscriptEvents; // trace subscripting
+        std::unordered_map<int, std::string> _inputParamIds; // object ids of input parameters.
 
         // evaluation stack
         std::vector<TraceItem> _evalStack;
@@ -94,6 +114,8 @@ namespace tuplex {
         // was a break statement executed in the ongoing loop?
         std::vector<bool> _loopBreakStack;
 
+        bool _functionReturned; // TODO: for nested functions, use stack.
+
         // each element vector corresponds to {{symbols created before loop}, symbolTypeChange} for an ongoing loop
         // whenever the type of a symbol that is in {symbols created before loop} changes, set symbolTypeChange to true
         std::vector<std::pair<std::vector<std::string>, bool>> _symbolsTypeChangeStack;
@@ -115,11 +137,19 @@ namespace tuplex {
          */
         class TraceException : public std::exception {
         };
+
+
+        inline int next_object_id() {
+            return _currentObjectId++;
+        }
+
+        void process_access_path_batch(std::vector<std::vector<access_path_t>>& paths, const std::vector<SubscriptEvent>& batch) const;
+
     public:
         explicit TraceVisitor(const python::Type& inputRowType=python::Type::UNKNOWN,
                               const codegen::CompilePolicy& policy=codegen::CompilePolicy()) : _args(nullptr),
                     _functionSeen(false),
-                    _retValue(nullptr), _inputRowType(inputRowType), _numSamplesProcessed(0), _policy(policy) {
+                    _retValue(-1, nullptr), _inputRowType(inputRowType), _numSamplesProcessed(0), _policy(policy), _currentTraceId(0), _currentObjectId(0) {
         }
 
         /*!
@@ -149,6 +179,8 @@ namespace tuplex {
          */
         std::vector<size_t> columnAccesses() const;
 
+        inline std::vector<std::string> columns() const { return _argsColumns; }
+
         /*!
          * set global constants, variables, imports etc. from closure environment
          * @param ce
@@ -160,6 +192,12 @@ namespace tuplex {
          * @return
          */
         PyObject* lastResult() const { return _retValue.value; }
+
+        /*!
+         * retrieve access paths for each column. Empty acess path means this element has not been accessed.
+         * @return vector of access oaths length of vector is equivalent to number of columns detected.
+         */
+        std::vector<std::vector<access_path_t>> columnAccessPaths() const;
 
         // leaf nodes
         void visit(NNone *) override;

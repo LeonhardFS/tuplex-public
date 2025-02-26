@@ -36,7 +36,7 @@ namespace tuplex {
                 delete [] _inputBuffer;
             _inputBuffer = nullptr;
         }
-        void read(const URI& inputFilePath) override;
+        void read(const URI& inputFilePath, const std::function<bool()>& blockFunctor) override;
         size_t inputRowCount() const override { return _num_normal_rows + _num_bad_rows; }
 
         void setRange(size_t start, size_t end) {

@@ -4,23 +4,22 @@
 set -euxo pipefail
 
 # dependency versions
-AWSSDK_CPP_VERSION=1.11.164
+AWSSDK_CPP_VERSION=1.11.513
 ANTLR4_VERSION=4.13.1
 YAML_CPP_VERSION=0.8.0
-AWS_LAMBDA_CPP_VERSION=0.2.8
-PCRE2_VERSION=10.42
+AWS_LAMBDA_CPP_VERSION=0.2.10
+PCRE2_VERSION=10.45
 PROTOBUF_VERSION=24.3
 CELERO_VERSION=2.8.3
 
 PYTHON_VERSION=$(echo $(python3 --version) | cut -d ' ' -f2)
 PYTHON_MAJMIN_VERSION=${PYTHON_VERSION%.*}
-
 echo ">> Installing dependencies for Python version ${PYTHON_VERSION}"
 
 function version { echo "$@" | awk -F. '{ printf("%d%03d%03d%03d\n", $1,$2,$3,$4); }'; }
 
 # install python dependencies depending on version
-declare -A PYTHON_DEPENDENCIES=(["3.8"]="cloudpickle<2.0 cython numpy pandas" ["3.9"]="cloudpickle<2.0 numpy pandas" ["3.10"]="cloudpickle>2.0 numpy pandas" ["3.11"]="cloudpickle>2.0 numpy pandas")
+declare -A PYTHON_DEPENDENCIES=(["3.8"]="cloudpickle<2.0 cython numpy pandas" ["3.9"]="cloudpickle<2.0 numpy pandas" ["3.10"]="cloudpickle>=3.0 numpy pandas" ["3.11"]="cloudpickle>=3.0 numpy pandas" ["3.12"]="cloudpickle>=3.0 numpy pandas" ["3.13"]="cloudpickle>=3.1 numpy pandas")
 PYTHON_REQUIREMENTS=$(echo "${PYTHON_DEPENDENCIES[$PYTHON_MAJMIN_VERSION]}")
 python3 -m pip install ${PYTHON_REQUIREMENTS}
 
@@ -40,10 +39,10 @@ mkdir -p $PREFIX/lib
 echo ">> Files will be downloaded to ${WORKDIR}/tuplex-downloads"
 WORKDIR=$WORKDIR/tuplex-downloads
 mkdir -p $WORKDIR
-yum install -y libedit-devel libzip-devel pkgconfig libxml2-devel uuid libuuid-devel libffi-devel graphviz-devel gflags-devel ncurses-devel awscli elfutils-devel java-11-openjdk libyaml-devel file-devel ninja-build zip unzip ninja-build openssh-clients --skip-broken
+dnf install -y libedit-devel libzip-devel pkgconfig libxml2-devel uuid libuuid-devel libffi-devel graphviz-devel gflags-devel ncurses-devel awscli elfutils-devel java-11-openjdk libyaml-devel file-devel ninja-build zip unzip ninja-build openssh-clients --skip-broken
 
 # if java exists, remove via
-yum remove -y java-1.8.0-openjdk-headless
+dnf remove -y java-1.8.0-openjdk-headless
 
 # install recent zlib version (1.2.11) fork from cloudflare
 # https://github.com/aws/aws-graviton-getting-started#zlib-on-linux
@@ -59,20 +58,6 @@ git clone https://github.com/google/googletest.git -b v1.14.0 && cd googletest &
 
 # build snappy as static lib
 git clone https://github.com/google/snappy.git -b 1.1.10 && cd snappy && git submodule update --init && mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_FLAGS="-fPIC" .. && make -j ${CPU_COUNT} && make install
-
-# custom OpenSSL, use a recent OpenSSL and uninstall current one
-if which yum; then
-	yum erase -y openssl-devel openssl
-else
-	apk del openssl-dev openssl
-fi
-cd $WORKDIR && \
-  wget https://ftp.openssl.org/source/openssl-1.1.1w.tar.gz && \
-  tar -xzvf openssl-1.1.1w.tar.gz && \
-  cd openssl-1.1.1w && \
-  ./config no-shared zlib-dynamic CFLAGS="-fPIC" CXXFLAGS="-fPIC" LDFLAGS="-fPIC" && \
-  make -j ${CPU_COUNT} && make install_sw && echo "OpenSSL ok"
-# this will install openssl into /usr/local
 
 # add github to known hosts
 mkdir -p /root/.ssh/ &&
@@ -113,11 +98,11 @@ echo ">> Installing AWS SDK"
 mkdir -p ${WORKDIR}/aws && cd ${WORKDIR}/aws \
 && git clone --recurse-submodules https://github.com/aws/aws-sdk-cpp.git \
 && cd aws-sdk-cpp && git checkout tags/${AWSSDK_CPP_VERSION} && sed -i 's/int ret = Z_NULL;/int ret = static_cast<int>(Z_NULL);/g' src/aws-cpp-sdk-core/source/client/RequestCompression.cpp && mkdir build && cd build \
-&& cmake -DCMAKE_BUILD_TYPE=Release -DUSE_OPENSSL=ON -DENABLE_TESTING=OFF -DENABLE_UNITY_BUILD=ON -DCPP_STANDARD=17 -DBUILD_SHARED_LIBS=OFF -DBUILD_ONLY="s3;core;lambda;transfer" -DCMAKE_INSTALL_PREFIX=${PREFIX} .. \
+&& cmake -DCMAKE_BUILD_TYPE=Release -DUSE_OPENSSL=ON -DENABLE_TESTING=OFF -DUSE_CRT_HTTP_CLIENT=ON -DENABLE_UNITY_BUILD=ON -DCPP_STANDARD=17 -DBUILD_SHARED_LIBS=OFF -DBUILD_ONLY="s3;s3-crt;core;lambda;transfer" -DCMAKE_INSTALL_PREFIX=${PREFIX} .. \
 && make -j ${CPU_COUNT} \
 && make install
 
-#installing AWS Lambda C++ runtime
+# Installing AWS Lambda C++ runtime.
 cd ${WORKDIR}/aws \
 && git clone https://github.com/awslabs/aws-lambda-cpp.git \
 && cd aws-lambda-cpp \
@@ -144,4 +129,4 @@ mkdir -p ${WORKDIR}/protobuf && cd ${WORKDIR}/protobuf \
 
 # delete workdir (downloads dir) to clean up space
 rm -rf ${WORKDIR}
-yum clean all
+dnf clean all

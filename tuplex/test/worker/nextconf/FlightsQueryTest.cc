@@ -64,7 +64,7 @@ namespace tuplex {
         m["tuplex.experimental.forceBadParseExceptFormat"] = "False";
         m["tuplex.resolveWithInterpreterOnly"] = "False";
         m["tuplex.inputSplitSize"] = "2GB";
-        m["tuplex.experimental.opportuneCompilation"] = "True";
+        m["tuplex.experimental.opportuneCompilation"] = "False";
         m["tuplex.aws.scratchDir"] = "s3://tuplex-leonhard/scratch/flights-exp";
 
         // sampling settings incl.
@@ -107,6 +107,8 @@ namespace tuplex {
         m["tuplex.backend"] = "worker";
         m["input_path"] = "/hot/data/flights_all/flights*.csv";
         m["tuplex.aws.scratchDir"] = "";
+
+        m["tuplex.experimental.opportuneCompilation"] = "false";
 
         return m;
     }
@@ -378,7 +380,27 @@ namespace tuplex {
         // disable filter promo
         // co.set("tuplex.optimizer.filterPromotion", "false");
 
-        // creater context according to settings
+        // Experiment setting 1:
+        // co.set("tuplex.resolveWithInterpreterOnly", "true");
+        // co.set("tuplex.useInterpreterOnly", "true");
+
+        // Experiment setting 2:
+        // enable hyperspecialization and constant folding (+ all other optimizations)
+        // co.set("tuplex.resolveWithInterpreterOnly", "false");
+        // co.set("tuplex.useInterpreterOnly", "false");
+        // co.set("tuplex.experimental.hyperspecialization", "true");
+        // co.set("tuplex.optimizer.constantFoldingOptimization", "true");
+
+        // Experiment setting 3:
+        // disable hyperspecialization but enable constant-folding to trigger wrong, global mode.
+        // together with original tuplex sampling mode this should lead to a huge issue.
+        co.set("tuplex.resolveWithInterpreterOnly", "false");
+        co.set("tuplex.useInterpreterOnly", "false");
+        co.set("tuplex.experimental.hyperspecialization", "false");
+        co.set("tuplex.optimizer.constantFoldingOptimization", "true");
+
+
+        // create context according to settings
         Context ctx(co);
 
         runtime::init(co.RUNTIME_LIBRARY().toPath());
@@ -391,8 +413,11 @@ namespace tuplex {
         // resource pattern
         input_pattern = "../resources/hyperspecialization/flights_all/flights_*.csv.sample";
 
-        //// full input pattern (all files)
-        //input_pattern = "/hot/data/flights_all/flights_on_time_performance_*.csv";
+        // full input pattern (all files)
+        input_pattern = "/hot/data/flights_all/flights_on_time_performance_*.csv";
+
+        // // single file: There should be no general case?
+        // input_pattern = "/hot/data/flights_all/flights_on_time_performance_*2002*11*.csv";
 
         // now perform query...
         auto& ds = ctx.csv(input_pattern, {}, option<bool>::none, option<char>::none, '"', {""}, {}, {}, sm);

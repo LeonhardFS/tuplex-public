@@ -203,6 +203,13 @@ namespace python {
         // import cloudpickle for serialized functions
         PyObject *cloudpickleModule = PyImport_ImportModule("cloudpickle");
 
+        if(PyErr_Occurred()) {
+            Logger::instance().defaultLogger().error("Error while import cloudpickle, details:");
+            PyErr_Print();
+            PyErr_Clear();
+            exit(1);
+        }
+
         // check whether cloudpickle module exists or errors occured!
         if(!cloudpickleModule) {
             // quit program
@@ -240,9 +247,16 @@ namespace python {
         auto pArgs = PyTuple_New(1);
         PyTuple_SetItem(pArgs, 0, PyBytes_FromStringAndSize(mem, size));
         auto pFuncLambda = PyObject_CallObject(pFunc, pArgs);
-        assert(pFuncLambda);
+        // Check for errors, print if needed.
+        if(PyErr_Occurred()) {
+            PyErr_Print();
+            PyErr_Clear();
+            return nullptr;
+        }
 
+        assert(pFuncLambda);
         assert(PyCallable_Check(pFuncLambda));
+
         return pFuncLambda;
     }
 
@@ -764,7 +778,11 @@ namespace python {
             for(unsigned i = 0; i < t.numElements(); ++i)
                 fields.push_back(t.getField(i));
             return Row::from_vector(fields);
-        } else return Row(f);
+        } else {
+            if(f.getType() == python::Type::EMPTYTUPLE) {
+            }
+            return {f};
+        }
     }
 
     tuplex::Row pythonToRowWithDictUnwrap(PyObject* obj, const std::vector<std::string>& columns) {
@@ -1158,22 +1176,35 @@ namespace python {
         // always return a tuple
         auto type = row.getRowType();
 
-        // row type is always a tuple type.
-        assert(type.isTupleType());
+        // row type is either tuple or row type
+        if(type.isTupleType()) {
+            assert(type.isTupleType());
 
-        if(type.parameters().size() == 1 && unpackPrimitives) {
-            // simple. primitive type stored
-            // unpack
-            return fieldToPython(row.get(0));
-        } else {
+            if(type.parameters().size() == 1 && unpackPrimitives) {
+                // simple. primitive type stored
+                // unpack
+                return fieldToPython(row.get(0));
+            } else {
+                // a tuple is stored
+                auto numElements = type.parameters().size();
+                auto tupleObj = PyTuple_New(numElements);
+                for(unsigned i = 0; i < numElements; ++i) {
+                    PyObject* field = fieldToPython(row.get(i));
+                    PyTuple_SetItem(tupleObj, i, field); // set steals reference, so inc by one
+                }
+                return tupleObj;
+            }
+        } else if(type.isRowType()) {
             // a tuple is stored
-            auto numElements = type.parameters().size();
+            auto numElements = type.get_column_count();
             auto tupleObj = PyTuple_New(numElements);
             for(unsigned i = 0; i < numElements; ++i) {
                 PyObject* field = fieldToPython(row.get(i));
                 PyTuple_SetItem(tupleObj, i, field); // set steals reference, so inc by one
             }
             return tupleObj;
+        } else {
+            throw std::runtime_error("invalid type, can only convert tuple or row type.");
         }
     }
 
@@ -1557,6 +1588,71 @@ namespace python {
 
         Py_XDECREF(args); // steals ref from dict
         pcr.res = resObj;
+        return pcr;
+    }
+
+    PythonCallResult callFunctionWithTraceObject(PyObject* function, PyObject* trace_oject) {
+        // make sure python interpreter is initialized
+        assert(Py_IsInitialized());
+        assert(holdsGIL());
+
+        assert(function);
+        assert(PyCallable_Check(function));
+        assert(!PyErr_Occurred());
+
+        PythonCallResult pcr;
+        auto pFuncName = PyObject_GetAttrString(function, "__name__");
+        assert(pFuncName);
+        auto pFuncCodeObj = PyObject_GetAttrString(function, "__code__");
+        assert(pFuncCodeObj);
+        // get file & firstlineno
+        auto pFuncFile = PyObject_GetAttrString(pFuncCodeObj, "co_filename");
+        assert(pFuncFile);
+        auto pFuncFirstLineNo = PyObject_GetAttrString(pFuncCodeObj, "co_firstlineno");
+        assert(pFuncFirstLineNo);
+        assert(pFuncName);
+        pcr.functionName = python::PyString_AsString(pFuncName);
+        pcr.functionFirstLineNo = PyLong_AsLong(pFuncFirstLineNo);
+        pcr.file = python::PyString_AsString(pFuncFile);
+        Py_XDECREF(pFuncName);
+        Py_XDECREF(pFuncCodeObj);
+        Py_XDECREF(pFuncFile);
+        Py_XDECREF(pFuncFirstLineNo);
+
+        // there are different ways to call a function
+        // either, the function has a single positional argument --> wrap in another tuple
+        // or multiple ones
+        size_t numPositionalArguments = python::pythonFunctionPositionalArgCount(function);
+        PyObject* args = nullptr;
+        PyObject* resObj = nullptr;
+        PyObject *type=nullptr, *value=nullptr, *traceback=nullptr;
+
+
+        // need to translate pArgs into args
+        if(numPositionalArguments > 1) {
+            // need to unwrap items.
+            throw std::runtime_error("not yet supported");
+        } else if(1 == numPositionalArguments) {
+            // exactly one argument!
+            args = PyTuple_New(1);
+            PyTuple_SET_ITEM(args, 0, trace_oject);
+        } else {
+            // 0 positional arguments?
+            // ==> i.e. constant expression
+            args = PyTuple_New(0); // call with no params
+        }
+
+        assert(args);
+        pcr.res = PyObject_CallObject(function, args);
+
+        // check whether exceptions are raised
+        // translate to Tuplex exception code & clear python error trace.
+        if(PyErr_Occurred())
+            tracebackAndClearError(pcr, function);
+
+        // decref if args != pArgs
+        Py_XDECREF(args);
+
         return pcr;
     }
 

@@ -15,11 +15,7 @@
 #include <TypeSystem.h>
 #include <Tuple.h>
 #include <List.h>
-#ifdef BUILD_WITH_AWS
-#include <aws/core/external/cjson/cJSON.h>
-#else
-#include <cJSON.h>
-#endif
+#include <Base.h>
 #include <optional.h>
 #include <type_traits>
 #include <Utils.h>
@@ -62,17 +58,27 @@ namespace tuplex {
 
         void releaseMemory();
 
-        inline bool hasPtrData() const {
+        [[nodiscard]] inline bool hasPtrData() const {
 
             // option type may have data
             auto type = _type;
-            if(type.isOptionType())
+            if(type.isOptionType()) {
                 type = type.getReturnType();
 
+                // if null is true, then assume NO pointer data.
+                if(_isNull)
+                    return false;
+            }
+
+            if(type == python::Type::EMPTYLIST)
+                return false;
+
             return python::Type::STRING == type ||
-            type.isTupleType() || type.isDictionaryType() ||
-            python::Type::GENERICDICT == type || type.isListType() || type == python::Type::PYOBJECT;
+                   type.isTupleType() || type.isDictionaryType() ||
+                   python::Type::GENERICDICT == type || type.isListType() || type == python::Type::PYOBJECT;
         }
+
+        void deep_copy_from_other(const Field& other);
 
         std::string extractDesc(const python::Type& type) const; /// helper function to extract data
 
@@ -81,12 +87,9 @@ namespace tuplex {
 
         // parses JSON and converts it into python syntax (together with type)
         std::string internalJSONToPythonString() const;
-
-        void deep_copy_from_other(const Field& other);
     public:
 
         Field(): _ptrValue(nullptr), _type(python::Type::UNKNOWN), _size(0), _isNull(false) {}
-
         // copy and move constructor
         Field(const Field& other) : _type(other._type), _size(other._size), _isNull(other._isNull) {
             // deep copy...
@@ -142,6 +145,7 @@ namespace tuplex {
             f._isNull = true;
             f._type = python::Type::NULLVALUE;
             f._iValue = 0;
+            f._ptrValue = nullptr;
             return f;
         }
 
@@ -166,6 +170,11 @@ namespace tuplex {
         // i.e. init with the dummy data for the option::none case
         // ==> helpful also for the tuple case!
         template<typename T> explicit Field(const option<T>& opt) : Field(opt.data()) {
+
+            // release memory if null
+            if(!opt.has_value())
+                releaseMemory();
+
             _isNull = !opt.has_value();
 
             if(!opt.has_value())
@@ -230,6 +239,7 @@ namespace tuplex {
             return *this;
         }
 
+
         void* getPtr() const { return _ptrValue; }
         size_t getPtrSize() const { return _size; }
         int64_t getInt() const { return _iValue; }
@@ -247,6 +257,9 @@ namespace tuplex {
            }
         }
 
+        size_t serialized_list_size() const;
+        size_t serialized_tuple_size() const;
+
         friend bool operator == (const Field& lhs, const Field& rhs);
 
 #ifdef BUILD_WITH_CEREAL
@@ -254,6 +267,8 @@ namespace tuplex {
             ar(_iValue, _type, _size, _isNull);
         }
 #endif
+
+        static Field from_constant_type(const python::Type &constant_type);
     };
 
     extern bool operator == (const Field& lhs, const Field& rhs);

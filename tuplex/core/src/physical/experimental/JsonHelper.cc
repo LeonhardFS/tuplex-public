@@ -2,9 +2,9 @@
 // Created by leonhard on 9/23/22.
 //
 #include <physical/experimental/JsonHelper.h>
+#include <physical/experimental/yyjson_helper.h>
 #include <jit/RuntimeInterface.h>
 #include <jit/JITCompiler.h>
-
 
 namespace tuplex {
     namespace codegen {
@@ -60,7 +60,7 @@ namespace tuplex {
             // j->parser.iterate_many(buf, buf_size, std::min(buf_size, SIMDJSON_BATCH_SIZE)).tie(j->stream, error);
 
             // dom
-            j->parser.parse_many(buf, buf_size, std::min(buf_size, SIMDJSON_BATCH_SIZE)).tie(j->stream, error);
+            j->parser.parse_many(buf, buf_size, std::max(simdjson::SIMDJSON_PADDING, std::min(buf_size, SIMDJSON_BATCH_SIZE))).tie(j->stream, error);
 
             if (error) {
                 std::stringstream err_stream;
@@ -145,6 +145,7 @@ namespace tuplex {
 
             // some weird error may happen IFF batch size is too small.
             // -> out of capacity. Could be detected here and then by manually hacking the iterator
+            // increase batch / i.e. reinitialize parser.
             // @TODO.
 
             simdjson::error_code error;
@@ -153,13 +154,14 @@ namespace tuplex {
             simdjson::dom::element_type line_type;
             doc.type().tie(line_type, error);
             if(error) {
-
+                // In debug mode, extensive error handling.
+#ifndef NDEBUG
                 // special case: empty line
                 if(simdjson::error_code::TAPE_ERROR == error) {
                     // can line be retrieved?
                     // -> do so.
-                    // make sure 0 is not used...
-                    return 0;
+                    // make sure this value is not used...
+                    return 0xFFFFFFFF;
                 }
 
                 if(simdjson::error_code::UTF8_ERROR == error) {
@@ -168,19 +170,18 @@ namespace tuplex {
                 }
 
                 std::stringstream ss;
-                ss<<error; // <-- can get error description like this
+                ss<<__FILE__<<":"<<__LINE__<<" "<<error; // <-- can get error description like this
 
-                // // can line retrieved?
-                // std::string full_row;
-                // {
-                //     std::stringstream ss;
-                //     ss << j->it.source() << std::endl;
-                //     full_row = ss.str();
-                // }
-#ifndef NDEBUG
+                if(simdjson::error_code::CAPACITY == error) {
+                    // If this error appears, adjust SIMDJSON_BATCH_SIZE to be larger!
+                    ss<< " unprocessed bytes at the end: " << j->stream.truncated_bytes()<<std::endl;
+                    ss<<" simdjson currently configured with SIMDJSON_BATCH_SIZE="<<SIMDJSON_BATCH_SIZE<<std::endl;
+                    ss<<" increase SIMDJSON_BATCH_SIZE by at least "<<(j->stream.truncated_bytes() - SIMDJSON_BATCH_SIZE)<<" to parse document"<<std::endl;
+                }
+
                 throw std::runtime_error(ss.str());
 #endif
-                return 0;
+                return 0xFFFFFFFF;
             }
 
             return static_cast<uint64_t>(line_type);
@@ -264,9 +265,10 @@ namespace tuplex {
             simdjson::error_code error;
             std::string_view sv_value;
             item->o[key].get_string().tie(sv_value, error);
-            if (error)
+            if (error) {
+                *out = nullptr;
                 return translate_simdjson_error(error);
-
+            }
             auto str_size = 1 + sv_value.size();
             char *buf = (char *) runtime::rtmalloc(str_size);
             for (unsigned i = 0; i < sv_value.size(); ++i)
@@ -281,19 +283,43 @@ namespace tuplex {
             assert(key);
             assert(out);
 
-            simdjson::error_code error;
+#ifndef NDEBUG
+            // additional checking here:
+            // TODO: remove this.
+            if(!key) {
+                std::cerr<<"Invalid key given in JsonItem_getStringAndSize: "<<key<<std::endl;
+                return ecToI64(ExceptionCode::KEYERROR);
+            }
+            if(!item) { // <-- this should never happen. Fixed here.
+                std::cerr<<"Returning ExceptionCode::NULLERROR"<<std::endl;
+                return ecToI64(ExceptionCode::NULLERROR);
+            }
+#endif
+
+            simdjson::error_code error = simdjson::SUCCESS;
             std::string_view sv_value;
             item->o[key].get_string().tie(sv_value, error);
             if (error)
                 return translate_simdjson_error(error);
 
+            // // OLD:
+            // auto str_size = 1 + sv_value.size();
+            // char *buf = (char *) runtime::rtmalloc(str_size);
+            // for (unsigned i = 0; i < sv_value.size(); ++i)
+            //     buf[i] = sv_value.at(i);
+            // buf[str_size - 1] = '\0';
+
+            // Optimized (after godbolt inspection):
             auto str_size = 1 + sv_value.size();
             char *buf = (char *) runtime::rtmalloc(str_size);
-            for (unsigned i = 0; i < sv_value.size(); ++i)
-                buf[i] = sv_value.at(i);
+            memcpy(buf, sv_value.data(), sv_value.size());
             buf[sv_value.size()] = '\0';
+
+            assert(out);
+            assert(size);
+
             *out = buf;
-            *size = sv_value.size() + 1;
+            *size = static_cast<int64_t>(str_size);
             return ecToI64(ExceptionCode::SUCCESS);
         }
 
@@ -320,6 +346,47 @@ namespace tuplex {
             item->o[key].get_object().tie(o, error);
             if (error)
                 return translate_simdjson_error(error);
+            // ONLY allocate if ok. else, leave how it is.
+            auto obj = new JsonItem();
+#ifdef JSON_PARSER_TRACE_MEMORY
+            traced_items.push_back(obj);
+            printf("Allocated object pointer in JsonItem_getObject [%p]\n", obj);
+#endif
+            obj->o = o;
+            *out = obj;
+            return ecToI64(ExceptionCode::SUCCESS);
+        }
+
+        uint64_t JsonItem_getObjectOrNull(JsonItem *item, const char *key, JsonItem **out) {
+            assert(item);
+            assert(key);
+            assert(out);
+
+            // free if set
+            if(out) {
+                JsonItem* ptr = *out;
+                if(nullptr != ptr) {
+                    JsonItem_Free(ptr);
+                    *out = nullptr;
+                }
+            }
+
+            simdjson::error_code error;
+            // on demand
+            // simdjson::ondemand::object o;
+            // dom
+            simdjson::dom::object o;
+
+            // check if null
+            if(item->o[key].is_null()) {
+                *out = nullptr;
+                return ecToI64(ExceptionCode::NULLERROR); // <-- use nullerror, but is actually ok.
+            }
+
+            item->o[key].get_object().tie(o, error);
+            if (error)
+                return translate_simdjson_error(error);
+
             // ONLY allocate if ok. else, leave how it is.
             auto obj = new JsonItem();
 #ifdef JSON_PARSER_TRACE_MEMORY
@@ -473,7 +540,7 @@ namespace tuplex {
                 buf[pos] = sv_value.at(pos);
             buf[sv_value.size()] = '\0';
             *out = buf;
-            *size = str_size;
+            *size = static_cast<int64_t>(str_size);
 
             assert(*size >= 1);
 
@@ -698,7 +765,45 @@ namespace tuplex {
             return buf;
         }
 
+        // negative function
+        uint64_t JsonItem_keySetNotMatch(JsonItem *item, uint8_t *not_keys_buf) {
+            assert(item);
+            assert(not_keys_buf);
 
+            // check always_keys_buf
+            // => they all need to be there!
+            uint64_t num_not_keys = *(uint64_t *) not_keys_buf;
+
+            // fetch all keys and check then off.
+            size_t num_fields = 0;
+            // note: looking up string views does work for C++20+
+            std::unordered_set<std::string> lookup;
+            for (auto field: item->o) {
+
+                // ondemand
+                // auto key = field.unescaped_key().take_value();
+
+                // dom
+                auto key = field.key;
+
+                lookup.insert(view_to_string(key));
+            }
+
+
+            // go through the two buffers, if any of the not keys is found return with key error
+            auto ptr = not_keys_buf + sizeof(int64_t);
+            for (unsigned i = 0; i < num_not_keys; ++i) {
+                auto str_size = *(uint32_t *) ptr;
+                ptr += sizeof(uint32_t);
+                std::string key = (char *) ptr;
+                if (lookup.end() != lookup.find(key)) {
+                    return ecToI64(ExceptionCode::KEYERROR);
+                }
+                ptr += str_size;
+            }
+
+            return ecToI64(ExceptionCode::SUCCESS);
+        }
 
         // use a helper function for this and specially encoded buffers
         uint64_t JsonItem_keySetMatch(JsonItem *item, uint8_t *always_keys_buf, uint8_t *maybe_keys_buf) {
@@ -801,7 +906,66 @@ namespace tuplex {
             return true;
         }
 
+        extern "C" cJSON_bool cJSON_IsArrayOfObjects(cJSON* obj) {
+            if(!obj)
+                return false;
+
+            if(!cJSON_IsArray(obj))
+                return false;
+
+            auto arr_size = cJSON_GetArraySize(obj);
+            for(unsigned i = 0; i < arr_size; ++i) {
+                if(!cJSON_IsObject(cJSON_GetArrayItem(obj, i)))
+                    return false;
+            }
+            return true;
+        }
+
+        extern "C" char* cJSON_PrintUnformattedEx(cJSON* obj) {
+
+            auto ret = cJSON_PrintUnformatted(obj);
+
+            if(!ret) {
+                obj = cJSON_CreateString("nullptr");
+                ret = cJSON_PrintUnformatted(obj);
+
+                assert(ret);
+            }
+
+            return ret;
+        }
+
+
+        void addYYJsonSymbolsToJIT(JITCompiler& jit) {
+            jit.registerSymbol("yyjson_mut_str", yyjson_mut_str);
+            jit.registerSymbol("yyjson_mut_obj_get", yyjson_mut_obj_get);
+            jit.registerSymbol("yyjson_mut_obj_put", yyjson_mut_obj_put);
+            jit.registerSymbol("yyjson_mut_is_num", yyjson_mut_is_num);
+            jit.registerSymbol("yyjson_mut_is_null", yyjson_mut_is_null);
+            jit.registerSymbol("yyjson_mut_is_obj", yyjson_mut_is_obj);
+            jit.registerSymbol("yyjson_mut_is_arr", yyjson_mut_is_arr);
+            jit.registerSymbol("yyjson_mut_is_str", yyjson_mut_is_str);
+            jit.registerSymbol("yyjson_mut_arr_size", yyjson_mut_arr_size);
+            jit.registerSymbol("yyjson_mut_arr_get", yyjson_mut_arr_get);
+            jit.registerSymbol("yyjson_is_array_of_objects", tuplex::yyjson_is_array_of_objects);
+            jit.registerSymbol("yyjson_mut_get_sint", yyjson_mut_get_sint);
+            jit.registerSymbol("yyjson_mut_get_bool", yyjson_mut_get_bool);
+            jit.registerSymbol("yyjson_mut_get_real", yyjson_get_real);
+            jit.registerSymbol("yyjson_mut_get_str", yyjson_get_str);
+            jit.registerSymbol("yyjson_init_doc", tuplex::yyjson_init_doc);
+            jit.registerSymbol("yyjson_mut_doc_get_root", yyjson_mut_doc_get_root);
+            jit.registerSymbol("yyjson_print_to_runtime_str", tuplex::yyjson_print_to_runtime_str);
+            jit.registerSymbol("JsonItem_to_yyjson_mut_doc", tuplex::JsonItem_to_yyjson_mut_doc);
+            jit.registerSymbol("yyjson_type_as_runtime_str", tuplex::yyjson_type_as_runtime_str);
+            jit.registerSymbol("yyjson_mut_parse", tuplex::yyjson_mut_parse);
+        }
+
         void addJsonSymbolsToJIT(JITCompiler& jit) {
+
+#ifdef USE_YYJSON_INSTEAD
+            addYYJsonSymbolsToJIT(jit);
+#endif
+
             // register symbols
             jit.registerSymbol("JsonParser_Init", JsonParser_init);
             jit.registerSymbol("JsonParser_Free", JsonParser_free);
@@ -815,12 +979,14 @@ namespace tuplex {
             jit.registerSymbol("JsonItem_Free", JsonItem_Free);
             jit.registerSymbol("JsonItem_getStringAndSize", JsonItem_getStringAndSize);
             jit.registerSymbol("JsonItem_getObject", JsonItem_getObject);
+            jit.registerSymbol("JsonItem_getObjectOrNull", JsonItem_getObjectOrNull);
             jit.registerSymbol("JsonItem_getDouble", JsonItem_getDouble);
             jit.registerSymbol("JsonItem_getInt", JsonItem_getInt);
             jit.registerSymbol("JsonItem_getBoolean", JsonItem_getBoolean);
             jit.registerSymbol("JsonItem_IsNull", JsonItem_IsNull);
             jit.registerSymbol("JsonItem_numberOfKeys", JsonItem_numberOfKeys);
             jit.registerSymbol("JsonItem_keySetMatch", JsonItem_keySetMatch);
+            jit.registerSymbol("JsonItem_keySetNotMatch", JsonItem_keySetNotMatch);
             jit.registerSymbol("JsonItem_hasKey", JsonItem_hasKey);
             jit.registerSymbol("JsonItem_getArray", JsonItem_getArray);
             jit.registerSymbol("JsonArray_Free", JsonArray_Free);
@@ -836,6 +1002,36 @@ namespace tuplex {
             jit.registerSymbol("Json_is_whitespace", Json_is_whitespace);
             jit.registerSymbol("JsonParser_TruncatedBytes", JsonParser_TruncatedBytes);
             jit.registerSymbol("JsonItem_to_cJSON", JsonItem_to_cJSON);
+
+            // AWS SDK cJSON
+#ifdef BUILD_WITH_AWS
+            // cJSON_PrintUnformatted, cJSON_AddItemToObject, cJSON_CreateObject, cJSON_DetachItemViaPointer, cJSON_CreateString
+            // jit.registerSymbol("cJSON_PrintUnformatted", cJSON_PrintUnformatted);
+            jit.registerSymbol("cJSON_PrintUnformatted", cJSON_PrintUnformattedEx); // <-- use here ex version to deal with nullptr.
+            jit.registerSymbol("cJSON_AddItemToObject", cJSON_AddItemToObject);
+            jit.registerSymbol("cJSON_CreateObject", cJSON_CreateObject);
+            jit.registerSymbol("cJSON_DetachItemViaPointer", cJSON_DetachItemViaPointer);
+            jit.registerSymbol("cJSON_CreateString", cJSON_CreateString);
+            jit.registerSymbol("cJSON_GetObjectItemCaseSensitive", cJSON_GetObjectItemCaseSensitive);
+            jit.registerSymbol("cJSON_GetArraySize", cJSON_GetArraySize);
+            jit.registerSymbol("cJSON_CreateNumber", cJSON_CreateNumber);
+            jit.registerSymbol("cJSON_CreateBool", cJSON_CreateBool);
+            jit.registerSymbol("cJSON_IsTrue", cJSON_IsTrue);
+            jit.registerSymbol("cJSON_IsArray", cJSON_IsArray);
+            jit.registerSymbol("cJSON_IsNull", cJSON_IsNull);
+            jit.registerSymbol("cJSON_IsNumber", cJSON_IsNumber);
+            jit.registerSymbol("cJSON_IsObject",cJSON_IsObject);
+            jit.registerSymbol("cJSON_IsString", cJSON_IsString);
+            jit.registerSymbol("cJSON_GetNumberValue", cJSON_GetNumberValue);
+            jit.registerSymbol("cJSON_GetArrayItem", cJSON_GetArrayItem);
+            jit.registerSymbol("cJSON_Parse", cJSON_Parse);
+            jit.registerSymbol("cJSON_CreateString", cJSON_CreateString);
+            jit.registerSymbol("cJSON_GetNumberValue", cJSON_GetNumberValue);
+            jit.registerSymbol("cJSON_GetArrayItem", cJSON_GetArrayItem);
+            jit.registerSymbol("cJSON_Parse", cJSON_Parse);
+#endif
+
+            jit.registerSymbol("cJSON_IsArrayOfObjects", cJSON_IsArrayOfObjects);
         }
 
         bool JsonContainsAtLeastOneDocument(const char* buf, size_t buf_size) {

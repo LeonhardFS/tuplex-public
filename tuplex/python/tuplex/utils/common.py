@@ -384,13 +384,14 @@ def registerLoggingCallback(callback):
     """
     from ..libexec.tuplex import registerLoggingCallback as ccRegister
 
-    # create a wrapper to capture exceptions properly and avoid crashing
+    # Create a wrapper to capture exceptions properly and avoid crashing.
     def wrapper(level, time_info, logger_name, msg):
         args = (level, time_info, logger_name, msg)
 
         try:
             callback(*args)
         except Exception as e:
+            print(f"Logging callback produced error: {e}")
             logging.error("logging callback produced following error: {}".format(e))
 
     ccRegister(wrapper)
@@ -940,3 +941,25 @@ def ensure_webui(options):
         # log gunicorn errors for local startup
         if os.path.isfile(gunicorn_logpath) and 'localhost' == webui_url:
             log_gunicorn_errors(gunicorn_logpath)
+
+def check_cloudpickle_version():
+    # check what the installed cloudpickle version is and compare to sys version because there are certain incompatibilities
+    import cloudpickle
+    import sys
+
+    cv = cloudpickle.__version__
+    cv_maj, cv_min, cv_patch = [int(v) for v in cv.split('.')]
+
+    if sys.version_info.major != 3:
+        raise RuntimeError("Tuplex is only compatible with Python 3.7+")
+
+    if sys.version_info.minor <= 9:
+        # Maximum cloudpickle version supported is 1.6.0 for Python < 3.9.
+        if cv_maj > 1:
+            error_message = f"Tuplex running Python {sys.version} is only compatible with cloudpickle up to 1.6.0. However, currently installed cloudpickle version is {cv}"
+            raise RuntimeError(error_message)
+    else:
+        # Minimum cloudpickle version supported is 2.2.0 for Python 3.10+ (2.1.0 and 2.0.0 is buggy)
+        if (cv_maj == 2 and cv_min < 2) or cv_maj < 2:
+            error_message = f"Tuplex running Python {sys.version} is only compatible with cloudpickle from 2.2.0 onwards. However, currently installed cloudpickle version is {cv}"
+            raise RuntimeError(error_message)

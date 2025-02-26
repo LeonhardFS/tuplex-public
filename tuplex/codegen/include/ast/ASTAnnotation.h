@@ -189,7 +189,7 @@ namespace tuplex {
                 assertFunctionDoesNotReturnGeneric(specializedFunctionType);
                 return true;
             }
-            // typer did not yield a result, hence try stored funciton types incl. upcasting
+            // typer did not yield a result, hence try stored function types incl. upcasting
             return findStoredTypedFunction(parameterType, specializedFunctionType);
         }
 
@@ -488,11 +488,27 @@ namespace tuplex {
         }
     };
 
+
+    // annotation for visiting branches
+    enum class FollowBranch {
+        NONE   = 0,
+        IF     = 1,
+        ELSE   = 2,
+    };
+
+    inline FollowBranch operator | (FollowBranch a, FollowBranch b) {
+        return static_cast<FollowBranch>(static_cast<int>(a) | static_cast<int>(b));
+    }
+
+    inline bool operator & (FollowBranch a, FollowBranch b) {
+        return (static_cast<int>(a) & static_cast<int>(b)) > 0;
+    }
+
     // simple class used to annotate ast nodes
     class ASTAnnotation {
      public:
 
-        ASTAnnotation() : numTimesVisited(0), symbol(nullptr), iMin(0), iMax(0), negativeValueCount(0), positiveValueCount(0), iteratorInfo(nullptr), typeStableCount(0), typeChangedAndStableCount(0), typeChangedAndUnstableCount(0), zeroIterationCount(0), deoptException(ExceptionCode::SUCCESS) {}
+        ASTAnnotation() : numTimesVisited(0), symbol(nullptr), iMin(0), iMax(0), negativeValueCount(0), positiveValueCount(0), iteratorInfo(nullptr), typeStableCount(0), typeChangedAndStableCount(0), typeChangedAndUnstableCount(0), zeroIterationCount(0), deoptException(ExceptionCode::SUCCESS), follow_branch(FollowBranch::NONE) {}
         ASTAnnotation(const ASTAnnotation& other) : numTimesVisited(other.numTimesVisited), iMin(other.iMin), iMax(other.iMax),
                                                     negativeValueCount(other.negativeValueCount),
                                                     positiveValueCount(other.positiveValueCount),
@@ -504,7 +520,8 @@ namespace tuplex {
                                                     typeChangedAndUnstableCount(other.typeChangedAndUnstableCount),
                                                     zeroIterationCount(other.zeroIterationCount),
                                                     deoptException(other.deoptException),
-                                                    originalColumnName(other.originalColumnName) {}
+                                                    originalColumnName(other.originalColumnName),
+                                                    follow_branch(other.follow_branch) {}
 
         ///! how often was node visited? Helpful annotation for if-branches
         size_t numTimesVisited;
@@ -563,6 +580,8 @@ namespace tuplex {
 
         std::string originalColumnName; // this is a dummy before introducing a proper "row" dummy type, use this for rewriting
 
+        FollowBranch follow_branch; // for NIfElse, store which branches are valid when using speculate mechanism.
+
         inline python::Type majorityType() const {
             if(types.empty())
                 return python::Type::UNKNOWN;
@@ -619,7 +638,7 @@ namespace tuplex {
     #ifdef BUILD_WITH_CEREAL
         template <class Archive>
         void serialize(Archive &ar) { ar(numTimesVisited, iMin, iMax, negativeValueCount,
-                                         positiveValueCount, symbol, types, deoptException, originalColumnName); }
+                                         positiveValueCount, symbol, types, deoptException, originalColumnName, follow_branch); }
     #endif
 
     };

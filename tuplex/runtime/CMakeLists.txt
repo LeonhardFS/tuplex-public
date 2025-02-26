@@ -4,7 +4,7 @@
 file(GLOB_RECURSE SOURCES src/*.cc)
 file(GLOB_RECURSE INCLUDES include/*.h)
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+#include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 add_library(runtime SHARED
         ${CMAKE_CURRENT_BINARY_DIR} ${SOURCES} ${INCLUDES})
@@ -22,7 +22,6 @@ target_link_libraries(runtime libutils ${PCRE2_LIBRARIES})
 
 # require thread_local and aligned malloc keyword (C11 or C++11)
 target_compile_features(runtime PRIVATE cxx_thread_local)
-target_compile_features(runtime PRIVATE c_std_11)
 
 # copy dylib to pip package
 add_custom_command(TARGET runtime POST_BUILD

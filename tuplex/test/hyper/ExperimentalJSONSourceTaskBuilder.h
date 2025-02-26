@@ -63,7 +63,7 @@ namespace tuplex {
             llvm::Value *_outTotalBadRowsVar;
             llvm::Value *_outTotalSerializationSize;
 
-            void writeOutput(llvm::IRBuilder<>& builder, llvm::Value* var, llvm::Value* val);
+            void writeOutput(const IRBuilder&  builder, llvm::Value* var, llvm::Value* val);
 
 
             // blocks to hold start/end of frees --> called before going to next row.
@@ -73,41 +73,41 @@ namespace tuplex {
 
             // helper functions
 
-            void generateParseLoop(llvm::IRBuilder<> &builder, llvm::Value *bufPtr, llvm::Value *bufSize);
+            void generateParseLoop(const IRBuilder& builder, llvm::Value *bufPtr, llvm::Value *bufSize);
 
-            llvm::Value *initJsonParser(llvm::IRBuilder<> &builder);
+            llvm::Value *initJsonParser(const IRBuilder& builder);
 
-            void freeJsonParse(llvm::IRBuilder<> &builder, llvm::Value *j);
+            void freeJsonParse(const IRBuilder& builder, llvm::Value *j);
 
             llvm::Value *
-            openJsonBuf(llvm::IRBuilder<> &builder, llvm::Value *j, llvm::Value *buf, llvm::Value *buf_size);
+            openJsonBuf(const IRBuilder& builder, llvm::Value *j, llvm::Value *buf, llvm::Value *buf_size);
 
             void
-            exitMainFunctionWithError(llvm::IRBuilder<> &builder, llvm::Value *exitCondition, llvm::Value *exitCode);
+            exitMainFunctionWithError(const IRBuilder& builder, llvm::Value *exitCondition, llvm::Value *exitCode);
 
-            llvm::Value *hasNextRow(llvm::IRBuilder<> &builder, llvm::Value *j);
+            llvm::Value *hasNextRow(const IRBuilder& builder, llvm::Value *j);
 
-            void moveToNextRow(llvm::IRBuilder<> &builder, llvm::Value *j);
+            void moveToNextRow(const IRBuilder& builder, llvm::Value *j);
 
 
             llvm::BasicBlock *
-            emitBadParseInputAndMoveToNextRow(llvm::IRBuilder<> &builder, llvm::Value *j, llvm::Value *condition);
+            emitBadParseInputAndMoveToNextRow(const IRBuilder& builder, llvm::Value *j, llvm::Value *condition);
 
-            inline llvm::Value *rowNumber(llvm::IRBuilder<> &builder) {
+            inline llvm::Value *rowNumber(const IRBuilder& builder) {
                 assert(_rowNumberVar);
                 assert(_rowNumberVar->getType() == _env.i64ptrType());
-                return builder.CreateLoad(_rowNumberVar);
+                return builder.CreateLoad(builder.getInt64Ty(), _rowNumberVar);
             }
 
-            llvm::Value *isDocumentOfObjectType(llvm::IRBuilder<> &builder, llvm::Value *j);
+            llvm::Value *isDocumentOfObjectType(const IRBuilder& builder, llvm::Value *j);
 
-            void parseAndPrintStructuredDictFromObject(llvm::IRBuilder<> &builder, llvm::Value *j,
+            void parseAndPrintStructuredDictFromObject(const IRBuilder& builder, llvm::Value *j,
                                                        llvm::BasicBlock *bbSchemaMismatch);
 
-            void printValueInfo(llvm::IRBuilder<> &builder, const std::string &key, const python::Type &valueType,
+            void printValueInfo(const IRBuilder& builder, const std::string &key, const python::Type &valueType,
                                 llvm::Value *keyPresent, const SerializableValue &value);
 
-            void checkRC(llvm::IRBuilder<> &builder, const std::string &key, llvm::Value *rc);
+            void checkRC(const IRBuilder& builder, const std::string &key, llvm::Value *rc);
         };
     }
 }

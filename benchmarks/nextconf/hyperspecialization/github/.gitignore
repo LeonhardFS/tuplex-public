@@ -1,6 +1,8 @@
 results/
 job/
 local-exp/
+local-exp.backup/
+lambda-exp/
 *.ndjson
 request*.json
 *.txt

@@ -72,6 +72,8 @@ namespace tuplex {
 
         int64_t cost() const override;
 
+        inline SamplingMode samplingMode() const { return _samplingMode; }
+
 #ifdef BUILD_WITH_CEREAL
         // cereal serialization functions
         template<class Archive> void save(Archive &ar) const {

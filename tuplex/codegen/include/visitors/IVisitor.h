@@ -101,5 +101,7 @@ namespace tuplex {
      * @return visit_ifelse, visit_if, visit_else
      */
     extern std::tuple<bool, bool, bool> whichBranchToVisit(NIfElse* ifelse);
+
+    extern bool has_any_statement_positive_visits(NSuite* suite);
 }
 #endif //TUPLEX_IVISITOR_H

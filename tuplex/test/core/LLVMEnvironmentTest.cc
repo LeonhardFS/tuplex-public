@@ -19,6 +19,8 @@
 
 #include <VirtualFileSystem.h>
 
+#include <physical/experimental/yyjson_helper.h>
+
 // bitmap test
 // simple tests for compiled stuff
 
@@ -41,13 +43,13 @@ str_test_func_f compileNullValueComparisonFunction(tuplex::JITCompiler& jit, con
 #else
     Function* func = cast<Function>(env->getModule()->getOrInsertFunction(name, FT).getCallee());
 #endif
-    name = func->getName();
+    name = func->getName().str();
 
     auto args = mapLLVMFunctionArgs(func, vector<string>{"str"});
 
     BasicBlock* bbEntry = BasicBlock::Create(env->getContext(), "entry", func);
 
-    IRBuilder<> builder(bbEntry);
+    tuplex::codegen::IRBuilder builder(bbEntry);
 
     // execute compare code
     auto resVal = env->compareToNullValues(builder, args["str"], null_values);
@@ -130,13 +132,13 @@ bitmap_test_func_f compileBitmapTestFunction(tuplex::JITCompiler& jit) {
 #else
     Function* func = cast<Function>(env->getModule()->getOrInsertFunction(name, FT).getCallee());
 #endif
-    name = func->getName();
+    name = func->getName().str();
 
     auto args = mapLLVMFunctionArgs(func, vector<string>{"isnull", "pos"});
 
     BasicBlock* bbEntry = BasicBlock::Create(env->getContext(), "entry", func);
 
-    IRBuilder<> builder(bbEntry);
+    tuplex::codegen::IRBuilder builder(bbEntry);
 
     // isnull << pos is the result
     // does that work for pos > 32? doubt it...
@@ -318,15 +320,15 @@ TEST(LLVMENV, TupleStructs) {
     auto argTupleType = python::Type::makeTupleType({python::Type::makeOptionType(python::Type::STRING), python::Type::I64, python::Type::F64});
     auto retTupleType = python::Type::makeTupleType({python::Type::STRING, python::Type::F64});
 
-    FunctionType* FT = FunctionType::get(Type::getInt64Ty(ctx), {createStructType(ctx, retTupleType, "tuple")->getPointerTo(),
-                                                                 createStructType(ctx, argTupleType, "tuple")->getPointerTo()}, false);
+    auto llvm_in_type = env->getOrCreateTupleType(retTupleType);
+    auto llvm_out_type = env->getOrCreateTupleType(argTupleType);
+
+    FunctionType* FT = FunctionType::get(Type::getInt64Ty(ctx), {llvm_in_type->getPointerTo(),
+                                                                 llvm_out_type->getPointerTo()}, false);
 
     string name = "process_row";
-#if LLVM_VERSION_MAJOR < 9
-    Function* func = cast<Function>(env->getModule()->getOrInsertFunction(name, FT));
-#else
-    Function* func = cast<Function>(env->getModule()->getOrInsertFunction(name, FT).getCallee());
-#endif
+    auto func = getOrInsertFunction(*env->getModule(), name, FT);
+
     // add attributes to the arguments (sret, byval)
     for (int i = 0; i < func->arg_size(); ++i) {
         auto& arg = *(func->arg_begin() + i);
@@ -339,22 +341,25 @@ TEST(LLVMENV, TupleStructs) {
 
         if(1 == i) {
             arg.setName("inRow");
+
+            // attributes broken...
+            // arg.addAttr(Attribute::ByVal);
             //arg.addAttr(Attribute::ByVal);
             // maybe align by 8?
         }
     }
 
-    // add norecurse to function & inline hint
-    func->addFnAttr(Attribute::NoRecurse);
-    func->addFnAttr(Attribute::InlineHint);
-    func->addFnAttr(Attribute::NoUnwind); // explicitly disable unwind! (no external lib calls!)
+//    // add norecurse to function & inline hint
+//    func->addFnAttr(Attribute::NoRecurse);
+//    func->addFnAttr(Attribute::InlineHint);
+//    func->addFnAttr(Attribute::NoUnwind); // explicitly disable unwind! (no external lib calls!)
 
 
     auto argMap = mapLLVMFunctionArgs(func, {"outRow", "inRow"});
 
     // codegen
     BasicBlock* bbEntry = BasicBlock::Create(ctx, "entry", func);
-    IRBuilder<> builder(bbEntry);
+    tuplex::codegen::IRBuilder builder(bbEntry);
 
     auto val = env->getTupleElement(builder, argTupleType, argMap["inRow"], 0);
     env->setTupleElement(builder, retTupleType, argMap["outRow"], 1, SerializableValue(env->f64Const(3.141), nullptr, nullptr));
@@ -405,7 +410,7 @@ TEST(LLVMENV, SingleElementStructTypes) {
 
     // codegen
     BasicBlock* bbEntry = BasicBlock::Create(ctx, "entry", func);
-    IRBuilder<> builder(bbEntry);
+    ::tuplex::codegen::IRBuilder builder(bbEntry);
 
     auto et_res = env->getTupleElement(builder, et_type, argMap["outRow"], 0);
     auto ed_res = env->getTupleElement(builder, ed_type, argMap["inRow"], 0);
@@ -450,12 +455,12 @@ TEST(LLVMENV, StringConstantFromGlobal) {
 #endif
 
     BasicBlock* bb = BasicBlock::Create(ctx, "body", func);
-    IRBuilder<> builder(bb);
+    tuplex::codegen::IRBuilder builder(bb);
 
     auto strObj = env->strConst(builder, "teststring");
     builder.CreateRet(env->i64Const(0));
 
-    EXPECT_EQ(codegen::globalVariableToString(strObj), "teststring");
+    EXPECT_EQ(env->globalVariableToString(strObj), "teststring");
 }
 
 extern "C" void throwingFunc() {
@@ -577,13 +582,70 @@ namespace tuplex {
             auto args = mapLLVMFunctionArgs(func, {"x"});
 
             auto body = BasicBlock::Create(env->getContext(), "body", func);
-            IRBuilder<> builder(body);
+            IRBuilder builder(body);
 
             auto ret = builder.CreateAdd(args["x"], env->i64Const(i_const));
 
             builder.CreateRet(ret);
             return func;
         }
+
+        llvm::Function *createcJSONGetItemFunction(LLVMEnvironment *env, const std::string &name,
+                                              decltype(malloc) allocator) {
+            using namespace llvm;
+
+            auto& logger = Logger::instance().logger("codegen");
+
+            assert(env);
+            assert(allocator == malloc || allocator == runtime::rtmalloc); // only two supported alloc functions. Could support any in future...
+
+            // create new function
+            // the pointers point to a string and key
+            auto func_type = FunctionType::get(env->i64Type(), {env->i8ptrType(), env->i8ptrType()}, false);
+            auto func = Function::Create(func_type, Function::ExternalLinkage, name, env->getModule().get());
+
+            // set arg names
+            auto args = mapLLVMFunctionArgs(func, {"obj", "key"});
+
+            auto body = BasicBlock::Create(env->getContext(), "body", func);
+            IRBuilder builder(body);
+
+            // parse cjson
+            auto j = call_cjson_parse(builder, args["obj"]);
+            llvm::Value* item_found = nullptr;
+            auto item = call_cjson_getitem(builder,j, args["key"], &item_found);
+
+
+            // compare whether item is nullptr or not.
+            auto yy_llvm_type = get_or_create_yyjson_shim_type(builder.getContext());
+            auto item_obj = builder.CreateStructLoadOrExtract(get_or_create_yyjson_shim_type(builder.getContext()), item, 1); // <-- this is get_yyjson_mut_obj.
+            auto is_nullptr = builder.CreateICmpEQ(item_obj, llvm::ConstantPointerNull::get(
+                    static_cast<PointerType *>(env->i8ptrType())));
+            env->printValue(builder, is_nullptr, "is item nullptr: ");
+
+            auto bbPrint = llvm::BasicBlock::Create(env->getContext(), "print_generic_dict_get", builder.GetInsertBlock()->getParent());
+            auto bbDone = llvm::BasicBlock::Create(env->getContext(), "print_done", builder.GetInsertBlock()->getParent());
+            //builder.CreateCondBr(item_found, bbPrint, bbDone);
+            builder.CreateBr(bbPrint);
+
+            builder.SetInsertPoint(bbPrint);
+            // print start.
+            auto str_val = call_cjson_to_string(builder, j);
+            env->debugPrint(builder, "Item found:");
+            env->printValue(builder, str_val.val, "cJSON object: ");
+            env->printValue(builder, args["key"], "key: ");
+            auto str_item = call_cjson_to_string(builder, item);
+            env->printValue(builder, str_item.val, "cJSON item indexed by key: ");
+            // print end.
+            builder.CreateBr(bbDone);
+            builder.SetInsertPoint(bbDone);
+
+            auto ret = builder.CreateZExtOrTrunc(item_found, env->i64Type());
+
+            builder.CreateRet(ret);
+            return func;
+        }
+
     }
 }
 
@@ -686,4 +748,56 @@ TEST(LLVMENV, CPUEnvString) {
     auto info = compileEnvironmentAsJsonString();
     std::cout<<"CPU info:\n"<<info<<std::endl;
     ASSERT_TRUE(info.size() > 10);
+}
+
+TEST(LLVMENV, cJSONGetItem) {
+    using namespace std;
+    using namespace tuplex;
+    using namespace tuplex::codegen;
+
+    auto jit = make_unique<JITCompiler>();
+    // init runtime memory
+    runtime::init(ContextOptions::defaults().RUNTIME_LIBRARY().toPath());
+
+    auto env = make_shared<LLVMEnvironment>();
+
+    // build basic add function (for testing)
+    auto func = createcJSONGetItemFunction(env.get(), "json_getitem", runtime::rtmalloc);
+
+    // emit object file (to string)
+    auto obj_buf = compileToObjectFile(*env->getModule().get());
+
+    ASSERT_FALSE(obj_buf.empty());
+
+    // write to file
+    auto file_path = URI("tests/llvmenv/objectfile/test2.o");
+    bufferToFile(file_path, &obj_buf[0], obj_buf.size());
+
+    // compile buffer
+    auto object_buf = fileToString(file_path);
+    bool rc = jit->compileObjectBuffer(object_buf);
+
+    EXPECT_TRUE(rc);
+
+    // get function (add) and call it
+    auto fun = reinterpret_cast<int64_t(*)(const char*, const char*)>(jit->getAddrOfSymbol("json_getitem"));
+
+    ASSERT_TRUE(fun);
+
+    // Now test various cjson scenarios.
+    std::vector<std::tuple<std::string, std::string, bool>> test_values{make_tuple("{}\n", "hello", false), make_tuple("{\"k\":20}\n", "k", true)};
+    for(auto t : test_values) {
+        char* buffer = new char[1024];
+        memset(buffer, 0, 1024);
+        memcpy(buffer, std::get<0>(t).c_str(), std::get<0>(t).size());
+
+        // test manual:
+#ifdef USE_YYJSON_INSTEAD
+        auto doc = yyjson_mut_parse(buffer, strlen(buffer));
+        auto val = yyjson_mut_doc_get_root(doc);
+#endif
+
+        auto i_rc = fun(buffer, std::get<1>(t).c_str());
+        EXPECT_EQ(i_rc, std::get<2>(t));
+    }
 }

@@ -30,7 +30,7 @@ namespace tuplex {
     public:
         IBackend() = delete;
         IBackend(const IBackend& other) = delete;
-        IBackend(const Context& context) : _context(context) {}
+        IBackend(Context& context) : _context(&context) {}
 
         // driver, i.e. where to store local data.
         virtual Executor* driver() = 0;
@@ -38,10 +38,12 @@ namespace tuplex {
 
         virtual ~IBackend() {} // virtual destructor needed b.c. of smart pointers
 
-        virtual const Context& context() const { return _context; }
+        virtual const Context& context() const { return *_context; }
+
+        void setContext(Context& context);
 
     private:
-        const Context& _context;
+        Context* _context;
     };
 
     inline std::unordered_map<std::tuple<int64_t, ExceptionCode>, size_t> merge_ecounts(std::unordered_map<std::tuple<int64_t, ExceptionCode>, size_t> lhs,

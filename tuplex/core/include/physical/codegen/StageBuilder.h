@@ -17,6 +17,7 @@
 // include all logical ops here
 #include <logical/Operators.h>
 #include "physical/codegen/CodeGenerationContext.h"
+#include "physical/codegen/StagePlanner.h"
 
 namespace tuplex {
     namespace codegen {
@@ -253,6 +254,8 @@ namespace tuplex {
          * @param operators
          */
         extern python::Type intermediateType(const std::vector<std::shared_ptr<LogicalOperator>>& operators);
+
+        extern void apply_stage_builder_conf_to_planner(const StageBuilderConfiguration& conf, StagePlanner& planner);
     }
 }
 

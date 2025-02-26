@@ -1167,13 +1167,13 @@ TEST_F(WrapperTest, FlightSimulateSpark) {
     // "optimizer.mergeExceptionsInOrder": false,
     // "optimizer.filterPushdown": true}
     PythonContext ctx("python", "",
-                    "{\"tuplex.webui.enable\":\"False\", \"tuplex.useLLVMOptimizer\" : \"True\","
-                    " \"tuplex.optimizer.retypeUsingOptimizedInputSchema\" : \"True\","
-                    " \"tuplex.optimizer.optimizer.selectionPushdown\" : \"True\","
-                    " \"tuplex.resolveWithInterpreterOnly\":\"False\","
-                    "\"tuplex.executorCount\":0,"
-                    "\"tuplex.driverMemory\":\"6G\","
-                    "\"tuplex.scratchDir\": \"file://" + scratchDir + "\"}");
+                      "{\"tuplex.webui.enable\":\"False\", \"tuplex.useLLVMOptimizer\" : \"True\","
+                      " \"tuplex.optimizer.retypeUsingOptimizedInputSchema\" : \"True\","
+                      " \"tuplex.optimizer.optimizer.selectionPushdown\" : \"True\","
+                      " \"tuplex.resolveWithInterpreterOnly\":\"False\","
+                      "\"tuplex.executorCount\":0,"
+                      "\"tuplex.driverMemory\":\"6G\","
+                      "\"tuplex.scratchDir\": \"file://" + scratchDir + "\"}");
 
 
     string bts_path = "../resources/flights_on_time_performance_2019_01.sample.csv";
@@ -1193,11 +1193,11 @@ TEST_F(WrapperTest, FlightSimulateSpark) {
         //         'Diverted', 'OriginCityName', 'AirTime', 'Origin', 'Dest', 'DestCityName',
         //         'DivReachedDest', 'TaxiIn', 'DepDelay', 'OpCarrierFlNum']
         auto time_req_cols_obj = python::runAndGet("time_req_cols = ['ActualElapsedTime', 'Distance', 'CancellationCode', 'DivActualElapsedTime', 'OpUniqueCarrier',\n"
-                          "            'LateAircraftDelay', 'NasDelay', 'ArrDelay', 'SecurityDelay', 'CarrierDelay',\n"
-                          "            'CrsArrTime', 'TaxiOut', 'CrsElapsedTime', 'WeatherDelay', 'DayOfWeek', 'DayOfMonth', 'Month', 'Year',\n"
-                          "            'CrsDepTime', 'Cancelled',\n"
-                          "            'Diverted', 'OriginCityName', 'AirTime', 'Origin', 'Dest', 'DestCityName',\n"
-                          "            'DivReachedDest', 'TaxiIn', 'DepDelay', 'OpCarrierFlNum']", "time_req_cols");
+                                                   "            'LateAircraftDelay', 'NasDelay', 'ArrDelay', 'SecurityDelay', 'CarrierDelay',\n"
+                                                   "            'CrsArrTime', 'TaxiOut', 'CrsElapsedTime', 'WeatherDelay', 'DayOfWeek', 'DayOfMonth', 'Month', 'Year',\n"
+                                                   "            'CrsDepTime', 'Cancelled',\n"
+                                                   "            'Diverted', 'OriginCityName', 'AirTime', 'Origin', 'Dest', 'DestCityName',\n"
+                                                   "            'DivReachedDest', 'TaxiIn', 'DepDelay', 'OpCarrierFlNum']", "time_req_cols");
         auto time_req_cols = py::reinterpret_borrow<py::list>(time_req_cols_obj);
 
         auto df = ctx.csv(bts_path);
@@ -1228,9 +1228,9 @@ TEST_F(WrapperTest, FlightSimulateSpark) {
 
         auto null_values_obj = python::runAndGet("NV=['', 'N/a', 'N/A']", "NV");
         auto airport_cols_obj = python::runAndGet("airport_cols = ['ICAOCode', 'IATACode', 'AirportName', 'AirportCity', 'Country',\n"
-                                             "                'LatitudeDegrees', 'LatitudeMinutes', 'LatitudeSeconds', 'LatitudeDirection',\n"
-                                             "                'LongitudeDegrees', 'LongitudeMinutes', 'LongitudeSeconds',\n"
-                                             "                'LongitudeDirection', 'Altitude', 'LatitudeDecimal', 'LongitudeDecimal']", "airport_cols");
+                                                  "                'LatitudeDegrees', 'LatitudeMinutes', 'LatitudeSeconds', 'LatitudeDirection',\n"
+                                                  "                'LongitudeDegrees', 'LongitudeMinutes', 'LongitudeSeconds',\n"
+                                                  "                'LongitudeDirection', 'Altitude', 'LatitudeDecimal', 'LongitudeDecimal']", "airport_cols");
         auto null_values = py::reinterpret_borrow<py::list>(null_values_obj);
         auto airport_cols = py::reinterpret_borrow<py::list>(airport_cols_obj);
         auto df_airports = ctx.csv(airport_path, airport_cols, true, false, ":", "\"", null_values);
@@ -1762,11 +1762,11 @@ TEST_F(WrapperTest, TPCHQ6) {
 
         auto path = "../resources/tpch/lineitem.tbl"; // SF 0.01
         c.csv(path, list, false, false, "|").mapColumn("l_shipdate", "lambda x: int(x.replace('-', ''))", "")
-        .filter("lambda x: 19940101 <= x['l_shipdate'] < 19940101 + 10000", "")
-        .filter("lambda x: 0.06 - 0.01 <= x['l_discount'] <= 0.06 + 0.01", "")
-        .filter("lambda x: x['l_quantity'] < 24", "")
-        .aggregate("lambda a, b: a + b", "", "lambda a, x: a + x[5] * x[6]", "", init_val)
-        .show();
+                .filter("lambda x: 19940101 <= x['l_shipdate'] < 19940101 + 10000", "")
+                .filter("lambda x: 0.06 - 0.01 <= x['l_discount'] <= 0.06 + 0.01", "")
+                .filter("lambda x: x['l_quantity'] < 24", "")
+                .aggregate("lambda a, b: a + b", "", "lambda a, x: a + x[5] * x[6]", "", init_val)
+                .show();
     }
 }
 
@@ -1917,130 +1917,130 @@ TEST_F(WrapperTest, SwapIII) {
 namespace tuplex {
 
     static auto extractBd_c = "def extractBd(x):\n"
-                       "   val = x['facts and features']\n"
-                       "   max_idx = val.find(' bd')\n"
-                       "   if max_idx < 0:\n"
-                       "       max_idx = len(val)\n"
-                       "   s = val[:max_idx]\n"
-                       "   # find comma before\n"
-                       "   split_idx = s.rfind(',')\n"
-                       "   if split_idx < 0:\n"
-                       "       split_idx = 0\n"
-                       "   else:\n"
-                       "       split_idx += 2\n"
-                       "   r = s[split_idx:]\n"
-                       "   return int(r)";
+                              "   val = x['facts and features']\n"
+                              "   max_idx = val.find(' bd')\n"
+                              "   if max_idx < 0:\n"
+                              "       max_idx = len(val)\n"
+                              "   s = val[:max_idx]\n"
+                              "   # find comma before\n"
+                              "   split_idx = s.rfind(',')\n"
+                              "   if split_idx < 0:\n"
+                              "       split_idx = 0\n"
+                              "   else:\n"
+                              "       split_idx += 2\n"
+                              "   r = s[split_idx:]\n"
+                              "   return int(r)";
 
     static auto extractBdAltLogic_c = "def extractBd(x):\n"
-                               "   val = x['facts and features']\n"
-                               "   max_idx = val.find(' bd')\n"
-                               "   if max_idx < 0:\n"
-                               "       max_idx = len(val)\n"
-                               "   s = val[:max_idx]\n"
-                               "   # find comma before\n"
-                               "   split_idx = s.rfind(',')\n"
-                               "   if split_idx < 0:\n"
-                               "       split_idx = 0\n"
-                               "   else:\n"
-                               "       split_idx += 2\n"
-                               "   r = s[split_idx:]\n"
-                               "   m = re.search(r'^\\d+$', r)\n"
-                               "   if m:\n"
-                               "       return int(r)\n"
-                               "   else:\n"
-                               "       return None";
+                                      "   val = x['facts and features']\n"
+                                      "   max_idx = val.find(' bd')\n"
+                                      "   if max_idx < 0:\n"
+                                      "       max_idx = len(val)\n"
+                                      "   s = val[:max_idx]\n"
+                                      "   # find comma before\n"
+                                      "   split_idx = s.rfind(',')\n"
+                                      "   if split_idx < 0:\n"
+                                      "       split_idx = 0\n"
+                                      "   else:\n"
+                                      "       split_idx += 2\n"
+                                      "   r = s[split_idx:]\n"
+                                      "   m = re.search(r'^\\d+$', r)\n"
+                                      "   if m:\n"
+                                      "       return int(r)\n"
+                                      "   else:\n"
+                                      "       return None";
 
     static auto extractBa_c = "def extractBa(x):\n"
-                       "    val = x['facts and features']\n"
-                       "    max_idx = val.find(' ba')\n"
-                       "    if max_idx < 0:\n"
-                       "        max_idx = len(val)\n"
-                       "    s = val[:max_idx]\n"
-                       "    # find comma before\n"
-                       "    split_idx = s.rfind(',')\n"
-                       "    if split_idx < 0:\n"
-                       "        split_idx = 0\n"
-                       "    else:\n"
-                       "        split_idx += 2\n"
-                       "    r = s[split_idx:]\n"
-                       "    return math.ceil(2.0 * float(r)) / 2.0\n";
+                              "    val = x['facts and features']\n"
+                              "    max_idx = val.find(' ba')\n"
+                              "    if max_idx < 0:\n"
+                              "        max_idx = len(val)\n"
+                              "    s = val[:max_idx]\n"
+                              "    # find comma before\n"
+                              "    split_idx = s.rfind(',')\n"
+                              "    if split_idx < 0:\n"
+                              "        split_idx = 0\n"
+                              "    else:\n"
+                              "        split_idx += 2\n"
+                              "    r = s[split_idx:]\n"
+                              "    return math.ceil(2.0 * float(r)) / 2.0\n";
     static auto extractSqft_c = "def extractSqft(x):\n"
-                         "    val = x['facts and features']\n"
-                         "    max_idx = val.find(' sqft')\n"
-                         "    if max_idx < 0:\n"
-                         "        max_idx = len(val)\n"
-                         "    s = val[:max_idx]\n"
-                         "    split_idx = s.rfind('ba ,')\n"
-                         "    if split_idx < 0:\n"
-                         "        split_idx = 0\n"
-                         "    else:\n"
-                         "        split_idx += 5\n"
-                         "    r = s[split_idx:]\n"
-                         "    r = r.replace(',', '')\n"
-                         "    return int(r)";
+                                "    val = x['facts and features']\n"
+                                "    max_idx = val.find(' sqft')\n"
+                                "    if max_idx < 0:\n"
+                                "        max_idx = len(val)\n"
+                                "    s = val[:max_idx]\n"
+                                "    split_idx = s.rfind('ba ,')\n"
+                                "    if split_idx < 0:\n"
+                                "        split_idx = 0\n"
+                                "    else:\n"
+                                "        split_idx += 5\n"
+                                "    r = s[split_idx:]\n"
+                                "    r = r.replace(',', '')\n"
+                                "    return int(r)";
     static auto extractOffer_c = "def extractOffer(x):\n"
-                          "    offer = x['title'].lower()\n"
-                          "    if 'sale' in offer:\n"
-                          "        return 'sale'\n"
-                          "    if 'rent' in offer:\n"
-                          "        return 'rent'\n"
-                          "    if 'sold' in offer:\n"
-                          "        return 'sold'\n"
-                          "    if 'foreclose' in offer.lower():\n"
-                          "        return 'foreclosed'\n"
-                          "    return offer";
+                                 "    offer = x['title'].lower()\n"
+                                 "    if 'sale' in offer:\n"
+                                 "        return 'sale'\n"
+                                 "    if 'rent' in offer:\n"
+                                 "        return 'rent'\n"
+                                 "    if 'sold' in offer:\n"
+                                 "        return 'sold'\n"
+                                 "    if 'foreclose' in offer.lower():\n"
+                                 "        return 'foreclosed'\n"
+                                 "    return offer";
     static auto extractType_c = "def extractType(x):\n"
-                         "    t = x['title'].lower()\n"
-                         "    type = 'unknown'\n"
-                         "    if 'condo' in t or 'apartment' in t:\n"
-                         "        type = 'condo'\n"
-                         "    if 'house' in t:\n"
-                         "        type = 'house'\n"
-                         "    return type";
+                                "    t = x['title'].lower()\n"
+                                "    type = 'unknown'\n"
+                                "    if 'condo' in t or 'apartment' in t:\n"
+                                "        type = 'condo'\n"
+                                "    if 'house' in t:\n"
+                                "        type = 'house'\n"
+                                "    return type";
     static auto extractPrice_c = "def extractPrice(x):\n"
-                          "    price = x['price']\n"
-                          "    p = 0\n"
-                          "    if x['offer'] == 'sold':\n"
-                          "        # price is to be calculated using price/sqft * sqft\n"
-                          "        val = x['facts and features']\n"
-                          "        s = val[val.find('Price/sqft:') + len('Price/sqft:') + 1:]\n"
-                          "        r = s[s.find('$')+1:s.find(', ') - 1]\n"
-                          "        price_per_sqft = int(r)\n"
-                          "        p = price_per_sqft * x['sqft']\n"
-                          "    elif x['offer'] == 'rent':\n"
-                          "        max_idx = price.rfind('/')\n"
-                          "        p = int(price[1:max_idx].replace(',', ''))\n"
-                          "    else:\n"
-                          "        # take price from price column\n"
-                          "        p = int(price[1:].replace(',', ''))\n"
-                          "    return p";
+                                 "    price = x['price']\n"
+                                 "    p = 0\n"
+                                 "    if x['offer'] == 'sold':\n"
+                                 "        # price is to be calculated using price/sqft * sqft\n"
+                                 "        val = x['facts and features']\n"
+                                 "        s = val[val.find('Price/sqft:') + len('Price/sqft:') + 1:]\n"
+                                 "        r = s[s.find('$')+1:s.find(', ') - 1]\n"
+                                 "        price_per_sqft = int(r)\n"
+                                 "        p = price_per_sqft * x['sqft']\n"
+                                 "    elif x['offer'] == 'rent':\n"
+                                 "        max_idx = price.rfind('/')\n"
+                                 "        p = int(price[1:max_idx].replace(',', ''))\n"
+                                 "    else:\n"
+                                 "        # take price from price column\n"
+                                 "        p = int(price[1:].replace(',', ''))\n"
+                                 "    return p";
 
     static auto resolveBd_c = "def resolveBd(x):\n"
-                       "    if 'Studio' in x['facts and features']:\n"
-                       "        return 1\n"
-                       "    raise ValueError\n";
+                              "    if 'Studio' in x['facts and features']:\n"
+                              "        return 1\n"
+                              "    raise ValueError\n";
 
     static auto resolveBa_c = "def extractBa(x):\n"
-                       "    val = x['facts and features']\n"
-                       "    max_idx = val.find(' ba')\n"
-                       "    if max_idx < 0:\n"
-                       "        max_idx = len(val)\n"
-                       "    s = val[:max_idx]\n"
-                       "    # find comma before\n"
-                       "    split_idx = s.rfind(',')\n"
-                       "    if split_idx < 0:\n"
-                       "        split_idx = 0\n"
-                       "    else:\n"
-                       "        split_idx += 2\n"
-                       "    r = s[split_idx:]\n"
-                       "    return math.ceil(float(r))";
+                              "    val = x['facts and features']\n"
+                              "    max_idx = val.find(' ba')\n"
+                              "    if max_idx < 0:\n"
+                              "        max_idx = len(val)\n"
+                              "    s = val[:max_idx]\n"
+                              "    # find comma before\n"
+                              "    split_idx = s.rfind(',')\n"
+                              "    if split_idx < 0:\n"
+                              "        split_idx = 0\n"
+                              "    else:\n"
+                              "        split_idx += 2\n"
+                              "    r = s[split_idx:]\n"
+                              "    return math.ceil(float(r))";
 
     static auto extractZipcodeAltLogic_c = "def extractZipcode(x):\n"
-                                            "    m = re.search(r'^\\d+$', x['postal_code'])\n"
-                                            "    if m:\n"
-                                            "        return '%05d' % int(x['postal_code'])\n"
-                                            "    else:\n"
-                                            "        return None";
+                                           "    m = re.search(r'^\\d+$', x['postal_code'])\n"
+                                           "    if m:\n"
+                                           "        return '%05d' % int(x['postal_code'])\n"
+                                           "    else:\n"
+                                           "        return None";
 
 
     PythonDataSet zillowDirtyNoResolvers(PythonContext& ctx, const std::string& z_path) {
@@ -2057,18 +2057,18 @@ namespace tuplex {
                                                 "'bedrooms', 'bathrooms', 'sqft', 'offer', 'type', 'price']", "L");
 
         return ctx.csv(z_path)
-           .withColumn("bedrooms", extractBd_c, "")
-           .filter("lambda x: x['bedrooms'] < 10", "")
-           .withColumn("type", extractType_c, "")
-           .filter("lambda x: x['type'] == 'house'", "")
-           .withColumn("zipcode", "lambda x: '%05d' % int(x['postal_code'])", "")
-           .mapColumn("city", "lambda x: x[0].upper() + x[1:].lower()", "")
-           .withColumn("bathrooms", extractBa_c, "", py::reinterpret_borrow<py::dict>(ba_closure))
-           .withColumn("sqft", extractSqft_c, "")
-           .withColumn("offer", extractOffer_c, "")
-           .withColumn("price", extractPrice_c, "")
-           .filter("lambda x: 100000 < x['price'] < 2e7", "")
-           .selectColumns(py::reinterpret_borrow<py::list>(cols_to_select));
+                .withColumn("bedrooms", extractBd_c, "")
+                .filter("lambda x: x['bedrooms'] < 10", "")
+                .withColumn("type", extractType_c, "")
+                .filter("lambda x: x['type'] == 'house'", "")
+                .withColumn("zipcode", "lambda x: '%05d' % int(x['postal_code'])", "")
+                .mapColumn("city", "lambda x: x[0].upper() + x[1:].lower()", "")
+                .withColumn("bathrooms", extractBa_c, "", py::reinterpret_borrow<py::dict>(ba_closure))
+                .withColumn("sqft", extractSqft_c, "")
+                .withColumn("offer", extractOffer_c, "")
+                .withColumn("price", extractPrice_c, "")
+                .filter("lambda x: 100000 < x['price'] < 2e7", "")
+                .selectColumns(py::reinterpret_borrow<py::list>(cols_to_select));
     }
 
     PythonDataSet zillowDirtyWithResolvers(PythonContext& ctx, const std::string& z_path) {
@@ -2179,24 +2179,24 @@ namespace tuplex {
                                  "        return None";
 
         return ctx.csv(z_path)
-                  .withColumn("bedrooms", extractBd_alt_c, "", py::reinterpret_borrow<py::dict>(ba_closure))
-                  .filter("lambda x: x['bedrooms'] != None and x['bedrooms'] < 10", "")
-                  .withColumn("type", extractType_c, "", py::reinterpret_borrow<py::dict>(ba_closure))
-                  .filter("lambda x: x['type'] == 'house'", "")
-                  .filter("lambda x: x['postal_code'] != None", "")
-                  .withColumn("zipcode", "lambda x: '%05d' % int(x['postal_code'])", "")
-                  .filter("lambda x: x['zipcode'] != None", "")
-                  .mapColumn("zipcode", "lambda x: str(x)", "")
-                  .mapColumn("city", "lambda x: x[0].upper() + x[1:].lower()", "")
-                  .withColumn("bathrooms", extractBa_alt_c, "", py::reinterpret_borrow<py::dict>(ba_closure))
-                  .filter("lambda x: x['bathrooms'] != None", "")
-                  .mapColumn("bathrooms", "lambda x: float(x)", "")
-                  .withColumn("sqft", extractSqft_alt_c, "", py::reinterpret_borrow<py::dict>(ba_closure))
-                  .filter("lambda x: x['sqft'] != None", "")
-                  .mapColumn("sqft", "lambda x: int(x)", "")
-                  .withColumn("offer", extractOffer_c, "", py::reinterpret_borrow<py::dict>(ba_closure))
-                  .withColumn("price", extractPrice_c, "", py::reinterpret_borrow<py::dict>(ba_closure))
-                  .filter("lambda x: 100000 < x['price'] < 2e7", "")
+                .withColumn("bedrooms", extractBd_alt_c, "", py::reinterpret_borrow<py::dict>(ba_closure))
+                .filter("lambda x: x['bedrooms'] != None and x['bedrooms'] < 10", "")
+                .withColumn("type", extractType_c, "", py::reinterpret_borrow<py::dict>(ba_closure))
+                .filter("lambda x: x['type'] == 'house'", "")
+                .filter("lambda x: x['postal_code'] != None", "")
+                .withColumn("zipcode", "lambda x: '%05d' % int(x['postal_code'])", "")
+                .filter("lambda x: x['zipcode'] != None", "")
+                .mapColumn("zipcode", "lambda x: str(x)", "")
+                .mapColumn("city", "lambda x: x[0].upper() + x[1:].lower()", "")
+                .withColumn("bathrooms", extractBa_alt_c, "", py::reinterpret_borrow<py::dict>(ba_closure))
+                .filter("lambda x: x['bathrooms'] != None", "")
+                .mapColumn("bathrooms", "lambda x: float(x)", "")
+                .withColumn("sqft", extractSqft_alt_c, "", py::reinterpret_borrow<py::dict>(ba_closure))
+                .filter("lambda x: x['sqft'] != None", "")
+                .mapColumn("sqft", "lambda x: int(x)", "")
+                .withColumn("offer", extractOffer_c, "", py::reinterpret_borrow<py::dict>(ba_closure))
+                .withColumn("price", extractPrice_c, "", py::reinterpret_borrow<py::dict>(ba_closure))
+                .filter("lambda x: 100000 < x['price'] < 2e7", "")
                 .selectColumns(py::reinterpret_borrow<py::list>(cols_to_select));
     }
 }
@@ -2223,21 +2223,21 @@ TEST_F(WrapperTest, ZillowDirty) {
                      " \"optimizer.selectionPushdown\": false, "
                      "\"optimizer.generateParser\": false,"
                      "\"tuplex.scratchDir\": \"file://" + scratchDir + "\","
-                     "\"optimizer.mergeExceptionsInOrder\": true}";
+                                                                       "\"optimizer.mergeExceptionsInOrder\": true}";
 
     auto json_opts_alt = "{\"webui.enable\": false,"
-                     " \"executorCount\": 6,"
-                     " \"executorMemory\": \"64MB\","
-                     " \"driverMemory\": \"64MB\","
-                     " \"partitionSize\": \"4MB\","
-                     " \"runTimeMemory\": \"4MB\","
-                     " \"useLLVMOptimizer\": true,"
-                     " \"optimizer.retypeUsingOptimizedInputSchema\": false,"
-                     " \"optimizer.selectionPushdown\": false, "
-                     "\"tuplex.scratchDir\": \"file://" + scratchDir + "\","
-                     "\"optimizer.generateParser\": false,"
+                         " \"executorCount\": 6,"
+                         " \"executorMemory\": \"64MB\","
+                         " \"driverMemory\": \"64MB\","
+                         " \"partitionSize\": \"4MB\","
+                         " \"runTimeMemory\": \"4MB\","
+                         " \"useLLVMOptimizer\": true,"
+                         " \"optimizer.retypeUsingOptimizedInputSchema\": false,"
+                         " \"optimizer.selectionPushdown\": false, "
+                         "\"tuplex.scratchDir\": \"file://" + scratchDir + "\","
+                                                                           "\"optimizer.generateParser\": false,"
 
-                     "\"optimizer.mergeExceptionsInOrder\": false}";
+                                                                           "\"optimizer.mergeExceptionsInOrder\": false}";
 
     z_path = "../resources/zillow_dirty.csv";
 
@@ -2262,7 +2262,7 @@ TEST_F(WrapperTest, ZillowDirty) {
         EXPECT_EQ(last_chars, needle);
 
         // check that both in order and out-of-order merge have the same number of result rows
-         auto in_order_rows_res = zillowDirtyWithResolvers(ctx, z_path).collect().ptr();
+        auto in_order_rows_res = zillowDirtyWithResolvers(ctx, z_path).collect().ptr();
         auto out_of_order_rows_res = zillowDirtyWithResolvers(ctx_alt, z_path).collect().ptr();
 
         // both should be list
@@ -2346,10 +2346,10 @@ TEST_F(WrapperTest, LambdaResolveI) {
     using namespace std;
 
     auto ctx_opts = "{\"webui.enable\": false,"
-                         " \"driverMemory\": \"8MB\","
-                         " \"partitionSize\": \"256KB\","
-                         "\"tuplex.scratchDir\": \"file://" + scratchDir + "\","
-                         "\"resolveWithInterpreterOnly\": true}";
+                    " \"driverMemory\": \"8MB\","
+                    " \"partitionSize\": \"256KB\","
+                    "\"tuplex.scratchDir\": \"file://" + scratchDir + "\","
+                                                                      "\"resolveWithInterpreterOnly\": true}";
     PythonContext ctx("", "", ctx_opts);
 
 
@@ -2367,7 +2367,7 @@ TEST_F(WrapperTest, LambdaResolveI) {
 
         // second w. resolve
         auto res2 = ctx.parallelize(object_list).map("lambda x: 1. / x", "")
-           .resolve(ecToI64(ExceptionCode::ZERODIVISIONERROR), "lambda x: 42", "").collect();
+                .resolve(ecToI64(ExceptionCode::ZERODIVISIONERROR), "lambda x: 42", "").collect();
         ASSERT_TRUE(res2.ptr());
         ASSERT_TRUE(PyList_Check(res2.ptr()));
         EXPECT_EQ(PyList_Size(res2.ptr()), 5);
@@ -2388,7 +2388,7 @@ TEST_F(WrapperTest, CollectPyObjects) {
                     " \"driverMemory\": \"8MB\","
                     " \"partitionSize\": \"256KB\","
                     "\"tuplex.scratchDir\": \"file://" + scratchDir + "\","
-                    "\"resolveWithInterpreterOnly\": true}";
+                                                                      "\"resolveWithInterpreterOnly\": true}";
     PythonContext ctx("", "", ctx_opts);
 
 
@@ -2427,7 +2427,7 @@ TEST_F(WrapperTest, SingleCharCSVField) {
                     " \"driverMemory\": \"8MB\","
                     " \"partitionSize\": \"256KB\","
                     "\"tuplex.scratchDir\": \"file://" + scratchDir + "\","
-                    "\"resolveWithInterpreterOnly\": true}";
+                                                                      "\"resolveWithInterpreterOnly\": true}";
     PythonContext ctx("", "", ctx_opts);
 
 
@@ -2458,7 +2458,7 @@ TEST_F(WrapperTest, NYC311) {
                     " \"partitionSize\": \"256KB\","
                     "\"executorCount\": 0,"
                     "\"tuplex.scratchDir\": \"file://" + scratchDir + "\","
-                    "\"resolveWithInterpreterOnly\": true}";
+                                                                      "\"resolveWithInterpreterOnly\": true}";
 
     auto fix_zip_codes_c = "def fix_zip_codes(zips):\n"
                            "    if not zips:\n"
@@ -2592,7 +2592,7 @@ TEST_F(WrapperTest, SelectColumns) {
 TEST_F(WrapperTest, PartitionRelease) {
     // this test checks that when context is destroyed, partitions are also properly released
 
-      using namespace tuplex;
+    using namespace tuplex;
     using namespace std;
 
     auto ctx_opts = "{\"webui.enable\": false,"
@@ -2600,7 +2600,7 @@ TEST_F(WrapperTest, PartitionRelease) {
                     " \"partitionSize\": \"256KB\","
                     "\"executorCount\": 0,"
                     "\"tuplex.scratchDir\": \"file://" + scratchDir + "\","
-                    "\"resolveWithInterpreterOnly\": true}";
+                                                                      "\"resolveWithInterpreterOnly\": true}";
 
     auto fix_zip_codes_c = "def fix_zip_codes(zips):\n"
                            "    if not zips:\n"
@@ -2627,7 +2627,7 @@ TEST_F(WrapperTest, PartitionRelease) {
         // type hints:
         // vector<string>{"Unspecified", "NO CLUE", "NA", "N/A", "0", ""}
         ctx->csv(service_path,py::none(), true, false, "", "\"",
-                py::none(), py::reinterpret_borrow<py::dict>(type_dict))
+                 py::none(), py::reinterpret_borrow<py::dict>(type_dict))
                 .mapColumn("Incident Zip", fix_zip_codes_c, "")
                 .selectColumns(py::reinterpret_borrow<py::dict>(cols_to_select))
                 .unique().show();
@@ -2729,11 +2729,11 @@ TEST_F(WrapperTest, SumByKey) {
         auto key_columns = py::reinterpret_borrow<py::list>(key_columns_obj);
 
         auto res = ctx.parallelize(values, columns)
-                      .aggregateByKey("lambda a, b: a + b", "",
-                                      "lambda a, x: a +x['volume']", "",
-                                      pickled_val,
-                                      key_columns)
-                      .collect();
+                .aggregateByKey("lambda a, b: a + b", "",
+                                "lambda a, x: a +x['volume']", "",
+                                pickled_val,
+                                key_columns)
+                .collect();
         auto resObj = res.ptr();
         ASSERT_TRUE(PyList_Check(resObj));
         EXPECT_GE(PyList_Size(resObj), 2);
@@ -2813,9 +2813,9 @@ TEST_F(WrapperTest, AllRows311) {
         auto type_hints = py::reinterpret_borrow<py::dict>(type_hints_obj);
 
         auto res = ctx.csv(input_path, py::none(), true, false, "", "\"", null_values, type_hints)
-                      .mapColumn("IncidentZip", udf_code, "")
-                      .unique()
-                      .collect();
+                .mapColumn("IncidentZip", udf_code, "")
+                .unique()
+                .collect();
         auto resObj = res.ptr();
         ASSERT_TRUE(PyList_Check(resObj));
         EXPECT_GE(PyList_Size(resObj), 2);
@@ -2900,14 +2900,14 @@ TEST_F(WrapperTest, Subset311) {
                                                                       "\"resolveWithInterpreterOnly\": true}";
 
     std::string udf_code_1 = "def extract_month(row):\n"
-                      "  date = row['Created Date']\n"
-                      "  date = date[:date.find(' ')]\n"
-                      "  return int(date.split('/')[0])";
+                             "  date = row['Created Date']\n"
+                             "  date = date[:date.find(' ')]\n"
+                             "  return int(date.split('/')[0])";
 
     std::string udf_code_2 = "def extract_year(row):\n"
-                      "  date = row['Created Date']\n"
-                      "  date = date[:date.find(' ')]\n"
-                      "  return int(date.split('/')[-1])";
+                             "  date = row['Created Date']\n"
+                             "  date = date[:date.find(' ')]\n"
+                             "  return int(date.split('/')[-1])";
     auto udf_closure = PyDict_New();
     PyDict_SetItemString(udf_closure, "year_to_investigate", PyLong_FromLong(2011));
     auto closure = py::reinterpret_borrow<py::dict>(udf_closure);
@@ -2921,11 +2921,11 @@ TEST_F(WrapperTest, Subset311) {
     PythonContext ctx("", "", ctx_opts);
     {
         ctx.csv("../resources/311_subset.small.csv")
-           .withColumn("Month", udf_code_1, "")
-           .withColumn("Year", udf_code_2, "")
-           .filter("lambda row: 'Street Sign' in row['Complaint Type']", "")
-           .filter("lambda row: row['Year'] == year_to_investigate", "", closure)
-           .selectColumns(cols_to_select).show();
+                .withColumn("Month", udf_code_1, "")
+                .withColumn("Year", udf_code_2, "")
+                .filter("lambda row: 'Street Sign' in row['Complaint Type']", "")
+                .filter("lambda row: row['Year'] == year_to_investigate", "", closure)
+                .selectColumns(cols_to_select).show();
 
         std::cout<<std::endl; // flush
     }
@@ -2987,9 +2987,9 @@ TEST_F(WrapperTest, NonConformingResolve) {
                                                                       "\"resolveWithInterpreterOnly\": true}";
 
     std::string udf_throwing = "def f(a, b):\n"
-                              "  return (a, a / b)";
+                               "  return (a, a / b)";
     std::string udf_resolve = "def h(a, b):\n"
-                                "  return 'some string'";
+                              "  return 'some string'";
 
     auto initial_pickled = python::pickleObject(python::getMainModule(), PyLong_FromLong(0));
 
@@ -3006,7 +3006,7 @@ TEST_F(WrapperTest, NonConformingResolve) {
     PythonContext ctx("", "", ctx_opts);
     {
         auto ds = ctx.parallelize(data_list)
-        .map(udf_throwing, "");
+                .map(udf_throwing, "");
 
         auto schema_str = python::PyString_AsString(ds.types().ptr());
         std::cout<<schema_str<<std::endl;
@@ -3085,7 +3085,7 @@ TEST_F(WrapperTest, PythonGithubProcessing) {
         auto list = py::reinterpret_borrow<py::list>(listObj);
 
         ctx.json(pattern, true, true)
-            .withColumn("year", "lambda x: int(x['created_at'].split('-')[0])", "")
+                .withColumn("year", "lambda x: int(x['created_at'].split('-')[0])", "")
                 .withColumn("repo_id", repo_id_code, "")
                 .filter("lambda x: x['type'] == 'ForkEvent'", "")
                 .selectColumns(list)
@@ -3110,7 +3110,7 @@ TEST_F(WrapperTest, PythonGithubLocalWorkerProcessing) {
 //                    " \"optimizer.selectionPushdown\": false,"
 //                    " \"experimental.hyperspecialization\": true"
 //                    "}";
-unsigned num_workers = 0; // 0 is within the process.
+    unsigned num_workers = 0; // 0 is within the process.
     auto ctx_opts = "{\"tuplex.useLLVMOptimizer\": true, \"tuplex.autoUpcast\": true,"
                     " \"tuplex.allowUndefinedBehavior\": false, \"tuplex.optimizer.codeStats\": true,"
                     " \"tuplex.optimizer.generateParser\": false, \"tuplex.optimizer.nullValueOptimization\": true,"
@@ -3142,7 +3142,7 @@ unsigned num_workers = 0; // 0 is within the process.
                     "\"tuplex.experimental.s3PreCacheSize\": \"0\", "
                     "\"tuplex.experimental.specializationUnitSize\": \"0\", "
                     "\"tuplex.experimental.worker.numWorkers\": \"" + std::to_string(num_workers) + "\", "
-                    "\"tuplex.experimental.worker.workerPath\": \"/home/leonhards/projects/tuplex-public/tuplex/cmake-build-release-w-cereal/dist/bin/tuplex-worker\", \"tuplex.inputSplitSize\": \"2GB\", \"tuplex.lambda.sample.maxDetectionMemory\": \"auto\", \"tuplex.lambda.sample.maxDetectionRows\": \"auto\", \"tuplex.lambda.sample.samplesPerStrata\": \"auto\", \"tuplex.lambda.sample.strataSize\": \"auto\", \"tuplex.logDir\": \".\", \"tuplex.network.caFile\": \"\", \"tuplex.network.caPath\": \"\", \"tuplex.optimizer.constantFoldingOptimization\": \"false\", \"tuplex.partitionSize\": \"32MB\", \"tuplex.readBufferSize\": \"4KB\", \"tuplex.runTimeLibrary\": \"/home/leonhards/projects/tuplex-public/tuplex/build/dist/python/tuplex/libexec/tuplex_runtime.so\", \"tuplex.runTimeMemory\": \"128MB\", \"tuplex.runTimeMemoryBlockSize\": \"4MB\", \"tuplex.sample.maxDetectionMemory\": \"32MB\", \"tuplex.sample.samplesPerStrata\": \"10\", \"tuplex.sample.strataSize\": \"1024\", \"tuplex.scratchDir\": \"/tmp/tuplex-cache-leonhards\", \"tuplex.webui.mongodb.path\": \"/tmp/tuplex-cache-leonhards/mongodb\", \"tuplex.webui.mongodb.url\": \"localhost\", \"tuplex.webui.url\": \"localhost\"}";
+                                                                                                    "\"tuplex.experimental.worker.workerPath\": \"/home/leonhards/projects/tuplex-public/tuplex/cmake-build-release-w-cereal/dist/bin/tuplex-worker\", \"tuplex.inputSplitSize\": \"2GB\", \"tuplex.lambda.sample.maxDetectionMemory\": \"auto\", \"tuplex.lambda.sample.maxDetectionRows\": \"auto\", \"tuplex.lambda.sample.samplesPerStrata\": \"auto\", \"tuplex.lambda.sample.strataSize\": \"auto\", \"tuplex.logDir\": \".\", \"tuplex.network.caFile\": \"\", \"tuplex.network.caPath\": \"\", \"tuplex.optimizer.constantFoldingOptimization\": \"false\", \"tuplex.partitionSize\": \"32MB\", \"tuplex.readBufferSize\": \"4KB\", \"tuplex.runTimeLibrary\": \"/home/leonhards/projects/tuplex-public/tuplex/build/dist/python/tuplex/libexec/tuplex_runtime.so\", \"tuplex.runTimeMemory\": \"128MB\", \"tuplex.runTimeMemoryBlockSize\": \"4MB\", \"tuplex.sample.maxDetectionMemory\": \"32MB\", \"tuplex.sample.samplesPerStrata\": \"10\", \"tuplex.sample.strataSize\": \"1024\", \"tuplex.scratchDir\": \"/tmp/tuplex-cache-leonhards\", \"tuplex.webui.mongodb.path\": \"/tmp/tuplex-cache-leonhards/mongodb\", \"tuplex.webui.mongodb.url\": \"localhost\", \"tuplex.webui.url\": \"localhost\"}";
 
     PythonContext ctx("", "", ctx_opts);
     {
@@ -3182,7 +3182,7 @@ unsigned num_workers = 0; // 0 is within the process.
         // sampling mode=FIRST_ROWS|LAST_ROWS|FIRST_FILE|LAST_FILE
         ctx.json(pattern, true, true, SamplingMode::FIRST_FILE | SamplingMode::LAST_FILE | SamplingMode::FIRST_ROWS | SamplingMode::LAST_ROWS)
                 .filter("lambda x: x['type'] == 'ForkEvent'", "")
-        .withColumn("year", "lambda x: int(x['created_at'].split('-')[0])", "")
+                .withColumn("year", "lambda x: int(x['created_at'].split('-')[0])", "")
                 .withColumn("repo_id", repo_id_code, "")
 
                 .withColumn("commits", "lambda row: row['payload'].get('commits')", "")
@@ -3190,6 +3190,109 @@ unsigned num_workers = 0; // 0 is within the process.
                 .selectColumns(list)
                 .tocsv(output_path);
         std::cout<<std::endl; // flush
+    }
+}
+
+
+
+namespace tuplex {
+
+    static const SamplingMode DEFAULT_EXPERIMENT_SAMPLING_MODE=SamplingMode::FIRST_FILE | SamplingMode::LAST_FILE | SamplingMode::FIRST_ROWS | SamplingMode::LAST_ROWS;
+
+    void github_pipeline(PythonContext& ctx,
+                         const std::string& input_pattern,
+                         const std::string& output_path,
+                         const SamplingMode& sm=DEFAULT_EXPERIMENT_SAMPLING_MODE,
+                         const std::string& event_type="ForkEvent") {
+
+    }
+}
+
+TEST_F(WrapperTest, GithubGlobalStructsWithS3Source) {
+    using namespace std;
+    using namespace tuplex;
+
+    // Config for test (useful for profiling)
+    bool use_noop_mode = false;
+
+    // Test over github daily with generic hyper dicts.
+    auto input_pattern = "s3://tuplex-public/data/github_daily/*.json";
+    auto output_path = "./local-exp-with-s3/" + testName + "/";
+    // remove output files if they exist
+    cout << "Removing files (if they exist) from " << output_path << endl;
+    boost::filesystem::remove_all(output_path.c_str());
+
+    std::unordered_map<std::string, std::string> conf;
+
+    // enable sparse structs, disable generic dicts
+    conf["tuplex.optimizer.sparsifyStructs"] = "false";
+    conf["tuplex.optimizer.simplifyLargeStructs"] = "false";
+    conf["tuplex.experimental.useGenericDicts"] = "false";
+    conf["tuplex.experimental.hyperspecialization"] = "false";
+
+    unsigned num_workers = 0; // 0 is within the process.
+    auto ctx_opts = "{\"tuplex.useLLVMOptimizer\": true, \"tuplex.autoUpcast\": true,"
+                    " \"tuplex.allowUndefinedBehavior\": false, \"tuplex.optimizer.codeStats\": true,"
+                    " \"tuplex.optimizer.generateParser\": false, \"tuplex.optimizer.nullValueOptimization\": true,"
+                    " \"tuplex.optimizer.filterPushdown\": true, \"tuplex.optimizer.sharedObjectPropagation\": true,"
+                    " \"tuplex.optimizer.mergeExceptionsInOrder\": false, \"tuplex.optimizer.operatorReordering\": false,"
+                    " \"tuplex.optimizer.filterPromotion\": true, \"tuplex.interleaveIO\": true, "
+                    " \"tuplex.optimizer.sparsifyStructs\":false, \"tuplex.optimizer.simplifyLargeStructs\":false,\"tuplex.experimental.useGenericDicts\":false,\"tuplex.experimental.hyperspecialization\":false "
+                    "\"tuplex.resolveWithInterpreterOnly\": false, \"tuplex.network.verifySSL\": false, "
+                    "\"tuplex.redirectToPythonLogging\": false, \"tuplex.useInterpreterOnly\": false, "
+                    "\"tuplex.aws.lambdaInvokeOthers\": true, \"tuplex.experimental.hyperspecialization\": true, "
+                    "\"tuplex.experimental.opportuneCompilation\": true, "
+                    "\"tuplex.experimental.forceBadParseExceptFormat\": true,"
+                    " \"tuplex.optimizer.selectionPushdown\": true, \"tuplex.webui.enable\": false, "
+                    "\"tuplex.executorCount\": 0, \"tuplex.sample.maxDetectionRows\": 10000, "
+                    "\"tuplex.webui.port\": 5000, \"tuplex.webui.mongodb.port\": 27017, "
+                    "\"tuplex.webui.exceptionDisplayLimit\": 5, \"tuplex.aws.requestTimeout\": 600, "
+                    "\"tuplex.aws.connectTimeout\": 1, \"tuplex.aws.maxConcurrency\": 410, "
+                    "\"tuplex.aws.httpThreadCount\": 410, \"tuplex.aws.lambdaMemory\": 1536,"
+                    " \"tuplex.aws.lambdaTimeout\": 900, \"tuplex.aws.requesterPay\": false, "
+                    "\"tuplex.normalcaseThreshold\": 0.9, \"tuplex.optionalThreshold\": 0.7, "
+                    "\"tuplex.aws.lambdaInvocationStrategy\": \"direct\", \"tuplex.aws.lambdaThreads\": \"auto\", "
+                    "\"tuplex.aws.region\": \"us-east-1\", \"tuplex.aws.scratchDir\": \"./local-exp/scratch\", "
+                    "\"tuplex.aws.verboseLogging\": \"true\", \"tuplex.backend\": \"worker\", "
+                    "\"tuplex.csv.comments\": [\"#\", \"~\"], \"tuplex.csv.quotechar\": \"\\\"\","
+                    " \"tuplex.csv.separators\": [\",\", \";\", \"|\", \"\\t\"], \"tuplex.driverMemory\": \"2G\", "
+                    "\"tuplex.env.hostname\": \"leonhards-System-Product-Name\", \"tuplex.env.mode\": \"file\", "
+                    "\"tuplex.env.user\": \"leonhards\", \"tuplex.executorMemory\": \"2G\","
+                    " \"tuplex.experimental.interchangeWithObjectFiles\": \"false\", "
+                    "\"tuplex.experimental.minimumSizeToSpecialize\": \"128MB\", "
+                    "\"tuplex.experimental.s3PreCacheSize\": \"0\", "
+                    "\"tuplex.experimental.specializationUnitSize\": \"0\", "
+                    "\"tuplex.experimental.worker.numWorkers\": \"" + std::to_string(num_workers) + "\", "
+                                                                                                    "\"tuplex.experimental.worker.workerPath\": \"/home/leonhards/projects/tuplex-public/tuplex/cmake-build-release-w-cereal/dist/bin/tuplex-worker\", \"tuplex.inputSplitSize\": \"2GB\", \"tuplex.lambda.sample.maxDetectionMemory\": \"auto\", \"tuplex.lambda.sample.maxDetectionRows\": \"auto\", \"tuplex.lambda.sample.samplesPerStrata\": \"auto\", \"tuplex.lambda.sample.strataSize\": \"auto\", \"tuplex.logDir\": \".\", \"tuplex.network.caFile\": \"\", \"tuplex.network.caPath\": \"\", \"tuplex.optimizer.constantFoldingOptimization\": \"false\", \"tuplex.partitionSize\": \"32MB\", \"tuplex.readBufferSize\": \"4KB\", \"tuplex.runTimeLibrary\": \"/home/leonhards/projects/tuplex-public/tuplex/build/dist/python/tuplex/libexec/tuplex_runtime.so\", \"tuplex.runTimeMemory\": \"128MB\", \"tuplex.runTimeMemoryBlockSize\": \"4MB\", \"tuplex.sample.maxDetectionMemory\": \"32MB\", \"tuplex.sample.samplesPerStrata\": \"10\", \"tuplex.sample.strataSize\": \"1024\", \"tuplex.scratchDir\": \"/tmp/tuplex-cache-leonhards\", \"tuplex.webui.mongodb.path\": \"/tmp/tuplex-cache-leonhards/mongodb\", \"tuplex.webui.mongodb.url\": \"localhost\", \"tuplex.webui.url\": \"localhost\"}";
+
+    PythonContext ctx("", "", ctx_opts);
+
+    {
+        cout<<"Running github pipeline."<<endl;
+
+        github_pipeline(ctx, input_pattern, output_path);
+
+        cout<<"Pipeline done."<<endl;
+
+        // Load stats result from json:
+        auto job_path = URI("worker_app_job.json");
+        auto job_data = fileToString(job_path);
+        ASSERT_FALSE(job_data.empty());
+
+
+        // check results (from python reference number, add up total line count)
+        if(!use_noop_mode) {
+            cout << "Analyzing result: " << endl;
+            auto output_uris = glob(output_path + "*.csv");
+            cout << "Found " << pluralize(output_uris.size(), "output file") << endl;
+            size_t total_row_count = 0;
+            for (auto path: output_uris) {
+                auto row_count = 0;//csv_row_count(path);
+                cout << "-- file " << path << ": " << pluralize(row_count, "row") << endl;
+                total_row_count += row_count;
+            }
+            EXPECT_EQ(total_row_count, 294195);
+        }
     }
 }
 

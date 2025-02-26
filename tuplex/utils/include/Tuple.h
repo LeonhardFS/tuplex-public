@@ -30,18 +30,13 @@ namespace tuplex {
         void init_from_vector(const std::vector<tuplex::Field>& elements);
     public:
         Tuple() : _elements(nullptr), _numElements(0)    {}
-        ~Tuple();
-
-//        Tuple(const Tuple& other) : _numElements(other._numElements), _elements(nullptr) {
-//            _elements = new Field[_numElements];
-//            for(unsigned i = 0; i < _numElements; ++i)
-//                _elements[i] = other._elements[i];
-//        }
 
         Tuple(Tuple&& other) : _numElements(other._numElements), _elements(other._elements) {
             other._numElements = 0;
             other._elements = nullptr;
         }
+
+        ~Tuple();
 
         // new variadic template param ctor
          template<typename... Targs> explicit Tuple(Targs... Fargs) {
@@ -71,7 +66,12 @@ namespace tuplex {
             return t;
         }
 
+        std::vector<tuplex::Field> to_vector() const;
+
         Tuple* allocate_deep_copy() const;
+
+        size_t serialized_length() const;
+        size_t serialize_to(uint8_t* ptr) const;
     };
 
     extern bool operator == (const Tuple& rhs, const Tuple& lhs);

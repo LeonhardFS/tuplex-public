@@ -29,24 +29,46 @@
 // ==> i.e. cf. wiki page on this. @TODO clarify later.
 
 namespace python {
+
+    // First init size memo (with -1 as default).
+    size_t Type::PRECOMPUTED_SIZE_TABLE[16] = {static_cast<size_t>(-1), static_cast<size_t>(-1), static_cast<size_t>(-1), static_cast<size_t>(-1),
+                                                    static_cast<size_t>(-1), static_cast<size_t>(-1), static_cast<size_t>(-1), static_cast<size_t>(-1),
+                                                     static_cast<size_t>(-1), static_cast<size_t>(-1), static_cast<size_t>(-1), static_cast<size_t>(-1),
+                                                     static_cast<size_t>(-1), static_cast<size_t>(-1), static_cast<size_t>(-1), static_cast<size_t>(-1)};
+
+    // Helper function to add size to table.
+    inline Type cacheSize(const Type& t, size_t size) {
+        if(t.hash() >= 0 && t.hash() < 16)
+            Type::PRECOMPUTED_SIZE_TABLE[t.hash()] = size;
+        return t;
+    }
+
+
+    // Trick: first define some types which have constant size, and save them in memo for fast lookup!
     const Type Type::UNKNOWN = TypeFactory::instance().createOrGetPrimitiveType("unknown");
-    // const Type Type::BOOLEAN = TypeFactory::instance().createOrGetPrimitiveType("boolean");
-    const Type Type::BOOLEAN = TypeFactory::instance().createOrGetPrimitiveType("bool");
-    const Type Type::I64 = TypeFactory::instance().createOrGetPrimitiveType("i64", {python::Type::BOOLEAN});
-    const Type Type::F64 = TypeFactory::instance().createOrGetPrimitiveType("f64", {python::Type::I64});
+    const Type Type::BOOLEAN = cacheSize(TypeFactory::instance().createOrGetPrimitiveType("bool"), 8);
+    const Type Type::I64 = cacheSize(TypeFactory::instance().createOrGetPrimitiveType("i64", {python::Type::BOOLEAN}), 8);
+    const Type Type::F64 = cacheSize(TypeFactory::instance().createOrGetPrimitiveType("f64", {python::Type::I64}), 8);
+    const Type Type::EMPTYTUPLE = cacheSize(python::TypeFactory::instance().createOrGetTupleType(std::vector<python::Type>()), 0);
+    const Type Type::EMPTYDICT = cacheSize(python::TypeFactory::instance().createOrGetPrimitiveType("{}"), 0); // empty dict
+    const Type Type::EMPTYSPARSEDICT = cacheSize(python::TypeFactory::instance().createOrGetStructuredDictType(std::vector<python::StructEntry>(), true), 0); // empty sparse dict
+    const Type Type::EMPTYLIST = cacheSize(python::TypeFactory::instance().createOrGetPrimitiveType("[]"), 0); // empty list: primitive because it can have any type element
+    const Type Type::EMPTYSET = cacheSize(python::TypeFactory::instance().createOrGetPrimitiveType("empty_set"), 0); // empty list: primitive because it can have any type element
+    const Type Type::NULLVALUE = cacheSize(python::TypeFactory::instance().createOrGetPrimitiveType("null"), 0);
+    // special case, empty row
+    const Type Type::EMPTYROW = cacheSize(python::TypeFactory::instance().createOrGetRowType({}), 0);
+
+    // Other types (for serialization these are typically var-length types).
     const Type Type::STRING = TypeFactory::instance().createOrGetPrimitiveType("str");
     const Type Type::ANY = TypeFactory::instance().createOrGetPrimitiveType("any");
     const Type Type::INF = TypeFactory::instance().createOrGetPrimitiveType("inf");
-    const Type Type::EMPTYTUPLE = python::TypeFactory::instance().createOrGetTupleType(std::vector<python::Type>());
-    const Type Type::EMPTYDICT = python::TypeFactory::instance().createOrGetPrimitiveType("{}"); // empty dict
-    const Type Type::EMPTYLIST = python::TypeFactory::instance().createOrGetPrimitiveType("[]"); // empty list: primitive because it can have any type element
-    const Type Type::EMPTYSET = python::TypeFactory::instance().createOrGetPrimitiveType("empty_set"); // empty list: primitive because it can have any type element
-    const Type Type::NULLVALUE = python::TypeFactory::instance().createOrGetPrimitiveType("null");
+
     const Type Type::PYOBJECT = python::TypeFactory::instance().createOrGetPrimitiveType("pyobject");
     const Type Type::GENERICTUPLE = python::TypeFactory::instance().createOrGetPrimitiveType("tuple");
     const Type Type::GENERICDICT = python::TypeFactory::instance().createOrGetDictionaryType(python::Type::PYOBJECT, python::Type::PYOBJECT);
     const Type Type::GENERICLIST = python::TypeFactory::instance().createOrGetListType(python::Type::PYOBJECT);
     const Type Type::GENERICROW = python::TypeFactory::instance().createOrGetPrimitiveType("row");
+
     //const Type Type::GENERICSET = python::TypeFactory::instance().createOrGetSetType(python::Type::PYOBJECT); // @TODO: implement.
     const Type Type::VOID = python::TypeFactory::instance().createOrGetPrimitiveType("void");
     const Type Type::MATCHOBJECT = python::TypeFactory::instance().createOrGetPrimitiveType("matchobject");
@@ -56,8 +78,7 @@ namespace python {
     const Type Type::EMPTYITERATOR = python::TypeFactory::instance().createOrGetPrimitiveType("emptyiterator");
     const Type Type::TYPEOBJECT = python::TypeFactory::instance().registerOrGetType("type", python::TypeFactory::AbstractType::TYPE, std::vector<Type>{}, python::Type::VOID);
 
-    // special case, empty row
-    const Type Type::EMPTYROW = python::TypeFactory::instance().createOrGetRowType({});
+
     // builtin exception types
     // --> class system
 
@@ -315,7 +336,7 @@ namespace python {
         // return registerOrGetType(name, AbstractType::TUPLE, args);
     }
 
-    Type TypeFactory::createOrGetStructuredDictType(const std::vector<std::pair<boost::any, python::Type>> &pairs) {
+    Type TypeFactory::createOrGetStructuredDictType(const std::vector<std::pair<boost::any, python::Type>> &pairs, bool is_sparse) {
         std::vector<StructEntry> kv_pairs;
         // for each pair, construct tuple (val_type, value) -> type
         for(auto pair : pairs) {
@@ -329,10 +350,10 @@ namespace python {
             kv_pair.keyType = f.getType();
             kv_pair.key = f.toPythonString();
             kv_pair.valueType = pair.second;
-            kv_pair.alwaysPresent = true;
+            kv_pair.presence = ALWAYS_PRESENT;
             kv_pairs.push_back(kv_pair);
         }
-        return createOrGetStructuredDictType(kv_pairs);
+        return createOrGetStructuredDictType(kv_pairs, is_sparse);
     }
 
     static std::vector<StructEntry> remove_bad_pairs(const std::vector<StructEntry>& kv_pairs) {
@@ -371,35 +392,55 @@ namespace python {
     }
 
 
-    Type TypeFactory::createOrGetStructuredDictType(const std::vector<StructEntry> &kv_pairs) {
+    std::string presence_to_string(StructPresence p) {
+        if(p == ALWAYS_PRESENT)
+            return "->";
+        if(p == MAYBE_PRESENT)
+            return "=>";
+        if(p == NOT_PRESENT)
+            return "~>";
+        return "<unknown presence>";
+    }
 
-        // Struct[] is empty dict
-        if(kv_pairs.empty())
+    Type TypeFactory::createOrGetStructuredDictType(const std::vector<StructEntry> &kv_pairs, bool is_sparse) {
+
+        // Struct[] is empty dict, but SparseStruct[] is its own type.
+        if(kv_pairs.empty() && !is_sparse)
             return python::Type::EMPTYDICT;
 
-        std::string name = "Struct[";
+        // Use stringstream instead of old += string building method.
+        std::stringstream name;
+        name << (is_sparse ? "SparseStruct[" : "Struct[");
 
         // for each pair, construct tuple (val_type, value) -> type
         for(const auto& kv_pair : kv_pairs) {
-            std::string pair_str = "(";
+            // std::string pair_str = "(";
+            name<<"(";
 
             // @TODO: we basically need a mechanism to serialize/deserialize field values to string and back.
             // add mapping
             // escape non-string values as string
             auto py_string = kv_pair.keyType == python::Type::STRING ? kv_pair.key : escape_to_python_str(kv_pair.key);
-            auto map_str = kv_pair.alwaysPresent ? "->" : "=>";
-            pair_str += kv_pair.keyType.desc() + "," + py_string + map_str + kv_pair.valueType.desc();
+            auto map_str = presence_to_string(kv_pair.presence);
+            //            pair_str += kv_pair.keyType.desc() + "," + py_string + map_str + kv_pair.valueType.desc();
+            name<<kv_pair.keyType.desc()<<","<<py_string<<map_str<<kv_pair.valueType.desc();
 
-            pair_str += ")";
-            name += pair_str + ",";
+            //pair_str += ")";
+            // name<<pair_str<<",";
+            name<<")";
+            name<<",";
         }
-        if(name.back() == ',')
-            name.back() = ']';
+        
+        auto name_str = name.str();
+        
+        if(name_str.back() == ',')
+            name_str.back() = ']';
         else
-            name += "]";
+            name_str += "]";
 
         // store as new type in type factory (@TODO)
-        auto t = registerOrGetType(name, AbstractType::STRUCTURED_DICTIONARY, {}, {}, {}, false, kv_pairs);
+        auto t = registerOrGetType(name_str, is_sparse ? AbstractType::SPARSE_STRUCTURED_DICTIONARY : AbstractType::STRUCTURED_DICTIONARY,
+                                   {}, {}, {}, false, kv_pairs);
         return t;
     }
 
@@ -488,7 +529,8 @@ namespace python {
 //        // check that constant is valid python string in the string case
 //#ifndef NDEBUG
 //        if(python::Type::STRING == underlying) {
-//            if(constant.empty() || (constant[0] != '\'' && constant[0] != '"'))
+//            // needs to be JSON string, i.e. start with ".
+//            if(constant.empty() || (constant[0] != '"'))
 //                throw std::runtime_error("can only create string constant with properly escaped python string.");
 //        }
 //#endif
@@ -496,7 +538,12 @@ namespace python {
         std::string name;
         name += "_Constant[";
         name += TypeFactory::instance().getDesc(underlying._hash);
-        name += ",value=" + constant;
+        name += ",value=";
+
+        if(underlying == python::Type::STRING)
+            name += tuplex::escape_for_json(constant);
+        else
+            name += constant; // for integer, bool.
         name += "]";
 
         return registerOrGetType(name, AbstractType::OPTIMIZED_CONSTANT, {underlying},
@@ -511,7 +558,7 @@ namespace python {
 
     std::string TypeFactory::getDesc(const int _hash) const {
         if(_hash <= 0)
-            return "unknown";
+            return "uninitialized";
 
         std::lock_guard<std::mutex> lock(_typeMapMutex);
         assert(_hash >= 0);
@@ -570,6 +617,10 @@ namespace python {
         return TypeFactory::instance().isStructuredDictionaryType(*this);
     }
 
+    bool Type::isSparseStructuredDictionaryType() const {
+        return TypeFactory::instance().isSparseStructuredDictionaryType(*this);
+    }
+
     bool Type::isRowType() const {
         return TypeFactory::instance().isRowType(*this);
     }
@@ -626,7 +677,7 @@ namespace python {
             return false;
 
         auto type = _typeVec[it->second]._type;
-        return type == AbstractType::DICTIONARY || t == Type::EMPTYDICT || t == Type::GENERICDICT || type == AbstractType::STRUCTURED_DICTIONARY;
+        return type == AbstractType::DICTIONARY || t == Type::EMPTYDICT || t == Type::GENERICDICT || type == AbstractType::STRUCTURED_DICTIONARY || type == AbstractType::SPARSE_STRUCTURED_DICTIONARY;
     }
 
     bool TypeFactory::isStructuredDictionaryType(const Type& t) const {
@@ -715,7 +766,10 @@ namespace python {
     }
 
     std::vector<StructEntry> Type::get_struct_pairs() const {
-        assert(isStructuredDictionaryType());
+        if(_hash == python::Type::EMPTYDICT._hash)
+            return {};
+
+        assert(isStructuredDictionaryType() || isSparseStructuredDictionaryType());
         auto& factory = TypeFactory::instance();
 
         const std::lock_guard<std::mutex> lock(factory._typeMapMutex);
@@ -782,8 +836,11 @@ namespace python {
             index += kv_pairs.size();
 
         // invalid index?
-        if(index < 0 || index >= kv_pairs.size())
-            throw std::runtime_error("invalid index " + std::to_string(index) + " to access row type column names");
+        if(index < 0 || index >= kv_pairs.size()) {
+            // do not use desc() because this needs the lock, leading to recursive dead-lock.
+            auto desc = factory._typeVec[factory._typeMap.at(_hash)]._desc;
+            throw std::runtime_error("invalid index " + std::to_string(index) + " to access row type column names of type " + desc);
+        }
 
         return kv_pairs[index].key;
     }
@@ -825,12 +882,12 @@ namespace python {
     Type Type::keyType() const {
 
         // special cases: empty dict, generic dict and structured dict
-        if(_hash == EMPTYDICT._hash || _hash == GENERICDICT._hash)
+        if(_hash == EMPTYDICT._hash || _hash == GENERICDICT._hash || _hash == EMPTYSPARSEDICT._hash)
             return PYOBJECT;
 
 
         // is it a structured dict? -> same key type?
-        if(isStructuredDictionaryType()) {
+        if(isStructuredDictionaryType() || isSparseStructuredDictionaryType()) {
             // check pairs and whether they all have the same type, if not return pyobject
             auto& factory = TypeFactory::instance();
             factory._typeMapMutex.lock();
@@ -871,11 +928,11 @@ namespace python {
 
     Type Type::valueType() const {
         // special cases: empty dict, generic dict and structured dict
-        if(_hash == EMPTYDICT._hash || _hash == GENERICDICT._hash)
+        if(_hash == EMPTYDICT._hash || _hash == GENERICDICT._hash || _hash == EMPTYSPARSEDICT._hash)
             return PYOBJECT;
 
         // is it a structured dict? -> same key type?
-        if(isStructuredDictionaryType()) {
+        if(isStructuredDictionaryType() || isSparseStructuredDictionaryType()) {
             // check pairs and whether they all have the same type, if not return pyobject
             auto& factory = TypeFactory::instance();
             factory._typeMapMutex.lock();
@@ -973,6 +1030,12 @@ namespace python {
 
     bool Type::isIterableType() const {
         return (*this).isIteratorType() || (*this).isListType() || (*this).isTupleType() || *this == python::Type::STRING || *this == python::Type::RANGE || (*this).isDictionaryType() || (*this).isDictKeysType() || (*this).isDictValuesType();
+    }
+
+    bool Type::isAbstractPrimitiveType() const {
+        auto& factory = TypeFactory::instance();
+        auto it = factory._typeMap.find(_hash);
+        return factory._typeVec[it->second]._type == TypeFactory::AbstractType::PRIMITIVE;
     }
 
     bool Type::isFixedSizeType() const {
@@ -1097,7 +1160,7 @@ namespace python {
         if(isExceptionType())
             return true;
 
-        return *this == Type::NULLVALUE || *this == Type::EMPTYTUPLE || *this == Type::EMPTYDICT || *this == Type::EMPTYLIST;
+        return *this == Type::NULLVALUE || *this == Type::EMPTYTUPLE || *this == Type::EMPTYDICT || *this == Type::EMPTYLIST || *this == Type::EMPTYITERATOR;
     }
 
     bool Type::isIllDefined() const {
@@ -1127,7 +1190,7 @@ namespace python {
             }
 
             // empty or generic are well defined
-            if(_hash == Type::EMPTYDICT._hash || _hash == Type::GENERICDICT._hash)
+            if(_hash == Type::EMPTYDICT._hash || _hash == Type::GENERICDICT._hash || _hash == EMPTYSPARSEDICT._hash)
                 return false;
 
             if(keyType().isIllDefined())
@@ -1187,12 +1250,12 @@ namespace python {
         return python::TypeFactory::instance().createOrGetListType(elementType);
     }
 
-    Type Type::makeStructuredDictType(const std::vector<std::pair<boost::any, python::Type>> &kv_pairs) {
-        return python::TypeFactory::instance().createOrGetStructuredDictType(kv_pairs);
+    Type Type::makeStructuredDictType(const std::vector<std::pair<boost::any, python::Type>> &kv_pairs, bool is_sparse) {
+        return python::TypeFactory::instance().createOrGetStructuredDictType(kv_pairs, is_sparse);
     }
 
-    Type Type::makeStructuredDictType(const std::vector<StructEntry> &kv_pairs) {
-        return python::TypeFactory::instance().createOrGetStructuredDictType(kv_pairs);
+    Type Type::makeStructuredDictType(const std::vector<StructEntry> &kv_pairs, bool is_sparse) {
+        return python::TypeFactory::instance().createOrGetStructuredDictType(kv_pairs, is_sparse);
     }
 
     Type Type::makeOptionType(const python::Type &type) {
@@ -1292,8 +1355,10 @@ namespace python {
             return makeTupleType(std::vector<python::Type>{type});
     }
 
-    std::unordered_map<std::string, Type> TypeFactory::get_primitive_keywords() const {
-        std::unordered_map<std::string, Type> keywords;
+    // std::unordered_map<std::string, Type> TypeFactory::get_primitive_keywords() const {
+    absl::flat_hash_map<std::string, Type> TypeFactory::get_primitive_keywords() const {
+        //std::unordered_map<std::string, Type> keywords;
+        absl::flat_hash_map<std::string, Type> keywords;
         _typeMapMutex.lock();
         for(const auto& keyval : _typeMap) {
             Type t;
@@ -1307,6 +1372,16 @@ namespace python {
         keywords["null"] = Type::NULLVALUE;
 
         return keywords;
+    }
+
+    bool TypeFactory::isSparseStructuredDictionaryType(const Type &t) {
+        std::lock_guard<std::mutex> lock(_typeMapMutex);
+        auto it = _typeMap.find(t._hash);
+        if(it == _typeMap.end())
+            return false;
+
+        auto type = _typeVec[it->second]._type;
+        return type == AbstractType::SPARSE_STRUCTURED_DICTIONARY;
     }
 
     bool tupleElementsHaveSameType(const python::Type& tupleType) {
@@ -1574,7 +1649,7 @@ namespace python {
 
                     // check "maybe" compatibility. I.e., can upcast a present to maybe but not the other way round
                     auto kv_to = to_key_type_map.at(kv_from.key);
-                    if(!kv_from.alwaysPresent && kv_to.alwaysPresent)
+                    if(!kv_from.presence != ALWAYS_PRESENT && kv_to.presence == ALWAYS_PRESENT)
                         return false;
 
                     // can we upcast both key/value?
@@ -1587,7 +1662,7 @@ namespace python {
                 // each key in "to" that is required must be present in "from" as well
                 // => if this fails, can early determine upcast not possible.
                 for(const auto& kv : to_key_type_map) {
-                    if(kv.second.alwaysPresent) {
+                    if(kv.second.presence == ALWAYS_PRESENT) {
                         // must be present and castable
                         if(from_key_type_map.find(kv.first) == from_key_type_map.end())
                             return false;
@@ -1598,6 +1673,11 @@ namespace python {
                     }
                 }
                 return true;
+            } else if(from.isSparseStructuredDictionaryType() && to.isStructuredDictionaryType()) {
+                // sparse can be upcast if same paths are available, else no chance.
+                // for now, return false.
+                // @TODO
+                return false;
             } else {
                 // check whether ALL from key types and value types can be upcasted to generic type
                 auto dest_key_type = to.keyType();
@@ -1658,6 +1738,13 @@ namespace python {
      * @return
      */
     bool canUpcastToRowType(const python::Type& minor, const python::Type& major) {
+        // Convert row types to tuple. No check on column names here.
+        if(minor.isRowType())
+            return canUpcastToRowType(minor.get_columns_as_tuple_type(), major);
+        if(major.isRowType())
+            return canUpcastToRowType(minor, major.get_columns_as_tuple_type());
+
+        // check using tuple type.
         if(!minor.isTupleType() || !major.isTupleType())
             throw std::runtime_error("upcast check requires both types to be tuple types!");
 
@@ -1692,7 +1779,7 @@ namespace python {
 //
 //        // check for optional type
 //        bool makeOption = false;
-//        // underlyingType: remove outermost Option if it exists
+//        // underlyingType: remove outermost Option if exists
 //        python::Type aUnderlyingType = a;
 //        python::Type bUnderlyingType = b;
 //        if(a.isOptionType()) {
@@ -1703,6 +1790,14 @@ namespace python {
 //        if(b.isOptionType()) {
 //            makeOption = true;
 //            bUnderlyingType = b.getReturnType();
+//        }
+//
+//        // if makeOption -> recursive call
+//        if(makeOption) {
+//            auto ans = unifyTypes(aUnderlyingType, bUnderlyingType);
+//            if(python::Type::UNKNOWN == ans)
+//                return ans;
+//            return python::Type::makeOptionType(ans);
 //        }
 //
 //        // same underlying types? make option
@@ -1743,6 +1838,18 @@ namespace python {
 //            }
 //            return python::Type::makeListType(newElementType);
 //        }
+//
+//        // any list is compatible with empty list
+//        if(aUnderlyingType.isListType() && bUnderlyingType == python::Type::EMPTYLIST)
+//            return aUnderlyingType;
+//        if(aUnderlyingType == python::Type::EMPTYLIST && bUnderlyingType.isListType())
+//            return bUnderlyingType;
+//
+//        // any dict is compatible with empty dict
+//        if(aUnderlyingType.isDictionaryType() && bUnderlyingType == python::Type::EMPTYDICT)
+//            return aUnderlyingType;
+//        if(aUnderlyingType == python::Type::EMPTYDICT && bUnderlyingType.isDictionaryType())
+//            return bUnderlyingType;
 //
 //        // tuple type? check if every parameter type compatible
 //        if(aUnderlyingType.isTupleType() && bUnderlyingType.isTupleType()) {
@@ -1883,6 +1990,37 @@ namespace python {
         return python::Type::UNKNOWN;
     }
 
+    bool Type::isImmutable() const {
+        // single valued objects are immutable
+        if(isSingleValued())
+            return true;
+
+        // primitives like bool, int, f64, string are immutable
+        if(python::Type::BOOLEAN == *this || python::Type::I64 == *this || python::Type::F64 == *this || python::Type::STRING == *this)
+            return true;
+
+        // consider pyobject as immutable for now
+        if(python::Type::PYOBJECT == *this)
+            return true;
+
+        // tuples are immutable
+        if(isTupleType())
+            return true;
+
+        if(isIteratorType())
+            return true;
+
+        if(python::Type::MATCHOBJECT == *this || python::Type::RANGE == *this)
+            return true;
+
+        // decide based on element type.
+        if(isOptionType())
+            return getReturnType().isImmutable();
+
+        // everything else is mutable.
+        return false;
+    }
+
     Type Type::makeConstantValuedType(const Type &underlying, const std::string &value) {
         return TypeFactory::instance().createOrGetConstantValuedType(underlying, value);
     }
@@ -1959,7 +2097,7 @@ namespace python {
         // fetch primitive keywords for decoding
         size_t min_keyword_length = s.length();
         size_t max_keyword_length = 0;
-        std::unordered_map<std::string, Type> keywords = TypeFactory::instance().get_primitive_keywords();
+        auto keywords = TypeFactory::instance().get_primitive_keywords();
 
         // add (), {}, and [] as keywords
         keywords["()"] = python::Type::EMPTYTUPLE;
@@ -2032,7 +2170,7 @@ namespace python {
                 // 3. don't push if the last pair is not filled out completely yet! -> i.e. a tuple type was encountered
 
                 bool push_new_pair = false;
-                if(!compoundStack.empty() && compoundStack.top() == "Struct"
+                if(!compoundStack.empty() && (compoundStack.top() == "Struct" || compoundStack.top() == "SparseStruct")
                    && (expressionStack.empty() || expressionStack.top().empty()))
                     push_new_pair = true;
 
@@ -2064,7 +2202,7 @@ namespace python {
                 }
 
                 // if in struct compound mode -> push pairs
-                if(!compoundStack.empty() && (compoundStack.top() == "Struct" || compoundStack.top() == "Row")) {
+                if(!compoundStack.empty() && (compoundStack.top() == "Struct" || compoundStack.top() == "SparseStruct" || compoundStack.top() == "Row")) {
                     // edit last pair.
                     assert(!kvStack.empty());
                     assert(!kvStack.top().empty());
@@ -2126,12 +2264,15 @@ namespace python {
                 while(pos < s.size() && isspace(s[pos]))
                     pos++;
                 // check if next one is ->
-                bool alwaysPresent = true;
+                StructPresence presence = ALWAYS_PRESENT;
                 if(s.substr(pos, 2) == "->") {
-                    alwaysPresent = true;
+                    presence = ALWAYS_PRESENT;
                     pos += 2;
                 } else if(s.substr(pos, 2) == "=>") {
-                    alwaysPresent = false;
+                    presence = MAYBE_PRESENT;
+                    pos += 2;
+                } else if(s.substr(pos, 2) == "~>") {
+                    presence = NOT_PRESENT;
                     pos += 2;
                 } else {
                     throw std::runtime_error("invalid pair found.");
@@ -2146,7 +2287,7 @@ namespace python {
                 assert(!kvStack.empty());
                 assert(!kvStack.top().empty());
                 kvStack.top().back().key = decoded_string;
-                kvStack.top().back().alwaysPresent = alwaysPresent;
+                kvStack.top().back().presence = presence;
             } else if(s[pos] == ']') {
                 numClosedSqBrackets++;
                 if(numOpenSqBrackets < numClosedSqBrackets) {
@@ -2172,7 +2313,11 @@ namespace python {
                 } else if("Struct" == compound_type) {
                     auto kv_pairs = kvStack.top();
                     kvStack.pop();
-                    t = TypeFactory::instance().createOrGetStructuredDictType(kv_pairs);
+                    t = TypeFactory::instance().createOrGetStructuredDictType(kv_pairs, false);
+                } else if("SparseStruct" == compound_type) {
+                    auto kv_pairs = kvStack.top();
+                    kvStack.pop();
+                    t = TypeFactory::instance().createOrGetStructuredDictType(kv_pairs, true);
                 } else if("_Constant" == compound_type) {
                     auto underlying_type = topVec[0];
                     t = TypeFactory::instance().createOrGetConstantValuedType(underlying_type, json_constant_value);
@@ -2286,6 +2431,15 @@ namespace python {
                 kvStack.push({}); // new pair entry!
                 numOpenSqBrackets++;
                 pos += strlen("Struct[");
+            } else if(s.substr(pos, strlen("SparseStruct[")).compare("SparseStruct[") == 0) {
+                // it's a compound struct type made up of a bunch of other types
+                // need to decode pairs manually!
+                // i.e., what is the next token? -> if ] => then empty dict!
+                expressionStack.push(std::vector<python::Type>());
+                compoundStack.push("SparseStruct");
+                kvStack.push({}); // new pair entry!
+                numOpenSqBrackets++;
+                pos += strlen("SparseStruct[");
             } else if(s.substr(pos, strlen("Row[")).compare("Row[") == 0) {
                 // similar decode to "Struct"
                 expressionStack.push(std::vector<python::Type>());
@@ -2305,10 +2459,24 @@ namespace python {
                     // decode the string (no nested structure allowed)
                     pos += strlen("value=");
 
-                    // escape the json string...
-                    size_t json_length = 0;
-                    json_constant_value = decodeJSONStringGreedily(s.substr(pos), &json_length);
-                    pos += json_length;
+                    // is first char at pos '"'? => decode JSON string.
+                    if(s.at(pos) == '"') {
+                        // escape the json string...
+                        size_t json_length = 0;
+                        json_constant_value = decodeJSONStringGreedily(s.substr(pos), &json_length);
+                        pos += json_length;
+                    } else if(isdigit(s.at(pos))) {
+                        // TODO: decode float, ...
+                        int json_length = 0;
+                        while(pos + json_length < s.length() && isdigit(s.at(pos + json_length)))
+                            json_length++;
+
+                        // greedily decode number.
+                        json_constant_value = s.substr(pos, json_length);
+                        pos += json_length;
+                    } else {
+                        throw std::runtime_error("Can not decode value from constant valued type: "  + s.substr(pos));
+                    }
                 }
 
             } else if(s.substr(pos, strlen("_Constant[")).compare("_Constant[") == 0) {
@@ -2328,6 +2496,11 @@ namespace python {
             *end_position = pos;
         assert(expressionStack.size() > 0);
         assert(expressionStack.top().size() > 0);
+
+        // check bracket counts are back to 0
+        if(numOpenParentheses != numClosedParentheses || numOpenBrackets != numClosedBrackets || numOpenSqBrackets != numClosedSqBrackets)
+            throw std::runtime_error("Unbalanced ( [ or { count.");
+
         return expressionStack.top().front();
     }
 
@@ -2343,7 +2516,7 @@ namespace python {
 
     // TODO: more efficient encoding using binary representation?
     std::string Type::encode() const {
-        if(_hash > 0) {
+        if(_hash >= 0) {
             auto& factory = TypeFactory::instance();
             // use super simple encoding scheme here.
             // -> i.e. primitives use desc
@@ -2383,6 +2556,7 @@ namespace python {
                     return "Dict[" + keyType().encode() + "," + valueType().encode() + "]";
                 }
                 case TypeFactory::AbstractType::STRUCTURED_DICTIONARY:
+                case TypeFactory::AbstractType::SPARSE_STRUCTURED_DICTIONARY:
                 case TypeFactory::AbstractType::ROW: {
                     return entry_desc;
                 }
@@ -2406,17 +2580,16 @@ namespace python {
                     return Type::UNKNOWN.encode();
                 }
             }
-        } else if (_hash <= 0)
-            return "unknown";
-        else
+        } else {
             return "uninitialized";
+        }
     }
 
     bool Type::all_struct_pairs_optional() const {
         assert(isStructuredDictionaryType());
 
         for(auto p : get_struct_pairs())
-            if(p.alwaysPresent)
+            if(p.presence == ALWAYS_PRESENT || p.presence == NOT_PRESENT)
                 return false;
         return true;
     }
@@ -2425,10 +2598,19 @@ namespace python {
         assert(isStructuredDictionaryType());
 
         for(auto p : get_struct_pairs()) {
-            if(!p.alwaysPresent)
+            if(p.presence != ALWAYS_PRESENT && p.presence != NOT_PRESENT)
                 return false;
         }
         return true;
+    }
+
+    bool Type::has_not_presence() const {
+        assert(isStructuredDictionaryType() || isSparseStructuredDictionaryType());
+        for(auto p : get_struct_pairs()) {
+            if(p.presence == NOT_PRESENT)
+                return true;
+        }
+        return false;
     }
 
     size_t Type::get_column_count() const {
@@ -2494,5 +2676,310 @@ namespace python {
         // sort
         std::sort(v.begin(), v.end());
         return v;
+    }
+
+    Type Type::makeNonSparse(bool recurse) const {
+        if(isStructuredDictionaryType())
+            return *this;
+
+        assert(isSparseStructuredDictionaryType());
+        if(!recurse)
+            return python::Type::makeStructuredDictType(get_struct_pairs(), false);
+
+        auto kv_pairs = get_struct_pairs();
+        for(auto& p : kv_pairs)
+            if(p.valueType.isSparseStructuredDictionaryType())
+                p = StructEntry(p.key, p.keyType, p.valueType.makeNonSparse(true), p.presence);
+        return python::Type::makeStructuredDictType(kv_pairs, false);
+    }
+}
+
+namespace tuplex {
+
+    // symbols for encoding (make sure there's no replication here)
+    static const char ENC_NULLVALUE_CHAR = 'N';
+    static const char ENC_BOOLEAN_CHAR = 'B';
+    static const char ENC_I64_CHAR = 'I';
+    static const char ENC_STRING_CHAR = 'S';
+    static const char ENC_F64_CHAR = 'F';
+    static const char ENC_PYOBJECT_CHAR = 'P';
+    static const char ENC_GENERICTUPLE_CHAR = '!';
+    static const char ENC_GENERICDICT_CHAR = '~';
+    // chars with other information encoded after them.
+    static const char ENC_HASH_CHAR = 'H';
+    static const char ENC_PRIMITIVE_CHAR = '*';
+    static const char ENC_OPTION_CHAR = 'O';
+    static const char ENC_LIST_CHAR = 'L';
+    static const char ENC_ROW_CHAR = 'R';
+    static const char ENC_SPARSE_STRUCT_CHAR = '<';
+    static const char ENC_STRUCT_CHAR = '{';
+    static const char ENC_DICT_CHAR = 'D';
+    static const char ENC_CONSTANT_CHAR = '=';
+    static const char ENC_TUPLE_CHAR = 'T';
+    static const char ENC_FUNCTION_CHAR = '^';
+    static const char ENC_OTHER_CHAR = 'U';
+
+
+    void type_encode(BinaryOutputStream& stream, const python::Type& t) {
+        // binary stream??
+
+        // some frequent python types get their own symbol
+        if(t == python::Type::NULLVALUE) {
+            stream<<ENC_NULLVALUE_CHAR;
+            return;
+        }
+        if(t == python::Type::BOOLEAN) {
+            stream<<ENC_BOOLEAN_CHAR;
+            return;
+        }
+        if(t == python::Type::I64) {
+            stream<<ENC_I64_CHAR;
+            return;
+        }
+        if(t == python::Type::STRING) {
+            stream<<ENC_STRING_CHAR;
+            return;
+        }
+        if(t == python::Type::F64) {
+            stream<<ENC_F64_CHAR;
+            return;
+        }
+        if(t == python::Type::PYOBJECT) {
+            stream<<ENC_PYOBJECT_CHAR;
+            return;
+        }
+
+        // special symbols for generic dict/generic tuple.
+        if(t == python::Type::GENERICTUPLE) {
+            stream<<ENC_GENERICTUPLE_CHAR; // any symbol will do.
+            return;
+        }
+
+        if(t == python::Type::GENERICTUPLE) {
+            stream << ENC_GENERICDICT_CHAR;
+            return;
+        }
+
+        // simple encoding with hash
+        if(t.hash() < 16) {
+            stream<<ENC_HASH_CHAR; // H for hash.
+            stream<<t.hash();
+            return;
+        }
+
+        // primitive? need to encode name, that's it.
+        if(t.isAbstractPrimitiveType()) {
+            stream<<ENC_PRIMITIVE_CHAR; // * for primitive
+            stream<<t.desc();
+            return;
+        }
+
+        // Option
+        if(t.isOptionType()) {
+            stream<<ENC_OPTION_CHAR;
+            type_encode(stream, t.getReturnType());
+            return;
+        }
+
+        // List
+        if(t.isListType()) {
+            stream<<ENC_LIST_CHAR;
+            type_encode(stream, t.elementType());
+            return;
+        }
+
+        // Row
+        if(t.isRowType()) {
+            stream<<ENC_ROW_CHAR;
+            // how many names?
+            // which entries?
+            auto names = t.get_column_names();
+            stream<<static_cast<int>(names.size());
+            for(auto name: names)
+                stream<<name;
+            auto types = t.get_column_types();
+            stream<<static_cast<int>(types.size());
+            for(auto col_type: types)
+                type_encode(stream, col_type);
+            return;
+        }
+
+        // Struct/SparseStruct
+        if(t.isStructuredDictionaryType() || t.isSparseStructuredDictionaryType()) {
+            stream<<(t.isSparseStructuredDictionaryType() ? ENC_SPARSE_STRUCT_CHAR : ENC_STRUCT_CHAR);
+            auto entries = t.get_struct_pairs();
+            stream<<static_cast<int>(entries.size());
+            for(const auto& entry: entries) {
+                type_encode(stream, entry.keyType);
+                type_encode(stream, entry.valueType);
+                stream<<entry.key;
+                stream<<static_cast<char>(entry.presence);
+            }
+            return;
+        }
+
+        // Dict (code must come AFTER struct dict/sparse dict)
+        if(t.isDictionaryType()) {
+            stream<<ENC_DICT_CHAR;
+            type_encode(stream, t.keyType());
+            type_encode(stream, t.valueType());
+            return;
+        }
+
+        // Constant.
+        if(t.isConstantValued()) {
+            stream<<ENC_CONSTANT_CHAR;
+            type_encode(stream, t.underlying());
+            stream<<t.constant();
+            return;
+        }
+
+        // Tuple.
+        if(t.isTupleType() && t != python::Type::GENERICTUPLE) {
+            stream<<ENC_TUPLE_CHAR;
+            stream<<static_cast<int>(t.parameters().size());
+            for(auto param : t.parameters())
+                type_encode(stream, param);
+            return;
+        }
+
+        // Function type.
+        if(t.isFunctionType()) {
+            stream<<ENC_FUNCTION_CHAR;
+            type_encode(stream, t.getParamsType());
+            type_encode(stream, t.getReturnType());
+            return;
+        }
+
+        // encode each other type using desc() as fallback with U tag.
+        stream<<ENC_OTHER_CHAR;
+        stream<<t.desc();
+    }
+
+    std::string compact_type_encode(const python::Type& t) {
+        BinaryOutputStream os;
+        type_encode(os, t);
+        return os.str();
+    }
+
+    // FAST decode function
+    python::Type type_decode(BinaryInputStream& is) {
+        char c;
+        is>>c;
+
+        switch(c) {
+            // @TODO: use lower-case letters for options!
+            case ENC_NULLVALUE_CHAR:
+                return python::Type::NULLVALUE;
+            case ENC_BOOLEAN_CHAR:
+                return python::Type::BOOLEAN;
+            case ENC_I64_CHAR:
+                return python::Type::I64;
+            case ENC_STRING_CHAR:
+                return python::Type::STRING;
+            case ENC_F64_CHAR:
+                return python::Type::F64;
+            case ENC_PYOBJECT_CHAR:
+                return python::Type::PYOBJECT;
+            case ENC_GENERICDICT_CHAR:
+                return python::Type::GENERICDICT;
+            case ENC_GENERICTUPLE_CHAR:
+                return python::Type::GENERICTUPLE;
+
+            // Compound types:
+            case ENC_HASH_CHAR: {
+                int hash;
+                is >> hash;
+                return python::Type::fromHash(hash);
+            }
+
+            case ENC_PRIMITIVE_CHAR: {
+                std::string name;
+                is >> name;
+                return python::TypeFactory::instance().createOrGetPrimitiveType(name);
+            }
+
+            case ENC_OPTION_CHAR:
+                return python::Type::makeOptionType(type_decode(is));
+            case ENC_LIST_CHAR:
+                return python::Type::makeListType(type_decode(is));
+            case ENC_TUPLE_CHAR: {
+                int n_params;
+                is >> n_params;
+                std::vector<python::Type> params(n_params);
+                for(unsigned i = 0; i < n_params; ++i)
+                    params[i] = type_decode(is);
+                return python::Type::makeTupleType(params);
+            }
+
+            case ENC_ROW_CHAR: {
+                int n_names;
+                int n_types;
+                std::vector<std::string> names;
+                std::vector<python::Type> types;
+                is >> n_names;
+                for(unsigned i = 0; i < n_names; ++i) {
+                    std::string name;
+                    is >> name;
+                    names.push_back(name);
+                }
+                is >> n_types;
+                for(unsigned i = 0; i < n_types; ++i) {
+                    types.push_back(type_decode(is));
+                }
+                return python::Type::makeRowType(types, names);
+            }
+
+            case ENC_SPARSE_STRUCT_CHAR:
+            case ENC_STRUCT_CHAR: {
+                auto is_sparse = c == ENC_SPARSE_STRUCT_CHAR;
+                std::vector<python::StructEntry> entries;
+
+                int n_entries;
+                is >> n_entries;
+                for(unsigned i = 0; i < n_entries; ++i) {
+                    python::StructEntry entry;
+                    entry.keyType = type_decode(is);
+                    entry.valueType = type_decode(is);
+                    is >> entry.key;
+                    char presence;
+                    is >> presence;
+                    entry.presence = static_cast<python::StructPresence>(presence);
+                    entries.push_back(entry);
+                }
+
+                return python::Type::makeStructuredDictType(entries, is_sparse);
+            }
+
+            case ENC_DICT_CHAR:
+                return python::Type::makeDictionaryType(type_decode(is), type_decode(is));
+
+            case ENC_CONSTANT_CHAR: {
+                python::Type underlying = type_decode(is);
+                std::string constant;
+                is >> constant;
+                return python::Type::makeConstantValuedType(underlying, constant);
+            }
+
+            case ENC_FUNCTION_CHAR: {
+                // func type.
+                return python::Type::makeFunctionType(type_decode(is), type_decode(is));
+            }
+
+            case ENC_OTHER_CHAR: {
+                std::string desc;
+                is >> desc;
+                return python::Type::decode(desc);
+            }
+
+            default:
+                throw std::runtime_error("DECODE ERROR IN compact type decode for " + is.str());
+        }
+    }
+
+
+    python::Type compact_type_decode(const std::string& s) {
+        BinaryInputStream is(s);
+        return type_decode(is);
     }
 }

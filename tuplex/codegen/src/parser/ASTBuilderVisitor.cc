@@ -33,7 +33,7 @@ namespace tuplex {
         } else if (ctx->NUMBER()) {
             pushNode(new NNumber(ctx->NUMBER()->getText()));
         } else if (!ctx->STRING().empty()) {
-            std::string str = "";
+            std::string str;
             for (auto s : ctx->STRING()) {
                 str += s->getText();
             }
@@ -219,8 +219,8 @@ namespace tuplex {
             pushNode(new NBinaryOp(left, stringToToken(children[1]->getText()), right));
 
             for (unsigned i = 2; i < vn.size(); ++i) {
-                auto left = popNode();
-                auto right = vn[i];
+                left = popNode();
+                right = vn[i];
                 pushNode(new NBinaryOp(left, stringToToken(children[2 * i - 1]->getText()), right));
 
                 // because NBinaryOp(...) calls clone() on left -> delete AST node memory here
@@ -353,7 +353,7 @@ namespace tuplex {
                 if (t->subscriptlist()) {
                     // subscript
                     // on the stack is the atom + trailer (i.e. the subscript)
-
+                    assert(trailer);
                     // two options here:
                     // either it is a slice or a subscript
                     if (trailer->type() == ASTNodeType::SliceItem) {
@@ -383,7 +383,7 @@ namespace tuplex {
                         auto atom_id = dynamic_cast<NIdentifier*>(atom);
                         if(atom_id && atom_id->_name == "range") {
                             auto range = new NRange();
-                            for(unsigned i = 0; i < num_args; ++i) {
+                            for(unsigned j = 0; j < num_args; ++j) {
                                 assert(!v.empty());
                                 range->_positionalArguments.push_back(std::unique_ptr<ASTNode>(v.back()));
                                 v.pop_back();
@@ -394,7 +394,7 @@ namespace tuplex {
                         } else {
                             auto call = new NCall(atom);
                             delete atom;
-                            for (unsigned i = 0; i < num_args; ++i) {
+                            for (unsigned j= 0; j < num_args; ++j) {
                                 assert(!v.empty());
                                 call->_positionalArguments.push_back(std::unique_ptr<ASTNode>(v.back()));
                                 v.pop_back();

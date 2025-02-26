@@ -7,7 +7,7 @@
 namespace tuplex {
     namespace codegen {
 //        llvm::Value* generate_cell_based_checks(LLVMEnvironment& env,
-//                                                llvm::IRBuilder<>& builder,
+//                                                const IRBuilder& builder,
 //                                                llvm::Value* cellsPtr,
 //                                                llvm::Value* sizesPtr,
 //                                                const std::vector<NormalCaseCheck>& checks) {
@@ -79,7 +79,7 @@ namespace tuplex {
 //                                    assert(const_type.isConstantValued());
 //                                    auto elementType = const_type.underlying();
 //
-//                                    //  auto t = rowType.parameters()[rowTypePos];?
+//                                    //  auto t = rowTypeAsTupleType.parameters()[rowTypePos];?
 ////                                assert(elementType == )
 //
 //                                    auto value = const_type.constant();

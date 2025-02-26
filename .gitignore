@@ -101,3 +101,6 @@ tuplex/.vscode/
 venv/
 Tuplex.egg-info/
 job/
+
+benchmarks/nextconf/hyperspecialization/github/.local/
+benchmarks/nextconf/hyperspecialization/github/local/

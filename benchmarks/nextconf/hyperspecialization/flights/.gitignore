@@ -20,3 +20,8 @@ preprocess/
 reference_implementation.log
 reference_output/
 
+request*.json
+worker_app_job.json
+failed_requests/
+pipeline_stage_*.py
+python_code_pipeline_stage_*.py

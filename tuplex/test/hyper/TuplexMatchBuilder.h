@@ -74,57 +74,57 @@ namespace tuplex {
             llvm::Value *_fallbackMemorySizeVar;
             llvm::Value *_filteredOutRowsVar;
 
-            void writeOutput(llvm::IRBuilder<>& builder, llvm::Value* var, llvm::Value* val);
+            void writeOutput(const IRBuilder& builder, llvm::Value* var, llvm::Value* val);
 
             // blocks to hold start/end of frees --> called before going to next row.
             llvm::BasicBlock *_freeStart;
             llvm::BasicBlock *_freeEnd;
 
             // helper functions
-            void generateParseLoop(llvm::IRBuilder<> &builder,
+            void generateParseLoop(const IRBuilder& builder,
                                    llvm::Value *bufPtr,
                                    llvm::Value *bufSize,
                                    bool hackyPromoteEventFilter,
                                    const std::string& hackyEventName);
 
-            llvm::Value *initJsonParser(llvm::IRBuilder<> &builder);
+            llvm::Value *initJsonParser(const IRBuilder& builder);
 
-            void freeJsonParse(llvm::IRBuilder<> &builder, llvm::Value *j);
+            void freeJsonParse(const IRBuilder& builder, llvm::Value *j);
 
             llvm::Value *
-            openJsonBuf(llvm::IRBuilder<> &builder, llvm::Value *j, llvm::Value *buf, llvm::Value *buf_size);
+            openJsonBuf(const IRBuilder& builder, llvm::Value *j, llvm::Value *buf, llvm::Value *buf_size);
 
             void
-            exitMainFunctionWithError(llvm::IRBuilder<> &builder, llvm::Value *exitCondition, llvm::Value *exitCode);
+            exitMainFunctionWithError(const IRBuilder& builder, llvm::Value *exitCondition, llvm::Value *exitCode);
 
-            llvm::Value *hasNextRow(llvm::IRBuilder<> &builder, llvm::Value *j);
+            llvm::Value *hasNextRow(const IRBuilder& builder, llvm::Value *j);
 
-            void moveToNextRow(llvm::IRBuilder<> &builder, llvm::Value *j);
+            void moveToNextRow(const IRBuilder& builder, llvm::Value *j);
 
-            llvm::Value* emitHackyFilterPromo(llvm::IRBuilder<>& builder, llvm::Value* parser, const std::string& hackyEventName, llvm::BasicBlock* bbFailure);
+            llvm::Value* emitHackyFilterPromo(const IRBuilder& builder, llvm::Value* parser, const std::string& hackyEventName, llvm::BasicBlock* bbFailure);
 
             llvm::BasicBlock *
-            emitBadParseInputAndMoveToNextRow(llvm::IRBuilder<> &builder, llvm::Value *j, llvm::Value *condition);
+            emitBadParseInputAndMoveToNextRow(const IRBuilder& builder, llvm::Value *j, llvm::Value *condition);
 
-            inline llvm::Value *rowNumber(llvm::IRBuilder<> &builder) {
+            inline llvm::Value *rowNumber(const IRBuilder& builder) {
                 assert(_rowNumberVar);
                 assert(_rowNumberVar->getType() == _env.i64ptrType());
-                return builder.CreateLoad(_rowNumberVar);
+                return builder.CreateLoad(builder.getInt64Ty(), _rowNumberVar);
             }
 
-            llvm::Value *isDocumentOfObjectType(llvm::IRBuilder<> &builder, llvm::Value *j);
+            llvm::Value *isDocumentOfObjectType(const IRBuilder& builder, llvm::Value *j);
 
-            llvm::Value* parseRowAsStructuredDict(llvm::IRBuilder<> &builder, const python::Type& row_type, llvm::Value *j,
+            llvm::Value* parseRowAsStructuredDict(const IRBuilder& builder, const python::Type& row_type, llvm::Value *j,
                                           llvm::BasicBlock *bbSchemaMismatch);
 
-            inline llvm::Value* incVar(llvm::IRBuilder<>& builder, llvm::Value* var, llvm::Value* what_to_add) {
-                llvm::Value* val = builder.CreateLoad(var);
+            inline llvm::Value* incVar(const IRBuilder& builder, llvm::Value* var, llvm::Value* what_to_add) {
+                llvm::Value* val = builder.CreateLoad(what_to_add->getType(), var);
                 val = builder.CreateAdd(val, what_to_add);
                 builder.CreateStore(val, var);
                 return val;
             }
 
-            inline llvm::Value* incVar(llvm::IRBuilder<>& builder, llvm::Value* var, int64_t delta=1) {
+            inline llvm::Value* incVar(const IRBuilder& builder, llvm::Value* var, int64_t delta=1) {
                 return incVar(builder, var, _env.i64Const(delta));
             }
         };

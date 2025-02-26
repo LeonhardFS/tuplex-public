@@ -25,7 +25,7 @@
 #include <boost/algorithm/string/join.hpp>
 
 #include "Base.h"
-#include "UTF8Utils.h"
+#include "utf8/UTF8Utils.h"
 
 namespace tuplex {
     // helper functions for data conversion (optimized for correct input)
@@ -446,6 +446,34 @@ namespace tuplex {
         for(auto& c : copy)
             c = std::tolower(c);
         return copy;
+    }
+
+    /*!
+     * replace all occurences of string with new string.
+     * @param input
+     * @param needle
+     * @param replacement
+     * @return replaced string.
+     */
+    inline std::string strReplaceAll(std::string input, const std::string& needle, const std::string& replacement) {
+        // find first occurrence of needle.
+        size_t pos = input.find(needle);
+        // iterate & subsequently replace
+        while (pos != std::string::npos) {
+            input.replace(pos, needle.size(), replacement);
+
+            // Find the next occurrence of the substring
+            pos = input.find(needle,
+                             pos + replacement.size());
+        }
+        return input;
+    }
+
+    inline std::string string_mem_cat(const std::string& lhs, const std::string rhs) {
+        std::string s(lhs.size() + rhs.size(), '\0');
+        lhs.copy(s.data(), lhs.size());
+        rhs.copy(s.data() + lhs.size(), rhs.size());
+        return s;
     }
 }
 

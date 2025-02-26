@@ -43,7 +43,7 @@ namespace tuplex {
 
                     // trick for row type, if not row type but columns exist -> rewrite!
                     auto parent_schema = this->parent()->getOutputSchema();
-                    if(PARAM_USE_ROW_TYPE && !parent->columns().empty() && !parent_schema.getRowType().isRowType()) {
+                    if(PARAM_USE_ROW_TYPE && !parent->columns().empty() && !parent_schema.getRowType().isRowType() && parent_schema != Schema::UNKNOWN) {
                         parent_schema = Schema(parent_schema.getMemoryLayout(), python::Type::makeRowType(parent_schema.getRowType().parameters(), parent->columns()));
                     }
 
@@ -126,9 +126,17 @@ namespace tuplex {
         return parent()->getSample(num);
     }
 
-    std::vector<Row> FilterOperator::getSample(const size_t num, bool applyFilter) const {
-        if(!applyFilter)
-            return getSample(num);
+    std::vector<Row> FilterOperator::getSample(const size_t num, bool applyFilter, std::vector<size_t>* indices_to_keep) const {
+        if(!applyFilter) {
+            auto sample = getSample(num);
+            if(indices_to_keep) {
+                std::vector<size_t> v_indices(sample.size());
+                for(unsigned i = 0; i < v_indices.size(); ++i)
+                    v_indices[i] = i;
+                *indices_to_keep = v_indices;
+            }
+            return sample;
+        }
 
         // get sample from parent & apply filter!
         auto in_sample = parent()->getSample(num);
@@ -139,6 +147,10 @@ namespace tuplex {
         auto func = python::deserializePickledFunction(python::getMainModule(), pickledCode.c_str(),
                                                        pickledCode.length());
         size_t numExceptions = 0;
+        unsigned idx = 0;
+        if(indices_to_keep)
+            *indices_to_keep = std::vector<size_t>();
+
         for (const auto& row : in_sample) {
 
             auto rowObj = python::rowToPython(row);
@@ -170,8 +182,13 @@ namespace tuplex {
                     filter_ret = PyObject_IsTrue(pyobj_res);
                 }
 
-                if(filter_ret)
+                if(filter_ret) {
+                    if(indices_to_keep) {
+                        indices_to_keep->push_back(idx);
+                    }
+
                     sample.push_back(row);
+                }
 #ifndef NDEBUG
                 // Py_XINCREF(pyobj_res);
                 // auto res = python::pythonToRow(pyobj_res);
@@ -181,6 +198,7 @@ namespace tuplex {
 
                 Py_XDECREF(pyobj_res);
             }
+            idx++;
         }
 
         if (numExceptions != 0)

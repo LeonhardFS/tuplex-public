@@ -102,6 +102,8 @@ namespace tuplex {
 
 #ifdef BUILD_WITH_AWS
         std::unique_ptr<messages::TransformStage> to_protobuf() const;
+        // helper to be called after hyperspecialization as well.
+        void fill_schemas_into_protobuf(messages::TransformStage* msg) const;
         static std::unique_ptr<TransformStage> from_protobuf(const messages::TransformStage& msg);
 #endif
 
@@ -294,6 +296,18 @@ namespace tuplex {
         codegen::CodeFormat fastPathCodeFormat() const { return _fastCodePath.codeFormat; }
         codegen::CodeFormat slowPathCodeFormat() const { return _slowCodePath.codeFormat; }
 
+        inline messages::CodePath fast_path_to_protobuf() const {
+            messages::CodePath m;
+            _fastCodePath.fill(&m);
+            return m;
+        }
+
+        inline messages::CodePath slow_path_to_protobuf() const {
+            messages::CodePath m;
+            _slowCodePath.fill(&m);
+            return m;
+        }
+
         Schema generalCaseInputSchema() const {
             return this->_generalCaseInputSchema;
         }
@@ -415,6 +429,11 @@ namespace tuplex {
                 codegen::release_stage_f releaseStageFunctor;
 
                 CodePath() : initStageFunctor(nullptr), releaseStageFunctor(nullptr) {}
+
+                inline void reset() {
+                    initStageFunctor = nullptr;
+                    releaseStageFunctor = nullptr;
+                }
             };
 
             CodePath _fastCodePath;
@@ -436,7 +455,9 @@ namespace tuplex {
                            _slowCodePath(),
                            aggInitFunctor(nullptr),
                            aggCombineFunctor(nullptr),
-                           aggAggregateFunctor(nullptr) {}
+                           aggAggregateFunctor(nullptr) {
+                reset();
+            }
 
 
            inline void update(const std::shared_ptr<JITSymbols>& syms) {
@@ -466,7 +487,23 @@ namespace tuplex {
                    aggAggregateFunctor = syms->aggAggregateFunctor;
                if(syms->aggCombineFunctor)
                    aggCombineFunctor = syms->aggCombineFunctor;
+           }
+
+            /**
+             * sets alls symbols to nullptr */
+            inline void reset() {
+                // update if other is not null
+                _fastCodePath.reset();
+                _slowCodePath.reset();
+                functor = nullptr;
+                functorWithExp = nullptr;
+                resolveFunctor = nullptr;
+                aggInitFunctor = nullptr;
+                aggAggregateFunctor = nullptr;
+                aggCombineFunctor = nullptr;
             }
+
+            inline bool valid() const { return functor || functorWithExp || resolveFunctor || (aggInitFunctor && aggAggregateFunctor && aggCombineFunctor); }
         };
 
         // HACK!!!
@@ -598,6 +635,8 @@ namespace tuplex {
         inline std::shared_ptr<JITSymbols> jitsyms() const {
             return _syms;
         }
+
+        void annotateModulesWithTraceInformation();
 
     private:
         /*!
@@ -798,6 +837,8 @@ namespace tuplex {
         static void compileCodePathToObjectFile(StageCodePath& path, const std::string& target_triple, const std::string& cpu);
 
         void registerCodePathSymbols(JITCompiler &jit, const StageCodePath &path) const;
+
+        void annotatePathWithTraceInformation(StageCodePath& path);
     };
 }
 #endif //TUPLEX_TRANSFORMSTAGE_H

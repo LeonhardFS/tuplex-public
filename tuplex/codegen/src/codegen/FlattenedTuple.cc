@@ -17,12 +17,15 @@
 
 namespace tuplex {
     namespace codegen {
+
+        bool check_llvm_type(LLVMEnvironment& env, const python::Type& type, const SerializableValue& v, bool allow_incompatible_options, std::ostream* os=nullptr);
+
         std::vector<python::Type> FlattenedTuple::getFieldTypes() const {
             return _tree.fieldTypes();
         }
 
         FlattenedTuple
-        FlattenedTuple::fromLLVMStructVal(LLVMEnvironment *env, llvm::IRBuilder<> &builder, llvm::Value *ptr,
+        FlattenedTuple::fromLLVMStructVal(LLVMEnvironment *env, const codegen::IRBuilder& builder, llvm::Value *ptr,
                                           const python::Type &type) {
             assert(env);
             assert(ptr);
@@ -44,10 +47,6 @@ namespace tuplex {
             // two options: either it's a pointer to llvm type OR the type directly (i.e. in struct access)
             if(llvmType->isPointerTy()) {
                 assert(llvmType->isPointerTy());
-                assert(llvmType->getPointerElementType()->isStructTy());
-                assert(llvmType->getPointerElementType() == t.getLLVMType());
-
-                assert(llvmType->getPointerElementType() == llvm_tuple_type);
 
                 // now fill in values using getelementptr
                 for (unsigned int i = 0; i < t.numElements(); ++i)
@@ -89,7 +88,7 @@ namespace tuplex {
             return _tree.fieldType(index);
         }
 
-        void FlattenedTuple::setDummy(llvm::IRBuilder<> &builder, const std::vector<int> &index) {
+        void FlattenedTuple::setDummy(const IRBuilder& builder, const std::vector<int> &index) {
             // is it a single value or a compound/tuple type?
             auto field_type = _tree.fieldType(index);
             if(field_type.isTupleType() && field_type != python::Type::EMPTYTUPLE) {
@@ -131,13 +130,26 @@ namespace tuplex {
             }
         }
 
-        void FlattenedTuple::set(llvm::IRBuilder<> &builder, const std::vector<int>& index, llvm::Value *value, llvm::Value *size, llvm::Value *is_null) {
-
+        void FlattenedTuple::set(const codegen::IRBuilder& builder, const std::vector<int>& index, llvm::Value *value, llvm::Value *size, llvm::Value *is_null) {
             // is it a single value or a compound/tuple type?
             auto field_type = _tree.fieldType(index);
+
+#ifndef NDEBUG
+            // check in DEBUG mode that correct LLVM type is set to tuple.
+
+            {
+                std::stringstream err_stream;
+                if(!check_llvm_type(*_env, field_type, SerializableValue(value, size, is_null), &err_stream)) {
+                    auto err_msg = std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + err_stream.str();
+                    Logger::instance().logger("codegen").debug(err_msg);
+                    throw std::runtime_error(err_msg);
+                }
+            }
+#endif
+
+
             if(field_type.isTupleType() && field_type != python::Type::EMPTYTUPLE) {
                 // need to assign a subtree
-                assert(value->getType()->isStructTy() || value->getType()->getPointerElementType()->isStructTy()); // struct or struct*
 
                 auto subtree = _tree.subTree(index);
                 auto subtree_type = subtree.tupleType();
@@ -152,7 +164,7 @@ namespace tuplex {
             }
         }
 
-        void FlattenedTuple::set(llvm::IRBuilder<> &builder, const std::vector<int> &index, const FlattenedTuple &t) {
+        void FlattenedTuple::set(const codegen::IRBuilder& builder, const std::vector<int> &index, const FlattenedTuple &t) {
             auto subtree = _tree.subTree(index);
             auto subtree_type = subtree.tupleType();
             assert(subtree_type == t.tupleType());
@@ -160,6 +172,10 @@ namespace tuplex {
         }
 
         void FlattenedTuple::init(const python::Type &type) {
+
+            // for now: do not support row type
+            if((type.isRowType()) || (type.isTupleType() && type.parameters().size() == 1 && type.parameters().front().isRowType()))
+                throw std::runtime_error("row type not yet supported");
 
             // special case: empty tuple
             if(python::Type::EMPTYTUPLE == type || python::Type::EMPTYROW == type) {
@@ -187,7 +203,7 @@ namespace tuplex {
             return types;
         }
 
-        void FlattenedTuple::deserializationCode(llvm::IRBuilder<>& builder, llvm::Value *input) {
+        void FlattenedTuple::deserializationCode(const codegen::IRBuilder& builder, llvm::Value *input) {
 
             using namespace llvm;
             using namespace std;
@@ -203,20 +219,18 @@ namespace tuplex {
             vector<llvm::Value*> bitmap;
             bool hasBitmap = tupleType().isOptional();
             if(hasBitmap) {
-                // new:
                 auto atype = getLLVMType()->getStructElementType(0); assert(atype->isArrayTy());
                 auto numBits = atype->getArrayNumElements();
                 std::tie(lastPtr, bitmap) = deserializeBitmap(*_env, builder, lastPtr, numBits);
-                // old
+
                 // auto atype = getLLVMType()->getStructElementType(0); assert(atype->isArrayTy());
                 // int numBitmapElements = core::ceilToMultiple(atype->getArrayNumElements(), (uint64_t)64) / 64;
-                //
                 // for(int i = 0; i < numBitmapElements; ++i) {
                 //     // read as 64bit int from memory
-                //     auto bitmapElement = builder.CreateLoad(builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)), "bitmap_part");
+                //     auto bitmapElement = builder.CreateLoad(_env->i64Type(), builder.CreateBitCast(lastPtr, _env->i64ptrType()), "bitmap_part");
                 //     bitmap.emplace_back(bitmapElement);
                 //     // set
-                //     lastPtr = builder.CreateGEP(lastPtr, _env->i32Const(sizeof(int64_t)));
+                //     lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t));
                 // }
             }
 
@@ -231,7 +245,8 @@ namespace tuplex {
                 }
                 if(python::Type::EMPTYTUPLE == type) {
                     // no load necessary for empty tuple. Simply load the dummy struct
-                    Value *load = builder.CreateLoad(builder.CreateAlloca(_env->getEmptyTupleType(), 0, nullptr));
+                    Value *load = builder.CreateLoad(_env->getEmptyTupleType(),
+                                                     builder.CreateAlloca(_env->getEmptyTupleType(), 0, nullptr));
                     _tree.set(i, codegen::SerializableValue(load, _env->i64Const(sizeof(int64_t)), _env->i1Const(false)));
                     continue;
                 }
@@ -243,6 +258,7 @@ namespace tuplex {
                 }
                 if(python::Type::EMPTYLIST == type) {
                     _tree.set(i, codegen::SerializableValue(_env->i8nullptr(), _env->i64Const(sizeof(int64_t)), _env->i1Const(false)));
+                    continue;
                 }
 
                 llvm::Value* isnull = nullptr;
@@ -258,7 +274,8 @@ namespace tuplex {
                     // get return type for extraction
                     type = type.getReturnType();
                     if(type == python::Type::EMPTYTUPLE) {
-                        Value *load = builder.CreateLoad(builder.CreateAlloca(_env->getEmptyTupleType(), 0, nullptr));
+                        auto llvm_empty_tuple_type = _env->getEmptyTupleType();
+                        Value *load = builder.CreateLoad(llvm_empty_tuple_type, builder.CreateAlloca(llvm_empty_tuple_type, 0, nullptr));
                         _tree.set(i, codegen::SerializableValue(load, _env->i64Const(sizeof(int64_t)), isnull));
                         continue;
                     }
@@ -281,7 +298,7 @@ namespace tuplex {
                 if(!type.isFixedSizeType() && type != python::Type::EMPTYDICT) {
                     // deserialize string
                     // load directly from memory (offset in lower 32bit, size in upper 32bit)
-                    Value *varInfo = builder.CreateLoad(builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)),
+                    Value *varInfo = builder.CreateLoad(builder.getInt64Ty(), builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)),
                                                         "offset");
 
                     // new:
@@ -293,162 +310,62 @@ namespace tuplex {
                     // // truncation yields lower 32 bit (= offset)
                     // Value *offset = builder.CreateTrunc(varInfo, Type::getInt32Ty(context));
                     // // right shift by 32 yields size
-                    // Value *size = builder.CreateLShr(varInfo, 32, "varsize");
+                    // Value *size = builder.CreateTrunc(builder.CreateLShr(varInfo, 32, "varsize"), Type::getInt32Ty(context));
+                    size = builder.CreateZExtOrTrunc(size, Type::getInt64Ty(context));
 
+                    // // debug print
+                    // _env->printValue(builder, varInfo, "var info=");
+                    // _env->printValue(builder, offset, "var type offset=");
+                    // _env->printValue(builder, size, "var type size=");
 
                     // add offset to get starting point of varlen argument's memory region
-                    Value *ptr = builder.CreateGEP(lastPtr, offset, twine);
+                    Value *ptr = builder.MovePtrByBytes(lastPtr, offset, twine); //builder.CreateGEP(_env->i8ptrType(), lastPtr, offset, twine);
                     assert(ptr->getType() == Type::getInt8PtrTy(context, 0));
                     if(type == python::Type::STRING || type == python::Type::PYOBJECT) {
                         _tree.set(i, codegen::SerializableValue(ptr, size, isnull));
                     } else if(type == python::Type::EMPTYDICT) {
                         throw std::runtime_error("Should not happen!");
                     } else if(type.isDictionaryType()) {
-                        if(type.isStructuredDictionaryType()) {
+                        if(type.isStructuredDictionaryType() || type.isSparseStructuredDictionaryType()) {
+
                             // deserialize from ptr
-                            auto dict_val = struct_dict_deserialize_from_memory(*_env, builder, ptr, type);
+                            auto dict_val = struct_dict_deserialize_from_memory(*_env, builder, ptr, type.makeNonSparse(), true, isnull); // could set this to true...
+
+                            // // print value:
+                            // _env->debugPrint(builder, "-- DESERIALIZED " + type.desc() + " from memory:");
+                            // struct_dict_print(*_env, builder, dict_val, type);
+                            // _env->debugPrint(builder, " -- END");
+
+                            // _env->debugPrint(builder, "SANITY CHECK:: load value from ptr and print");
+                            // auto llvm_dict_type = _env->pythonToLLVMType(type);
+                            // auto loaded_dict = builder.CreateLoad(llvm_dict_type, dict_val.val);
+                            // struct_dict_print(*_env, builder, {loaded_dict, nullptr, nullptr}, type);
+                            // _env->debugPrint(builder, " -- END");
+
                             _tree.set(i, dict_val);
                         } else {
                             // create the dictionary pointer
-                            auto dictPtr = builder.CreateCall(cJSONParse_prototype(_env->getContext(), _env->getModule().get()),
-                                                              {ptr});
+                            auto dictPtr = call_cjson_parse(builder, ptr);
                             _tree.set(i, codegen::SerializableValue(dictPtr, size, isnull));
                         }
                     } else if(type.isListType()) {
-                        throw std::runtime_error("list deserializaiton must be updated, not yet implemented");
-                        assert(type != python::Type::EMPTYLIST);
-                        auto llvmType = _env->getOrCreateListType(type);
-                        llvm::Value *listAlloc = _env->CreateFirstBlockAlloca(builder, llvmType, "listAlloc");
 
-                        // get number of elements
-                        auto numElements = builder.CreateLoad(builder.CreateBitCast(ptr, Type::getInt64PtrTy(context, 0)), "list_num_elements");
-                        llvm::Value* listSize = builder.CreateAlloca(Type::getInt64Ty(context));
-                        builder.CreateStore(builder.CreateAdd(builder.CreateMul(numElements, _env->i64Const(8)), _env->i64Const(8)), listSize); // start list size as 8 * numElements + 8 ==> have to add string lengths for string case
+                        SerializableValue list_value;
+                        llvm::Value* list_size_in_bytes=nullptr;
 
-                        // load the list with its initial size
-                        auto list_capacity_ptr = CreateStructGEP(builder, listAlloc,  0);
-                        builder.CreateStore(numElements, list_capacity_ptr);
-                        auto list_len_ptr = CreateStructGEP(builder, listAlloc,  1);
-                        builder.CreateStore(numElements, list_len_ptr);
+                        // TODO: isnull decode
+                        list_value.is_null = isnull;
+                        list_value = list_deserialize_from(*_env, builder, ptr, type, isnull, &list_size_in_bytes);
 
-                        auto elementType = type.elementType();
-                        if(elementType == python::Type::STRING) {
-                            auto offset_ptr = builder.CreateBitCast(builder.CreateGEP(ptr, _env->i64Const(sizeof(int64_t))), Type::getInt64PtrTy(context, 0)); // get pointer to i64 serialized array of offsets
-                            // need to point to each of the strings and calculate lengths
-                            llvm::Function *func = builder.GetInsertBlock()->getParent();
-                            assert(func);
-                            BasicBlock *loopCondition = BasicBlock::Create(context, "list_loop_condition", func);
-                            BasicBlock *loopBodyEntry = BasicBlock::Create(context, "list_loop_body_entry", func);
-                            BasicBlock *loopBodyLastEl = BasicBlock::Create(context, "list_loop_body_lastElement", func);
-                            BasicBlock *loopBodyReg = BasicBlock::Create(context, "list_loop_body_regular", func);
-                            BasicBlock *loopBodyEnd = BasicBlock::Create(context, "list_loop_body_end", func);
-                            BasicBlock *after = BasicBlock::Create(context, "list_after", func);
+                        if(isnull)
+                            assert(list_value.is_null);
 
-                            // allocate the char* array
-                            auto list_arr_malloc = builder.CreatePointerCast(_env->malloc(builder, builder.CreateMul(numElements, _env->i64Const(8))),
-                                    llvmType->getStructElementType(2));
-                            // allocate the sizes array
-                            auto list_sizearr_malloc = builder.CreatePointerCast(_env->malloc(builder, builder.CreateMul(numElements, _env->i64Const(8))),
-                                    llvmType->getStructElementType(3));
-
-                            // read the elements
-                            auto loopCounter = builder.CreateAlloca(Type::getInt64Ty(context));
-                            builder.CreateStore(_env->i64Const(0), loopCounter);
-                            builder.CreateBr(loopCondition);
-
-                            builder.SetInsertPoint(loopCondition);
-                            auto loopNotDone = builder.CreateICmpSLT(builder.CreateLoad(loopCounter), numElements);
-                            builder.CreateCondBr(loopNotDone, loopBodyEntry, after);
-
-                            builder.SetInsertPoint(loopBodyEntry);
-                            // store the pointer to the string
-                            auto curOffset = builder.CreateLoad(builder.CreateGEP(offset_ptr, builder.CreateLoad(loopCounter)));
-                            auto next_str_ptr = builder.CreateGEP(list_arr_malloc, builder.CreateLoad(loopCounter));
-                            auto curStrPtr = builder.CreateGEP(builder.CreateBitCast(builder.CreateGEP(offset_ptr, builder.CreateLoad(loopCounter)), Type::getInt8PtrTy(context, 0)), curOffset);
-                            builder.CreateStore(curStrPtr, next_str_ptr);
-
-                            // set up to calculate the size based on offsets
-                            auto next_size_ptr = builder.CreateGEP(list_sizearr_malloc, builder.CreateLoad(loopCounter));
-                            auto lastElement = builder.CreateICmpEQ(builder.CreateLoad(loopCounter), builder.CreateSub(numElements, _env->i64Const(1)));
-                            builder.CreateCondBr(lastElement, loopBodyLastEl, loopBodyReg);
-
-                            builder.SetInsertPoint(loopBodyReg);
-                            // get the next serialized offset
-                            auto nextOffset = builder.CreateLoad(builder.CreateGEP(offset_ptr, builder.CreateAdd(builder.CreateLoad(loopCounter), _env->i64Const(1))));
-                            auto curLenReg = builder.CreateSub(nextOffset, builder.CreateSub(curOffset, _env->i64Const(sizeof(uint64_t))));
-                            // store it into the list
-                            builder.CreateStore(curLenReg, next_size_ptr);
-                            builder.CreateStore(builder.CreateAdd(builder.CreateLoad(listSize), curLenReg), listSize);
-                            builder.CreateBr(loopBodyEnd);
-
-                            builder.SetInsertPoint(loopBodyLastEl);
-                            auto curLenLast = builder.CreateSub(size, builder.CreateMul(_env->i64Const(8), numElements)); // size - 8*(nE) (no -1 because of the size field before)
-                            curLenLast = builder.CreateSub(curLenLast, curOffset);
-                            // store it into the list
-                            builder.CreateStore(curLenLast, next_size_ptr);
-                            builder.CreateStore(builder.CreateAdd(builder.CreateLoad(listSize), curLenLast), listSize);
-                            builder.CreateBr(loopBodyEnd);
-
-                            builder.SetInsertPoint(loopBodyEnd);
-                            // update the loop variable and return
-                            builder.CreateStore(builder.CreateAdd(builder.CreateLoad(loopCounter), _env->i64Const(1)), loopCounter);
-                            builder.CreateBr(loopCondition);
-
-                            builder.SetInsertPoint(after);
-                            // store the malloc'd and populated array to the struct
-                            auto list_arr = CreateStructGEP(builder, listAlloc, 2);
-                            builder.CreateStore(list_arr_malloc, list_arr);
-                            auto list_sizearr = CreateStructGEP(builder, listAlloc, 3);
-                            builder.CreateStore(list_sizearr_malloc, list_sizearr);
-                        }
-                        else if(elementType == python::Type::BOOLEAN) {
-                            ptr = builder.CreateBitCast(builder.CreateGEP(ptr, _env->i64Const(sizeof(int64_t))), Type::getInt64PtrTy(context, 0)); // get pointer to i64 serialized array of booleans
-                            // need to copy the values out because serialized boolean = 8 bytes, but llvm boolean = 1 byte
-                            llvm::Function *func = builder.GetInsertBlock()->getParent();
-                            assert(func);
-                            BasicBlock *loopCondition = BasicBlock::Create(context, "list_loop_condition", func);
-                            BasicBlock *loopBody = BasicBlock::Create(context, "list_loop_body", func);
-                            BasicBlock *after = BasicBlock::Create(context, "list_after", func);
-                            // allocate the array
-                            auto list_arr_malloc = builder.CreatePointerCast(_env->malloc(builder, numElements),
-                                                                             llvmType->getStructElementType(2));
-
-                            // read the elements
-                            auto loopCounter = builder.CreateAlloca(Type::getInt64Ty(context));
-                            builder.CreateStore(_env->i64Const(0), loopCounter);
-                            builder.CreateBr(loopCondition);
-
-                            builder.SetInsertPoint(loopCondition);
-                            auto loopNotDone = builder.CreateICmpSLT(builder.CreateLoad(loopCounter), numElements);
-                            builder.CreateCondBr(loopNotDone, loopBody, after);
-
-                            builder.SetInsertPoint(loopBody);
-                            auto list_el = builder.CreateGEP(list_arr_malloc, builder.CreateLoad(loopCounter)); // next list element
-                            // get the next serialized value
-                            auto serializedbool = builder.CreateLoad(builder.CreateGEP(ptr, builder.CreateLoad(loopCounter)));
-                            auto truncbool = builder.CreateTrunc(serializedbool, boolType);
-                            // store it into the list
-                            builder.CreateStore(truncbool, list_el);
-                            // update the loop variable and return
-                            builder.CreateStore(builder.CreateAdd(builder.CreateLoad(loopCounter), _env->i64Const(1)), loopCounter);
-                            builder.CreateBr(loopCondition);
-
-                            builder.SetInsertPoint(after);
-                            // store the malloc'd and populated array to the struct
-                            auto list_arr = CreateStructGEP(builder, listAlloc, 2);
-                            builder.CreateStore(list_arr_malloc, list_arr);
-                        }
-                        else if(elementType == python::Type::I64 || elementType == python::Type::F64) {
-                            // can just directly point to the serialized data
-                            auto list_arr = CreateStructGEP(builder, listAlloc, 2);
-                            builder.CreateStore(builder.CreateBitCast(builder.CreateGEP(ptr, _env->i64Const(sizeof(int64_t))),
-                                    llvmType->getStructElementType(2)), list_arr);
-                        } else {
-                            Logger::instance().defaultLogger().error("unknown type '" + type.desc() + "' to be deserialized!");
-                        }
-
+#ifndef NDEBUG
+                        _env->printValue(builder, list_size_in_bytes, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " deserialized list " + type.desc() + " with bytes: ");
+                        // _env->printValue(builder, size, "stored field size used for skipping, this number should match: ");
+#endif
                         // set the deserialized list
-                        _tree.set(i, codegen::SerializableValue(builder.CreateLoad(listAlloc), builder.CreateLoad(listSize), isnull));
+                        _tree.set(i, list_value);
                     } else {
                         Logger::instance().defaultLogger().error("unknown type '" + type.desc() + "' to be deserialized!");
                     }
@@ -458,7 +375,8 @@ namespace tuplex {
                     if(python::Type::BOOLEAN == type) {
 
                         // load directly from memory
-                        Value *tmp = builder.CreateLoad(builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)));
+                        Value *tmp = builder.CreateLoad(builder.getInt64Ty(),
+                                                        builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)));
 
                         // cast to boolean type
                         Value *load = builder.CreateTrunc(tmp, boolType, twine);
@@ -467,13 +385,14 @@ namespace tuplex {
                     } else if(python::Type::I64 == type) {
 
                         // load directly from memory
-                        Value *load = builder.CreateLoad(builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)), twine);
+                        Value *load = builder.CreateLoad(_env->i64Type(),
+                                                         builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)), twine);
                         _tree.set(i, codegen::SerializableValue(load, _env->i64Const(sizeof(int64_t)), isnull));
 
                     } else if(python::Type::F64 == type) {
 
                         // load directly from memory
-                        Value *load = builder.CreateLoad(builder.CreateBitCast(lastPtr, Type::getDoublePtrTy(context, 0)), twine);
+                        Value *load = builder.CreateLoad(_env->doubleType(), builder.CreateBitCast(lastPtr, Type::getDoublePtrTy(context, 0)), twine);
                         _tree.set(i, codegen::SerializableValue(load, _env->i64Const(sizeof(int64_t)), isnull));
 
                     } else if(python::Type::EMPTYTUPLE == type) {
@@ -482,7 +401,7 @@ namespace tuplex {
                         throw std::runtime_error("Should not happen EMPTYDICT");
                     } else if(type.isListType()) {
                         // lists of fixed size are just represented by a length
-                        Value *num_elements = builder.CreateLoad(builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)), twine);
+                        Value *num_elements = builder.CreateLoad(_env->i64Type(), builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)), twine);
                         _tree.set(i, codegen::SerializableValue(num_elements, _env->i64Const(sizeof(int64_t)), isnull));
                     } else if(type.isConstantValued()) {
                         // simple constant gen
@@ -494,11 +413,11 @@ namespace tuplex {
                 }
 
                 // inc last ptr (SKIP for constants)
-                lastPtr = builder.CreateGEP(lastPtr, _env->i32Const(sizeof(int64_t)), "inptr");
+                lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t), "inptr");
             }
         }
 
-        llvm::Value* FlattenedTuple::serializationCode(llvm::IRBuilder<>& builder, llvm::Value *output,
+        llvm::Value* FlattenedTuple::serializationCode(const codegen::IRBuilder& builder, llvm::Value *output,
                                                        llvm::Value *capacity, llvm::BasicBlock* insufficientCapacityHandler) const {
             using namespace llvm;
             assert(_env);
@@ -530,28 +449,40 @@ namespace tuplex {
 
             // then block...
             // -------
-            IRBuilder<> bThen(enoughCapacity);
+            codegen::IRBuilder bThen(enoughCapacity);
             serialize(bThen, output);
 
-            // set builder to insert on then block
-            builder.SetInsertPoint(enoughCapacity);
+            // set builder to last block of bThen
+            assert(bThen.GetInsertBlock());
+            builder.SetInsertPoint(bThen.GetInsertBlock());
+
             return serializationSize;
         }
 
+        python::Type tuple_type_without_first_level_options(const python::Type& tuple_type) {
+            assert(tuple_type.isTupleType());
+            std::vector<python::Type> col_types = tuple_type.parameters();
+            for(auto& type : col_types) {
+                if(type.isOptionType())
+                    type = type.getReturnType();
+            }
+            return python::Type::makeTupleType(col_types);
+        }
 
-
-        llvm::Value* FlattenedTuple::serialize(llvm::IRBuilder<>& builder, llvm::Value *ptr) const {
+        llvm::Value* FlattenedTuple::serialize(const codegen::IRBuilder& builder, llvm::Value *ptr) const {
             using namespace llvm;
             using namespace std;
 
+            // _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Serializing flattened tuple of type " + _flattenedTupleType.desc() + " to memory.");
+
             auto& context = _env->getContext();
             auto types = getFieldTypes();
-            bool hasVarField = !getTupleType().withoutOptionsRecursive().isFixedSizeType();
+            auto tuple_type = python::Type::makeTupleType(types);
+
+            // Logger::instance().defaultLogger().debug("serialize flattened tuple of type: " + getTupleType().desc());
+            bool hasVarField = !tuple_type_without_first_level_options(tuple_type).isFixedSizeType();
 
             auto original_start_ptr = ptr;
-
-            // _env->debugPrint(builder, "starting serialization of tuple:");
-            // this->print(builder);
 
             // serialize fixed size + varlen fields out
             Value *lastPtr = ptr;
@@ -561,11 +492,12 @@ namespace tuplex {
                     numSerializedElements++;
                 }
             }
-            Value *varlenBasePtr = builder.CreateGEP(lastPtr, _env->i32Const(sizeof(int64_t) * (numSerializedElements + 1)), "varbaseptr");
+            Value *varlenBasePtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t) * (numSerializedElements + 1), "varbaseptr");
             Value *varlenSize = _env->i64Const(0);
 
             // bitmap needed?
             bool hasBitmap = getTupleType().isOptional();
+            int64_t num_bitmap_blocks = 0;
 
             // step 1: serialize bitmap
             if(hasBitmap) {
@@ -579,14 +511,14 @@ namespace tuplex {
                     builder.CreateStore(be, builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)));
 
                     // warning multiple
-                    lastPtr = builder.CreateGEP(lastPtr, _env->i32Const(sizeof(int64_t)), "outptr");
+                    lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t), "outptr");
                 }
 
-                // add 8 bytes to varlen base ptr
-                varlenBasePtr = builder.CreateGEP(varlenBasePtr, _env->i32Const(sizeof(int64_t) * bitmap.size()), "varlenbaseptr");
-            }
+                num_bitmap_blocks = bitmap.size();
 
-            // _env->printValue(builder, builder.CreatePtrDiff(varlenBasePtr, original_start_ptr), "varlen pointer start offset is: ");
+                // add multiple of 8 bytes to varlen base ptr for bitmap
+                varlenBasePtr = builder.MovePtrByBytes(varlenBasePtr, sizeof(int64_t) * bitmap.size(), "varlenbaseptr");
+            }
 
             // step 2: serialize fields
             // go through elements
@@ -643,11 +575,11 @@ namespace tuplex {
                 if(fieldType.isDictionaryType() && fieldType != python::Type::EMPTYDICT) {
 
                     // serialize struct dict
-                    if(fieldType.isStructuredDictionaryType()) {
+                    if(fieldType.isStructuredDictionaryType() || fieldType.isSparseStructuredDictionaryType()) {
                         auto dict_type = types[i].withoutOption();
 
                         // struct dicts are a var field (ignore the special case here)
-                        size = struct_dict_serialized_memory_size(*_env, builder, field, dict_type).val;
+                        size = struct_dict_serialized_memory_size(*_env, builder, field, dict_type.makeNonSparse()).val;
 
                         // note: when null, don't serialize anything.
                         if(types[i].isOptionType())
@@ -667,47 +599,42 @@ namespace tuplex {
                         builder.CreateStore(info, builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)), false);
 
                         // write to i8 pointer
-                        Value *outptr = builder.CreateGEP(lastPtr, offset, "varoff");
+                        Value *outptr = builder.MovePtrByBytes(lastPtr, offset, "varoff");
 
                         // write actual data to outptr
-                        auto s_info = struct_dict_serialize_to_memory(*_env, builder, field, dict_type, outptr);
+                        auto s_info = struct_dict_serialize_to_memory(*_env, builder, field, dict_type.makeNonSparse(), outptr);
 
                         // _env->printValue(builder, s_info.size, "actually serialized size: ");
 
 #ifndef NDEBUG
-                         // print info
-                         auto bitmap_pos_idx = 0;
-                         if(struct_dict_has_bitmap(dict_type)) {
-                             auto bitmap_val = builder.CreateLoad(builder.CreatePointerCast(builder.CreateGEP(s_info.val, _env->i64Const(bitmap_pos_idx)), _env->i64ptrType()));
-                             // _env->printValue(builder, bitmap_val, "bitmap:      ");
-                             bitmap_pos_idx += 8;
-                         }
-                        if(struct_dict_has_presence_map(dict_type)) {
-                            auto bitmap_val = builder.CreateLoad(builder.CreatePointerCast(builder.CreateGEP(s_info.val, _env->i64Const(bitmap_pos_idx)), _env->i64ptrType()));
-                            // _env->printValue(builder, bitmap_val, "presence map: ");
-                            bitmap_pos_idx += 8;
-                        }
+//                         // print info
+//                         auto bitmap_pos_idx = 0;
+//                         if(struct_dict_has_bitmap(dict_type)) {
+//                             auto bitmap_val = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(builder.CreateGEP(builder.getInt64Ty(), s_info.val, _env->i64Const(bitmap_pos_idx)), _env->i64ptrType()));
+//                             // _env->printValue(builder, bitmap_val, "bitmap:      ");
+//                             bitmap_pos_idx += 8;
+//                         }
+//                        if(struct_dict_has_presence_map(dict_type)) {
+//                            auto bitmap_val = builder.CreateLoad(builder.getInt64Ty(), builder.CreatePointerCast(builder.CreateGEP(builder.getInt64Ty(), s_info.val, _env->i64Const(bitmap_pos_idx)), _env->i64ptrType()));
+//                            // _env->printValue(builder, bitmap_val, "presence map: ");
+//                            bitmap_pos_idx += 8;
+//                        }
 #endif
                         // also varlensize needs to be output separately, so add
                         varlenSize = builder.CreateAdd(varlenSize, size);
-                        lastPtr = builder.CreateGEP(lastPtr, _env->i32Const(sizeof(int64_t)), "outptr");
+                        lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t), "outptr");
                         serialized_idx++;
                         continue; // field done.
                     } else {
                         // assert(!is_option_field); // --> need to implement if logic for this!
+                        auto f = call_cjson_to_string(builder, field);
+                        field = f.val;
+                        size = f.size;
 
-
-                        field = builder.CreateCall(
-                                cJSONPrintUnformatted_prototype(_env->getContext(), _env->getModule().get()),
-                                {field});
-                        size = builder.CreateAdd(
-                                builder.CreateCall(strlen_prototype(_env->getContext(), _env->getModule().get()), {field}),
-                                _env->i64Const(1));
-
-                        // // debug:
-                        // _env->debugPrint(builder, "serializing generic dict: ");
-                        // _env->printValue(builder, is_not_null, fieldType.desc() + " is not null: ");
-                        // _env->printValue(builder, size, fieldType.desc() + " size is: ");
+                         // // debug:
+                         // _env->debugPrint(builder, "serializing generic dict: ");
+                         // _env->printValue(builder, is_not_null, fieldType.desc() + " is not null: ");
+                         // _env->printValue(builder, size, fieldType.desc() + " size is: ");
                     }
                 }
 
@@ -728,23 +655,25 @@ namespace tuplex {
                         size = builder.CreateSelect(_tree.get(i).is_null, _env->i64Const(0), size);
 
                     // the offset is computed using how many varlen fields have been already serialized
-                    int64_t field_offset_in_bytes = (numSerializedElements + 1 - serialized_idx) * sizeof(int64_t);
-                    Value *offset = builder.CreateAdd(_env->i64Const(field_offset_in_bytes), varlenSize);
+                    // and including how many 8-byte blocks the bitmao requires
+                    int64_t fixed_offset = (static_cast<int64_t>(numSerializedElements) + 1 - serialized_idx) * static_cast<int64_t>(sizeof(int64_t));
+                    Value *offset = builder.CreateAdd(_env->i64Const(fixed_offset), varlenSize); // <-- offset where to serialize to
 
                     // store offset + length
                     // len | size
                     auto info = pack_offset_and_size(builder, offset, size);
                     builder.CreateStore(info, builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)), false);
 
+
                     // write to i8 pointer
-                    Value *outptr = builder.CreateGEP(lastPtr, offset, "varoff");
+                    Value *outptr = builder.MovePtrByBytes(lastPtr, offset, "list_varoff");
 
                     // write actual data to outptr
                     auto s_info = list_serialize_to(*_env, builder, field, list_type, outptr);
 
                     // also varlensize needs to be output separately, so add
                     varlenSize = builder.CreateAdd(varlenSize, size);
-                    lastPtr = builder.CreateGEP(lastPtr, _env->i32Const(sizeof(int64_t)), "outptr");
+                    lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t), "outptr");
                     serialized_idx++;
                     continue; // field done.
                 } else if(fieldType != python::Type::EMPTYDICT && fieldType != python::Type::NULLVALUE && field->getType()->isPointerTy()) {
@@ -784,7 +713,7 @@ namespace tuplex {
                     // copy memory of i8 pointer
                     assert(field->getType()->isPointerTy());
                     assert(field->getType() == Type::getInt8PtrTy(context, 0));
-                    Value *outptr = builder.CreateGEP(lastPtr, offset, "varoff");
+                    Value *outptr = builder.MovePtrByBytes(lastPtr, offset, "varoff");
 
 
 #if LLVM_VERSION_MAJOR < 9
@@ -799,14 +728,14 @@ namespace tuplex {
                     if ((fieldType == python::Type::STRING ||
                          fieldType.isDictionaryType()) && _forceZeroTerminatedStrings) {
                         // write 0 for string
-                        auto lastCharPtr = builder.CreateGEP(outptr, builder.CreateSub(size, _env->i64Const(1)));
+                        auto lastCharPtr = builder.MovePtrByBytes(outptr, builder.CreateSub(size, _env->i64Const(1)));
                         builder.CreateStore(_env->i8Const('\0'), lastCharPtr);
                     }
 
                     // also varlensize needs to be output separately, so add
                     varlenSize = builder.CreateAdd(varlenSize, size);
 
-                    lastPtr = builder.CreateGEP(lastPtr, _env->i32Const(sizeof(int64_t)), "outptr");
+                    lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t), "outptr");
                 } else {
                     assert(fieldType.isFixedSizeType());
 
@@ -832,7 +761,7 @@ namespace tuplex {
 
                         // store within output
                         Value *store = builder.CreateStore(boolVal, builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)), false);
-                        lastPtr = builder.CreateGEP(lastPtr, _env->i32Const(sizeof(int64_t)), "outptr");
+                        lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t), "outptr");
                     } else if(python::Type::I64 == fieldType) {
                         // option trick
                         if(is_option_field) {
@@ -841,7 +770,7 @@ namespace tuplex {
                         assert(field->getType() == _env->i64Type());
                         // store within output
                         Value *store = builder.CreateStore(field, builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)), false);
-                        lastPtr = builder.CreateGEP(lastPtr, _env->i32Const(sizeof(int64_t)), "outptr");
+                        lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t), "outptr");
                     } else if(python::Type::F64 == fieldType) {
                         // option trick
                         if(is_option_field) {
@@ -855,12 +784,11 @@ namespace tuplex {
                         assert(field->getType() == _env->doubleType());
                         // store within output
                         Value *store = builder.CreateStore(field, builder.CreateBitCast(lastPtr, Type::getDoublePtrTy(context, 0)), false);
-                        lastPtr = builder.CreateGEP(lastPtr, _env->i32Const(sizeof(double)), "outptr");
+                        lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(double), "outptr");
                     } else if(fieldType.isListType() && fieldType.elementType().isSingleValued()) {
-                        throw std::runtime_error("list not supported yet");
                         // store within output - the field is just the size of the list
                         Value *store = builder.CreateStore(field, builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)), false);
-                        lastPtr = builder.CreateGEP(lastPtr, _env->i32Const(sizeof(int64_t)), "outptr");
+                        lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t), "outptr");
                     } else {
                         std::stringstream ss;
                         ss<<"unknown fixed type '"<<fieldType.desc()<<"' wanted to be serialized";
@@ -874,20 +802,21 @@ namespace tuplex {
 
             // if varfield was encountered, store varfield size!
             if(hasVarField) {
+                // _env->printValue(builder, varlenSize, "storing total varlen fields size = ");
                 builder.CreateStore(varlenSize, builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0))); // last field
-                lastPtr = builder.CreateGEP(lastPtr, _env->i32Const(sizeof(int64_t)));
+                lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t));
                 // add varlength
-                lastPtr = builder.CreateGEP(lastPtr, varlenSize);
+                lastPtr = builder.MovePtrByBytes(lastPtr, varlenSize);
             }
 
             // return diff
-            auto bytes_written = builder.CreatePtrDiff(lastPtr, original_start_ptr);
+            auto bytes_written = builder.CreatePtrDiff(builder.getInt8Ty(), lastPtr, original_start_ptr);
 
             // _env->printValue(builder, bytes_written, "bytes written: ");
             return bytes_written;
         }
 
-        void FlattenedTuple::setElement(llvm::IRBuilder<>& builder,
+        void FlattenedTuple::setElement(const codegen::IRBuilder& builder,
                                         const int iElement,
                                         llvm::Value *val,
                                         llvm::Value *size,
@@ -927,13 +856,14 @@ namespace tuplex {
             || elementType == python::Type::GENERICDICT || elementType.isListType() || elementType == python::Type::PYOBJECT) {
 
                 // special case: struct dict
-                if(elementType.isStructuredDictionaryType()) {
+                if(elementType.isStructuredDictionaryType() || elementType.isSparseStructuredDictionaryType()) {
                     // either struct.dict or struct.dict* supported.
                     assert(val->getType()->isStructTy() ||
-                          (val->getType()->isPointerTy() && val->getType()->getPointerElementType()->isStructTy()));
+                          (val->getType()->isPointerTy() && LLVM_VERSION_MAJOR <= 15 && val->getType()->getPointerElementType()->isStructTy()));
                     if(val->getType()->isPointerTy()) {
+                        auto llvm_struct_type = _env->getOrCreateStructuredDictType(elementType.makeNonSparse());
                         // perform load!
-                        val = builder.CreateLoad(val);
+                        val = builder.CreateLoad(llvm_struct_type, val);
                     }
                     size = nullptr; // needs to be calculated...
                 }
@@ -945,8 +875,9 @@ namespace tuplex {
                 // empty tuple will result in constants
                 // i.e. set the value to a load of the empty tuple special type and the size to sizeof(int64_t)
                 assert(_env);
-                auto alloc = builder.CreateAlloca(_env->getEmptyTupleType(), 0, nullptr);
-                auto load = builder.CreateLoad(alloc);
+                auto llvm_empty_tuple_type = _env->getEmptyTupleType();
+                auto alloc = builder.CreateAlloca(llvm_empty_tuple_type, 0, nullptr);
+                auto load = builder.CreateLoad(llvm_empty_tuple_type, alloc);
                 set(builder, {iElement}, load, _env->i64Const(sizeof(int64_t)), _env->i1Const(false));
             } else if(elementType == python::Type::NULLVALUE) {
                 set(builder, {iElement}, nullptr, nullptr, _env->i1Const(true));
@@ -964,7 +895,7 @@ namespace tuplex {
             return !tupleType().isFixedSizeType();
         }
 
-        llvm::Value* FlattenedTuple::getSize(llvm::IRBuilder<>& builder) const {
+        llvm::Value* FlattenedTuple::getSize(const codegen::IRBuilder& builder) const {
             // @TODO: make this more performant by NOT serializing anymore NULL, EMPTYDICT, EMPTYTUPLE, ...
             using namespace llvm;
 
@@ -1008,7 +939,7 @@ namespace tuplex {
                 auto type = _tree.fieldType(i);
 
                 // skip single-valued elements.
-                if(type.isSingleValued())
+                if(type.isSingleValued() || type.withoutOption().isSingleValued())
                     continue;
 
                 // not single-valued? there should be a value!
@@ -1053,8 +984,12 @@ namespace tuplex {
                 if(!type.isFixedSizeType()) {
 
                     // special cases list and struct
-                    if(type.isStructuredDictionaryType()) {
-                        auto s_size = struct_dict_serialized_memory_size(*_env, builder, el.val, type).val;
+                    if(type.isStructuredDictionaryType() || type.isSparseStructuredDictionaryType()) {
+#if LLVM_VERSION_MAJOR < 15
+                        assert(el.val && (el.val->getType()->isPointerTy() && el.val->getType()->getPointerElementType()->isStructTy()) || el.val->getType()->isStructTy());
+#endif
+
+                        auto s_size = struct_dict_serialized_memory_size(*_env, builder, el.val, type.makeNonSparse()).val;
 
                         // debug print:
                         // _env->printValue(builder, s_size, "struct dict of " + type.desc() + " size is: ");
@@ -1066,14 +1001,14 @@ namespace tuplex {
                         assert(l_size && l_size->getType() == _env->i64Type());
                         s = builder.CreateAdd(s, l_size);
                     } else if(type.isDictionaryType()) {
+#ifdef USE_YYJSON_INSTEAD
+                        auto& ctx = builder.getContext();
+                        auto llvm_type = el.val->getType();
+                        assert(llvm_type == get_or_create_yyjson_shim_type(ctx));
+#endif
                         // could store size explicitly to avoid the formatting call here...
-                        auto field = builder.CreateCall(
-                                cJSONPrintUnformatted_prototype(_env->getContext(), _env->getModule().get()),
-                                {el.val});
-                        auto size = builder.CreateAdd(
-                                builder.CreateCall(strlen_prototype(_env->getContext(), _env->getModule().get()), {field}),
-                                _env->i64Const(1));
-                        s = builder.CreateAdd(s, size);
+                        auto f = call_cjson_to_string(builder, el.val);
+                        s = builder.CreateAdd(s, f.size);
                     } else {
                         // string etc.
                         assert(el.size && el.size->getType() == _env->i64Type());
@@ -1097,7 +1032,7 @@ namespace tuplex {
                 }
             }
 
-            // _env->debugPrint(builder, "including varlen fields that's bytes: ", s);
+             // _env->debugPrint(builder, "including varlen fields that's bytes: ", s);
 
             // check whether varlen field is contained (true for strings only so far. Later, also for arrays, dicts, ...)
             if(containsVarLenField())
@@ -1128,19 +1063,26 @@ namespace tuplex {
             return _env->getOrCreateTupleType(_flattenedTupleType);
         }
 
-        llvm::Value* FlattenedTuple::alloc(llvm::IRBuilder<> &builder, const std::string& twine) const {
+        llvm::Value* FlattenedTuple::alloc(const codegen::IRBuilder& builder, const std::string& twine) const {
             // copy structure llvm like out
             auto llvmType = getLLVMType();
 
-            auto cb = getFirstBlockBuilder(builder);
-            auto tuple_ptr = cb.CreateAlloca(llvmType, 0, nullptr, twine);
+            auto tuple_ptr = _env->CreateFirstBlockAlloca(builder, llvmType, twine);
 
-            // get tuple indices and initialize values!
+            // get tuple indices and initialize values!d
             for(unsigned i = 0; i < _flattenedTupleType.parameters().size(); ++i) {
                 auto indices = getTupleIndices(_flattenedTupleType, i);
 
                 int val_idx=-1, size_idx=-1, bitmap_idx=-1;
                 std::tie(val_idx, size_idx, bitmap_idx) = indices;
+
+//#ifdef USE_YYJSON_INSTEAD
+//                // explicitly initialize to avoid errors.
+//                if(_flattenedTupleType.parameters()[i].withoutOption().isDictionaryType()) {
+//                    auto null_constant = _env->nullConstant(llvmType->getStructElementType(val_idx));
+//                    builder.CreateStructStore(llvmType, tuple_ptr, val_idx, null_constant);
+//                }
+//#endif
 
                 // explit null initialization of data, uncomment to perform
                 // if(val_idx >= 0) {
@@ -1157,7 +1099,7 @@ namespace tuplex {
             // return _env->CreateFirstBlockAlloca(builder, llvmType, twine);
         }
 
-        void FlattenedTuple::storeTo(llvm::IRBuilder<> &builder, llvm::Value *ptr, bool is_volatile) const {
+        void FlattenedTuple::storeTo(const IRBuilder& builder, llvm::Value *ptr, bool is_volatile) const {
             // check that type corresponds
             auto llvmType = getLLVMType();
 
@@ -1174,9 +1116,7 @@ namespace tuplex {
                 throw std::runtime_error("need to figure this out..."); // what needs to be stored here anyways??
                 assert(1 == numElements());
                 // store size for packed empty tuple
-                auto loc = builder.CreateGEP(ptr, {_env->i32Const(0), _env->i32Const(numElements())});
-                builder.CreateStore(_tree.get(0).size,
-                                    loc, is_volatile);
+                builder.CreateStore(_tree.get(0).size, builder.CreateStructGEP(ptr, llvmType, numElements()));
                 return;
             }
 
@@ -1191,10 +1131,10 @@ namespace tuplex {
             }
         }
 
-        llvm::Value* FlattenedTuple::getLoad(llvm::IRBuilder<> &builder) const {
+        llvm::Value* FlattenedTuple::getLoad(const codegen::IRBuilder& builder) const {
             auto alloc = this->alloc(builder);
             storeTo(builder, alloc);
-            return builder.CreateLoad(alloc);
+            return builder.CreateLoad(getLLVMType(), alloc);
         }
 
         void FlattenedTuple::assign(const int i, llvm::Value *val, llvm::Value *size, llvm::Value *isnull) {
@@ -1216,57 +1156,6 @@ namespace tuplex {
                 size = nullptr;
             }
 
-            if(val) {
-
-                // debug:
-                if(!(val->getType() == llvm::Type::getInt8PtrTy(context, 0)
-                     || val->getType() == llvm::Type::getInt64Ty(context)
-                     || val->getType() == llvm::Type::getDoubleTy(context)
-                     || val->getType() == _env->getBooleanType()
-                     || val->getType() == _env->getEmptyTupleType()
-                     || val->getType()->isStructTy())
-                     || (val->getType()->isPointerTy() && val->getType()->getPointerElementType()->isStructTy())) {
-                    // std::cerr<<"invalid val type: "<<_env->getLLVMTypeName(val->getType())<<std::endl;
-                }
-
-                // val must be a primitive
-                assert(val->getType() == llvm::Type::getInt8PtrTy(context, 0)
-                       || val->getType() == llvm::Type::getInt64Ty(context)
-                       || val->getType() == llvm::Type::getDoubleTy(context)
-                       || val->getType() == _env->getBooleanType()
-                       || val->getType() == _env->getEmptyTupleType()
-                       || val->getType()->isStructTy()
-                       || (val->getType() == _env->i64ptrType() && type.isListType() && type.elementType().isSingleValued()) // special case for List[null]
-                       || (val->getType()->isPointerTy() && val->getType()->getPointerElementType()->isStructTy()));
-
-
-                if (val->getType() == llvm::Type::getInt8PtrTy(context, 0)) {
-                    // must be string, dict, list
-                    assert(type == python::Type::STRING ||
-                           type.isDictionaryType() || type == python::Type::GENERICDICT ||
-                           type.isListType() || type == python::Type::GENERICLIST ||
-                           type == python::Type::NULLVALUE);
-                }
-                if(val->getType() == llvm::Type::getInt64Ty(context)) {
-                    assert(type == python::Type::I64
-                           || type == python::Type::BOOLEAN
-                           || (type.isListType() && type.elementType().isSingleValued()));
-                }
-                if(val->getType() == llvm::Type::getDoubleTy(context))
-                    assert(type == python::Type::F64);
-                // if(val->getType() == _env->getBooleanType()) {
-                //     assert(type == python::Type::BOOLEAN);
-                // }
-
-                if(val->getType()->isStructTy()) {
-                    if (val->getType() == _env->getEmptyTupleType())
-                        assert(type == python::Type::EMPTYTUPLE);
-                    else
-                        assert((type.isListType() && !type.elementType().isSingleValued())
-                        || type.isStructuredDictionaryType());
-                }
-            }
-
             // size must be 64bit
             if(size)
                 assert(size->getType() == llvm::Type::getInt64Ty(context));
@@ -1278,7 +1167,7 @@ namespace tuplex {
             _tree.set(i, codegen::SerializableValue(val, size, isnull));
         }
 
-        codegen::SerializableValue FlattenedTuple::getLoad(llvm::IRBuilder<> &builder, const std::vector<int> &index) {
+        codegen::SerializableValue FlattenedTuple::getLoad(const codegen::IRBuilder& builder, const std::vector<int> &index) {
             auto subtree = _tree.subTree(index);
             FlattenedTuple dummy(_env);
             dummy._tree = subtree;
@@ -1294,21 +1183,33 @@ namespace tuplex {
                 if(size)
                     assert(size->getType() == _env->i64Type());
                 return subtree.get(0);
+
+                // if there are issues, use following code:
+                //  assert(subtree.numElements() == 1);
+                //                auto ret_val = subtree.get(0);
+                //
+                //                // HACK: fix loading for lists to be pointer
+                //                if(subtree.tupleType().isListType() && subtree.tupleType() != python::Type::EMPTYLIST) {
+                //                    if(!ret_val.val->getType()->isPointerTy()) {
+                //                        auto alloc = _env->CreateFirstBlockAlloca(builder, ret_val.val->getType());
+                //                        builder.CreateStore(ret_val.val, alloc);
+                //                        ret_val.val = alloc; // <-- pointer now!
+                //                    }
+                //                }
+                //
+                //                return ret_val;
             }
 
-            auto size = dummy.getSize(builder);
-            assert(size && size->getType() == _env->i64Type());
-            return codegen::SerializableValue(dummy.getLoad(builder), size);
+            auto ret_val = codegen::SerializableValue(dummy.getLoad(builder), dummy.getSize(builder));
+            return ret_val;
         }
 
-        codegen::SerializableValue FlattenedTuple::serializeToMemory(llvm::IRBuilder<> &builder) const {
-
-             // _env->debugPrint(builder, "entering serialize to memory");
+        codegen::SerializableValue FlattenedTuple::serializeToMemory(const codegen::IRBuilder& builder) const {
 
             auto buf_size = getSize(builder);
 
-             // debug
-             // _env->debugPrint(builder, "buf_size to serialize is: ", buf_size);
+            // // debug
+            // _env->debugPrint(builder, "buf_size to serialize is: ", buf_size);
 
             // debug print
             auto buf = _env->malloc(builder, buf_size);
@@ -1318,7 +1219,7 @@ namespace tuplex {
             return codegen::SerializableValue(buf, buf_size);
         }
 
-        std::vector<llvm::Value*> FlattenedTuple::getBitmap(llvm::IRBuilder<> &builder) const {
+        std::vector<llvm::Value*> FlattenedTuple::getBitmap(const codegen::IRBuilder& builder) const {
             using namespace std;
 
             auto types = getFieldTypes();
@@ -1335,7 +1236,7 @@ namespace tuplex {
             // ndebug check
 #ifndef NDEBUG
             auto numOptions = 0;
-            for(auto t : types)
+            for(const auto& t : types)
                 if(t.isOptionType())
                     numOptions++;
             assert(numOptions <= numOptionalElements);
@@ -1362,8 +1263,75 @@ namespace tuplex {
             return bitmapArray;
         }
 
+        void struct_dict_print(LLVMEnvironment& env, const codegen::IRBuilder& builder, llvm::Value* dict_ptr, const python::Type& dict_type) {
+            auto indices = struct_dict_load_indices(dict_type);
+            flattened_struct_dict_entry_list_t entries;
+            flatten_recursive_helper(entries, dict_type);
 
-        void FlattenedTuple::print(llvm::IRBuilder<> &builder) const {
+            env.debugPrint(builder, "Printing struct_dict of type " + dict_type.desc() + "::");
+
+            for(const auto& entry : entries) {
+                access_path_t access_path = std::get<0>(entry);
+                python::Type value_type = std::get<1>(entry);
+                bool always_present = std::get<2>(entry);
+                auto key = json_access_path_to_string(access_path, value_type, always_present);
+
+                // fetch indices
+                // 1. null bitmap index 2. maybe bitmap index 3. field index 4. size index
+                int bitmap_idx = 0, present_idx =0, field_idx=0, size_idx=0;
+                std::tie(bitmap_idx, present_idx, field_idx, size_idx) = indices.at(access_path);
+
+                // check if element is
+                auto& ctx = builder.getContext();
+                auto func = builder.GetInsertBlock()->getParent();
+                auto bbElementDone = llvm::BasicBlock::Create(ctx, "element_done", func);
+                auto path_str = access_path_to_str(access_path);
+                if(!always_present) {
+                    auto bbElementPresent = llvm::BasicBlock::Create(ctx, "element_present", func);
+                    auto bbElementNotPresent = llvm::BasicBlock::Create(ctx, "element_not_present", func);
+                    auto is_present = struct_dict_load_present(env, builder, dict_ptr, dict_type, access_path);
+                    builder.CreateCondBr(is_present, bbElementPresent, bbElementNotPresent);
+                    builder.SetInsertPoint(bbElementNotPresent);
+                    env.debugPrint(builder, "\t -- " + path_str + " not present. ");
+                    builder.CreateBr(bbElementDone);
+                    builder.SetInsertPoint(bbElementPresent);
+                }
+
+                // always present.
+                // can load value directly
+                auto element_value = struct_dict_load_value(env, builder, dict_ptr, dict_type, access_path);
+                if(element_value.val)
+                    env.printValue(builder, element_value.val, "\t -- " + path_str + " value of " + key + " (" + value_type.desc() + "): ");
+                if(element_value.size)
+                    env.printValue(builder, element_value.size, "\t -- " + path_str + " size of " + key + " (" + value_type.desc() + "): ");
+                if(element_value.is_null) {
+                    assert(element_value.is_null->getType() == env.i1Type());
+                    env.printValue(builder, element_value.val, "\t -- " + path_str + " is_null of " + key + " (" + value_type.desc() + "): ");
+                }
+
+                if(!always_present) {
+                    builder.CreateBr(bbElementDone);
+                    builder.SetInsertPoint(bbElementDone);
+                }
+
+//
+//                // generate new line
+//                std::stringstream ss;
+//                ss<<key<<" :: ";
+//                if(bitmap_idx >= 0)
+//                    ss<<" bitmap: "<<bitmap_idx;
+//                if(present_idx >= 0)
+//                    ss<<" presence: "<<present_idx;
+//                if(field_idx >= 0)
+//                    ss<<" value: "<<field_idx<<" "<<struct_dict_lookup_llvm(env, stype, field_idx);
+//                if(size_idx >= 0)
+//                    ss<<" size: "<<size_idx<<" "<<struct_dict_lookup_llvm(env, stype, size_idx);
+//                os<<ss.str()<<std::endl;
+            }
+        }
+
+
+        void FlattenedTuple::print(const codegen::IRBuilder& builder) const {
             // print tuple out for debug purposes
             using namespace  std;
 
@@ -1376,13 +1344,21 @@ namespace tuplex {
                 auto isnull = getIsNull(i);
                 auto cellStr = "element("+to_string(i)+") ";
                 _env->debugPrint(builder, "- " + cellStr + "type: " + t.desc());
-                if(val)_env->debugPrint(builder, "  " + cellStr + "value: ", val);
+                if(val) {
+
+                    // special type printing:
+                    if(t.withoutOption().isStructuredDictionaryType() || t.withoutOption().isSparseStructuredDictionaryType()) {
+                        struct_dict_print(*_env, builder, val, t.withoutOption().makeNonSparse());
+                    } else {
+                        _env->debugPrint(builder, "  " + cellStr + "value: ", val);
+                    }
+                }
                 if(size)_env->debugPrint(builder, "  " + cellStr + "size: ", size);
                 if(isnull)_env->debugPrint(builder, "  " + cellStr + "is_null: ", isnull);
             }
         }
 
-        FlattenedTuple FlattenedTuple::fromRow(LLVMEnvironment *env, llvm::IRBuilder<>& builder, const Row &row) {
+        FlattenedTuple FlattenedTuple::fromRow(LLVMEnvironment *env, const codegen::IRBuilder& builder, const Row &row) {
             FlattenedTuple ft(env);
             ft.init(row.getRowType());
 
@@ -1395,7 +1371,153 @@ namespace tuplex {
             return ft;
         }
 
-        FlattenedTuple FlattenedTuple::upcastTo(llvm::IRBuilder<>& builder,
+        inline std::tuple<llvm::Value*, llvm::Value*> decodeSingleCell(LLVMEnvironment& env, IRBuilder& builder, llvm::Value* cellsPtr, llvm::Value* sizesPtr, unsigned i) {
+            auto cellStr = builder.CreateLoad(env.i8ptrType(), builder.CreateGEP(env.i8ptrType(), cellsPtr, env.i64Const(i)), "x" + std::to_string(i));
+            auto cellSize = builder.CreateLoad(env.i64Type(), builder.CreateGEP(env.i64Type(), sizesPtr, env.i64Const(i)), "s" + std::to_string(i));
+            return std::make_tuple(cellStr, cellSize);
+        }
+
+        std::shared_ptr<FlattenedTuple> decodeCells(LLVMEnvironment& env, IRBuilder& builder,
+                                                    const python::Type& rowType,
+                                                    size_t numCells,
+                                                    llvm::Value* cellsPtr,
+                                                    llvm::Value* sizesPtr,
+                                                    llvm::BasicBlock* nullErrorBlock,
+                                                    llvm::BasicBlock* valueErrorBlock,
+                                                    const std::vector<std::string>& null_values,
+                                                    const std::vector<size_t>& cell_indices) {
+            using namespace llvm;
+            using namespace std;
+            auto ft = make_shared<FlattenedTuple>(&env);
+
+            ft->init(rowType);
+            assert(rowType.isTupleType());
+            assert(nullErrorBlock);
+            assert(valueErrorBlock);
+
+            assert(cellsPtr->getType() == env.i8ptrType()->getPointerTo()); // i8** => array of char* pointers
+            assert(sizesPtr->getType() == env.i64ptrType()); // i64* => array of int64_t
+
+            auto cellRowType = rowType;
+            // if single tuple element, just use that... (i.e. means pipeline interprets first arg as tuple...)
+            assert(cellRowType.isTupleType());
+            if(cellRowType.parameters().size() == 1 && cellRowType.parameters().front().isTupleType()
+               && cellRowType.parameters().front().parameters().size() > 1)
+                cellRowType = cellRowType.parameters().front();
+
+            assert(cellRowType.parameters().size() == ft->flattenedTupleType().parameters().size()); /// this must hold!
+
+            // check, if rowTypeAsTupleType.size() != numCells, cell_indices must provide valid mapping.
+            if(cellRowType.parameters().size() != numCells) {
+                assert(cell_indices.size() == cellRowType.parameters().size());
+                for(auto idx : cell_indices)
+                    assert(idx < numCells);
+            }
+
+            // check type & assign
+            for(int i = 0; i < cellRowType.parameters().size(); ++i) {
+                auto t = cellRowType.parameters()[i];
+
+                // mapping from cellPtrs -> tuple
+                auto original_idx = cell_indices.empty() ? i : cell_indices[i];
+                auto llvm_original_idx = env.i64Const(static_cast<int64_t>(original_idx));
+                llvm::Value* isnull = nullptr;
+
+                // option type? do NULL value interpretation
+                if(t.isOptionType()) {
+                    auto cellStr = builder.CreateLoad(env.i8ptrType(), builder.CreateGEP(env.i8ptrType(), cellsPtr, llvm_original_idx), "x" + std::to_string(original_idx));
+                    isnull = env.compareToNullValues(builder, cellStr, null_values, true);
+                } else if(t != python::Type::NULLVALUE) {
+                    // null check, i.e. raise NULL value exception!
+                    auto val = builder.CreateLoad(env.i8ptrType(),
+                                                  builder.CreateGEP(env.i8ptrType(), cellsPtr, llvm_original_idx),
+                                                  "x" + std::to_string(original_idx));
+                    auto null_check = env.compareToNullValues(builder, val, null_values, true);
+
+                    // if positive, exception!
+                    // else continue!
+                    BasicBlock* bbNullCheckPassed = BasicBlock::Create(builder.getContext(),
+                                                                       "col" + std::to_string(original_idx) + "_null_check_passed",
+                                                                       builder.GetInsertBlock()->getParent());
+                    builder.CreateCondBr(null_check, nullErrorBlock, bbNullCheckPassed);
+                    builder.SetInsertPoint(bbNullCheckPassed);
+                }
+
+                t = t.withoutOption();
+
+                llvm::Value* cellStr = nullptr, *cellSize = nullptr;
+
+                // values?
+                if(python::Type::STRING == t) {
+                    // fill in
+                    auto val = builder.CreateLoad(env.i8ptrType(), builder.CreateGEP(env.i8ptrType(),
+                                                                                     cellsPtr, llvm_original_idx),
+                                                  "x" + std::to_string(i));
+                    auto size = builder.CreateLoad(env.i64Type(), builder.CreateGEP(env.i64Type(), sizesPtr, llvm_original_idx),
+                                                   "s" + std::to_string(i));
+                    ft->assign(i, val, size, isnull);
+                } else if(python::Type::BOOLEAN == t) {
+                    // conversion code here
+                    std::tie(cellStr, cellSize) = decodeSingleCell(env, builder, cellsPtr, sizesPtr, original_idx);
+                    auto val = parseBoolean(env, builder, valueErrorBlock, cellStr, cellSize, isnull);
+                    ft->assign(i, val.val, val.size, isnull);
+                } else if(python::Type::I64 == t) {
+                    // conversion code here
+                    std::tie(cellStr, cellSize) = decodeSingleCell(env, builder, cellsPtr, sizesPtr, original_idx);
+                    auto val = parseI64(env, builder, valueErrorBlock, cellStr, cellSize, isnull);
+                    ft->assign(i, val.val, val.size, isnull);
+                } else if(python::Type::F64 == t) {
+                    // conversion code here
+                    std::tie(cellStr, cellSize) = decodeSingleCell(env, builder, cellsPtr, sizesPtr, original_idx);
+                    auto val = parseF64(env, builder, valueErrorBlock, cellStr, cellSize, isnull);
+                    ft->assign(i, val.val, val.size, isnull);
+                } else if(python::Type::NULLVALUE == t) {
+                    // perform null check only, & set null element depending on result
+                    std::tie(cellStr, cellSize) = decodeSingleCell(env, builder, cellsPtr, sizesPtr, original_idx);
+                    isnull = env.compareToNullValues(builder, cellStr, null_values, true);
+
+                    // if not null, exception! ==> i.e. ValueError!
+                    BasicBlock* bbNullCheckPassed = BasicBlock::Create(builder.getContext(), "col" + std::to_string(original_idx) + "_value_check_passed", builder.GetInsertBlock()->getParent());
+                    builder.CreateCondBr(isnull, bbNullCheckPassed, valueErrorBlock);
+                    builder.SetInsertPoint(bbNullCheckPassed);
+                    ft->assign(i, nullptr, nullptr, env.i1Const(true)); // set NULL (should be ignored)
+                } else {
+                    // NOTE: only flat, primitives yet supported. I.e. there can't be lists/dicts within a cell...
+                    throw std::runtime_error("unsupported type " + t.desc() + " in decodeCells encountered");
+                }
+            }
+
+            return ft;
+        }
+
+        std::shared_ptr<FlattenedTuple> decodeCells(LLVMEnvironment& env, IRBuilder& builder,
+                                                    const python::Type& rowType,
+                                                    llvm::Value* numCells,
+                                                    llvm::Value* cellsPtr,
+                                                    llvm::Value* sizesPtr,
+                                                    llvm::BasicBlock* cellCountMismatchErrorBlock,
+                                                    llvm::BasicBlock* nullErrorBlock,
+                                                    llvm::BasicBlock* valueErrorBlock,
+                                                    const std::vector<std::string>& null_values,
+                                                    const std::vector<size_t>& cell_indices) {
+            using namespace llvm;
+
+            auto num_parameters = (uint64_t)rowType.parameters().size();
+
+            assert(cellCountMismatchErrorBlock);
+
+            // check numCells
+            auto func = builder.GetInsertBlock()->getParent(); assert(func);
+            BasicBlock* bbCellNoOk = BasicBlock::Create(env.getContext(), "noCellsOK", func);
+            auto cell_match_cond = builder.CreateICmpEQ(numCells, llvm::ConstantInt::get(numCells->getType(), num_parameters));
+            builder.CreateCondBr(cell_match_cond, bbCellNoOk, cellCountMismatchErrorBlock);
+            builder.SetInsertPoint(bbCellNoOk);
+
+            return decodeCells(env, builder, rowType, num_parameters, cellsPtr,
+                               sizesPtr, nullErrorBlock, valueErrorBlock, null_values, cell_indices);
+        }
+
+        FlattenedTuple FlattenedTuple::upcastTo(const IRBuilder& builder,
                                                 const python::Type& target_type,
                                                 bool allow_simple_tuple_wrap) const {
 
@@ -1457,24 +1579,38 @@ namespace tuplex {
                 auto from = SerializableValue(val, size, is_null);
                 // _env->debugPrint(builder, "upcasting " + from_type.desc() + " -> " + to_type.desc() + " (col=" + std::to_string(i) + ")");
                 auto to = _env->upcastValue(builder, from, from_type, to_type);
+
+                // quick check:
+#ifndef NDEBUG
+                if(to_type.withoutOption().isStructuredDictionaryType()) {
+                    assert(to.val);
+#if LLVM_VERSION_MAJOR < 15
+                    if(!(to.val->getType()->isStructTy() || to.val->getType()->getPointerElementType()->isStructTy())) {
+                        throw std::runtime_error("invalid llvm type " + _env->getLLVMTypeName(to.val->getType()) + " for " + to_type.desc());
+                    }
+#else
+                    if(!(to.val->getType()->isStructTy() || to.val->getType()->isPointerTy())) {
+                        throw std::runtime_error("invalid llvm type " + _env->getLLVMTypeName(to.val->getType()) + " for " + to_type.desc());
+                    }
+#endif
+                }
+#endif
+
                 ft.assign(i, to.val, to.size, to.is_null);
             }
 
             return ft;
         }
 
-        llvm::Value *FlattenedTuple::loadToHeapPtr(llvm::IRBuilder<> &builder) const {
+        llvm::Value *FlattenedTuple::loadToHeapPtr(const IRBuilder& builder) const {
             auto llvm_type = getLLVMType(); assert(llvm_type);
 
-            const auto& DL = _env->getModule()->getDataLayout();
-            auto tuple_size = DL.getTypeAllocSize(llvm_type);
-
-            auto ptr = builder.CreatePointerCast(_env->malloc(builder, tuple_size), llvm_type->getPointerTo());
-
 #ifndef NDEBUG
-            // memset to zero
-            builder.CreateMemSet(ptr, _env->i8Const(0), tuple_size, 0);
+            bool memset_to_zero = true;
+#else
+            bool memset_to_zero = false;
 #endif
+            auto ptr = _env->CreateHeapAlloca(builder, llvm_type, memset_to_zero);
 
             // // alloc and then memcpy (can't directly store, not even using volatile mode).
             // auto tmp_ptr = _env->CreateFirstBlockAlloca(builder, getLLVMType());
@@ -1503,7 +1639,7 @@ namespace tuplex {
             return element;
         }
 
-        FlattenedTuple upcast_row_and_reorder(llvm::IRBuilder<> &builder, FlattenedTuple normal_case_row,
+        FlattenedTuple upcast_row_and_reorder(const IRBuilder &builder, FlattenedTuple normal_case_row,
                                                       python::Type normal_case_row_type,
                                                       python::Type general_case_row_type) {
 
@@ -1553,6 +1689,108 @@ namespace tuplex {
             }
 
             return upcasted_row;
+        }
+
+        bool check_llvm_type(LLVMEnvironment& env, const python::Type& type, const SerializableValue& v, bool allow_incompatible_options, std::ostream* os) {
+
+            std::stringstream err_stream;
+            bool rc = true;
+
+            // single valued do no need anything set.
+            if(type.isSingleValued())
+                return true;
+
+            if(type.isOptionType()) {
+                if(!v.is_null) {
+                    err_stream<<"is option type, but is_null is not set"<<std::endl;
+                    rc = false;
+                } else if(v.is_null->getType() != env.i1Type()) {
+                    err_stream<<"is option type, but is_null is not LLVM i1 type"<<std::endl;
+                    rc = false;
+                }
+            }
+
+            // check mapping:
+            auto mapped_llvm_type = env.pythonToLLVMType(type.withoutOption());
+            // for struct either struct or pointer to struct is ok
+            if(mapped_llvm_type->isStructTy()) {
+                if(!v.val) {
+                    err_stream<<"has type "<<type.desc()<<" but no val field set"<<std::endl;
+                    rc = false;
+                } else {
+                    bool type_mismatch = false;
+
+#if LLVM_VERSION_MAJOR < 15
+                    type_mismatch = v.val->getType() != mapped_llvm_type && v.val->getType() != mapped_llvm_type->getPointerTo();
+#else
+                    // ptr is ok, or if type == mapped_llvm_type
+                    type_mismatch = v.val->getType() != mapped_llvm_type && !v.val->getType()->isPointerTy();
+#endif
+
+                    if(type_mismatch) {
+                        err_stream<<"has type "<<type.desc()<<" which is mapped to LLVM type "<<env.getLLVMTypeName(mapped_llvm_type)<<" but set type of element is "<<env.getLLVMTypeName(v.val->getType())<<std::endl;
+                        rc = false;
+                    }
+
+                }
+            } else {
+                if(!type.withoutOption().isSingleValued()) {
+                    if(!v.val) {
+                        err_stream <<"has type " << type.desc() << " but no val field set"
+                                   << std::endl;
+                        rc = false;
+                    } else {
+                        if(v.val->getType() != mapped_llvm_type) {
+                            err_stream<<"has type "<<type.desc()<<" which is mapped to LLVM type "<<env.getLLVMTypeName(mapped_llvm_type)<<" but set type of element is "<<env.getLLVMTypeName(v.val->getType())<<std::endl;
+                            rc = false;
+                        }
+                    }
+                }
+
+                if(!type.withoutOption().isFixedSizeType()) {
+                    if(!v.size) {
+                        err_stream << "has type " << type.desc() << " but size field set"
+                                   << std::endl;
+                        rc = false;
+                    } else {
+                        if(v.size->getType() != env.i64Type()) {
+                            err_stream << "has type " << type.desc() << " but size field has LLVM type" << env.getLLVMTypeName(v.size->getType())<<" which should be i64"
+                                       << std::endl;
+                            rc = false;
+                        }
+                    }
+                }
+            }
+
+
+            if(os)
+                *os<<err_stream.str();
+
+            return rc;
+        }
+
+        bool FlattenedTuple::checkLLVMTypes() const {
+            std::stringstream err_stream;
+            bool rc = true;
+
+            // go through all types
+            int num_elements = _tree.numElements();
+            for(unsigned i = 0; i < num_elements; ++i) {
+                auto type = _tree.fieldType(i);
+                auto v = _tree.get(i);
+
+                std::stringstream v_err_stream;
+                if(!check_llvm_type(*_env, type, v, &v_err_stream)) {
+                    rc = false;
+                    err_stream<<"element #"<<i<<": "<<v_err_stream.str();
+                }
+            }
+
+#ifndef NDEBUG
+            Logger::instance().logger("codegen").error("Following errors were found in FlattenedTuple:\n" + err_stream.str());
+#endif
+
+            return rc;
         }
 
     }
