@@ -3,6 +3,7 @@
 
 set -euxo pipefail
 
+# Use for Boost version 1.87.0
 # this a script to install boost for specific python version to some folder
 USAGE="./install_boost.sh <PYTHON_EXECUTABLE> <PREFIX> <BOOST_VERSION>"
 PYTHON_EXECUTABLE=${1:?Usage: ${USAGE}}
@@ -30,7 +31,7 @@ mkdir -p ${WORKDIR}/boost
 BOOST_UNDERSCORED_VERSION=$(echo ${BOOST_VERSION} | tr . _)
 
 # build incl. boost python
-pushd ${WORKDIR}/boost && curl -L -O https://boostorg.jfrog.io/artifactory/main/release/${BOOST_VERSION}/source/boost_${BOOST_UNDERSCORED_VERSION}.tar.gz && tar xf boost_${BOOST_UNDERSCORED_VERSION}.tar.gz && cd ${WORKDIR}/boost/boost_${BOOST_UNDERSCORED_VERSION} \
+pushd ${WORKDIR}/boost && curl -L -O https://github.com/boostorg/boost/releases/download/boost-${BOOST_VERSION}/boost-${BOOST_VERSION}-b2-nodocs.tar.gz && tar xf boost-${BOOST_VERSION}-b2-nodocs.tar.gz && cd ${WORKDIR}/boost/boost-${BOOST_VERSION} \
            && ./bootstrap.sh --with-python=${PYTHON_EXECUTABLE} --prefix=${PREFIX} --with-libraries="thread,iostreams,regex,system,filesystem,python,stacktrace,atomic,chrono,date_time" \
             && ./b2 cxxflags="-fPIC" link=static -j "$(nproc)" \
             && ./b2 cxxflags="-fPIC" link=static install && sed -i 's/#if PTHREAD_STACK_MIN > 0/#ifdef PTHREAD_STACK_MIN/g' ${PREFIX}/include/boost/thread/pthread/thread_data.hpp

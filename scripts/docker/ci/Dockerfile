@@ -9,8 +9,8 @@ MAINTAINER "Tuplex project@Brown"
 
 # select core versions to use when building CI image here
 ARG PYTHON_VERSION=3.11.10
-ARG CMAKE_VERSION=3.27.5
-ARG BOOST_VERSION=1.79.0
+ARG CMAKE_VERSION=3.31.6
+ARG BOOST_VERSION=1.87.0
 
 # CentOS7 (on which manylinux2014_x86_64 is based) reached EOL July 1st, 2024. Change yum urls here according to
 # https://serverfault.com/questions/1161816/mirrorlist-centos-org-no-longer-resolve
