@@ -95,6 +95,12 @@ namespace tuplex {
         size_t rowCount() const { return _rowCount; }
         size_t estimationBufferSize() const { return _bufSize; }
 
+        inline size_t columnCount() const {
+            if(!_rowType.isIllDefined())
+                return extract_columns_from_type(_rowType);
+            return 1;
+        }
+
         /*!
          * return list of column indices where small cells have been detected.
          * @return vector of indices (ascending) or empty vector

@@ -909,13 +909,18 @@ namespace tuplex {
             if(!hasHeader.has_value()) {
                 if(_header)
                     logger.info("Auto-detected presence of a header line in CSV files.");
-                else
+                else {
                     logger.info("Auto-detected there's no header line in CSV files.");
+                }
             }
 
             // set column names from stat
             // Note: call this BEFORE applying type hints!
             _columnNames = _header ? csvstat.columns() : std::vector<std::string>();
+            if(!_header || csvstat.columns().empty()) {
+                // Important to set here number of columns, because columnNames will be empty.
+                _columnsToSerialize = std::vector<bool>(csvstat.columnCount(), true);
+            }
 
             // now fill row cache to detect majority type (?)
             if(!co.USE_STRATIFIED_SAMPLING())

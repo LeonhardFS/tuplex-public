@@ -133,14 +133,20 @@ namespace tuplex {
                 if(python::Type::EMPTYROW == rowType)
                     return rowType;
 
-                assert(_columnsToSerialize.size() == rowType.get_column_names().size());
+                if(!rowType.get_column_names().empty()) {
+                    assert(_columnsToSerialize.size() == rowType.get_column_names().size());
+                }
                 auto column_names = rowType.get_column_names();
                 std::vector<python::Type> projected_column_types;
                 std::vector<std::string> projected_column_names;
-                for(unsigned i = 0; i < std::min(column_names.size(), _columnsToSerialize.size()); ++i) {
+                auto column_count = std::min(column_names.size(), _columnsToSerialize.size());
+                if(column_names.empty())
+                    column_count = _columnsToSerialize.size();
+                for(unsigned i = 0; i < column_count; ++i) {
                     if(_columnsToSerialize[i]) {
                         projected_column_types.push_back(rowType.get_column_type(i));
-                        projected_column_names.push_back(column_names[i]);
+                        if(!column_names.empty()) // could also have no column names.
+                            projected_column_names.push_back(column_names[i]);
                     }
                 }
                 return python::Type::makeRowType(projected_column_types, projected_column_names);
