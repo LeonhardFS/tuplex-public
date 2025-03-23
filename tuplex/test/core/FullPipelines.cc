@@ -1035,57 +1035,57 @@ TEST_F(PipelinesTest, ZillowConfigHarness) {
         cout<<"-- Running ref with cache="<<boolalpha<<cache<<endl;
         auto ref = pipelineAsStrs(zillowPipeline(c_ref, zpath, cache));
 
-//        // with LLVM optimizers enabled
-//        auto opt_wLLVMOpt = opt_ref;
-//        opt_wLLVMOpt.set("tuplex.useLLVMOptimizer", "true");
-//        Context c_wLLVMOpt(opt_wLLVMOpt);
-//        cout<<"-- Running with LLVM optimizers enabled and with cache="<<boolalpha<<cache<<endl;
-//        auto r_wLLVMOpt = pipelineAsStrs(zillowPipeline(c_wLLVMOpt, zpath, cache));
-//        compareStrArrays(r_wLLVMOpt, ref, true);
-//
-//        // with projection pushdown enabled
-//        auto opt_proj = opt_ref;
-//        opt_proj.set("tuplex.optimizer.selectionPushdown", "true");
-//        Context c_proj(opt_proj);
-//        cout<<"-- Running with projection pushdown enabled and with cache="<<boolalpha<<cache<<endl;
-//        auto r_proj = pipelineAsStrs(zillowPipeline(c_proj, zpath, cache));
-//        compareStrArrays(r_proj, ref, true);
-//
-//        // with projection pushdown + LLVM Optimizers
-//        auto opt_proj_wLLVMOpt = opt_ref;
-//        opt_proj_wLLVMOpt.set("tuplex.optimizer.selectionPushdown", "true");
-//        opt_proj_wLLVMOpt.set("tuplex.useLLVMOptimizer", "true");
-//        Context c_proj_wLLVMOpt(opt_proj_wLLVMOpt);
-//        cout<<"-- Running with with projection pushdown enabled, LLVM optimizers enabled and with cache="<<boolalpha<<cache<<endl;
-//        auto r_proj_wLLVMOpt = pipelineAsStrs(zillowPipeline(c_proj_wLLVMOpt, zpath, cache));
-//        compareStrArrays(r_proj_wLLVMOpt, ref, true);
-//
-//        // with null value optimization (i.e. getting rid off them!)
-//        auto opt_null = opt_ref;
-//        opt_null.set("tuplex.optimizer.retypeUsingOptimizedInputSchema", "true");
-//        Context c_null(opt_null);
-//        cout<<"-- Running with NVO enabled and with cache="<<boolalpha<<cache<<endl;
-//        auto r_null = pipelineAsStrs(zillowPipeline(c_null, zpath, cache));
-//        compareStrArrays(r_null, ref, true);
-//
-//        // with null value + proj
-//        auto opt_null_proj = opt_ref;
-//        opt_null_proj.set("tuplex.optimizer.retypeUsingOptimizedInputSchema", "true");
-//        opt_null_proj.set("tuplex.optimizer.selectionPushdown", "true");
-//        Context c_null_proj(opt_null_proj);
-//        cout<<"-- Running with NVO enabled, projection pushdown enabled and with cache="<<boolalpha<<cache<<endl;
-//        auto r_null_proj = pipelineAsStrs(zillowPipeline(c_null_proj, zpath, cache));
-//        compareStrArrays(r_null_proj, ref, true);
-//
-//        // with null value + proj + llvmopt
-//        auto opt_null_proj_opt = opt_ref;
-//        opt_null_proj_opt.set("tuplex.optimizer.retypeUsingOptimizedInputSchema", "true");
-//        opt_null_proj_opt.set("tuplex.optimizer.selectionPushdown", "true");
-//        opt_null_proj_opt.set("tuplex.useLLVMOptimizer", "true");
-//        Context c_null_proj_opt(opt_null_proj_opt);
-//        cout<<"-- Running with NVO enabled, projection pushdown enabled, LLVM optimizers enabled and with cache="<<boolalpha<<cache<<endl;
-//        auto r_null_proj_opt = pipelineAsStrs(zillowPipeline(c_null_proj_opt, zpath, cache));
-//        compareStrArrays(r_null_proj_opt, ref, true);
+        // with LLVM optimizers enabled
+        auto opt_wLLVMOpt = opt_ref;
+        opt_wLLVMOpt.set("tuplex.useLLVMOptimizer", "true");
+        Context c_wLLVMOpt(opt_wLLVMOpt);
+        cout<<"-- Running with LLVM optimizers enabled and with cache="<<boolalpha<<cache<<endl;
+        auto r_wLLVMOpt = pipelineAsStrs(zillowPipeline(c_wLLVMOpt, zpath, cache));
+        compareStrArrays(r_wLLVMOpt, ref, true);
+
+        // with projection pushdown enabled
+        auto opt_proj = opt_ref;
+        opt_proj.set("tuplex.optimizer.selectionPushdown", "true");
+        Context c_proj(opt_proj);
+        cout<<"-- Running with projection pushdown enabled and with cache="<<boolalpha<<cache<<endl;
+        auto r_proj = pipelineAsStrs(zillowPipeline(c_proj, zpath, cache));
+        compareStrArrays(r_proj, ref, true);
+
+        // with projection pushdown + LLVM Optimizers
+        auto opt_proj_wLLVMOpt = opt_ref;
+        opt_proj_wLLVMOpt.set("tuplex.optimizer.selectionPushdown", "true");
+        opt_proj_wLLVMOpt.set("tuplex.useLLVMOptimizer", "true");
+        Context c_proj_wLLVMOpt(opt_proj_wLLVMOpt);
+        cout<<"-- Running with with projection pushdown enabled, LLVM optimizers enabled and with cache="<<boolalpha<<cache<<endl;
+        auto r_proj_wLLVMOpt = pipelineAsStrs(zillowPipeline(c_proj_wLLVMOpt, zpath, cache));
+        compareStrArrays(r_proj_wLLVMOpt, ref, true);
+
+        // with null value optimization (i.e. getting rid off them!)
+        auto opt_null = opt_ref;
+        opt_null.set("tuplex.optimizer.retypeUsingOptimizedInputSchema", "true");
+        Context c_null(opt_null);
+        cout<<"-- Running with NVO enabled and with cache="<<boolalpha<<cache<<endl;
+        auto r_null = pipelineAsStrs(zillowPipeline(c_null, zpath, cache));
+        compareStrArrays(r_null, ref, true);
+
+        // with null value + proj
+        auto opt_null_proj = opt_ref;
+        opt_null_proj.set("tuplex.optimizer.retypeUsingOptimizedInputSchema", "true");
+        opt_null_proj.set("tuplex.optimizer.selectionPushdown", "true");
+        Context c_null_proj(opt_null_proj);
+        cout<<"-- Running with NVO enabled, projection pushdown enabled and with cache="<<boolalpha<<cache<<endl;
+        auto r_null_proj = pipelineAsStrs(zillowPipeline(c_null_proj, zpath, cache));
+        compareStrArrays(r_null_proj, ref, true);
+
+        // with null value + proj + llvmopt
+        auto opt_null_proj_opt = opt_ref;
+        opt_null_proj_opt.set("tuplex.optimizer.retypeUsingOptimizedInputSchema", "true");
+        opt_null_proj_opt.set("tuplex.optimizer.selectionPushdown", "true");
+        opt_null_proj_opt.set("tuplex.useLLVMOptimizer", "true");
+        Context c_null_proj_opt(opt_null_proj_opt);
+        cout<<"-- Running with NVO enabled, projection pushdown enabled, LLVM optimizers enabled and with cache="<<boolalpha<<cache<<endl;
+        auto r_null_proj_opt = pipelineAsStrs(zillowPipeline(c_null_proj_opt, zpath, cache));
+        compareStrArrays(r_null_proj_opt, ref, true);
 
         // with projection pushdown + LLVM Optimizers + generated parser
         auto opt_proj_wLLVMOpt_parse = opt_ref;
