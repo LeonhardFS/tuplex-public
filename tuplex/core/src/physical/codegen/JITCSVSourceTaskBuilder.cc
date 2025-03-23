@@ -47,16 +47,18 @@ namespace tuplex {
             // ==> i.e. this might change some of the pipeline parameters!!!
             assert(_inputRowType.isTupleType());
 
+            auto col_types = _fileInputRowType.isRowType() ? _fileInputRowType.get_column_types() : _fileInputRowType.parameters();
+
             // add all columns to be serialized IFF no selectionPushdown given
             if(_columnsToSerialize.empty()) {
                 assert(_fileInputRowType == _inputRowType); // they should be the same...
 
-                for (auto colType : _fileInputRowType.parameters())
+                for (auto colType : col_types)
                     _parseRowGen->addCell(colType, true);
             } else {
-                assert(_fileInputRowType.parameters().size() == _columnsToSerialize.size());
-                for(int i = 0; i < _fileInputRowType.parameters().size(); ++i) {
-                    auto colType = _fileInputRowType.parameters()[i];
+                assert(col_types.size() == _columnsToSerialize.size());
+                for(int i = 0; i < col_types.size(); ++i) {
+                    auto colType = col_types[i];
                     _parseRowGen->addCell(colType, _columnsToSerialize[i]);
                 }
             }
@@ -71,8 +73,7 @@ namespace tuplex {
             ft.init(parseRowType);
 
 
-
-            auto numColumns = parseRowType.parameters().size();
+            auto numColumns = extract_columns_from_type(parseRowType);
             for(int col = 0; col < numColumns; ++col) {
                 // _env->debugPrint(builder, "get col result for column " + std::to_string(col));
                 auto val = _parseRowGen->getColumnResult(builder, col, parseResult);

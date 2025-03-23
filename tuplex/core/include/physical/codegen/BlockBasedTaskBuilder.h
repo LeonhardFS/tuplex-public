@@ -264,8 +264,17 @@ namespace tuplex {
                 assert(!_pipBuilder);
                 _pipBuilder = pip;
 
-                // check row compatibility
-                if (pip->inputRowType() != _inputRowType) {
+                // Row/tuple type duality. Allow check here.
+                auto pip_input_row_type_as_tuple_type = pip->inputRowType();
+                if(pip_input_row_type_as_tuple_type.isRowType())
+                    pip_input_row_type_as_tuple_type = pip_input_row_type_as_tuple_type.get_columns_as_tuple_type();
+
+                auto input_row_type_as_tuple_type = _inputRowType;
+                if(input_row_type_as_tuple_type.isRowType())
+                    input_row_type_as_tuple_type = input_row_type_as_tuple_type.get_columns_as_tuple_type();
+
+                // Check row compatibility by comparing the two tuple types, print original ones in case of mismatch.
+                if (pip_input_row_type_as_tuple_type != input_row_type_as_tuple_type) {
                     logger().debug("pip hash: " + std::to_string(pip->inputRowType().hash()) + " _input hash: " + std::to_string(_inputRowType.hash()));
                     logger().debug("given pipeline has type: " + pip->inputRowType().desc() + "\nbut, task input row type is: " + _inputRowType.desc());
                     throw std::runtime_error("input types of pipeline and CSV Parser incompatible:\n"
