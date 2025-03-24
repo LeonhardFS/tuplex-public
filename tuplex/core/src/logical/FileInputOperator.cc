@@ -281,6 +281,8 @@ namespace tuplex {
 #endif
         _sampling_time_s = timer.time();
         logger.info("Sampling took " + std::to_string(_sampling_time_s));
+
+        ensure_column_names();
     }
 
     FileInputOperator *FileInputOperator::fromCsv(const std::string &pattern, const ContextOptions &co,
@@ -541,6 +543,7 @@ namespace tuplex {
         }
 #endif
 
+        f->ensure_column_names();
 
         return f;
     }
@@ -1083,6 +1086,9 @@ namespace tuplex {
             logger.warn("no input files found, can't infer type from given path: " + pattern);
             setOutputSchema(Schema(Schema::MemoryLayout::ROW, python::Type::EMPTYTUPLE));
         }
+
+        ensure_column_names();
+
         _sampling_time_s += timer.time();
     }
 
@@ -1144,6 +1150,8 @@ namespace tuplex {
 #else
         throw std::runtime_error(MISSING_ORC_MESSAGE);
 #endif
+
+        ensure_column_names();
     }
 
     void FileInputOperator::setProjectionDefaults() {// set optimized schema to current one
@@ -1460,6 +1468,8 @@ namespace tuplex {
 
         // copy cache (?)
         for (const auto& kv: other._sampleCache) { _sampleCache[kv.first] = kv.second; }
+
+        ensure_column_names();
     }
 
     void FileInputOperator::cloneCaches(const tuplex::FileInputOperator &other) {

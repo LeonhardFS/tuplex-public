@@ -18,6 +18,19 @@
 
 namespace tuplex {
 
+    // helper function to generate pseudo-column names (helpful for pushdown).
+    // For now simple numbers with _.
+
+    // @TODO: need in show to dealias/remove special names.
+    inline std::vector<std::string> generate_pseudo_column_names(size_t column_count) {
+        using namespace std;
+        vector<string> names(column_count, "_");
+        for(unsigned int i = 0; i < column_count; ++i) {
+            names[i] = "_" + std::to_string(i);
+        }
+        return names;
+    }
+
     // because processing happens with 16byte alignment, need to use aligned 16byte strings!
     using aligned_string=std::basic_string<char, std::char_traits<char>, boost::alignment::aligned_allocator<char, 16>>;
 
@@ -257,6 +270,14 @@ namespace tuplex {
                     num += flag;
                 return num;
             }
+        }
+
+        /*!
+         * make sure column names (or pseudo-column names) do exist.
+         */
+        inline void ensure_column_names() {
+            if(!_columnsToSerialize.empty() && _columnNames.empty())
+                _columnNames = generate_pseudo_column_names(_columnsToSerialize.size());
         }
 
         void detectFiles(const std::string& pattern);
