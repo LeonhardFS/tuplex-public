@@ -7,7 +7,10 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(SRCS main.cc md5.cc)
 
-find_package(AWSSDK REQUIRED COMPONENTS core s3 s3-crt)
+# find zlib
+find_package(ZLIB REQUIRED)
+
+find_package(AWSSDK REQUIRED COMPONENTS core s3 s3-crt transfer)
 Message(STATUS "AWSSDK_LINK_LIBRARIES ${AWSSDK_LINK_LIBRARIES}")
 
 # linking

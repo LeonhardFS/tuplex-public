@@ -21,7 +21,19 @@
 #include <aws/s3-crt/model/PutObjectRequest.h>
 #include <aws/s3-crt/model/GetObjectRequest.h>
 #include <aws/s3-crt/model/DeleteObjectRequest.h>
+#include <aws/s3-crt/model/HeadObjectRequest.h>
 #include <aws/core/utils/UUID.h>
+
+#include <aws/core/utils/threading/Executor.h>
+#include <aws/transfer/TransferManager.h>
+#include <aws/transfer/TransferHandle.h>
+#include <aws/s3/S3Client.h>
+#include <aws/core/utils/memory/AWSMemory.h>
+#include <aws/core/utils/memory/stl/AWSStreamFwd.h>
+#include <aws/core/utils/stream/PreallocatedStreamBuf.h>
+#include <aws/core/utils/StringUtils.h>
+
+#include <aws/s3/S3Client.h>
 
 class Timer {
 private:
@@ -82,9 +94,75 @@ bool GetObject(const Aws::S3Crt::S3CrtClient& s3CrtClient, const Aws::String& bu
     }
 }
 
+std::string s3Bucket(const std::string& uri) {
+    // validate & throw exception if not valid s3 path
+    if(uri.substr(0, 5) != "s3://")
+        throw std::runtime_error("S3 path " + uri + " must start with s3:// " + "started with ");
+    auto idx = uri.substr(5).find_first_of('/');
+    return uri.substr(5, idx);
+}
+
+std::string s3Key(const std::string& uri) {
+    // validate & throw exception if not valid s3 path
+    if(uri.substr(0, 5) != "s3://")
+        throw std::runtime_error("S3 path " + uri + " must start with s3:// " + "started with ");
+    auto idx = uri.substr(5).find_first_of('/');
+    if(std::string::npos == idx)
+        return "";
+    return uri.substr(5 + idx + 1);
+}
+
+size_t s3_size_of_uri(Aws::S3Crt::S3CrtClient& client, const std::string& bucket, const std::string& key) {
+    Aws::S3Crt::Model::HeadObjectRequest req;
+    req.WithBucket(bucket);
+    req.WithKey(key);
+    auto outcome = client.HeadObject(req);
+    auto result = outcome.GetResultWithOwnership();
+    return result.GetContentLength();
+}
+
+class MyUnderlyingStream : public Aws::IOStream
+{
+public:
+    using Base = Aws::IOStream;
+    // Provide a customer-controlled streambuf to hold data from the bucket.
+    explicit MyUnderlyingStream(std::streambuf* buf)
+            : Base(buf)
+    {}
+
+    ~MyUnderlyingStream() override = default;
+};
+
+void download_to_buffer(uint8_t* buffer, size_t buffer_size, const std::string& bucket, const std::string& key) {
+    auto s3_client = Aws::MakeShared<Aws::S3::S3Client>("S3Client");
+    auto executor = Aws::MakeShared<Aws::Utils::Threading::PooledThreadExecutor>("executor", 25);
+    Aws::Transfer::TransferManagerConfiguration transfer_config(executor.get());
+    transfer_config.s3Client = s3_client;
+
+    // The local variable 'streamBuffer' is captured by reference in a lambda.
+    // It must persist until all downloading by the 'transfer_manager' is complete.
+    Aws::Utils::Stream::PreallocatedStreamBuf streamBuffer(buffer, buffer_size);
+
+    auto transfer_manager = Aws::Transfer::TransferManager::Create(transfer_config);
+
+    auto downloadHandle = transfer_manager->DownloadFile(bucket,
+                                                         key,
+                                                         [&]() { //Define a lambda expression for the callback method parameter to stream back the data.
+                                                             return Aws::New<MyUnderlyingStream>("TestTag", &streamBuffer);
+                                                         });
+    downloadHandle->WaitUntilFinished();// Block calling thread until download is complete.
+    auto downStat = downloadHandle->GetStatus();
+    if (downStat != Aws::Transfer::TransferStatus::COMPLETED)
+    {
+        auto err = downloadHandle->GetLastError();
+        std::cout << "File download failed:  " << err.GetMessage() << std::endl;
+    }
+    std::cout << "File download to memory finished."  << std::endl;
+}
+
 int main(int argc, char* argv[]) {
-    std::string file_uri = "s3://tuplex-public/data/100GB/zillow_00001.csv";
-   unsigned int num_tries = 10; // number of tries using AWS S3 client
+   std::string file_uri = "s3://tuplex-public/data/github_daily/2020-10-15.json";
+   unsigned int num_tries = 1; // number of tries using AWS S3 client
    bool show_help = false;
 
    // construct CLI
@@ -128,6 +206,8 @@ int main(int argc, char* argv[]) {
    //     return Aws::MakeShared<Aws::Crt::Io::TlsConnectionOptions>(ALLOCATION_TAG, tlsContext.NewConnectionOptions());
    // };
 
+   uint8_t* DATA_BUFFER = nullptr;
+
    Aws::InitAPI(options);
    {
 
@@ -141,12 +221,12 @@ int main(int argc, char* argv[]) {
        Aws::String region = Aws::Region::US_EAST_1;
 
        //The object_key is the unique identifier for the object in the bucket.
-       Aws::String object_key = "data/100GB/zillow_00001.csv";
+       Aws::String object_key = s3Key(file_uri);
 
        // Create a globally unique name for the new bucket.
        // Format: "my-bucket-" + lowercase UUID.
        Aws::String uuid = Aws::Utils::UUID::RandomUUID();
-       Aws::String bucket_name = "tuplex-public";
+       Aws::String bucket_name = s3Bucket(file_uri);
 
        const double throughput_target_gbps = 5;
        const uint64_t part_size = 8 * 1024 * 1024; // 8 MB.
@@ -167,18 +247,35 @@ int main(int argc, char* argv[]) {
        num_tries = std::max(1u, std::min(num_tries, 25u));
        cout<<"Starting benchmark with "<<num_tries<<" tries::"<<endl;
        for(unsigned i = 0; i < num_tries; ++i) {
-          cout<<"Run "<<(i+1)<<"/"<<num_tries;
+          cout<<"Run "<<(i+1)<<"/"<<num_tries<<endl;
 
           Timer timer;
-          GetObject(s3_crt_client, bucket_name, object_key);
 
+          // 1. send HEAD request out to get size.
+          size_t uri_size = s3_size_of_uri(s3_crt_client, bucket_name, object_key);
+          cout<<timer.time()<<" HEAD object request success, size of content: "<<uri_size<<"B"<<endl;
+
+          // 2. Allocate buffer of content size to write output
+          if(DATA_BUFFER) {
+              delete [] DATA_BUFFER;
+              DATA_BUFFER = nullptr;
+          }
+          DATA_BUFFER = new uint8_t[uri_size];
+          cout<<timer.time()<<" Buffer alloc succeeded."<<endl;
+
+          // 3. Download to buffer via transfer manager.
+          download_to_buffer(DATA_BUFFER, uri_size, bucket_name, object_key);
+          cout<<timer.time()<<" Download done."<<endl;
+
+          // 4. compute md5 from buffer
           MD5 md5;
           auto data = string("Hello world");
-          md5.update(data.c_str(), data.size());
+          md5.update(DATA_BUFFER, uri_size);
           md5.finalize();
+          cout<<timer.time()<<" MD5 digest: "<<md5.hexdigest()<<endl;
 
-          // use S3 crt
-          cout<<" took "<<timer.time()<<"s "<<md5.hexdigest()<<endl;
+          // Use S3 crt.
+          cout<<" took "<<timer.time()<<"s "<<endl;
 
        }
    }
