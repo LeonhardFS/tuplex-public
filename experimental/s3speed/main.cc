@@ -251,6 +251,8 @@ int main(int argc, char* argv[]) {
 
           Timer timer;
 
+          cout<<"Downloading "<<file_uri<<"..."<<endl;
+
           // 1. send HEAD request out to get size.
           size_t uri_size = s3_size_of_uri(s3_crt_client, bucket_name, object_key);
           cout<<timer.time()<<" HEAD object request success, size of content: "<<uri_size<<"B"<<endl;
