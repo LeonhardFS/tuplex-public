@@ -41,8 +41,8 @@ namespace tuplex {
 
         // explicit ranges
         uint8_t* get(const URI& uri, size_t range_start, size_t range_end, option<size_t> uri_size = option<size_t>::none);
-        uint8_t* put(const URI& uri, size_t range_start, size_t range_end, size_t* bytes_written =nullptr, option<size_t> uri_size = option<size_t>::none);
-        std::future<size_t> putAsync(const URI& uri, size_t range_start, size_t range_end);
+        uint8_t* put(const URI& uri, size_t range_start, size_t range_end, size_t* bytes_written =nullptr, option<size_t> uri_size = option<size_t>::none, bool requestWithTransferManager=false);
+        std::future<size_t> putAsync(const URI& uri, size_t range_start, size_t range_end, bool requestWithTransferManager=false);
 
         // write to external buffer.
         bool get(uint8_t* buf, size_t buf_capacity,
@@ -136,6 +136,8 @@ namespace tuplex {
         S3FileSystemImpl* _s3fs; // weak ptr.
         AwsS3RequestPayer _requestPayer;
         CacheEntry s3Read(const URI& uri, size_t range_start, size_t range_end);
+
+        CacheEntry s3ReadWithTransferManager(const URI& uri, size_t range_start, size_t range_end);
 
         /*!
          * computes which requests would need to be issued to make sure the range requested is covered.

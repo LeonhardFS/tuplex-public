@@ -8,6 +8,9 @@
 #include <algorithm>
 #include <future>
 #include <aws/s3/model/HeadObjectRequest.h>
+#include <aws/core/utils/memory/AWSMemory.h>
+#include <aws/core/utils/memory/stl/AWSStreamFwd.h>
+#include <aws/core/utils/stream/PreallocatedStreamBuf.h>
 #include "Logger.h"
 #include "Timer.h"
 #include "S3File.h"
@@ -21,7 +24,6 @@ namespace tuplex {
         _maxSize = maxSize;
         _cacheSize = 0;
     }
-
 
     void S3FileCache::putChunk(tuplex::S3FileCache::CacheEntry &&chunk) {
 
@@ -54,7 +56,7 @@ namespace tuplex {
         _chunks.emplace_back(std::move(chunk));
     }
 
-    uint8_t* S3FileCache::put(const URI &uri, size_t range_start, size_t range_end, size_t* bytes_written, option<size_t> uri_size) {
+    uint8_t* S3FileCache::put(const URI &uri, size_t range_start, size_t range_end, size_t* bytes_written, option<size_t> uri_size, bool requestWithTransferManager) {
 
         URI target_uri = uri;
         size_t custom_range_start = 0, custom_range_end = 0;
@@ -92,7 +94,7 @@ namespace tuplex {
             pruneBy(requested_size);
         } else {
             // ok, can store.
-            auto chunk = s3Read(uri, range_start, range_end);
+            auto chunk = requestWithTransferManager ? s3ReadWithTransferManager(uri, range_start, range_end) : s3Read(uri, range_start, range_end);
             {
                 std::lock_guard<std::mutex> lock(_mutex);
                 auto ptr = chunk.buf;
@@ -106,11 +108,11 @@ namespace tuplex {
         return nullptr;
     }
 
-    std::future<size_t> S3FileCache::putAsync(const URI &uri, size_t range_start, size_t range_end) {
-        // future from a promise
-        return std::async( [this, uri, range_start, range_end] {
+    std::future<size_t> S3FileCache::putAsync(const URI &uri, size_t range_start, size_t range_end, bool requestWithTransferManager) {
+        // Future from a promise
+        return std::async( [this, uri, range_start, range_end, requestWithTransferManager] {
             size_t bytes_written = 0;
-            put(uri, range_start, range_end, &bytes_written);
+            put(uri, range_start, range_end, &bytes_written, option<size_t>::none, requestWithTransferManager);
             return bytes_written;
         });
     }
@@ -586,7 +588,7 @@ namespace tuplex {
         auto& logger = Logger::instance().logger("s3fs");
 
         if(!_s3fs)
-            throw std::runtime_error("Trying to use S3Cache without an initialized S3 Filesystem");
+            throw std::runtime_error("Trying to use S3Cache without an initialized S3 Filesystem.");
 
         // issue a S3 read (part) request -> will contain all data etc.
 // simply issue here one direct request
@@ -610,7 +612,12 @@ namespace tuplex {
         Timer timer;
         auto get_object_outcome = _s3fs->client().GetObject(req);
         _s3fs->_getRequests++;
-        logger.info("Requested from S3 in " + std::to_string(timer.time()) + "s.");
+
+        {
+            std::stringstream ss;
+            ss<<"Requested from S3 "<<"("<<uri.toString()<<":"<<range_start<<"-"<<range_end<<")"<<" in " + std::to_string(timer.time()) + "s.";
+            logger.info(ss.str());
+        }
 
         if (get_object_outcome.IsSuccess()) {
             auto result = get_object_outcome.GetResultWithOwnership();
@@ -657,6 +664,126 @@ namespace tuplex {
 
             logger.error(err_msg);
             throw std::runtime_error(err_msg);
+        }
+
+        return entry;
+    }
+
+
+    class CustomStream : public Aws::IOStream  {
+    public:
+        using Base = Aws::IOStream;
+        // Provide a customer-controlled streambuf to hold data from the bucket.
+        explicit CustomStream(std::streambuf* buf)
+                : Base(buf)
+        {}
+
+        ~CustomStream() override = default;
+    };
+
+    S3FileCache::CacheEntry S3FileCache::s3ReadWithTransferManager(const tuplex::URI &uri, size_t range_start, size_t range_end) {
+        CacheEntry entry;
+
+        auto& logger = Logger::instance().logger("s3fs");
+
+        if(!_s3fs)
+            throw std::runtime_error("Trying to use S3Cache without an initialized S3 Filesystem.");
+
+        // Get full file, or a part of it?
+        size_t uri_size = 1;
+        if(range_start == 0 && range_end == 0) {
+            // Fetch object size of URI, download the full one then.
+            uri_size = s3GetContentLength(_s3fs->client(), uri);
+            range_end = uri_size;
+        }
+
+        // issue a S3 read (part) request -> will contain all data etc.
+// simply issue here one direct request
+        size_t retrievedBytes = 0;
+        size_t nbytes = range_end - range_start;
+        // range header
+        std::string range = "bytes=" + std::to_string(range_start) + "-" + std::to_string(range_start + nbytes - 1);
+        // make AWS S3 part request to uri
+        // check how to retrieve object in poarts
+        AwsS3GetObjectRequest req;
+        req.SetBucket(uri.s3Bucket().c_str());
+        req.SetKey(uri.s3Key().c_str());
+        // retrieve byte range according to http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.35
+        req.SetRange(range.c_str());
+        // Amazon specific header.
+        if(_s3fs->isAmazon()) {
+            req.SetRequestPayer(_requestPayer);
+        }
+
+        // Get the object ==> Note: this s3 client is damn slow, need to make it faster in the future...
+        Timer timer;
+
+        auto executor = Aws::MakeShared<Aws::Utils::Threading::PooledThreadExecutor>("executor", std::max(8u, std::thread::hardware_concurrency() * 2));
+        Aws::Transfer::TransferManagerConfiguration transfer_config(executor.get());
+        transfer_config.s3Client = _s3fs->make_pure_s3_client();
+
+        // Allocate buffer:
+        entry.buf = new uint8_t[nbytes + 32]; // 32 bytes as security.
+
+        // The local variable 'streamBuffer' is captured by reference in a lambda.
+        // It must persist until all downloading by the 'transfer_manager' is complete.
+        Aws::Utils::Stream::PreallocatedStreamBuf streamBuffer(entry.buf, nbytes);
+
+        auto transfer_manager = Aws::Transfer::TransferManager::Create(transfer_config);
+
+        auto downloadHandle = transfer_manager->DownloadFile(uri.s3Bucket(),
+                                                             uri.s3Key(),
+                                                             range_start,
+                                                             range_end -  range_start + 1,
+                                                             [&]() { //Define a lambda expression for the callback method parameter to stream back the data.
+                                                                 return Aws::New<CustomStream>("TestTag", &streamBuffer);
+                                                             });
+        downloadHandle->WaitUntilFinished();// Block calling thread until download is complete.
+        auto downStat = downloadHandle->GetStatus();
+        if (downStat != Aws::Transfer::TransferStatus::COMPLETED) {
+
+            std::stringstream err_stream;
+            err_stream<<"S3 transfer manager failed with error: "<<downloadHandle->GetLastError().GetExceptionName()<<": "<<downloadHandle->GetLastError().GetMessage().c_str()<<" for uri "<<uri.toPath();
+            auto err_msg = err_stream.str();
+
+            // special case: Request Timeout Has Expired -> add additional information.
+            if(err_msg.find("Request Timeout Has Expired") != std::string::npos) {
+                std::stringstream ss;
+                ss<<"Requested "<<sizeToMemString(nbytes)<<", connect timeout="<<_s3fs->_config.connectTimeoutMs<<"ms, request timeout="<<_s3fs->_config.requestTimeoutMs<<"ms.";
+                err_msg += " " + ss.str();
+            }
+
+            delete [] entry.buf;
+            entry.buf = nullptr;
+
+            logger.error(err_msg);
+            throw std::runtime_error(err_msg);
+        } else {
+            // all good.
+            if(0 == retrievedBytes) {
+                logger.debug("empty range");
+                return entry;
+            }
+
+            auto fileSize = downloadHandle->GetBytesTotalSize();
+            retrievedBytes = downloadHandle->GetBytesTransferred();
+
+            // set entries.
+            entry.range_start = range_start;
+            entry.range_end = range_start + retrievedBytes;
+            entry.uri = uri;
+            entry.uri_size = fileSize;
+
+            // note: for ascii files there might be an issue regarding the file ending!!!
+            _s3fs->_bytesReceived += retrievedBytes;
+        }
+
+        _s3fs->_getRequests++; // ????
+
+        {
+            std::stringstream ss;
+            ss<<"Requested from S3 with transfer manager "<<"("<<uri.toString()<<":"<<range_start<<"-"<<range_end<<")"<<" in " + std::to_string(timer.time()) + "s.";
+            logger.info(ss.str());
         }
 
         return entry;
