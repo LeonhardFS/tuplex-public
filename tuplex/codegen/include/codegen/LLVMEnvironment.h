@@ -253,10 +253,11 @@ namespace tuplex {
                         return {keyval.first};
                 }
 
+#if LLVM_VERSION_MAJOR <=16
                 // if it's a pointer type, deref
                 if(llvm_type->isPointerTy())
                     return lookupPythonTypes(llvm_type->getPointerElementType());
-
+#endif
                 return {};
             }
 
@@ -465,7 +466,11 @@ namespace tuplex {
             }
 
             inline llvm::Type *i8ptrType() {
+#ifdef LLVM_VERSION_MAHOR <= 19
                 return llvm::Type::getInt8PtrTy(_context, 0);
+#else
+                return llvm::PointerType::get(llvm::Type::getInt8Ty(_context), 0);
+#endif
             }
 
             inline llvm::Type *i32Type() {
@@ -481,10 +486,18 @@ namespace tuplex {
             }
 
             inline llvm::Type *i64ptrType() {
+#if LLVM_VERSION_MAJOR <= 19
                 return llvm::Type::getInt64PtrTy(_context, 0);
+#else
+                return llvm::PointerType::get(llvm::Type::getInt64Ty(_context), 0);
+#endif
             }
             inline llvm::Type *i32ptrType() {
+#if LLVM_VERSION_MAJOR <= 19
                 return llvm::Type::getInt32PtrTy(_context, 0);
+#else
+                return llvm::PointerType::get(llvm::Type::getInt32Ty(_context), 0);
+#endif
             }
 
             inline llvm::Type *doubleType() {
@@ -492,7 +505,11 @@ namespace tuplex {
             }
 
             inline llvm::Type *doublePointerType() {
+#if LLVM_VERSION_MAJOR <= 19
                 return llvm::Type::getDoublePtrTy(_context, 0);
+#else
+                return llvm::PointerType::get(doubleType(), 0);
+#endif
             }
 
             inline llvm::Value* pack32iTo64i(const IRBuilder& builder, llvm::Value* high, llvm::Value* low) {
@@ -559,8 +576,8 @@ namespace tuplex {
                     // not registered yet, register now
                     auto& ctx = _module->getContext();
                     bool packed = false;
-                    std::vector<llvm::Type*> members{llvm::Type::getInt64PtrTy(_context, 0),
-                                                     llvm::Type::getInt8PtrTy(_context, 0),
+                    std::vector<llvm::Type*> members{i64ptrType(),
+                                                     i8ptrType(),
                                                      llvm::Type::getInt64Ty(_context)};
                     stype = llvm::StructType::create(ctx, members, "match", packed);
                 }
@@ -723,15 +740,15 @@ namespace tuplex {
             }
 
             inline llvm::Constant* i8ptrConst(const uint8_t* ptr) {
-                return llvm::Constant::getIntegerValue(llvm::Type::getInt8PtrTy(_context, 0), llvm::APInt(64, reinterpret_cast<uint64_t>(ptr)));
+                return llvm::Constant::getIntegerValue(i8ptrType(), llvm::APInt(64, reinterpret_cast<uint64_t>(ptr)));
             }
 
             inline llvm::Constant* i64nullptr() const {
-                return llvm::ConstantPointerNull::get(llvm::Type::getInt64PtrTy(const_cast<LLVMEnvironment*>(this)->getContext(), 0));
+                return llvm::ConstantPointerNull::get(static_cast<llvm::PointerType*>(const_cast<LLVMEnvironment*>(this)->i64ptrType()));
             }
 
             inline llvm::Constant* i8nullptr() const {
-                return llvm::ConstantPointerNull::get(llvm::Type::getInt8PtrTy(const_cast<LLVMEnvironment*>(this)->getContext(), 0));
+                return llvm::ConstantPointerNull::get(static_cast<llvm::PointerType*>(const_cast<LLVMEnvironment*>(this)->i8ptrType()));
             }
 
             inline llvm::Value* strConst(const codegen::IRBuilder& builder, const std::string& s) {
@@ -741,7 +758,7 @@ namespace tuplex {
                 auto it = _stringMap.find(s);
                 if(it == _stringMap.end()) {
                     auto sconst = builder.CreateGlobalStringPtr(s);
-                    auto ptr = builder.CreatePointerCast(sconst, llvm::Type::getInt8PtrTy(_context, 0));
+                    auto ptr = builder.CreatePointerCast(sconst, i8ptrType());
                     _stringMap.insert(std::make_pair(s, ptr));
 
                     // save const as well to allow lookup for both raw pointer values
@@ -1232,7 +1249,7 @@ namespace tuplex {
         static inline llvm::Function* memcmp_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
             using namespace llvm;
 
-            auto char_ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
+            auto char_ptr_type = llvm::PointerType::get(llvm::Type::getInt8Ty(ctx), 0);
             auto int64_type = llvm::Type::getInt64Ty(ctx);
 
             FunctionType *memcmp_type = llvm::FunctionType::get(int64_type, {char_ptr_type, char_ptr_type, int64_type}, false);
@@ -1249,7 +1266,7 @@ namespace tuplex {
         static inline llvm::Function* ststr_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
             using namespace llvm;
 
-            auto char_ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
+            auto char_ptr_type = llvm::PointerType::get(llvm::Type::getInt8Ty(ctx), 0);
 
             FunctionType *strstr_type = llvm::FunctionType::get(char_ptr_type, {char_ptr_type, char_ptr_type}, false);
 
@@ -1265,7 +1282,7 @@ namespace tuplex {
         static inline llvm::Function* strlen_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
             using namespace llvm;
 
-            FunctionType *strlen_type = llvm::FunctionType::get(llvm::Type::getInt64Ty(ctx), {llvm::Type::getInt8PtrTy(ctx, 0)},
+            FunctionType *strlen_type = llvm::FunctionType::get(llvm::Type::getInt64Ty(ctx), {llvm::PointerType::get(llvm::Type::getInt8Ty(ctx), 0)},
                                                                 false);
 
 #if LLVM_VERSION_MAJOR < 9
@@ -1279,7 +1296,7 @@ namespace tuplex {
 
         static inline llvm::Function* fastatod_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
             using namespace llvm;
-            auto ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
+            auto ptr_type = llvm::PointerType::get(llvm::Type::getInt8Ty(ctx), 0);
             FunctionType *fastatod_type = llvm::FunctionType::get(llvm::Type::getInt32Ty(ctx),
                                                                   {ptr_type, ptr_type, llvm::Type::getDoublePtrTy(ctx, 0)},
                                                                   false);

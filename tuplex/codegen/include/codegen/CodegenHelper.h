@@ -119,7 +119,7 @@ namespace tuplex {
 
 #ifndef NDEBUG
                 // pointer check
-                if(Val->getType()->getPointerTo() != Ptr->getType()) {
+                if(llvm::PointerType::get(Val->getType(), 0) != Ptr->getType()) {
                     throw std::runtime_error("attempting to store value of incompatible llvm type to llvm pointer");
                 }
 #endif
@@ -288,7 +288,11 @@ namespace tuplex {
             }
             inline llvm::Value *CreateNeg(llvm::Value *V, const std::string& Name = "",
                                   bool HasNUW = false, bool HasNSW = false) const {
+#if LLVM_VERSION_MAJOR >= 20
+                return get_or_throw().CreateNeg(V, Name, HasNSW);
+#else
                 return get_or_throw().CreateNeg(V, Name, HasNUW, HasNSW);
+#endif
             }
              inline llvm::Value *CreateXor(llvm::Value *LHS, llvm::Value *RHS, const std::string& Name = "") const {
                  return get_or_throw().CreateXor(LHS, RHS, Name);
@@ -753,7 +757,7 @@ namespace tuplex {
 
 
                  // create external call to rtmalloc function
-                 auto func = mod->getOrInsertFunction("rtmalloc", llvm::Type::getInt8PtrTy(ctx, 0),
+                 auto func = mod->getOrInsertFunction("rtmalloc", i8ptrType(ctx),
                                                                 llvm::Type::getInt64Ty(ctx));
                  return get_or_throw().CreateCall(func, size);
              }
@@ -775,6 +779,10 @@ namespace tuplex {
                 if(!_llvm_builder)
                     throw std::runtime_error("no builder specified");
                 return *_llvm_builder;
+            }
+
+            inline llvm::Type* i8ptrType(llvm::LLVMContext& ctx) const {
+                return llvm::PointerType::get(llvm::Type::getInt8Ty(ctx), 0);
             }
 
             IRBuilder(llvm::BasicBlock::iterator it);
@@ -1081,12 +1089,14 @@ namespace tuplex {
             SerializableValue() : val(nullptr), size(nullptr), is_null(nullptr)   {}
             SerializableValue(llvm::Value *v, llvm::Value* s) : val(v), size(s), is_null(nullptr) {
 #ifndef NDEBUG
+#if LLVM_VERSION_MAJOR <= 16
                 if(s) {
                    auto stype = s->getType();
                    if(stype->isPointerTy())
                        stype = stype->getPointerElementType();
                     assert(stype == llvm::Type::getInt64Ty(s->getContext()));
                 }
+#endif
 #endif
             }
             SerializableValue(llvm::Value *v, llvm::Value* s, llvm::Value* n) : val(v), size(s), is_null(n) {
@@ -1291,11 +1301,13 @@ namespace tuplex {
 
         static inline llvm::Function* exception_handler_prototype(llvm::LLVMContext& ctx, llvm::Module* mod, const std::string& name) {
             using namespace llvm;
-            std::vector<Type*> eh_argtypes{Type::getInt8PtrTy(ctx, 0),
+            auto t_i8ptr = llvm::PointerType::get(llvm::Type::getInt8Ty(ctx), 0);
+
+            std::vector<Type*> eh_argtypes{t_i8ptr,
                                            Type::getInt64Ty(ctx),
                                            Type::getInt64Ty(ctx),
                                            Type::getInt64Ty(ctx),
-                                           Type::getInt8PtrTy(ctx, 0),
+                                           t_i8ptr,
                                            Type::getInt64Ty(ctx),};
             FunctionType *eh_type = FunctionType::get(Type::getVoidTy(ctx), eh_argtypes, false);
 
