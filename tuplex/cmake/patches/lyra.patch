@@ -1,0 +1,13 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 48a55ae..8c61187 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -20,7 +20,7 @@
+ 
+ # Only need the basic minimum of project, add_library, and
+ # target_include_directories commands.
+-cmake_minimum_required( VERSION 3.0 )
++cmake_minimum_required( VERSION 3.20 )
+ 
+ # Don't set VERSION, as that's a pita to keep up to date with the version
+ # header. And don't set LANGUAGES as we are multi-language and header

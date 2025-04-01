@@ -14,8 +14,7 @@ FetchContent_Declare(
         GIT_TAG tags/v3.8.0
 )
 
-# FetchContent_MakeAvailable(simdjson)
-
+# FetchContent_MakeAvailable(simdjson) # --> does not work yet with customization, update cmake file for this.
 if(NOT simdjson_POPULATED)
     FetchContent_Populate(simdjson)
     # Disable threads for simdjson
@@ -23,10 +22,12 @@ if(NOT simdjson_POPULATED)
     add_subdirectory(${simdjson_SOURCE_DIR} ${simdjson_BINARY_DIR})
 endif()
 
-
+set(lyra_patch git apply ${PATCHES_DIR}/lyra.patch)
 FetchContent_Declare(lyra
         GIT_REPOSITORY https://github.com/bfgroup/Lyra
         GIT_TAG 1.6.1
+        PATCH_COMMAND ${lyra_patch}
+        UPDATE_DISCONNECTED 1
 )
 FetchContent_MakeAvailable(lyra)
 

@@ -20,7 +20,10 @@ FetchContent_Declare(pybind11 GIT_REPOSITORY https://github.com/pybind/pybind11
                              GIT_TAG        v2.11.1 )
 FetchContent_GetProperties(pybind11)
 if(NOT pybind11_POPULATED)
+    # Disable cmake warning, need to update to FetchContent_MakeAvailable eventually.
+    cmake_policy(SET CMP0169 OLD)
     FetchContent_Populate(pybind11)
+    cmake_policy(SET CMP0169 NEW)
     add_subdirectory(${pybind11_SOURCE_DIR} ${pybind11_BINARY_DIR})
 endif()
 
