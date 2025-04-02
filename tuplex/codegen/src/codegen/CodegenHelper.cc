@@ -445,10 +445,10 @@ CodeGenOptLevel::Aggressive
             else throw std::runtime_error("objects of type " + valType.desc() + " are not supported as dictionary values");
 
             auto replaceptr = builder.CreatePointerCast(builder.CreateGlobalStringPtr(replacestr),
-                                                        llvm::Type::getInt8PtrTy(ctx, 0));
+                                                        ctypeToLLVM<char*>(ctx));
             auto sizeVar = builder.CreateAlloca(llvm::Type::getInt64Ty(ctx), 0, nullptr);
             auto typesptr = builder.CreatePointerCast(builder.CreateGlobalStringPtr(typesstr),
-                                                      llvm::Type::getInt8PtrTy(ctx, 0));
+                                                      ctypeToLLVM<char*>(ctx));
             valargs.push_back(replaceptr);
             valargs.push_back(sizeVar);
             valargs.push_back(typesptr);
@@ -773,13 +773,13 @@ CodeGenOptLevel::Aggressive
         }
 
         inline llvm::Type* i8ptrType(llvm::LLVMContext& ctx) {
-            return llvm::Type::getInt8PtrTy(ctx, 0);
+            return ctypeToLLVM<char*>(ctx);
         }
         inline llvm::Type* i32ptrType(llvm::LLVMContext& ctx) {
-            return llvm::Type::getInt32PtrTy(ctx, 0);
+            return ctypeToLLVM<int32_t*>(ctx);
         }
         inline llvm::Type* i64ptrType(llvm::LLVMContext& ctx) {
-            return llvm::Type::getInt64PtrTy(ctx, 0);
+            return ctypeToLLVM<int64_t*>(ctx);
         }
         inline llvm::Value* i1Const(llvm::LLVMContext& ctx, bool value) {
             return llvm::Constant::getIntegerValue(llvm::Type::getInt1Ty(ctx), llvm::APInt(1, value));
@@ -1013,7 +1013,11 @@ CodeGenOptLevel::Aggressive
                                                  const std::string& cpu) {
 
             // -O2.
+#if LLVM_VERSION_MAJOR < 20
             auto OLvl = llvm::CodeGenOpt::Default;
+#else
+            auto OLvl = llvm::CodeGenOptLevel::Default;
+#endif
             auto NoVerify = true;
 
             std::string error;
@@ -1044,11 +1048,10 @@ CodeGenOptLevel::Aggressive
             if(!TargetMachine)
                 throw std::runtime_error("failed to create target machine for CPU=" + CPU + ", features="=Features);
 
-            llvm::LLVMTargetMachine& LLVMTM = static_cast<llvm::LLVMTargetMachine&>(*TargetMachine);
-
 #if LLVM_VERSION_MAJOR == 9
             llvm::MachineModuleInfo* MMIWP = nullptr;
-#else
+#elif LLVM_VERSION_MAJOR < 20
+            llvm::LLVMTargetMachine& LLVMTM = static_cast<llvm::LLVMTargetMachine&>(*TargetMachine);
             llvm::MachineModuleInfoWrapperPass *MMIWP = new llvm::MachineModuleInfoWrapperPass(&LLVMTM);
             const_cast<llvm::TargetLoweringObjectFile *>(LLVMTM.getObjFileLowering())->Initialize(MMIWP->getMMI().getContext(), *TargetMachine);
 #endif
@@ -1060,8 +1063,10 @@ CodeGenOptLevel::Aggressive
 
 #if LLVM_VERSION_MAJOR == 9
             auto FileType = llvm::LLVMTargetMachine::CGFT_ObjectFile;
-#else
+#elif LLVM_VERSION_MAJOR < 20
             auto FileType = llvm::CGFT_ObjectFile;
+#else
+            auto FileType = llvm::CodeGenFileType::ObjectFile;
 #endif
             llvm::SmallVector<char, 0> buffer;
             llvm::raw_svector_ostream dest(buffer);
@@ -1295,7 +1300,7 @@ CodeGenOptLevel::Aggressive
             auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
 
             auto func = getOrInsertFunction(mod, "yyjson_mut_is_num", ctypeToLLVM<bool>(ctx),
-                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+                                            (llvm::Type*)ctypeToLLVM<char*>(ctx));
 
             // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_isnumber");
 
@@ -1321,7 +1326,7 @@ CodeGenOptLevel::Aggressive
             auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
 
             auto func = getOrInsertFunction(mod, "yyjson_mut_is_null", ctypeToLLVM<bool>(ctx),
-                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+                                            (llvm::Type*)ctypeToLLVM<char*>(ctx));
 
             codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_isnull");
 
@@ -1346,7 +1351,7 @@ CodeGenOptLevel::Aggressive
             auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
 
             auto func = getOrInsertFunction(mod, "yyjson_mut_is_obj", ctypeToLLVM<bool>(ctx),
-                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+                                            (llvm::Type*)ctypeToLLVM<char*>(ctx));
 
             codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_isobject");
 
@@ -1371,7 +1376,7 @@ CodeGenOptLevel::Aggressive
             auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
 
             auto func = getOrInsertFunction(mod, "yyjson_mut_is_arr", ctypeToLLVM<bool>(ctx),
-                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+                                            (llvm::Type*)ctypeToLLVM<char*>(ctx));
 
             // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_isarray");
 
@@ -1396,14 +1401,14 @@ CodeGenOptLevel::Aggressive
             auto yy_obj = get_yyjson_mut_obj(builder, cjson_array);
 
             auto func = getOrInsertFunction(mod, "yyjson_mut_arr_size", ctypeToLLVM<size_t>(ctx),
-                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+                                            (llvm::Type*)ctypeToLLVM<char*>(ctx));
 
             codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_getarraysize");
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt64Ty(ctx));
 #else
             auto func = getOrInsertFunction(mod, "cJSON_GetArraySize", ctypeToLLVM<int>(ctx),
-                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+                                            (llvm::Type*)ctypeToLLVM<char*>(ctx));
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_array}), llvm::Type::getInt64Ty(ctx));
 #endif
@@ -1458,14 +1463,14 @@ CodeGenOptLevel::Aggressive
             auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
 
             auto func = getOrInsertFunction(mod, "yyjson_mut_is_str", ctypeToLLVM<bool>(ctx),
-                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+                                            (llvm::Type*)ctypeToLLVM<char*>(ctx));
 
             // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_isstring");
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt1Ty(ctx));
 #else
             auto func = getOrInsertFunction(mod, "cJSON_IsString", ctypeToLLVM<cJSON_AS4CPP_bool>(ctx),
-                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+                                            (llvm::Type*)ctypeToLLVM<char*>(ctx));
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_obj}), llvm::Type::getInt1Ty(ctx));
 #endif
@@ -1484,14 +1489,14 @@ CodeGenOptLevel::Aggressive
             auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
 
             auto func = getOrInsertFunction(mod, "yyjson_is_array_of_objects", ctypeToLLVM<bool>(ctx),
-                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+                                            (llvm::Type*)ctypeToLLVM<char*>(ctx));
 
             codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_is_list_of_generic_dicts");
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt1Ty(ctx));
 #else
             auto func = getOrInsertFunction(mod, "cJSON_IsArrayOfObjects", ctypeToLLVM<cJSON_AS4CPP_bool>(ctx),
-                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+                                            (llvm::Type*)ctypeToLLVM<char*>(ctx));
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {cjson_obj}), llvm::Type::getInt1Ty(ctx));
 #endif
@@ -1510,7 +1515,7 @@ CodeGenOptLevel::Aggressive
             auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
 
             auto func = getOrInsertFunction(mod, "yyjson_mut_get_sint", ctypeToLLVM<int64_t>(ctx),
-                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+                                            (llvm::Type*)ctypeToLLVM<char*>(ctx));
 
             // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_get_integer");
 
@@ -1533,13 +1538,13 @@ CodeGenOptLevel::Aggressive
             auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
 
             auto func = getOrInsertFunction(mod, "yyjson_mut_get_bool", ctypeToLLVM<bool>(ctx),
-                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+                                            (llvm::Type*)ctypeToLLVM<char*>(ctx));
 
             codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_get_boolean");
 
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt64Ty(ctx));
 #else
-            auto func = getOrInsertFunction(mod, "cJSON_IsTrue", llvm::Type::getInt64Ty(ctx), llvm::Type::getInt8PtrTy(ctx, 0));
+            auto func = getOrInsertFunction(mod, "cJSON_IsTrue", llvm::Type::getInt64Ty(ctx), ctypeToLLVM<char*>(ctx));
 
             return builder.CreateCall(func, {cjson_obj});
 #endif
@@ -1557,14 +1562,14 @@ CodeGenOptLevel::Aggressive
             auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
 
             auto func = getOrInsertFunction(mod, "yyjson_mut_get_real", ctypeToLLVM<double>(ctx),
-                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+                                            (llvm::Type*)ctypeToLLVM<char*>(ctx));
 
             codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_get_float");
 
             return builder.CreateCall(func, {yy_obj});
 #else
             auto func = getOrInsertFunction(mod, "cJSON_GetNumberValue", llvm::Type::getDoubleTy(ctx),
-                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+                                            (llvm::Type*)ctypeToLLVM<char*>(ctx));
 
             return builder.CreateCall(func, {cjson_obj});
 #endif
@@ -1582,14 +1587,14 @@ CodeGenOptLevel::Aggressive
             auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
 
             auto func = getOrInsertFunction(mod, "yyjson_mut_get_str", ctypeToLLVM<const char*>(ctx),
-                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+                                            (llvm::Type*)ctypeToLLVM<char*>(ctx));
 
             // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_get_string");
 
             auto str_pointer = builder.CreateCall(func, {yy_obj});
 #else
-            auto func = getOrInsertFunction(mod, "cJSON_GetStringValue", llvm::Type::getInt8PtrTy(ctx, 0),
-                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+            auto func = getOrInsertFunction(mod, "cJSON_GetStringValue", ctypeToLLVM<char*>(ctx),
+                                            (llvm::Type*)ctypeToLLVM<char*>(ctx));
 
             auto str_pointer = builder.CreateCall(func, {cjson_obj});
 #endif
@@ -1607,8 +1612,8 @@ CodeGenOptLevel::Aggressive
             auto& ctx = mod->getContext();
 #ifdef USE_YYJSON_INSTEAD
 
-            auto func = getOrInsertFunction(mod, "yyjson_print_to_runtime_str", llvm::Type::getInt8PtrTy(ctx, 0),
-                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt64PtrTy(ctx, 0));
+            auto func = getOrInsertFunction(mod, "yyjson_print_to_runtime_str", ctypeToLLVM<char*>(ctx),
+                                            (llvm::Type*)ctypeToLLVM<char*>(ctx), ctypeToLLVM<int64_t*>(ctx));
 
             auto first_builder = builder.firstBlockBuilder(false);
             auto str_size_var = first_builder.CreateAlloca(llvm::Type::getInt64Ty(ctx), 0, nullptr);
@@ -1668,8 +1673,8 @@ CodeGenOptLevel::Aggressive
             auto& ctx = mod->getContext();
 
 #ifdef USE_YYJSON_INSTEAD
-            auto func = getOrInsertFunction(mod, "JsonItem_to_yyjson_mut_doc", llvm::Type::getInt8PtrTy(ctx, 0),
-                                           (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0));
+            auto func = getOrInsertFunction(mod, "JsonItem_to_yyjson_mut_doc", ctypeToLLVM<char*>(ctx),
+                                           (llvm::Type*)ctypeToLLVM<char*>(ctx));
 
             auto func_doc_get_root = getOrInsertFunction(mod, "yyjson_mut_doc_get_root", i8ptrType(ctx), i8ptrType(ctx));
             auto yy_doc = builder.CreateCall(func, {json_item});
@@ -1699,8 +1704,8 @@ CodeGenOptLevel::Aggressive
             auto& ctx = mod->getContext();
 #ifdef USE_YYJSON_INSTEAD
 
-            auto func = getOrInsertFunction(mod, "yyjson_type_as_runtime_str", llvm::Type::getInt8PtrTy(ctx, 0),
-                                            (llvm::Type*)llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt64PtrTy(ctx, 0));
+            auto func = getOrInsertFunction(mod, "yyjson_type_as_runtime_str", ctypeToLLVM<char*>(ctx),
+                                            (llvm::Type*)ctypeToLLVM<char*>(ctx), ctypeToLLVM<int64_t*>(ctx));
 
             auto first_builder = builder.firstBlockBuilder(false);
             auto str_size_var = first_builder.CreateAlloca(llvm::Type::getInt64Ty(ctx), 0, nullptr);
@@ -1758,7 +1763,7 @@ CodeGenOptLevel::Aggressive
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
             auto& ctx = mod->getContext();
-            auto f_print = getOrInsertFunction(mod, "cJSON_PrintUnformatted", llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt8PtrTy(ctx, 0));
+            auto f_print = getOrInsertFunction(mod, "cJSON_PrintUnformatted", ctypeToLLVM<char*>(ctx), ctypeToLLVM<char*>(ctx));
             auto f_strlen = strlen_prototype(ctx, mod);
 
             SerializableValue v;
@@ -1805,7 +1810,7 @@ CodeGenOptLevel::Aggressive
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
             auto& ctx = mod->getContext();
-            auto i8ptrtype = llvm::Type::getInt8PtrTy(ctx, 0);
+            auto i8ptrtype = ctypeToLLVM<char*>(ctx);
 
             if(type.isOptionType()) {
                 // nested -> if null, convert to Json null
