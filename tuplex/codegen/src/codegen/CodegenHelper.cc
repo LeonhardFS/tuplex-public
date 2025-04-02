@@ -47,8 +47,10 @@
 #include <llvm/Support/CodeGen.h>
 
 // llvm 10 refactored sys into Host
-#if LLVM_VERSION_MAJOR > 9
+#if (LLVM_VERSION_MAJOR > 9 && LLVM_VERSION_MAJOR <= 19)
 #include <llvm/Support/Host.h>
+#else
+
 #endif
 
 #include <llvm/CodeGen/MachineModuleInfo.h>
@@ -203,9 +205,14 @@ namespace tuplex {
             // features the autodetected CPU name lists in the target. For example,
             // not all Sandybridge processors support AVX.
             StringMap<bool> HostFeatures;
-            if (sys::getHostCPUFeatures(HostFeatures))
-                for (auto &F : HostFeatures)
-                    Features.AddFeature(F.first(), F.second);
+#if LLVM_VERSION_MAJOR < 20
+            if (!sys::getHostCPUFeatures(HostFeatures))
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::string(__LINE__) + " failed getting cpu features.");
+#else
+            HostFeatures = sys::getHostCPUFeatures();
+#endif
+            for (auto &F : HostFeatures)
+                Features.AddFeature(F.first(), F.second);
 
             return Features.getString();
         }
@@ -248,7 +255,12 @@ namespace tuplex {
                                                   to,
                                                   Reloc::PIC_,
                                                   CodeModel::Large,
-                                                  CodeGenOpt::Aggressive);
+#if LLVM_VERSION_MAJOR < 20
+                                                  CodeGenOpt::Aggressive
+#else
+CodeGenOptLevel::Aggressive
+#endif
+                                                  );
         }
 
         std::string moduleToAssembly(std::shared_ptr<llvm::Module> module) {
@@ -267,7 +279,12 @@ namespace tuplex {
                                                 llvm::TargetMachine::CGFT_AssemblyFile);
 #else
             target_machine->addPassesToEmitFile(pass_manager, asm_sstream, nullptr,
-                                                llvm::CodeGenFileType::CGFT_AssemblyFile);
+#if LLVM_VERSION_MAJOR < 20
+                                                llvm::CodeGenFileType::CGFT_AssemblyFile
+#else
+                                                llvm::CodeGenFileType::AssemblyFile
+#endif
+                                                );
 #endif
 
             pass_manager.run(*module);

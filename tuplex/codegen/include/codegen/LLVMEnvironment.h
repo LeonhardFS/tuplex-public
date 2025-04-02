@@ -1296,9 +1296,10 @@ namespace tuplex {
 
         static inline llvm::Function* fastatod_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
             using namespace llvm;
-            auto ptr_type = llvm::PointerType::get(llvm::Type::getInt8Ty(ctx), 0);
+            auto i8ptr_type = llvm::PointerType::get(llvm::Type::getInt8Ty(ctx), 0);
+            auto doubleptr_type = llvm::PointerType::get(llvm::Type::getDoubleTy(ctx), 0);
             FunctionType *fastatod_type = llvm::FunctionType::get(llvm::Type::getInt32Ty(ctx),
-                                                                  {ptr_type, ptr_type, llvm::Type::getDoublePtrTy(ctx, 0)},
+                                                                  {i8ptr_type, i8ptr_type, doubleptr_type},
                                                                   false);
 
 #if LLVM_VERSION_MAJOR < 9
@@ -1312,15 +1313,16 @@ namespace tuplex {
 
         static inline llvm::Function* fastatob_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
             using namespace llvm;
-            auto ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
-            FunctionType *fastatod_type = llvm::FunctionType::get(llvm::Type::getInt32Ty(ctx),
-                                                                  {ptr_type, ptr_type, ptr_type},
+            FunctionType *fastatob_type = llvm::FunctionType::get(llvm::Type::getInt32Ty(ctx),
+                                                                  {ctypeToLLVM<const char*>(ctx),
+                                                                   ctypeToLLVM<const char*>(ctx),
+                                                                   ctypeToLLVM<int8_t*>(ctx)},
                                                                   false);
 
 #if LLVM_VERSION_MAJOR < 9
-            Function* func = cast<Function>(mod->getOrInsertFunction("fast_atob", fastatod_type));
+            Function* func = cast<Function>(mod->getOrInsertFunction("fast_atob", fastatob_type));
 #else
-            Function* func = cast<Function>(mod->getOrInsertFunction("fast_atob", fastatod_type).getCallee());
+            Function* func = cast<Function>(mod->getOrInsertFunction("fast_atob", fastatob_type).getCallee());
 #endif
             // func->addAttribute(1U, Attribute::NoAlias);
             return func;
@@ -1328,9 +1330,10 @@ namespace tuplex {
 
         static inline llvm::Function* fastatoi_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
             using namespace llvm;
-            auto ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
             FunctionType *fastatoi_type = llvm::FunctionType::get(llvm::Type::getInt32Ty(ctx),
-                                                                  {ptr_type, ptr_type, llvm::Type::getInt64PtrTy(ctx, 0)},
+                                                                  {ctypeToLLVM<const char*>(ctx),
+                                                                   ctypeToLLVM<const char*>(ctx),
+                                                                   ctypeToLLVM<int64_t*>(ctx)},
                                                                   false);
 
 #if LLVM_VERSION_MAJOR < 9
@@ -1346,7 +1349,7 @@ namespace tuplex {
             using namespace llvm;
 
             auto int64_type = llvm::Type::getInt64Ty(ctx);
-            auto char_ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
+            auto char_ptr_type = ctypeToLLVM<const char*>(ctx);
 
             FunctionType *count_proto = llvm::FunctionType::get(int64_type, {char_ptr_type, char_ptr_type, int64_type, int64_type}, false);
 
@@ -1362,7 +1365,7 @@ namespace tuplex {
         static inline llvm::Function* rfind_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
             using namespace llvm;
 
-            auto char_ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
+            auto char_ptr_type = ctypeToLLVM<const char*>(ctx);
 
             FunctionType *strstr_type = llvm::FunctionType::get(llvm::Type::getInt64Ty(ctx), {char_ptr_type, char_ptr_type}, false);
 
@@ -1378,7 +1381,7 @@ namespace tuplex {
         static inline llvm::Function* isdecimal_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
             using namespace llvm;
 
-            auto char_ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
+            auto char_ptr_type = ctypeToLLVM<const char*>(ctx);
             auto int8_type = llvm::Type::getInt8Ty(ctx);
 
             FunctionType *isdecimal_type = llvm::FunctionType::get(int8_type, {char_ptr_type}, false);
@@ -1395,7 +1398,7 @@ namespace tuplex {
         static inline llvm::Function* isdigit_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
             using namespace llvm;
 
-            auto char_ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
+            auto char_ptr_type = ctypeToLLVM<const char*>(ctx);
             auto int8_type = llvm::Type::getInt8Ty(ctx);
 
             FunctionType *isdigit_type = llvm::FunctionType::get(int8_type, {char_ptr_type}, false);
@@ -1412,7 +1415,7 @@ namespace tuplex {
         static inline llvm::Function* isalpha_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
             using namespace llvm;
 
-            auto char_ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
+            auto char_ptr_type = ctypeToLLVM<const char*>(ctx);
             auto int8_type = llvm::Type::getInt8Ty(ctx);
 
             FunctionType *isalpha_type = llvm::FunctionType::get(int8_type, {char_ptr_type}, false);
@@ -1429,7 +1432,7 @@ namespace tuplex {
         static inline llvm::Function* isalnum_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
             using namespace llvm;
 
-            auto char_ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
+            auto char_ptr_type = ctypeToLLVM<const char*>(ctx);
             auto int8_type = llvm::Type::getInt8Ty(ctx);
 
             FunctionType *isalnum_type = llvm::FunctionType::get(int8_type, {char_ptr_type}, false);
@@ -1446,10 +1449,12 @@ namespace tuplex {
         static inline llvm::Function* strip_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
             using namespace llvm;
 
-            auto char_ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
+            auto char_ptr_type = ctypeToLLVM<const char*>(ctx);
 
-            FunctionType *function_type = llvm::FunctionType::get(char_ptr_type, {char_ptr_type, char_ptr_type,
-                                                                                  llvm::Type::getInt64PtrTy(ctx, 0)}, false);
+            FunctionType *function_type = llvm::FunctionType::get(char_ptr_type, {char_ptr_type,
+                                                                                  char_ptr_type,
+                                                                                  ctypeToLLVM<int64_t*>(ctx)},
+                                                                  false);
 #if LLVM_VERSION_MAJOR < 9
             Function* func = cast<Function>(mod->getOrInsertFunction("strStrip", function_type));
 #else
@@ -1462,10 +1467,10 @@ namespace tuplex {
         static inline llvm::Function* rstrip_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
             using namespace llvm;
 
-            auto char_ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
+            auto char_ptr_type = ctypeToLLVM<const char*>(ctx);
 
             FunctionType *function_type = llvm::FunctionType::get(char_ptr_type, {char_ptr_type, char_ptr_type,
-                                                                                  llvm::Type::getInt64PtrTy(ctx, 0)}, false);
+                                                                                  ctypeToLLVM<int64_t*>(ctx)}, false);
 #if LLVM_VERSION_MAJOR < 9
             Function* func = cast<Function>(mod->getOrInsertFunction("strRStrip", function_type));
 #else
@@ -1478,10 +1483,10 @@ namespace tuplex {
         static inline llvm::Function* lstrip_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
             using namespace llvm;
 
-            auto char_ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
+            auto char_ptr_type = ctypeToLLVM<const char*>(ctx);
 
             FunctionType *function_type = llvm::FunctionType::get(char_ptr_type, {char_ptr_type, char_ptr_type,
-                                                                                  llvm::Type::getInt64PtrTy(ctx, 0)}, false);
+                                                                                  ctypeToLLVM<int64_t*>(ctx)}, false);
 
 #if LLVM_VERSION_MAJOR < 9
             Function* func = cast<Function>(mod->getOrInsertFunction("strLStrip", function_type));
@@ -1495,7 +1500,7 @@ namespace tuplex {
         static inline llvm::Function* replace_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
             using namespace llvm;
 
-            auto char_ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
+            auto char_ptr_type = ctypeToLLVM<const char*>(ctx);
 
             FunctionType *strstr_type = llvm::FunctionType::get(char_ptr_type, {char_ptr_type, char_ptr_type, char_ptr_type, llvm::Type::getInt64Ty(ctx)->getPointerTo(0)}, false);
 
@@ -1512,7 +1517,8 @@ namespace tuplex {
             using namespace llvm;
             static_assert(sizeof(size_t) == sizeof(int64_t), "size_t should be same size as a 64bit integer");
 
-            FunctionType *malloc_type = llvm::FunctionType::get(llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt64Ty(ctx), false);
+            FunctionType *malloc_type = llvm::FunctionType::get(ctypeToLLVM<const char*>(ctx),
+                    llvm::Type::getInt64Ty(ctx), false);
 
 #if LLVM_VERSION_MAJOR < 9
             Function *func = cast<Function>(mod->getOrInsertFunction("malloc", malloc_type));
@@ -1543,14 +1549,14 @@ namespace tuplex {
             using namespace tuplex::codegen;
 
             FunctionType *functionType = llvm::FunctionType::get(
-                    llvm::Type::getInt8PtrTy(ctx, 0), // result string
+                    ctypeToLLVM<const char*>(ctx), // result string
                     {
-                            llvm::Type::getInt8PtrTy(ctx, 0), // base string
+                            ctypeToLLVM<const char*>(ctx), // base string
                             llvm::Type::getInt64Ty(ctx), // length of base string
                             llvm::Type::getInt64Ty(ctx), // length of list
-                            llvm::PointerType::get(llvm::Type::getInt8PtrTy(ctx, 0), 0), // list strings
-                            llvm::Type::getInt64PtrTy(ctx, 0), // list string lengths
-                            llvm::Type::getInt64PtrTy(ctx, 0), // result length
+                            llvm::PointerType::get(ctypeToLLVM<const char*>(ctx), 0), // list strings
+                            ctypeToLLVM<int64_t*>(ctx), // list string lengths
+                            ctypeToLLVM<int64_t*>(ctx), // result length
                     },
                     false);
 
@@ -1570,13 +1576,13 @@ namespace tuplex {
             FunctionType *functionType = llvm::FunctionType::get(
                     llvm::Type::getInt64Ty(ctx), // serialized size of resulting list
                     {
-                            llvm::Type::getInt8PtrTy(ctx, 0), // base string
+                            ctypeToLLVM<const char*>(ctx), // base string
                             llvm::Type::getInt64Ty(ctx), // length of base string
-                            llvm::Type::getInt8PtrTy(ctx, 0), // delim string
+                            ctypeToLLVM<const char*>(ctx), // delim string
                             llvm::Type::getInt64Ty(ctx), // length of delim string
-                            llvm::PointerType::get(llvm::PointerType::get(llvm::Type::getInt8PtrTy(ctx, 0), 0), 0), // result list strings
-                            llvm::PointerType::get(llvm::Type::getInt64PtrTy(ctx, 0), 0), // result list string lengths
-                            llvm::Type::getInt64PtrTy(ctx, 0), // result list length
+                            llvm::PointerType::get(llvm::PointerType::get(ctypeToLLVM<const char*>(ctx), 0), 0), // result list strings
+                            llvm::PointerType::get(ctypeToLLVM<int64_t*>(ctx), 0), // result list string lengths
+                            ctypeToLLVM<int64_t*>(ctx), // result list length
                     },
                     false);
 
@@ -1777,14 +1783,14 @@ namespace tuplex {
             //  pcre2_real_code_8 *pcre2_compile_8(PCRE2_SPTR8, size_t, uint32_t, int *, size_t *, pcre2_real_compile_context_8 *)
 
             FunctionType *functionType = llvm::FunctionType::get(
-                    llvm::Type::getInt8PtrTy(ctx, 0), // compiled regex
+                    ctypeToLLVM<const char*>(ctx), // compiled regex
                     {
-                        llvm::Type::getInt8PtrTy(ctx, 0), // pattern
+                        ctypeToLLVM<const char*>(ctx), // pattern
                         llvm::Type::getInt64Ty(ctx), // length
                         llvm::Type::getInt32Ty(ctx), // options
-                        llvm::Type::getInt32PtrTy(ctx, 0), // errorcode
-                        llvm::Type::getInt64PtrTy(ctx, 0), // erroroffset
-                        llvm::Type::getInt8PtrTy(ctx, 0) // compile context
+                        ctypeToLLVM<int32_t*>(ctx), // errorcode
+                        ctypeToLLVM<int64_t*>(ctx), // erroroffset
+                        ctypeToLLVM<const char*>(ctx) // compile context
                     },
                     false);
 
@@ -1800,7 +1806,7 @@ namespace tuplex {
         static inline llvm::Function* pcre2CodeFree_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
             using namespace llvm;
 
-            FunctionType *functionType = llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), {llvm::Type::getInt8PtrTy(ctx, 0)}, false);
+            FunctionType *functionType = llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), {ctypeToLLVM<const char*>(ctx)}, false);
 
 #if LLVM_VERSION_MAJOR < 9
             auto func = cast<Function>(mod->getOrInsertFunction("pcre2_code_free_8", functionType));
@@ -1814,9 +1820,9 @@ namespace tuplex {
         static inline llvm::Function* pcre2MatchDataCreateFromPattern_prototype(llvm::LLVMContext& ctx, llvm::Module* mod) {
             using namespace llvm;
 
-            FunctionType *functionType = llvm::FunctionType::get(llvm::Type::getInt8PtrTy(ctx, 0),
-                                                                 {llvm::Type::getInt8PtrTy(ctx, 0),
-                                                                  llvm::Type::getInt8PtrTy(ctx, 0)}, false);
+            FunctionType *functionType = llvm::FunctionType::get(ctypeToLLVM<const char*>(ctx),
+                                                                 {ctypeToLLVM<const char*>(ctx),
+                                                                  ctypeToLLVM<const char*>(ctx)}, false);
 
 #if LLVM_VERSION_MAJOR < 9
             auto func = cast<Function>(mod->getOrInsertFunction("pcre2_match_data_create_from_pattern_8", functionType));
@@ -1834,17 +1840,17 @@ namespace tuplex {
             FunctionType *functionType = llvm::FunctionType::get(
                     llvm::Type::getInt32Ty(ctx), // number of matches/error
                     {
-                            llvm::Type::getInt8PtrTy(ctx, 0), // code
-                            llvm::Type::getInt8PtrTy(ctx, 0), // subject
+                            ctypeToLLVM<const char*>(ctx), // code
+                            ctypeToLLVM<const char*>(ctx), // subject
                             llvm::Type::getInt64Ty(ctx), // subject length
                             llvm::Type::getInt64Ty(ctx), // start offset
                             llvm::Type::getInt32Ty(ctx), // options
-                            llvm::Type::getInt8PtrTy(ctx, 0), // match data ptr
-                            llvm::Type::getInt8PtrTy(ctx, 0), // match context ptr
-                            llvm::Type::getInt8PtrTy(ctx, 0), // replacement
+                            ctypeToLLVM<const char*>(ctx), // match data ptr
+                            ctypeToLLVM<const char*>(ctx), // match context ptr
+                            ctypeToLLVM<const char*>(ctx), // replacement
                             llvm::Type::getInt64Ty(ctx), // replacement length
-                            llvm::Type::getInt8PtrTy(ctx, 0), // output buffer
-                            llvm::Type::getInt64PtrTy(ctx, 0), // output buffer length
+                            ctypeToLLVM<const char*>(ctx), // output buffer
+                            ctypeToLLVM<int64_t*>(ctx), // output buffer length
                     },
                     false);
 
@@ -1863,13 +1869,13 @@ namespace tuplex {
             FunctionType *functionType = llvm::FunctionType::get(
                     llvm::Type::getInt32Ty(ctx), // number of matches/error
                     {
-                            llvm::Type::getInt8PtrTy(ctx, 0), // code
-                            llvm::Type::getInt8PtrTy(ctx, 0), // subject
+                            ctypeToLLVM<const char*>(ctx), // code
+                            ctypeToLLVM<const char*>(ctx), // subject
                             llvm::Type::getInt64Ty(ctx), // subject length
                             llvm::Type::getInt64Ty(ctx), // start offset
                             llvm::Type::getInt32Ty(ctx), // options
-                            llvm::Type::getInt8PtrTy(ctx, 0), // match data ptr
-                            llvm::Type::getInt8PtrTy(ctx, 0), // match context ptr
+                            ctypeToLLVM<const char*>(ctx), // match data ptr
+                            ctypeToLLVM<const char*>(ctx), // match context ptr
                     },
                     false);
 
@@ -1888,13 +1894,13 @@ namespace tuplex {
             FunctionType *functionType = llvm::FunctionType::get(
                     llvm::Type::getInt32Ty(ctx), // number of matches/error
                     {
-                            llvm::Type::getInt8PtrTy(ctx, 0), // code
-                            llvm::Type::getInt8PtrTy(ctx, 0), // subject
+                            ctypeToLLVM<const char*>(ctx), // code
+                            ctypeToLLVM<const char*>(ctx), // subject
                             llvm::Type::getInt64Ty(ctx), // subject length
                             llvm::Type::getInt64Ty(ctx), // start offset
                             llvm::Type::getInt32Ty(ctx), // options
-                            llvm::Type::getInt8PtrTy(ctx, 0), // match data ptr
-                            llvm::Type::getInt8PtrTy(ctx, 0), // match context ptr
+                            ctypeToLLVM<const char*>(ctx), // match data ptr
+                            ctypeToLLVM<const char*>(ctx), // match context ptr
                     },
                     false);
 
@@ -1913,7 +1919,7 @@ namespace tuplex {
             FunctionType *functionType = llvm::FunctionType::get(
                     llvm::Type::getInt32Ty(ctx), // number of matches/error
                     {
-                            llvm::Type::getInt8PtrTy(ctx, 0), // code
+                            ctypeToLLVM<const char*>(ctx), // code
                             llvm::Type::getInt32Ty(ctx), // options
                     },
                     false);
@@ -1931,11 +1937,11 @@ namespace tuplex {
             using namespace llvm;
 
             FunctionType *functionType = llvm::FunctionType::get(
-                    llvm::PointerType::get(llvm::StructType::get(ctx, {llvm::Type::getInt64PtrTy(ctx, 0),
-                                                                            llvm::Type::getInt8PtrTy(ctx, 0),
-                                                                            llvm::Type::getInt64Ty(ctx)}), 0),
-                    {llvm::Type::getInt8PtrTy(ctx, 0),
-                     llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt64Ty(ctx)}, false);
+                    llvm::PointerType::get(llvm::StructType::get(ctx, {ctypeToLLVM<int64_t*>(ctx),
+                                                                       ctypeToLLVM<const char*>(ctx),
+                                                                       llvm::Type::getInt64Ty(ctx)}), 0),
+                    {ctypeToLLVM<const char*>(ctx),
+                     ctypeToLLVM<const char*>(ctx), llvm::Type::getInt64Ty(ctx)}, false);
 
 #if LLVM_VERSION_MAJOR < 9
             auto func = cast<Function>(mod->getOrInsertFunction("wrapPCRE2MatchObject", functionType));
@@ -1950,7 +1956,7 @@ namespace tuplex {
             using namespace llvm;
 
             FunctionType *functionType = llvm::FunctionType::get(
-                    llvm::Type::getInt8PtrTy(ctx, 0), {}, false);
+                    ctypeToLLVM<const char*>(ctx), {}, false);
 
 #if LLVM_VERSION_MAJOR < 9
             auto func = cast<Function>(mod->getOrInsertFunction("pcre2GetLocalGeneralContext", functionType));
@@ -1965,7 +1971,7 @@ namespace tuplex {
             using namespace llvm;
 
             FunctionType *functionType = llvm::FunctionType::get(
-                    llvm::Type::getInt8PtrTy(ctx, 0), {}, false);
+                    ctypeToLLVM<const char*>(ctx), {}, false);
 
 #if LLVM_VERSION_MAJOR < 9
             auto func = cast<Function>(mod->getOrInsertFunction("pcre2GetGlobalGeneralContext", functionType));
@@ -1980,7 +1986,7 @@ namespace tuplex {
             using namespace llvm;
 
             FunctionType *functionType = llvm::FunctionType::get(
-                    llvm::Type::getInt8PtrTy(ctx, 0), {llvm::Type::getInt8PtrTy(ctx, 0)}, false);
+                    ctypeToLLVM<const char*>(ctx), {ctypeToLLVM<const char*>(ctx)}, false);
 
 #if LLVM_VERSION_MAJOR < 9
             auto func = cast<Function>(mod->getOrInsertFunction("pcre2_match_context_create_8", functionType));
@@ -1995,7 +2001,7 @@ namespace tuplex {
             using namespace llvm;
 
             FunctionType *functionType = llvm::FunctionType::get(
-                    llvm::Type::getInt8PtrTy(ctx, 0), {}, false);
+                    ctypeToLLVM<const char*>(ctx), {}, false);
 
 #if LLVM_VERSION_MAJOR < 9
             auto func = cast<Function>(mod->getOrInsertFunction("pcre2GetGlobalMatchContext", functionType));
@@ -2010,7 +2016,7 @@ namespace tuplex {
             using namespace llvm;
 
             FunctionType *functionType = llvm::FunctionType::get(
-                    llvm::Type::getInt8PtrTy(ctx, 0), {llvm::Type::getInt8PtrTy(ctx, 0)}, false);
+                    ctypeToLLVM<const char*>(ctx), {ctypeToLLVM<const char*>(ctx)}, false);
 
 #if LLVM_VERSION_MAJOR < 9
             auto func = cast<Function>(mod->getOrInsertFunction("pcre2_compile_context_create_8", functionType));
@@ -2025,7 +2031,7 @@ namespace tuplex {
             using namespace llvm;
 
             FunctionType *functionType = llvm::FunctionType::get(
-                    llvm::Type::getInt8PtrTy(ctx, 0), {}, false);
+                    ctypeToLLVM<const char*>(ctx), {}, false);
 
 #if LLVM_VERSION_MAJOR < 9
             auto func = cast<Function>(mod->getOrInsertFunction("pcre2GetGlobalCompileContext", functionType));
@@ -2040,7 +2046,7 @@ namespace tuplex {
             using namespace llvm;
 
             FunctionType *functionType = llvm::FunctionType::get(
-                    llvm::Type::getVoidTy(ctx), {llvm::Type::getInt8PtrTy(ctx, 0)}, false);
+                    llvm::Type::getVoidTy(ctx), {ctypeToLLVM<const char*>(ctx)}, false);
 
 #if LLVM_VERSION_MAJOR < 9
             auto func = cast<Function>(mod->getOrInsertFunction("pcre2_general_context_free_8", functionType));
@@ -2055,7 +2061,7 @@ namespace tuplex {
             using namespace llvm;
 
             FunctionType *functionType = llvm::FunctionType::get(
-                    llvm::Type::getVoidTy(ctx), {llvm::Type::getInt8PtrTy(ctx, 0)}, false);
+                    llvm::Type::getVoidTy(ctx), {ctypeToLLVM<const char*>(ctx)}, false);
 
 #if LLVM_VERSION_MAJOR < 9
             auto func = cast<Function>(mod->getOrInsertFunction("pcre2ReleaseGlobalGeneralContext", functionType));
@@ -2070,7 +2076,7 @@ namespace tuplex {
             using namespace llvm;
 
             FunctionType *functionType = llvm::FunctionType::get(
-                    llvm::Type::getVoidTy(ctx), {llvm::Type::getInt8PtrTy(ctx, 0)}, false);
+                    llvm::Type::getVoidTy(ctx), {ctypeToLLVM<const char*>(ctx)}, false);
 
 #if LLVM_VERSION_MAJOR < 9
             auto func = cast<Function>(mod->getOrInsertFunction("pcre2_match_context_free_8", functionType));
@@ -2085,7 +2091,7 @@ namespace tuplex {
             using namespace llvm;
 
             FunctionType *functionType = llvm::FunctionType::get(
-                    llvm::Type::getVoidTy(ctx), {llvm::Type::getInt8PtrTy(ctx, 0)}, false);
+                    llvm::Type::getVoidTy(ctx), {ctypeToLLVM<const char*>(ctx)}, false);
 
 #if LLVM_VERSION_MAJOR < 9
             auto func = cast<Function>(mod->getOrInsertFunction("pcre2ReleaseGlobalMatchContext", functionType));
@@ -2100,7 +2106,7 @@ namespace tuplex {
             using namespace llvm;
 
             FunctionType *functionType = llvm::FunctionType::get(
-                    llvm::Type::getVoidTy(ctx), {llvm::Type::getInt8PtrTy(ctx, 0)}, false);
+                    llvm::Type::getVoidTy(ctx), {ctypeToLLVM<const char*>(ctx)}, false);
 
 #if LLVM_VERSION_MAJOR < 9
             auto func = cast<Function>(mod->getOrInsertFunction("pcre2_compile_context_free_8", functionType));
@@ -2115,7 +2121,7 @@ namespace tuplex {
             using namespace llvm;
 
             FunctionType *functionType = llvm::FunctionType::get(
-                    llvm::Type::getVoidTy(ctx), {llvm::Type::getInt8PtrTy(ctx, 0)}, false);
+                    llvm::Type::getVoidTy(ctx), {ctypeToLLVM<const char*>(ctx)}, false);
 
 #if LLVM_VERSION_MAJOR < 9
             auto func = cast<Function>(mod->getOrInsertFunction("pcre2ReleaseGlobalCompileContext", functionType));
@@ -2165,7 +2171,7 @@ namespace tuplex {
             using namespace llvm;
             static_assert(sizeof(size_t) == sizeof(int64_t), "size_t should be same size as a 64bit integer");
 
-            FunctionType *free_type = llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), llvm::Type::getInt8PtrTy(ctx, 0), false);
+            FunctionType *free_type = llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), ctypeToLLVM<const char*>(ctx), false);
 
 #if LLVM_VERSION_MAJOR < 9
             Function* func = cast<Function>(mod->getOrInsertFunction("free", free_type));
@@ -2181,7 +2187,7 @@ namespace tuplex {
             // int i64toa_sse2(int64_t value, char* buffer)
             FunctionType *i64toa_type = llvm::FunctionType::get(llvm::Type::getInt32Ty(ctx),
                                                                 {llvm::Type::getInt64Ty(ctx),
-                                                                 llvm::Type::getInt8PtrTy(ctx, 0)}, false);
+                                                                 ctypeToLLVM<const char*>(ctx)}, false);
 #if LLVM_VERSION_MAJOR < 9
             Function* func = cast<Function>(mod->getOrInsertFunction("i64toa_sse2", i64toa_type));
 #else
@@ -2197,7 +2203,7 @@ namespace tuplex {
             FunctionType *d2fixed_type = llvm::FunctionType::get(llvm::Type::getInt32Ty(ctx),
                                                                 {llvm::Type::getDoubleTy(ctx),
                                                                  llvm::Type::getInt32Ty(ctx),
-                                                                 llvm::Type::getInt8PtrTy(ctx, 0)}, false);
+                                                                 ctypeToLLVM<const char*>(ctx)}, false);
 #if LLVM_VERSION_MAJOR < 9
             Function* func = cast<Function>(mod->getOrInsertFunction("d2fixed_buffered_n", d2fixed_type));
 #else

@@ -298,7 +298,8 @@ namespace tuplex {
                 if(!type.isFixedSizeType() && type != python::Type::EMPTYDICT) {
                     // deserialize string
                     // load directly from memory (offset in lower 32bit, size in upper 32bit)
-                    Value *varInfo = builder.CreateLoad(builder.getInt64Ty(), builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)),
+                    Value *varInfo = builder.CreateLoad(builder.getInt64Ty(), builder.CreateBitCast(lastPtr,
+                                                                                                    ctypeToLLVM<int64_t*>(context)),
                                                         "offset");
 
                     // new:

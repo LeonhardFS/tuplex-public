@@ -95,7 +95,7 @@ namespace tuplex {
             } else if(ut == python::Type::STRING) {
                 assert(builder.GetInsertBlock()->getParent()); // make sure block has a parent, else pretty bad bugs could happen...
                 auto sconst = builder.CreateGlobalStringPtr(constant_value);
-                auto sval = builder.CreatePointerCast(sconst, llvm::Type::getInt8PtrTy(ctx, 0));
+                auto sval = builder.CreatePointerCast(sconst, ctypeToLLVM<char*>(ctx));
                 auto s64const_size = llvm::Constant::getIntegerValue(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, constant_value.length() + 1));
                 return SerializableValue(sval, s64const_size, not_null);
             } else {
@@ -777,7 +777,7 @@ namespace tuplex {
             std::vector<llvm::Type*> memberTypes;
             // iter iterator struct: { pointer to block address (i8*), current index (i64 for range otherwise i32), pointer to iterable struct type,
             // iterable length (for string and tuple)}
-            memberTypes.push_back(llvm::Type::getInt8PtrTy(_context, 0));
+            memberTypes.push_back(ctypeToLLVM<char*>(_context));
             if(iterableType == python::Type::RANGE) {
                 memberTypes.push_back(llvm::Type::getInt64Ty(_context));
                 memberTypes.push_back(llvm::PointerType::get(getRangeObjectType(), 0));
@@ -787,7 +787,7 @@ namespace tuplex {
                     iteratorName = "list_";
                     memberTypes.push_back(llvm::PointerType::get(createOrGetListType(iterableType), 0));
                 } else if(iterableType == python::Type::STRING) {
-                    memberTypes.push_back(llvm::Type::getInt8PtrTy(_context, 0));
+                    memberTypes.push_back(ctypeToLLVM<char*>(_context));
                     memberTypes.push_back(llvm::Type::getInt64Ty(_context));
                 } else if(iterableType.isTupleType()) {
                     memberTypes.push_back(llvm::PointerType::get(getOrCreateTupleType(flattenedType(iterableType)), 0));
@@ -824,13 +824,13 @@ namespace tuplex {
             std::vector<llvm::Type*> memberTypes;
             // iter iterator struct: { pointer to block address (i8*), current index (i64 for range otherwise i32), pointer to arg object struct type,
             // iterable length (for string and tuple)}
-            memberTypes.push_back(llvm::Type::getInt8PtrTy(_context, 0));
+            memberTypes.push_back(ctypeToLLVM<char*>(_context));
             memberTypes.push_back(llvm::Type::getInt32Ty(_context));
             if(argType.isListType()) {
                 iteratorName = "list_";
                 memberTypes.push_back(llvm::PointerType::get(createOrGetListType(argType), 0));
             } else if(argType == python::Type::STRING) {
-                memberTypes.push_back(llvm::Type::getInt8PtrTy(_context, 0));
+                memberTypes.push_back(ctypeToLLVM<char*>(_context));
             } else if(argType.isTupleType()) {
                 memberTypes.push_back(llvm::PointerType::get(getOrCreateTupleType(flattenedType(argType)), 0));
             } else {
@@ -1130,7 +1130,11 @@ namespace tuplex {
             // debug:
             if(size && size->getType() != i64Type()) {
                 std::cerr<<"ERROR::"<<std::endl;
+#if LLVM_VERSION_MAJOR < 20
                 std::cerr<<"tuple element access:\n "<<printAggregateType(tuplePtr->getType()->getPointerElementType(), true)<<std::endl;
+#else
+                std::cerr<<__FILE__<<":"<<__LINE__<<" tuple element access."<<std::endl;
+#endif
             }
 #endif
 
@@ -1483,7 +1487,7 @@ namespace tuplex {
 
 
             // create external call to rtmalloc function
-            auto func = _module.get()->getOrInsertFunction("rtmalloc", llvm::Type::getInt8PtrTy(_context, 0),
+            auto func = _module.get()->getOrInsertFunction("rtmalloc", ctypeToLLVM<void*>(_context),
                                                            llvm::Type::getInt64Ty(_context));
             return builder.CreateCall(func, size);
         }
@@ -1497,7 +1501,7 @@ namespace tuplex {
             assert(size->getType() == llvm::Type::getInt64Ty(_context));
 
             // create external call to rtmalloc function
-            Function* func = getOrInsertFunction(_module.get(), "malloc", llvm::Type::getInt8PtrTy(_context, 0),
+            Function* func = getOrInsertFunction(_module.get(), "malloc", ctypeToLLVM<void*>(_context),
                                                            llvm::Type::getInt64Ty(_context));
 
             func->addFnAttr(Attribute::NoUnwind); // like in godbolt
@@ -1511,7 +1515,7 @@ namespace tuplex {
 
             // create external call to rtmalloc function
             Function* func = getOrInsertFunction(_module.get(), "free",
-                    llvm::Type::getVoidTy(_context), llvm::Type::getInt8PtrTy(_context, 0));
+                    llvm::Type::getVoidTy(_context), ctypeToLLVM<void*>(_context));
 
             func->addFnAttr(Attribute::NoUnwind); // like in godbolt
             return builder.CreateCall(func, ptr);
@@ -1532,11 +1536,11 @@ namespace tuplex {
 
             std::string pointer_stars = "";
             while(stype->isPointerTy()) {
-#if (LLVM_VERSION_MAJOR > 14)
+#if (LLVM_VERSION_MAJOR > 14 && LLVM_VERSION_MAJOR < 17)
                 if(stype->isOpaquePointerTy())
                     return "ptr";
 #elif (LLVM_VERSION_MAJOR >= 17)
-                return "ptr"
+                return "ptr";
 #else
                 stype = stype->getPointerElementType();
 #endif
