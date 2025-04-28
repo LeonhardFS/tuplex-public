@@ -33,6 +33,8 @@
 #include <Timer.h>
 #include <utils/Messages.h>
 
+#include <ee/aws/AWSLambdaBackend.h>
+
 namespace tuplex {
     // dummy values used for testing
     static const std::string MINIO_ACCESS_KEY="AKIAIOSFODNN7EXAMPLE";
@@ -68,6 +70,14 @@ namespace tuplex {
     extern messages::InvocationResponse process_request_with_worker(const std::string& worker_path, const std::string& scratch_dir, const messages::InvocationRequest& request, bool invoke_process=true);
 
     extern void github_pipeline(Context& ctx, const std::string& input_pattern, const std::string& output_path, const SamplingMode& sm=DEFAULT_EXPERIMENT_SAMPLING_MODE, const std::string& event_type="ForkEvent");
+
+    /*!
+     * chunks uris into pairs of encoded range uri and actual uri size.
+     * @param pattern
+     * @param desired_parallelism how many chunks to split found uris too.
+     * @return list of pairs (encoded_uri, uri_size)
+     */
+    extern std::vector<std::pair<std::string, size_t>> chunk_uris(const std::string& pattern, size_t desired_parallelism);
 }
 
 #endif //TUPLEX_HELPER_H

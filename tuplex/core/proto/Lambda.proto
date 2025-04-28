@@ -22,6 +22,7 @@ enum MessageType {
     MT_WARMUP = 1;
     MT_TRANSFORM = 2;
     MT_ENVIRONMENTINFO = 3;
+    MT_EXPERIMENTAL_IO_READ_THROUGHPUT = 4; // Experimental message to check what I/O read throughput can be achieved.
 }
 
 enum SerializationFormat {

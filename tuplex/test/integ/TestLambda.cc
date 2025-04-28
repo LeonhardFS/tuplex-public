@@ -503,17 +503,61 @@ TEST_F(LambdaTest, FindSuitableMaxChunkSize) {
     // monthly
     string input_pattern = "s3://tuplex-public/data/github_monthly/*.json";
 
-    // test quantity (parametrize test over this)
-    auto desired_parallelism = 5000; // --> ~5.24GB.
-
     vector<tuple<URI,size_t>> uri_infos;
     VirtualFileSystem::walkPattern(URI(input_pattern), [&](void *userData, const tuplex::URI &uri, size_t size) {
         uri_infos.push_back(make_tuple(uri, size));
         return true;
     });
-
     cout<<"Found "<<pluralize(uri_infos.size(), "uri")<<" to split up into requests."<<endl;
+    auto minimum_chunk_size = memStringToSize("16MB");
+    std::vector<size_t> sizes;
+    for(auto uri_info : uri_infos)
+        sizes.emplace_back(std::get<1>(uri_info));
 
+
+
+    // Test splitting here:
+
+    vector<unsigned> t_parallelism{100, 200, 300, 400, 500, 1000, 1500, 2500, 5000, 10000};
+
+    // test quantity (parametrize test over this)
+    vector<tuple<unsigned, unsigned, size_t>> results;
+    for(const auto& desired_parallelism : t_parallelism) {
+        auto c_max = find_max_chunk_size(sizes, minimum_chunk_size, desired_parallelism);
+
+        // check:
+        auto& handler = Logger::instance().defaultLogger();
+        auto requests = create_specializing_recursive_requests(uri_infos, minimum_chunk_size, c_max, handler);
+
+        cout<<"Found suitable maximum chunk size "<<sizeToMemString(c_max)<<"\n."
+            <<"Splitting into tree will yield "<<requests.size()<<" direct requests.\n"
+            <<"Desired: "<<desired_parallelism<<" Actual max parallel requests: "<< total_request_count(requests)<<endl;
+
+        results.push_back(make_tuple(desired_parallelism, requests.size(), c_max));
+    }
+
+    for(const auto& r: results) {
+        cout<<"parallelism="<<get<0>(r)<<": \t"<<"n_requests="<<get<1>(r)<<"\tsize="<<sizeToMemString(get<2>(r))<<endl;
+    }
+}
+
+TEST_F(LambdaTest, S3ReadThroughput) {
+    // Checks with Lambda function how fast S3 can be read to main memory with split.
+
+    using namespace std;
+    using namespace tuplex;
+
+    // Change here params.
+    string input_pattern = "s3://tuplex-public/data/github_monthly/*.json";
+    auto desired_parallelism = 300; // Use 300 so parts are < 10GB Lambda limit.
+
+    // Logic to split everything.
+    vector<tuple<URI,size_t>> uri_infos;
+    VirtualFileSystem::walkPattern(URI(input_pattern), [&](void *userData, const tuplex::URI &uri, size_t size) {
+        uri_infos.push_back(make_tuple(uri, size));
+        return true;
+    });
+    cout<<"Found "<<pluralize(uri_infos.size(), "uri")<<" to split up into requests."<<endl;
     auto minimum_chunk_size = memStringToSize("16MB");
     std::vector<size_t> sizes;
     for(auto uri_info : uri_infos)
@@ -528,6 +572,12 @@ TEST_F(LambdaTest, FindSuitableMaxChunkSize) {
     cout<<"Found suitable maximum chunk size "<<sizeToMemString(c_max)<<"\n."
         <<"Splitting into tree will yield "<<requests.size()<<" direct requests.\n"
         <<"Desired: "<<desired_parallelism<<" Actual max parallel requests: "<< total_request_count(requests)<<endl;
+
+    // Create protobuf requests (incl. recursion).
+
+}
+
+TEST_F(LambdaTest, S3ReadThroughputWorkerApp) {
 
 }
 

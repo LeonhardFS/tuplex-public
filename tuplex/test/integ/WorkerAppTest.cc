@@ -66,6 +66,10 @@ namespace tuplex {
     TEST_F(WorkerAppTest, EnvironmentMessage) {
         using namespace std;
 
+        // init S3 cache
+        VirtualFileSystem::addS3FileSystem();
+        VirtualFileSystem::getS3FileSystemImpl()->activateReadCache(memStringToSize("10G")); // 10G test size.
+
         // Send basic Environment request message.
         std::string json_buf;
         messages::InvocationRequest req;
@@ -87,4 +91,43 @@ namespace tuplex {
         auto j = nlohmann::json::parse(response.resources(0).payload());
         cout<<"Environment information message:\n"<<j.dump(2)<<endl;
     }
+
+#ifdef BUILD_WITH_AWS
+    TEST_F(WorkerAppTest, S3ReadThroughputWorkerApp) {
+        using namespace std;
+
+        // walk:
+        auto pattern = "s3://tuplex-public/data/github_monthly/*.json";
+        size_t parallelism = 300;
+        auto v = chunk_uris(pattern, parallelism);
+        cout<<"Split into "<<pluralize(v.size(), "part")<<" for parallelism="<<parallelism<<" pattern="<<pattern<<endl;
+
+        // TODO: randomize, for now fix
+        auto test_idx = 42;
+
+        // hardcoded S3 uris?
+        std::string json_buf;
+        messages::InvocationRequest req;
+        req.set_type(messages::MessageType::MT_EXPERIMENTAL_IO_READ_THROUGHPUT);
+        req.add_inputsizes(v[test_idx].second);
+        req.add_inputuris(v[test_idx].first);
+        google::protobuf::util::MessageToJsonString(req, &json_buf);
+
+        cout<<"JSON message to send:\n"<<json_buf<<endl;
+
+        auto absl_rc = google::protobuf::util::JsonStringToMessage(json_buf, &req);
+        ASSERT_TRUE(absl_rc.ok());
+
+        auto rc = app->processJSONMessage(json_buf);
+        ASSERT_EQ(rc, WORKER_OK);
+
+        auto response = app->response();
+        cout<<"Done."<<endl;
+//        ASSERT_EQ(response.resources_size(), 1); // 1 resource for encoded JSON
+//        ASSERT_EQ(response.resources(0).type(), static_cast<uint32_t>(ResourceType::ENVIRONMENT_JSON));
+//
+//        auto j = nlohmann::json::parse(response.resources(0).payload());
+//        cout<<"Environment information message:\n"<<j.dump(2)<<endl;
+    }
+#endif
 }

@@ -52,7 +52,7 @@ namespace tuplex {
                                          size_t maximum_chunk_size) {
 
         // this code here is adapted from AWSLambdaBackend.cc
-        // to condense it more, maybe this formulat works. Yet it is somehow off.
+        // to condense it more, maybe this formula works. Yet it is somehow off.
         //            size_t p = 0;
         //            for(auto s : sizes) {
         //                // smaller equal then c_min + c_max: 1 request.

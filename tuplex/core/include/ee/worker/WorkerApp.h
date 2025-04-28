@@ -415,6 +415,8 @@ namespace tuplex {
 
         virtual int processMessage(const tuplex::messages::InvocationRequest& req);
 
+        virtual int processReadThroughputMessage(const tuplex::messages::InvocationRequest& req);
+
         virtual int waitForInvoker() const;
         virtual void fill_response_with_self_invocation_state(messages::InvocationResponse& response) const;
 

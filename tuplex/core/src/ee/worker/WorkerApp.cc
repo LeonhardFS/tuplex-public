@@ -211,6 +211,63 @@ namespace tuplex {
         return 0;
     }
 
+    int WorkerApp::processReadThroughputMessage(const tuplex::messages::InvocationRequest &req) {
+        // This message is for measuring time it takes to read data via S3 into cache.
+        using namespace std;
+
+        Timer timer;
+
+        // supports self-invoke as well, i.e. if there are self-invoke message -> collect first, and issue in parallel!
+        if(use_self_invocation(req)) {
+            throw std::runtime_error("Need to implement.");
+        }
+
+        // Get input uri & range and alloc to buffer.
+        // If too large, error out.
+        vector<pair<string, size_t>> uri_infos;
+        size_t total_buffer_size_required = 0;
+        for(unsigned i = 0; i < req.inputuris_size(); ++i) {
+            URI uri(req.inputuris(i));
+            auto uri_size = req.inputsizes(i);
+            uri_infos.push_back(make_pair(uri.toString(), uri_size));
+            size_t range_start = 0;
+            size_t range_end = 0;
+            URI target_uri;
+            decodeRangeURI(uri.toString(), target_uri, range_start, range_end);
+            if(range_end != 0)
+                total_buffer_size_required += range_end - range_start + 1;
+            else
+                total_buffer_size_required += uri_size;
+        }
+
+        logger().info("Total buffer required to cache " + pluralize(uri_infos.size(), "URI") + " is " + sizeToMemString(total_buffer_size_required));
+        VirtualFileSystem::getS3FileSystemImpl()->activateReadCache(total_buffer_size_required);
+
+        // Use S3PreCache with TransferManager to download data.
+        auto& cache = S3FileCache::instance();
+        cache.reset(total_buffer_size_required);
+
+        std::vector<std::future<size_t>> handles;
+        for(const auto& p : uri_infos) {
+            size_t range_start = 0;
+            size_t range_end = 0;
+            URI target_uri;
+            decodeRangeURI(p.first, target_uri, range_start, range_end);
+            handles.emplace_back(cache.putAsync(target_uri, range_start, range_end, true));
+        }
+
+        for(auto& h : handles)
+            h.wait();
+
+        {
+            std::stringstream ss;
+            ss<<"Caching "<<sizeToMemString(total_buffer_size_required)<<" took "<<timer.time()<<"s ("<<pluralize(handles.size(), "handle")<<")";
+            logger().info(ss.str());
+        }
+
+        return WORKER_OK;
+    }
+
     int WorkerApp::processJSONMessage(const std::string &message) {
         auto& logger = this->logger();
 
@@ -234,6 +291,8 @@ namespace tuplex {
         // shortcut for special messages
         if(req.type() == messages::MessageType::MT_ENVIRONMENTINFO)
             return processEnvironmentInfoMessage();
+        if(req.type() == messages::MessageType::MT_EXPERIMENTAL_IO_READ_THROUGHPUT)
+            return processReadThroughputMessage(req);
 
         // do this first.
         resetThreadEnvironments();
