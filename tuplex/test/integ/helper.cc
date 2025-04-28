@@ -321,4 +321,21 @@ namespace tuplex {
         }
         return v;
     }
+
+    std::tuple<Aws::Auth::AWSCredentials, Aws::Client::ClientConfiguration> remote_s3_credentials() {
+
+        auto c = AWSCredentials::get();
+
+        Aws::Auth::AWSCredentials credentials;
+        Aws::Client::ClientConfiguration config;
+        // TODO: fill in if needed.
+        config.region = c.default_region.c_str();
+
+
+        Aws::Auth::AWSCredentials cred(c.access_key.c_str(),
+                                       c.secret_key.c_str(),
+                                       c.session_token.c_str());
+
+        return std::make_tuple(credentials, config);
+    }
 }

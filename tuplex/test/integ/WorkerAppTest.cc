@@ -123,11 +123,11 @@ namespace tuplex {
 
         auto response = app->response();
         cout<<"Done."<<endl;
-//        ASSERT_EQ(response.resources_size(), 1); // 1 resource for encoded JSON
-//        ASSERT_EQ(response.resources(0).type(), static_cast<uint32_t>(ResourceType::ENVIRONMENT_JSON));
-//
-//        auto j = nlohmann::json::parse(response.resources(0).payload());
-//        cout<<"Environment information message:\n"<<j.dump(2)<<endl;
+        ASSERT_EQ(response.resources_size(), 1); // 1 resource for encoded JSON
+        ASSERT_EQ(response.resources(0).type(), static_cast<uint32_t>(ResourceType::ENVIRONMENT_JSON));
+
+        auto j = nlohmann::json::parse(response.resources(0).payload());
+        cout<<"IO information message:\n"<<j.dump(2)<<endl;
     }
 #endif
 }

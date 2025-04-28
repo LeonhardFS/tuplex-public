@@ -578,7 +578,131 @@ TEST_F(LambdaTest, S3ReadThroughput) {
 }
 
 TEST_F(LambdaTest, S3ReadThroughputWorkerApp) {
+    using namespace std;
 
+    auto pattern = "s3://tuplex-public/data/github_monthly/*.json";
+    size_t parallelism = 300;
+    auto v = chunk_uris(pattern, parallelism);
+    cout<<"Split into "<<pluralize(v.size(), "part")<<" for parallelism="<<parallelism<<" pattern="<<pattern<<endl;
+
+    // TODO: randomize, for now fix
+    auto test_idx = 42;
+
+
+    cout<<"Connecting via AWS Lambda client..."<<endl;
+
+    // Test with AWS Lambda client.
+    Aws::Auth::AWSCredentials aws_credentials;
+    Aws::Client::ClientConfiguration s3_config;
+    std::tie(aws_credentials, s3_config) = remote_s3_credentials();
+
+    Aws::Client::ClientConfiguration config = s3_config;
+//    // Overwrite lambda endpoint.
+//    NetworkSettings ns;
+//    ns.endpointOverride = lambda_endpoint;
+//    ns.signPayloads = false;
+//    ns.useVirtualAddressing = false;
+//    applyNetworkSettings(ns, config);
+
+    // Need to use long timeouts, Lambdas may take a while.
+    config.connectTimeoutMs = 30 * 1000.0; // 30s connect timeout.
+    config.requestTimeoutMs = 60 * 1000.0; // 60s timeout.
+
+
+    // init Lambda client
+    Aws::Client::ClientConfiguration clientConfig;
+
+    ContextOptions options = ContextOptions::defaults();
+
+    clientConfig.requestTimeoutMs = options.AWS_REQUEST_TIMEOUT() * 1000; // conv seconds to ms
+    clientConfig.connectTimeoutMs = options.AWS_CONNECT_TIMEOUT() * 1000; // connection timeout
+
+    // tune client, according to https://docs.aws.amazon.com/sdk-for-cpp/v1/developer-guide/client-config.html
+    // note: max connections should not exceed max concurrency if it is below 100, else aws lambda
+    // will return toomanyrequestsexception
+    clientConfig.maxConnections = std::max(32ul, options.AWS_MAX_CONCURRENCY());
+
+    // to avoid thread exhaust of system, use pool thread executor with 8 threads
+    clientConfig.executor = Aws::MakeShared<Aws::Utils::Threading::PooledThreadExecutor>("test",
+                                                                                         options.AWS_NUM_HTTP_THREADS());
+    clientConfig.region = options.AWS_REGION().c_str(); // hard-coded here
+
+    auto ns = options.AWS_NETWORK_SETTINGS();
+
+    //clientConfig.userAgent = "tuplex"; // should be perhaps set as well.
+    applyNetworkSettings(ns, clientConfig);
+
+    // change aws settings here
+    auto credentials = AWSCredentials::get();
+    Aws::Auth::AWSCredentials cred(credentials.access_key.c_str(),
+                                   credentials.secret_key.c_str(),
+                                   credentials.session_token.c_str());
+    auto client = Aws::MakeShared<Aws::Lambda::LambdaClient>("test", cred, clientConfig);
+
+
+    Aws::Lambda::Model::InvokeRequest invoke_req;
+    invoke_req.SetFunctionName(options.AWS_LAMBDA_NAME());
+    invoke_req.SetInvocationType(Aws::Lambda::Model::InvocationType::RequestResponse);
+    // logtype to extract log data??
+    invoke_req.SetLogType(Aws::Lambda::Model::LogType::Tail);
+    std::string json_buf;
+
+    // Send basic Environment request message.
+    ::messages::InvocationRequest req;
+    req.set_type(::messages::MessageType::MT_EXPERIMENTAL_IO_READ_THROUGHPUT);
+    req.add_inputsizes(v[test_idx].second);
+    req.add_inputuris(v[test_idx].first);
+    google::protobuf::util::MessageToJsonString(req, &json_buf);
+
+    invoke_req.SetBody(stringToAWSStream(json_buf));
+    invoke_req.SetContentType("application/javascript");
+    auto outcome = client->Invoke(invoke_req);
+    if (!outcome.IsSuccess()) {
+        std::stringstream ss;
+        ss << "error: "<<outcome.GetError().GetExceptionName().c_str() << ", "
+           << outcome.GetError().GetMessage().c_str();
+
+        cerr<<ss.str()<<endl;
+    } else {
+        // Get result, and display environment:
+
+        // write response
+        auto &result = outcome.GetResult();
+        auto statusCode = result.GetStatusCode();
+        std::string version = result.GetExecutedVersion().c_str();
+
+        // parse payload
+        stringstream ss;
+        auto &stream = const_cast<Aws::Lambda::Model::InvokeResult &>(result).GetPayload();
+        ss << stream.rdbuf();
+        string data = ss.str();
+        ::messages::InvocationResponse response;
+        auto status = google::protobuf::util::JsonStringToMessage(data, &response);
+        EXPECT_TRUE(status.ok());
+        EXPECT_EQ(statusCode, 200); // should be 200 for ok.
+
+        // print log in case of failure:
+        if(response.resources_size() == 1) {
+            cerr<<"Log of Lambda invocation:\n"
+                <<decompress_string(response.resources(0).payload())<<endl;
+        }
+
+        ASSERT_EQ(response.resources_size(), 2); // 1 resource for encoded JSON, 1 resource for LOG.
+        // Note: order does not matter.
+        auto env_resource = response.resources(0);
+        auto log_resource = response.resources(1);
+
+        ASSERT_EQ(env_resource.type(), static_cast<uint32_t>(ResourceType::ENVIRONMENT_JSON));
+        ASSERT_EQ(log_resource.type(), static_cast<uint32_t>(ResourceType::LOG));
+
+        // Log:
+        cout<<"Log of Lambda invocation:\n"
+            <<decompress_string(log_resource.payload());
+
+        auto j = nlohmann::json::parse(env_resource.payload());
+        cout<<"IO Throughput information message:\n"<<j.dump(2)<<endl;
+    }
+    EXPECT_TRUE(outcome.IsSuccess());
 }
 
 

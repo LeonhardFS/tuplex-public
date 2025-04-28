@@ -65,6 +65,8 @@ namespace tuplex {
 
     extern std::tuple<Aws::Auth::AWSCredentials, Aws::Client::ClientConfiguration> local_s3_credentials(const std::string& access_key=MINIO_ACCESS_KEY, const std::string& secret_key=MINIO_SECRET_KEY, int port=MINIO_S3_ENDPOINT_PORT);
 
+    extern std::tuple<Aws::Auth::AWSCredentials, Aws::Client::ClientConfiguration> remote_s3_credentials();
+
     extern std::string minio_data_location();
 
     extern messages::InvocationResponse process_request_with_worker(const std::string& worker_path, const std::string& scratch_dir, const messages::InvocationRequest& request, bool invoke_process=true);

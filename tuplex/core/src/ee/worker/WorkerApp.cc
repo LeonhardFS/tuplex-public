@@ -265,6 +265,23 @@ namespace tuplex {
             logger().info(ss.str());
         }
 
+        _response.set_type(messages::MessageType::MT_EXPERIMENTAL_IO_READ_THROUGHPUT);
+        _response.set_status(messages::InvocationResponse_Status_SUCCESS);
+
+        nlohmann::json j;
+        j["totalBufferSize"] = total_buffer_size_required;
+        j["ioTime"] = timer.time();
+        j["handleCount"] = handles.size();
+
+        // Add to response result as Resource.
+        auto id_gen = _response.resources_size();
+        auto resource = _response.add_resources();
+        if(resource) {
+            resource->set_id(std::to_string(id_gen++));
+            resource->set_payload(j.dump());
+            resource->set_type(static_cast<uint32_t>(ResourceType::ENVIRONMENT_JSON));
+        }
+
         return WORKER_OK;
     }
 
