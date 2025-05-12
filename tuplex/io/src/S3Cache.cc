@@ -26,7 +26,6 @@ namespace tuplex {
     }
 
     void S3FileCache::putChunk(tuplex::S3FileCache::CacheEntry &&chunk) {
-
         auto target_uri = chunk.uri;
         auto range_start = chunk.range_start;
         auto range_end = chunk.range_end;
@@ -57,6 +56,7 @@ namespace tuplex {
     }
 
     uint8_t* S3FileCache::put(const URI &uri, size_t range_start, size_t range_end, size_t* bytes_written, option<size_t> uri_size, bool requestWithTransferManager) {
+        auto& logger = Logger::instance().logger("s3fs");
 
         URI target_uri = uri;
         size_t custom_range_start = 0, custom_range_end = 0;
@@ -87,11 +87,27 @@ namespace tuplex {
         if(requested_size > _maxSize) {
             // prune to available size
 
-            // ignore... to large to store.
+            // ignore... too large to store.
+            {
+                std::stringstream ss;
+                ss<<"Could not fetch uri "<<uri.toString()<<" because requested size ("<<requested_size<<") is larger than max size ("<<_maxSize<<")";
+                logger.error(ss.str());
+            }
             return nullptr;
         } else if(requested_size + cacheSize() > _maxSize) {
-            std::lock_guard<std::mutex> lock(_mutex);
-            pruneBy(requested_size);
+            _mutex.lock();
+            auto prune_rc = pruneBy(requested_size);
+            _mutex.unlock();
+            if(prune_rc) {
+                // recursively put again.
+                logger.info("Pruned cache by " + sizeToMemString(requested_size) + ".");
+                return put(uri, range_start, range_end, bytes_written, uri_size, requestWithTransferManager);
+            } else {
+                std::stringstream ss;
+                ss<<"Pruning cache by size "<<sizeToMemString(requested_size)<<" failed. Can not put URI into cache.";
+                logger.info(ss.str());
+                return nullptr;
+            }
         } else {
             // ok, can store.
             auto chunk = requestWithTransferManager ? s3ReadWithTransferManager(uri, range_start, range_end) : s3Read(uri, range_start, range_end);
@@ -105,6 +121,7 @@ namespace tuplex {
             }
         }
 
+        logger.info("Unknown error while putting " + uri.toString());
         return nullptr;
     }
 
