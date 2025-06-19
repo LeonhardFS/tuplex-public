@@ -19,6 +19,7 @@
 #include <S3FileSystemImpl.h>
 #include <S3Cache.h>
 #include <S3File.h>
+#include <third_party/md5/md5.h>
 
 namespace tuplex {
 
@@ -265,12 +266,41 @@ namespace tuplex {
             logger().info(ss.str());
         }
 
+        // Compute md5 hash from buffer.
+        double io_time = timer.time();
+        timer.reset();
+        for(const auto& p : uri_infos) {
+            size_t range_start = 0;
+            size_t range_end = 0;
+            URI target_uri;
+            decodeRangeURI(p.first, target_uri, range_start, range_end);
+            auto buf = cache.get(target_uri, range_start, range_end);
+            if(!buf) {
+                logger().error("Invalid buffer received from cache for " + p.first);
+            } else {
+                // Get size
+                size_t buf_size = (range_start == 0 && range_end == 0) ? p.second : range_end - range_start;
+                logger().info("Computing md5 hash over " + sizeToMemString(buf_size) +  ".");
+                MD5 md5;
+                md5.update(buf, buf_size);
+                md5.finalize();
+                std::stringstream ss;
+                ss<<"time: "<<timer.time()<<" MD5: "<<md5.hexdigest()<<" uri: "<<p.first<<endl;
+                logger().info(ss.str());
+            }
+        }
+
+        double md5_time = timer.time();
+        logger().info("Computing MD5 hashes took: " + std::to_string(md5_time) + "s.");
+
         _response.set_type(messages::MessageType::MT_EXPERIMENTAL_IO_READ_THROUGHPUT);
         _response.set_status(messages::InvocationResponse_Status_SUCCESS);
 
         nlohmann::json j;
         j["totalBufferSize"] = total_buffer_size_required;
-        j["ioTime"] = timer.time();
+        j["ioTime"] = io_time;
+        j["totalTime"] = io_time + timer.time();
+        j["md5Time"] = md5_time;
         j["handleCount"] = handles.size();
 
         // Add to response result as Resource.

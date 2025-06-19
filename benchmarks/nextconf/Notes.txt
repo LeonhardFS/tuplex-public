@@ -1,0 +1,5 @@
+### S3
+
+S3 download speeds are a major issue at the moment, throughout they're highly unstable.
+--> Need to find a way to request faster, and perform faster download.
+--> Evaluate s5cmd for doing so, i.e. https://joshua-robinson.medium.com/s5cmd-for-high-performance-object-storage-7071352cc09d.
