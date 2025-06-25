@@ -20,7 +20,7 @@ for python_version in "${PYTHON_VERSIONS[@]}"; do
   echo "-- docker image tag: $TAG"
 
   # build tuplex/ci:3.x image
-  docker build --build-arg="PYTHON_VERSION=${python_version}" --squash -t $TAG . || exit 1
+  docker build --platform=linux/amd64 --build-arg="PYTHON_VERSION=${python_version}" --squash -t $TAG . || exit 1
 
   # is upload set?
   if [[ "${UPLOAD}" == 'SET' ]]; then
