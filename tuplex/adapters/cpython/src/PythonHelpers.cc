@@ -58,7 +58,7 @@ namespace python {
         Py_SetPythonHome(&vec[0]);
     }
 
-    void handle_and_throw_py_error() {
+    std::string extract_and_reset_py_error() {
         if(PyErr_Occurred()) {
             // PyObject *ptype = NULL, *pvalue = NULL, *ptraceback = NULL;
             // PyErr_Fetch(&ptype,&pvalue,&ptraceback);
@@ -120,8 +120,15 @@ namespace python {
             }
             Py_XDECREF(lines_obj);
 
-            throw std::runtime_error(ss.str());
+           return ss.str();
         }
+        return "";
+    }
+
+    void handle_and_throw_py_error() {
+        auto err = extract_and_reset_py_error();
+        if(!err.empty())
+            throw std::runtime_error(err);
     }
 
 

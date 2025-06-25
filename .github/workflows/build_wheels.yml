@@ -2,45 +2,91 @@ name: Build
 
 on: [push, pull_request, workflow_dispatch]
 
+# For macos, at least 10.13 is required
+# to avoid issues and since the runners are macos-13 and macos-14:
+#   -> use 13.0, which is Venture from 2022 and 14.0 on the arm runners.
+
 jobs:
   build_wheels:
     name: Build wheel on ${{ matrix.os }} - py ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-20.04, macos-11 ]
-        python-version: ["3.8", "3.9", "3.10", "3.11"]
+        # macos-14 (which is macos-latest) is ARM only. macos-13 is the latest intel runner.
+        os: [ ubuntu-latest, macos-13, macos-14 ]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
         include:
-          - os: ubuntu-20.04
-            python-version: "3.8"
-            cibw-build: "cp38-manylinux_x86_64"
-          - os: ubuntu-20.04
+          - os: ubuntu-latest
             python-version: "3.9"
             cibw-build: "cp39-manylinux_x86_64"
-          - os: ubuntu-20.04
+          - os: ubuntu-latest
             python-version: "3.10"
             cibw-build: "cp310-manylinux_x86_64"
-          - os: ubuntu-20.04
+          - os: ubuntu-latest
             python-version: "3.11"
             cibw-build: "cp311-manylinux_x86_64"
-          - os: macos-11
-            python-version: "3.8"
-            cibw-build: "cp38-macosx_x86_64"
-          - os: macos-11
+          - os: ubuntu-latest
+            python-version: "3.12"
+            cibw-build: "cp312-manylinux_x86_64"
+          - os: ubuntu-latest
+            python-version: "3.13"
+            cibw-build: "cp313-manylinux_x86_64"
+          - os: macos-13
             python-version: "3.9"
             cibw-build: "cp39-macosx_x86_64"
-          - os: macos-11
+            macos-target: "13.0"
+            arch: "x86_64"
+          - os: macos-13
             python-version: "3.10"
             cibw-build: "cp310-macosx_x86_64"
-          - os: macos-11
+            macos-target: "13.0"
+            arch: "x86_64"
+          - os: macos-13
             python-version: "3.11"
             cibw-build: "cp311-macosx_x86_64"
+            macos-target: "13.0"
+            arch: "x86_64"
+          - os: macos-13
+            python-version: "3.12"
+            cibw-build: "cp312-macosx_x86_64"
+            macos-target: "13.0"
+            arch: "x86_64"
+          - os: macos-13
+            python-version: "3.13"
+            cibw-build: "cp313-macosx_x86_64"
+            macos-target: "13.0"
+            arch: "x86_64"
+          - os: macos-14
+            python-version: "3.9"
+            cibw-build: "cp39-macosx_arm64"
+            macos-target: "14.0"
+            arch: "arm64"
+          - os: macos-14
+            python-version: "3.10"
+            cibw-build: "cp310-macosx_arm64"
+            macos-target: "14.0"
+            arch: "arm64"
+          - os: macos-14
+            python-version: "3.11"
+            cibw-build: "cp311-macosx_arm64"
+            macos-target: "14.0"
+            arch: "arm64"
+          - os: macos-14
+            python-version: "3.12"
+            cibw-build: "cp312-macosx_arm64"
+            macos-target: "14.0"
+            arch: "arm64"
+          - os: macos-14
+            python-version: "3.13"
+            cibw-build: "cp313-macosx_arm64"
+            macos-target: "14.0"
+            arch: "arm64"
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Cache brew dependencies
         if: runner.os == 'macOS'
-        uses: actions/cache@v3.3.2
+        uses: actions/cache@v4.2.1
         with:
           # Paths to cache:
           # /usr/local/Homebrew - installation folder of Homebrew
@@ -52,17 +98,19 @@ jobs:
             /usr/local/Frameworks
             /usr/local/bin
             /usr/local/opt
-          key: macos-11-build-cache-${{ hashFiles('./scripts/macos/brew_dependencies.sh') }}-v2
+          # macos13 runners are x86, macos14 are arm. --> use os therefore as cache key.
+          key: ${{ matrix.os }}-build-cache-${{ hashFiles('./scripts/macos/brew_dependencies.sh') }}-v2
 
-      # need to make this an intermediate step, i.e. build first the different lambda runners on Ubuntu...
-      - name: Build Lambda runner (Linux only)
-        if: runner.os != 'macOS'
-        run: docker pull registry-1.docker.io/tuplex/ci:${{ matrix.python-version }} && export PYTHON3_VERSION=${{ matrix.python-version }}.0 && bash ./scripts/create_lambda_zip.sh && mkdir -p ./tuplex/python/tuplex/other && cp ./build-lambda/tplxlam.zip ./tuplex/python/tuplex/other
-        shell: bash
+      - name: Setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11' 
 
-      - name: Build wheel
-        #if: runner.os != 'macOS'
-        uses: pypa/cibuildwheel@fff9ec32ed25a9c576750c91e06b410ed0c15db7 # hash corresponds to v2.16.2
+      - name: Install cibuildwheel
+        run: python -m pip install cibuildwheel==2.22.0
+
+      - name: Build wheels
+        run: python -m cibuildwheel --output-dir wheelhouse
         env:
           # configure cibuildwheel to build native archs ('auto'), and some
           # emulated ones
@@ -70,23 +118,41 @@ jobs:
           CIBW_MANYLINUX_X86_64_IMAGE: "registry-1.docker.io/tuplex/ci:${{ matrix.python-version }}"
           CIBW_BUILD: ${{ matrix.cibw-build }}
 
-          # macOS dependencies separate, for linux use docker tuplex/ci:3.x images.
+          # macOS dependencies separate, for Linux use docker tuplex/ci:3.x images.
           CIBW_BEFORE_ALL_MACOS: bash ./scripts/macos/install_antlr4_cpp_runtime.sh && bash ./scripts/macos/brew_dependencies.sh && bash ./scripts/macos/install_aws-sdk-cpp.sh && echo 'export PATH="/usr/local/opt/openjdk@11/bin:$PATH"' >> /Users/runner/.bash_profile
 
-          # bundle aws runner with linux wheel, remove environment variable TUPLEX_LAMBDA_ZIP to remove runner.
-          CIBW_ENVIRONMENT_LINUX: "TUPLEX_LAMBDA_ZIP='./tuplex/python/tuplex/other/tplxlam.zip' CMAKE_ARGS='-DBUILD_WITH_AWS=ON -DBUILD_WITH_ORC=ON' LD_LIBRARY_PATH=/usr/local/lib:/opt/lib"
+          # If CI complains about missing /usr/local/libexec/git-core/git-remote-https: error while loading shared libraries: libssl.so.3: cannot open shared object file: No such file or directory
+          # the OpenSSL3 lib is stored under /usr/local/lib64.
+          CIBW_ENVIRONMENT_LINUX: "CMAKE_ARGS='-DBUILD_WITH_AWS=ON -DBUILD_WITH_ORC=ON' LD_LIBRARY_PATH=/usr/local/lib:/usr/local/lib64:/opt/lib"
 
-          # requires macOS 10.13 at least to build because of C++17 features.
-          CIBW_ENVIRONMENT_MACOS: "CMAKE_ARGS='-DBUILD_WITH_AWS=ON -DBUILD_WITH_ORC=ON' JAVA_HOME=${JAVA_HOME_11_X64}"
+          # Requires macOS 10.13 at least to build because of C++17 features.
+          # To avoid issues, simply use 13.0 for now.
+          # Fix for Java home from https://github.com/actions/runner-images/discussions/9266.
+          # For github actions, $HOME is /Users/runner/
+          CIBW_ENVIRONMENT_MACOS: "ARCH=${{ matrix.arch }} PREFIX=${HOME}/.local MACOSX_DEPLOYMENT_TARGET=${{ matrix.macos-target }} CMAKE_ARGS='-DCMAKE_PREFIX_PATH=/Users/runner/.local -DCMAKE_MODULE_PATH=/Users/runner/.local/cmake/ -DBUILD_WITH_AWS=ON -DBUILD_WITH_ORC=ON' JAVA_HOME=${JAVA_HOME_11_X64:-$JAVA_HOME_11_arm64}"
+
           # run all python tests to make sure wheels are not defunct
           CIBW_TEST_REQUIRES: "pytest pytest-timeout numpy nbformat jupyter"
+
+          # Use following test command when segfaults happen to better pinpoint:
+          # python3 -X faulthandler -m pytest -p no:faulthandler
+          # else can use pytest ...
+
           # use 3min timeout per test and print top 25 slowest tests
-          CIBW_TEST_COMMAND: "cd {project} && pytest tuplex/python/tests -v --timeout 600 --durations 25"
+          CIBW_TEST_COMMAND: "cd {project} && python3 -X faulthandler -m pytest -p no:faulthandler tuplex/python/tests -v --timeout 600 --durations 25"
 
       - name: reorganize files
         run: touch ./scripts/dummy.version && cp ./scripts/*.version ./wheelhouse && cp ./.github/scripts/test_pypi.sh ./wheelhouse
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
+          name: wheels-${{ matrix.os }}-${{ matrix.cibw-build }}
           path: |
             ./wheelhouse/*.whl
+
+# Note: when using download-artifact, use
+#       - uses: actions/download-artifact@v4
+#         with:
+#           path: dist
+#           merge-multiple: true
+#        # Requires 4.1

@@ -15,8 +15,7 @@ def LooseVersion(v):
     parts = v.split('.')
     return parts
 
-
-# to create a testpypi version use X.Y.devN
+# Change here and run script within its directory to update versions across the board.
 version = '0.3.7'
 
 # https://pypi.org/simple/tuplex/

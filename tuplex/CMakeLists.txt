@@ -130,7 +130,7 @@ set(WORKER_NAME tuplex-worker)
 # uncomment to get verbose cmake output
 # set(CMAKE_VERBOSE_MAKEFILE ON)
 
-message(STATUS "additional cmake module path is ${CMAKE_MODULE_PATH}")
+message(STATUS "Additional cmake module path is: ${CMAKE_MODULE_PATH}")
 include("${CMAKE_SOURCE_DIR}/cmake/ucm.cmake") #handy package to manipulate compiler flags
 include("${CMAKE_SOURCE_DIR}/cmake/CPM.cmake") # package manager from https://github.com/cpm-cmake/CPM.cmake
 # for debug mode export all symbols
@@ -377,6 +377,7 @@ if(BUILD_WITH_AWS)
         endif()
     endif()
     find_package(AWSSDK REQUIRED COMPONENTS s3 s3-crt core lambda transfer)
+    message(STATUS "AWS SDK version: ${AWSSDK_VERSION}")
     message(STATUS "AWS libs: ${AWSSDK_LINK_LIBRARIES}")
     message(STATUS "AWS include dirs: ${AWSSDK_INCLUDE_DIR}")
     if(AWSSDK_FOUND)

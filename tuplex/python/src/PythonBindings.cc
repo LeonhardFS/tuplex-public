@@ -116,4 +116,6 @@ PYMODULE {
     m.def("registerWithInterpreter", &python::registerWithInterpreter);
 
     m.def("getPythonVersion", &tuplex::getPythonVersion);
+
+    m.def("setExternalAwssdk", &tuplex::setExternalAwssdk);
 }

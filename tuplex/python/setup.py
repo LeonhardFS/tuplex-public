@@ -62,7 +62,7 @@ setup(
         'jupyter<7.0',
         'nbconvert<7.0',
         'nbformat<7.0',
-        'Werkzeug<2.2.0',
+        'Werkzeug',
         'attrs>=19.2.0',
         'dill>=0.2.7.1',
         'pluggy>=0.6.0, <1.0.0',
@@ -81,12 +81,4 @@ setup(
         'iso8601'
     ],
     url="https://tuplex.cs.brown.edu"
-    #,
-    # project_urls={
-    #     "Bug Tracker": "https://bugs.example.com/HelloWorld/",
-    #     "Documentation": "https://docs.example.com/HelloWorld/",
-    #     "Source Code": "https://code.example.com/HelloWorld/",
-    # }
-
-    # could also include long_description, download_url, classifiers, etc.
 )

@@ -1,16 +1,23 @@
 #!/usr/bin/env bash
-# this is a script to install the antlr4 runtime
+# This is a script to install the antlr4 runtime.
 
-# specify here target location
-PREFIX=/usr/local
+set -euxo pipefail
 
-# if antlr4 exists already, skip
+# Specify here target location.
+PREFIX=${PREFIX:-/usr/local}
+
+# If antlr4 exists already, skip.
 [ -d "antlr4" ] && exit 0
 
 if [ -d "${PREFIX}/include/antlr4-runtime" ]; then
   echo "skip antlr4 runtime install, directory already exists"
   exit 0
 fi
+
+# use arm64 or x86_64.
+ARCH=${ARCH:-x86_64}
+
+echo ">>> Building for architecture: ${ARCH}"
 
 # if macOS is 10.x -> use this as minimum
 MINIMUM_TARGET="-DCMAKE_OSX_DEPLOYMENT_TARGET=10.13"
@@ -30,22 +37,27 @@ else
     echo "defaulting build to use as minimum target ${MINIMUM_TARGET}"
 fi
 
+# Ensure $PREFIX/{lib,include} exist.
+mkdir -p $PREFIX/include
+mkdir -p $PREFIX/lib
+
 # with sed, modify deploy to add osx_deployment_target
 git clone https://github.com/antlr/antlr4.git \
 && cd antlr4 && cd runtime &&  git fetch --all --tags \
 && git checkout tags/4.13.1 -b 4.13.1 && cd Cpp/ \
 && sed -i '' "s/cmake ./cmake . ${MINIMUM_TARGET}/g" deploy-macos.sh \
+&& sed -i '' "s/CMAKE_OSX_ARCHITECTURES=\"arm64; x86_64\"/CMAKE_OSX_ARCHITECTURES=\"${ARCH}\"/g" deploy-macos.sh \
 && cat deploy-macos.sh \
 && ./deploy-macos.sh \
 && unzip -l antlr4-cpp-runtime-macos.zip && unzip antlr4-cpp-runtime-macos.zip \
 && cd lib && cp -R * $PREFIX/lib/ && cd .. \
 && mv antlr4-runtime $PREFIX/include/ \
-&& echo "ANTLR4 Cpp runtime installed to $PREFIX"
+&& echo "ANTLR4 Cpp runtime installed to $PREFIX."
 
 # execute copy command (fix for delocate wheel)
-ls -l /usr/local/include
-ls -l /usr/local/lib
+ls -l $PREFIX/include
+ls -l $PREFIX/lib
 
-cp lib/libantlr4-runtime.dylib /Users/runner/work/tuplex/tuplex/libantlr4-runtime.dylib
+cp $PREFIX/lib/libantlr4-runtime.dylib /Users/runner/work/tuplex/tuplex/libantlr4-runtime.dylib || echo "cp failed."
 
 exit 0
