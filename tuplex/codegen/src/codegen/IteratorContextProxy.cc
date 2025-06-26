@@ -77,7 +77,7 @@ namespace tuplex {
                 builder.CreateStore(_env->i64Const(iterableType.parameters().size()), iterableLengthPtr);
             }
 
-            auto* dl = new DataLayout(_env->getModule().get());
+            auto dl = _env->createNewDataLayoutBasedOnModule();
             return SerializableValue(iteratorContextStruct, _env->i64Const(dl->getTypeAllocSize(iteratorContextType)));
         }
 
@@ -169,7 +169,7 @@ namespace tuplex {
             }
             builder.CreateStore(seqStruct, seqPtr);
 
-            auto* dl = new DataLayout(_env->getModule().get());
+            auto dl = _env->createNewDataLayoutBasedOnModule();
             return SerializableValue(iteratorContextStruct, _env->i64Const(dl->getTypeAllocSize(iteratorContextType)));
         }
 
@@ -211,7 +211,7 @@ namespace tuplex {
             }
             builder.CreateStore(iteratorVal, iterablePtr);
 
-            auto* dl = new DataLayout(_env->getModule().get());
+            auto dl = _env->createNewDataLayoutBasedOnModule();
             return SerializableValue(iteratorContextStruct, _env->i64Const(dl->getTypeAllocSize(iteratorContextType)));
         }
 
@@ -861,7 +861,7 @@ namespace tuplex {
                 builder.CreateStore(iteratorVal, iterablePtr);
             }
 
-            auto* dl = new DataLayout(_env.getModule().get());
+            auto dl = _env.createNewDataLayoutBasedOnModule();
             return SerializableValue(iteratorContextStruct, _env.i64Const(dl->getTypeAllocSize(iteratorContextType)));
         }
 
@@ -1029,7 +1029,7 @@ namespace tuplex {
             // store iterator context (the pointer)
             builder.CreateStore(iteratorVal, iterablePtr);
 
-            auto* dl = new DataLayout(_env.getModule().get());
+            auto dl = _env.createNewDataLayoutBasedOnModule();
             return SerializableValue(iteratorContextStruct, _env.i64Const(dl->getTypeAllocSize(iteratorContextType)));
         }
 

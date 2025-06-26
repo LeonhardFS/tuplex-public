@@ -1048,7 +1048,7 @@ CodeGenOptLevel::Aggressive
             if(!TargetMachine)
                 throw std::runtime_error("failed to create target machine for CPU=" + CPU + ", features="=Features);
 
-#if LLVM_VERSION_MAJOR == 9
+#if (LLVM_VERSION_MAJOR == 9 || LLVM_VERSION_MAJOR >= 20)
             llvm::MachineModuleInfo* MMIWP = nullptr;
 #elif LLVM_VERSION_MAJOR < 20
             llvm::LLVMTargetMachine& LLVMTM = static_cast<llvm::LLVMTargetMachine&>(*TargetMachine);

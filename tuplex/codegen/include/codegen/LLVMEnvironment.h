@@ -277,6 +277,16 @@ namespace tuplex {
 //            }
 
 
+            inline std::unique_ptr<llvm::DataLayout> createNewDataLayoutBasedOnModule() const {
+                // Check that module has a layout string attached.
+                std::string dl_layout_str = _module->getDataLayoutStr();
+#if LLVM_VERSION_MAJOR < 20
+                return std::make_unique<llvm::DataLayout>(_env->getModule().get());
+#else
+                return std::make_unique<llvm::DataLayout>(dl_layout_str);
+#endif
+            }
+
             // generate default null value depending on type
             llvm::Constant* nullConstant(llvm::Type* type) {
                 if(type->isIntegerTy()) {
