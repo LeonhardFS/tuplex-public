@@ -168,10 +168,10 @@ namespace tuplex {
             // @ Todo: refactor by introducing overloadable variable class for easier code generation
 
             inline llvm::Value* i8nullptr() {
-                return llvm::ConstantPointerNull::get(llvm::Type::getInt8PtrTy(_env->getContext(), 0));
+                return llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(_env->i8ptrType()));
             }
             inline llvm::Value* i64nullptr() {
-                return llvm::ConstantPointerNull::get(llvm::Type::getInt64PtrTy(_env->getContext(), 0));
+                return llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(_env->i64ptrType()));
             }
         };
     }

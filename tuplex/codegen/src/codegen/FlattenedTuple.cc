@@ -321,7 +321,9 @@ namespace tuplex {
 
                     // add offset to get starting point of varlen argument's memory region
                     Value *ptr = builder.MovePtrByBytes(lastPtr, offset, twine); //builder.CreateGEP(_env->i8ptrType(), lastPtr, offset, twine);
-                    assert(ptr->getType() == Type::getInt8PtrTy(context, 0));
+#if LLVM_VERSION_MAJOR < 16
+                    assert(ptr->getType() == _env->i8ptrType());
+#endif
                     if(type == python::Type::STRING || type == python::Type::PYOBJECT) {
                         _tree.set(i, codegen::SerializableValue(ptr, size, isnull));
                     } else if(type == python::Type::EMPTYDICT) {
@@ -374,26 +376,24 @@ namespace tuplex {
                     // directly read value
                     // depending on type, generate load instructions & summing instructions for var length fields to bytesread
                     if(python::Type::BOOLEAN == type) {
-
                         // load directly from memory
                         Value *tmp = builder.CreateLoad(builder.getInt64Ty(),
-                                                        builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)));
+                                                        builder.CreateBitCast(lastPtr, _env->i64ptrType()));
 
                         // cast to boolean type
                         Value *load = builder.CreateTrunc(tmp, boolType, twine);
                         _tree.set(i, codegen::SerializableValue(load, _env->i64Const(sizeof(int64_t)), isnull));
 
                     } else if(python::Type::I64 == type) {
-
                         // load directly from memory
                         Value *load = builder.CreateLoad(_env->i64Type(),
-                                                         builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)), twine);
+                                                         builder.CreateBitCast(lastPtr, _env->i64ptrType()), twine);
                         _tree.set(i, codegen::SerializableValue(load, _env->i64Const(sizeof(int64_t)), isnull));
 
                     } else if(python::Type::F64 == type) {
 
                         // load directly from memory
-                        Value *load = builder.CreateLoad(_env->doubleType(), builder.CreateBitCast(lastPtr, Type::getDoublePtrTy(context, 0)), twine);
+                        Value *load = builder.CreateLoad(_env->doubleType(), builder.CreateBitCast(lastPtr, _env->doublePointerType()), twine);
                         _tree.set(i, codegen::SerializableValue(load, _env->i64Const(sizeof(int64_t)), isnull));
 
                     } else if(python::Type::EMPTYTUPLE == type) {
@@ -402,7 +402,7 @@ namespace tuplex {
                         throw std::runtime_error("Should not happen EMPTYDICT");
                     } else if(type.isListType()) {
                         // lists of fixed size are just represented by a length
-                        Value *num_elements = builder.CreateLoad(_env->i64Type(), builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)), twine);
+                        Value *num_elements = builder.CreateLoad(_env->i64Type(), builder.CreateBitCast(lastPtr, _env->i64ptrType()), twine);
                         _tree.set(i, codegen::SerializableValue(num_elements, _env->i64Const(sizeof(int64_t)), isnull));
                     } else if(type.isConstantValued()) {
                         // simple constant gen
@@ -428,7 +428,7 @@ namespace tuplex {
             assert(output);
             assert(capacity);
             assert(insufficientCapacityHandler);
-            assert(output->getType() == llvm::Type::getInt8PtrTy(context, 0));
+            assert(output->getType() == _env->i8ptrType());
             assert(capacity->getType() == llvm::Type::getInt64Ty(context));
 
             auto types = getFieldTypes();
@@ -443,8 +443,8 @@ namespace tuplex {
 
             // if(serializationSize <= capacity && outputPtr)goto enoughCapacity, else insufficientCapacityHandler
             Value *condValCapacity = builder.CreateICmpULE(serializationSize, capacity);
-            assert(output->getType() == llvm::Type::getInt8PtrTy(context, 0));
-            Value *validOutputPtr = builder.CreateICmpNE(output, llvm::ConstantPointerNull::get(Type::getInt8PtrTy(context, 0)));
+            assert(output->getType() == _env->i8ptrType());
+            Value *validOutputPtr = builder.CreateICmpNE(output, llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(_env->i8ptrType())));
             Value *condVal = builder.CreateAnd(condValCapacity, validOutputPtr);
             builder.CreateCondBr(condVal, enoughCapacity, insufficientCapacityHandler);
 
@@ -509,7 +509,7 @@ namespace tuplex {
                 // store bitmap to output ptr
                 for(auto be : bitmap) {
                     assert(be->getType() == _env->i64Type());
-                    builder.CreateStore(be, builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)));
+                    builder.CreateStore(be, builder.CreateBitCast(lastPtr, _env->i64ptrType()));
 
                     // warning multiple
                     lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t), "outptr");
@@ -597,7 +597,7 @@ namespace tuplex {
                         // store offset + length
                         // len | size
                         auto info = pack_offset_and_size(builder, offset, size);
-                        builder.CreateStore(info, builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)), false);
+                        builder.CreateStore(info, builder.CreateBitCast(lastPtr, _env->i64ptrType()), false);
 
                         // write to i8 pointer
                         Value *outptr = builder.MovePtrByBytes(lastPtr, offset, "varoff");
@@ -663,7 +663,7 @@ namespace tuplex {
                     // store offset + length
                     // len | size
                     auto info = pack_offset_and_size(builder, offset, size);
-                    builder.CreateStore(info, builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)), false);
+                    builder.CreateStore(info, builder.CreateBitCast(lastPtr, _env->i64ptrType()), false);
 
 
                     // write to i8 pointer
@@ -709,11 +709,11 @@ namespace tuplex {
                         info = builder.CreateMul(info, builder.CreateZExt(is_not_null, _env->i64Type()));
                     }
 
-                    builder.CreateStore(info, builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)), false);
+                    builder.CreateStore(info, builder.CreateBitCast(lastPtr, _env->i64ptrType()), false);
 
                     // copy memory of i8 pointer
                     assert(field->getType()->isPointerTy());
-                    assert(field->getType() == Type::getInt8PtrTy(context, 0));
+                    assert(field->getType() == _env->i8ptrType());
                     Value *outptr = builder.MovePtrByBytes(lastPtr, offset, "varoff");
 
 
@@ -761,7 +761,7 @@ namespace tuplex {
                         }
 
                         // store within output
-                        Value *store = builder.CreateStore(boolVal, builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)), false);
+                        Value *store = builder.CreateStore(boolVal, builder.CreateBitCast(lastPtr, _env->i64ptrType()), false);
                         lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t), "outptr");
                     } else if(python::Type::I64 == fieldType) {
                         // option trick
@@ -770,7 +770,7 @@ namespace tuplex {
                         }
                         assert(field->getType() == _env->i64Type());
                         // store within output
-                        Value *store = builder.CreateStore(field, builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)), false);
+                        Value *store = builder.CreateStore(field, builder.CreateBitCast(lastPtr, _env->i64ptrType()), false);
                         lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t), "outptr");
                     } else if(python::Type::F64 == fieldType) {
                         // option trick
@@ -784,11 +784,11 @@ namespace tuplex {
                         }
                         assert(field->getType() == _env->doubleType());
                         // store within output
-                        Value *store = builder.CreateStore(field, builder.CreateBitCast(lastPtr, Type::getDoublePtrTy(context, 0)), false);
+                        Value *store = builder.CreateStore(field, builder.CreateBitCast(lastPtr, _env->doublePointerType()), false);
                         lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(double), "outptr");
                     } else if(fieldType.isListType() && fieldType.elementType().isSingleValued()) {
                         // store within output - the field is just the size of the list
-                        Value *store = builder.CreateStore(field, builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0)), false);
+                        Value *store = builder.CreateStore(field, builder.CreateBitCast(lastPtr, _env->i64ptrType()), false);
                         lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t), "outptr");
                     } else {
                         std::stringstream ss;
@@ -804,7 +804,7 @@ namespace tuplex {
             // if varfield was encountered, store varfield size!
             if(hasVarField) {
                 // _env->printValue(builder, varlenSize, "storing total varlen fields size = ");
-                builder.CreateStore(varlenSize, builder.CreateBitCast(lastPtr, Type::getInt64PtrTy(context, 0))); // last field
+                builder.CreateStore(varlenSize, builder.CreateBitCast(lastPtr, _env->i64ptrType())); // last field
                 lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t));
                 // add varlength
                 lastPtr = builder.MovePtrByBytes(lastPtr, varlenSize);
@@ -859,8 +859,13 @@ namespace tuplex {
                 // special case: struct dict
                 if(elementType.isStructuredDictionaryType() || elementType.isSparseStructuredDictionaryType()) {
                     // either struct.dict or struct.dict* supported.
+#if LLVM_VERSION_MAJOR < 16
                     assert(val->getType()->isStructTy() ||
                           (val->getType()->isPointerTy() && LLVM_VERSION_MAJOR <= 15 && val->getType()->getPointerElementType()->isStructTy()));
+#else
+                    assert(val->getType()->isStructTy() ||
+                         val->getType()->isPointerTy());
+#endif
                     if(val->getType()->isPointerTy()) {
                         auto llvm_struct_type = _env->getOrCreateStructuredDictType(elementType.makeNonSparse());
                         // perform load!
