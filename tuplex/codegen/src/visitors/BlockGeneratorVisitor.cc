@@ -4068,7 +4068,7 @@ namespace tuplex {
             } else if (value_type == python::Type::STRING
                        && sub->getInferredType() == python::Type::STRING) {
 
-                assert(value.val->getType() == llvm::Type::getInt8PtrTy(_env->getContext(), 0));
+                assert(value.val->getType() == _env->i8ptrType());
 
                 auto strlength = builder.CreateSub(value.size, _env->i64Const(1));
 
@@ -4090,8 +4090,7 @@ namespace tuplex {
                 // normal code goes on (builder variable has been updated)
                 // copy out one char string here
                 auto newstr = builder.CreatePointerCast(builder.malloc(_env->i64Const(2)),
-                                                        llvm::Type::getInt8PtrTy(context,
-                                                                                 0)); // indexing string will return one char string!
+                                                        _env->i8ptrType()); // indexing string will return one char string!
                 // do via load & store, no need for memcpy here yet
                 auto charAtIndex = builder.CreateLoad(builder.getInt8Ty(), builder.MovePtrByBytes(value.val, index.val));
                 assert(charAtIndex->getType() == llvm::Type::getInt8Ty(context));

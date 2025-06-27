@@ -1048,12 +1048,14 @@ CodeGenOptLevel::Aggressive
             if(!TargetMachine)
                 throw std::runtime_error("failed to create target machine for CPU=" + CPU + ", features="=Features);
 
-#if (LLVM_VERSION_MAJOR == 9 || LLVM_VERSION_MAJOR >= 20)
+#if (LLVM_VERSION_MAJOR == 9)
             llvm::MachineModuleInfo* MMIWP = nullptr;
 #elif LLVM_VERSION_MAJOR < 20
             llvm::LLVMTargetMachine& LLVMTM = static_cast<llvm::LLVMTargetMachine&>(*TargetMachine);
             llvm::MachineModuleInfoWrapperPass *MMIWP = new llvm::MachineModuleInfoWrapperPass(&LLVMTM);
             const_cast<llvm::TargetLoweringObjectFile *>(LLVMTM.getObjFileLowering())->Initialize(MMIWP->getMMI().getContext(), *TargetMachine);
+#else
+            llvm::MachineModuleInfoWrapperPass* MMIWP = nullptr;
 #endif
             // check: https://llvm.org/docs/tutorial/MyFirstLanguageFrontend/LangImpl08.html
             mod.setDataLayout(TargetMachine->createDataLayout());
@@ -1070,7 +1072,6 @@ CodeGenOptLevel::Aggressive
 #endif
             llvm::SmallVector<char, 0> buffer;
             llvm::raw_svector_ostream dest(buffer);
-
 
 
             if (TargetMachine->addPassesToEmitFile(pass_manager, dest, nullptr, FileType, NoVerify, MMIWP)) {

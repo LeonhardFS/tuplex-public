@@ -1652,7 +1652,7 @@ namespace tuplex {
                 fillchar_val = builder.CreateLoad(builder.getInt8Ty(), fillchar->val);
             }
 
-            FunctionType *ft = FunctionType::get(_env.i8ptrType(), {_env.i8ptrType(), _env.i64Type(), _env.i64Type(), llvm::Type::getInt64PtrTy(_env.getContext(), 0), _env.i8Type()}, false);
+            FunctionType *ft = FunctionType::get(_env.i8ptrType(), {_env.i8ptrType(), _env.i64Type(), _env.i64Type(), _env.i64ptrType(), _env.i8Type()}, false);
 
             auto func = _env.getModule()->getOrInsertFunction("strCenter", ft);
             auto res_size = _env.CreateFirstBlockAlloca(builder, _env.i64Type());
@@ -2889,7 +2889,7 @@ namespace tuplex {
             auto res_size = builder.CreateAlloca(_env.i64Type(), 0, nullptr);
             // build chars argument
             llvm::Value *chars;
-            if(args.size() == 0) chars = llvm::ConstantPointerNull::get(llvm::PointerType::getInt8PtrTy(_env.getContext(), 0));
+            if(args.size() == 0) chars = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(_env.i8ptrType()));
             else chars = args[0].val;
 
             // create call
@@ -2911,7 +2911,7 @@ namespace tuplex {
             auto res_size = builder.CreateAlloca(_env.i64Type(), 0, nullptr);
             // build chars argument
             llvm::Value *chars;
-            if(args.size() == 0) chars = llvm::ConstantPointerNull::get(llvm::PointerType::getInt8PtrTy(_env.getContext(), 0));
+            if(args.size() == 0) chars = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(_env.i8ptrType()));
             else chars = args[0].val;
 
             // create call
@@ -2933,7 +2933,7 @@ namespace tuplex {
             auto res_size = builder.CreateAlloca(_env.i64Type(), 0, nullptr);
             // build chars argument
             llvm::Value *chars;
-            if(args.size() == 0) chars = llvm::ConstantPointerNull::get(llvm::PointerType::getInt8PtrTy(_env.getContext(), 0));
+            if(args.size() == 0) chars = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(_env.i8ptrType()));
             else chars = args[0].val;
 
             // create call
