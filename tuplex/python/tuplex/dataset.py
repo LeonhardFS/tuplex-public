@@ -19,16 +19,17 @@ try:
     from .libexec.tuplex import _Context, _DataSet  # noqa: F401
 except ModuleNotFoundError as e:
     logging.error("need to compiled Tuplex first, details: {}".format(e))
+from enum import IntFlag
+
 from tuplex.utils.framework import UDFCodeExtractionError
 from tuplex.utils.reflection import get_globals
 from tuplex.utils.reflection import get_source as get_udf_source
 
 from .exceptions import classToExceptionCode
 
-from enum import IntFlag
-
 # Signed 64bit limit.
 max_rows = 9223372036854775807
+
 
 # Helper enum for different sampling modes.
 class SamplingMode(IntFlag):
@@ -39,6 +40,7 @@ class SamplingMode(IntFlag):
     LAST_FILE = 16
     RANDOM_FILE = 32
     ALL_FILES = 64
+
 
 class DataSet:
     def __init__(self) -> None:

@@ -386,7 +386,6 @@ def registerLoggingCallback(callback: Callable) -> None:
         try:
             callback(*args)
         except Exception as e:
-            print(f"Logging callback produced error: {e}")
             logging.error("logging callback produced following error: {}".format(e))
 
     ccRegister(wrapper)
@@ -1081,13 +1080,15 @@ def ensure_webui(options: dict) -> None:
         if os.path.isfile(gunicorn_logpath) and "localhost" == webui_url:
             log_gunicorn_errors(gunicorn_logpath)
 
-def check_cloudpickle_version():
+
+def check_cloudpickle_version() -> None:
     # check what the installed cloudpickle version is and compare to sys version because there are certain incompatibilities
-    import cloudpickle
     import sys
 
+    import cloudpickle
+
     cv = cloudpickle.__version__
-    cv_maj, cv_min, cv_patch = [int(v) for v in cv.split('.')]
+    cv_maj, cv_min, cv_patch = [int(v) for v in cv.split(".")]
 
     if sys.version_info.major != 3:
         raise RuntimeError("Tuplex is only compatible with Python 3.7+")

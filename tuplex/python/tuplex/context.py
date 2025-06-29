@@ -18,18 +18,15 @@ try:
 except ModuleNotFoundError as e:
     logging.error("need to compiled Tuplex first, details: {}".format(e))
 
-from .dataset import DataSet, SamplingMode
-import os
 import glob
 import json
 import os
 import sys
-import cloudpickle
-from tuplex.utils.common import flatten_dict, load_conf_yaml, stringify_dict, unflatten_dict, save_conf_yaml, in_jupyter_notebook, in_google_colab, is_in_interactive_mode, current_user, is_shared_lib, host_name, ensure_webui, pythonize_options, logging_callback, registerLoggingCallback, check_cloudpickle_version
 import uuid
 from typing import Any, List, Optional, Tuple, Union
 
 from tuplex.utils.common import (
+    check_cloudpickle_version,
     current_user,
     ensure_webui,
     flatten_dict,
@@ -47,7 +44,7 @@ from tuplex.utils.common import (
     unflatten_dict,
 )
 
-from .dataset import DataSet
+from .dataset import DataSet, SamplingMode
 from .metrics import Metrics
 
 
@@ -255,7 +252,7 @@ class Context:
         columns: Optional[List[str]] = None,
         schema: Optional[Union[Tuple, List]] = None,
         auto_unpack: bool = True,
-            sampling_mode:SamplingMode=SamplingMode.FIRST_ROWS
+        sampling_mode: SamplingMode = SamplingMode.FIRST_ROWS,
     ) -> "DataSet":
         """passes data to the Tuplex framework. Must be a list of primitive objects (e.g. of type bool, int, float, str) or
         a list of (nested) tuples of these types.
@@ -273,7 +270,9 @@ class Context:
 
         assert isinstance(value_list, list), "data must be given as a list of objects"
         assert isinstance(auto_unpack, bool), "auto_unpack must be given as a boolean"
-        assert isinstance(sampling_mode, SamplingMode), 'sampling_mode must be one or a combination of the allowed SamplingMode values'
+        assert isinstance(sampling_mode, SamplingMode), (
+            "sampling_mode must be one or a combination of the allowed SamplingMode values"
+        )
 
         cols = []
         if not columns:
@@ -290,8 +289,8 @@ class Context:
 
         ds = DataSet()
         ds._dataSet = self._context.parallelize(
-            value_list, columns, schema, auto_unpack
-        , int(sampling_mode))
+            value_list, columns, schema, auto_unpack, int(sampling_mode)
+        )
         return ds
 
     def csv(
@@ -303,7 +302,9 @@ class Context:
         quotechar: str = '"',
         null_values: List[str] = [""],
         type_hints: dict = {},
-            sampling_mode:SamplingMode=SamplingMode.FIRST_ROWS | SamplingMode.LAST_ROWS | SamplingMode.FIRST_FILE
+        sampling_mode: SamplingMode = SamplingMode.FIRST_ROWS
+        | SamplingMode.LAST_ROWS
+        | SamplingMode.FIRST_FILE,
     ) -> "DataSet":
         """reads csv (comma separated values) files. This function may either be provided with
         parameters that help to determine the delimiter, whether a header present or what kind
@@ -355,7 +356,9 @@ class Context:
         assert isinstance(type_hints, dict), (
             "type_hints must be a dictionary mapping index to type hint"
         )  # TODO: update with other options
-        assert isinstance(sampling_mode, SamplingMode), 'sampling_mode must be one or a combination of the allowed SamplingMode values'
+        assert isinstance(sampling_mode, SamplingMode), (
+            "sampling_mode must be one or a combination of the allowed SamplingMode values"
+        )
 
         if delimiter:
             assert len(delimiter) == 1, (
@@ -373,11 +376,18 @@ class Context:
             quotechar,
             null_values,
             type_hints,
-            int(sampling_mode)
+            int(sampling_mode),
         )
         return ds
 
-    def text(self, pattern: str, null_values: Optional[List[str]] = None, sampling_mode=SamplingMode.FIRST_ROWS|SamplingMode.LAST_ROWS|SamplingMode.FIRST_FILE) -> "DataSet":
+    def text(
+        self,
+        pattern: str,
+        null_values: Optional[List[str]] = None,
+        sampling_mode: SamplingMode = SamplingMode.FIRST_ROWS
+        | SamplingMode.LAST_ROWS
+        | SamplingMode.FIRST_FILE,
+    ) -> "DataSet":
         """reads text files.
         Args:
             pattern     (str): a file glob pattern, e.g. /data/file.csv or /data/\*.csv or /\*/\*csv
@@ -394,32 +404,55 @@ class Context:
         assert isinstance(null_values, list), (
             "null_values must be a list of strings representing null values"
         )
-        assert isinstance(sampling_mode, SamplingMode), 'sampling_mode must be one or a combination of the allowed SamplingMode values'
+        assert isinstance(sampling_mode, SamplingMode), (
+            "sampling_mode must be one or a combination of the allowed SamplingMode values"
+        )
 
         ds = DataSet()
-        ds._dataSet = self._context.json(pattern, unwrap_first_level, treat_heterogenous_lists_as_tuples, sampling_mode)
+        ds._dataSet = self._context.text(pattern, null_values, sampling_mode)
         return ds
 
-def json(self, pattern:str, unwrap_first_level:bool=True, treat_heterogenous_lists_as_tuples:bool=True, sampling_mode:SamplingMode=SamplingMode.FIRST_ROWS|SamplingMode.LAST_ROWS|SamplingMode.FIRST_FILE):
-    """reads json files.
-    Args:
-        pattern     (str): a file glob pattern, e.g. /data/file.json or /data/\*.json or /\*/\*json
-        unwrap_first_level (bool): if true, then the first level of keys is unwrapped and treated as columns. Missing values for the first level are filled in with None.
-        treat_heterogenous_lists_as_tuples (bool): if true, then lists where JSON element types differ are parsed as tuples. if false, keeps the type as list. This will likely lead to more fallback rows.
-    Returns:
-        tuplex.dataset.DataSet: A Tuplex Dataset object that allows further ETL operations
-    """
+    def json(
+        self,
+        pattern: str,
+        unwrap_first_level: bool = True,
+        treat_heterogenous_lists_as_tuples: bool = True,
+        sampling_mode: SamplingMode = SamplingMode.FIRST_ROWS
+        | SamplingMode.LAST_ROWS
+        | SamplingMode.FIRST_FILE,
+    ) -> "DataSet":
+        """reads json files.
+        Args:
+            pattern     (str): a file glob pattern, e.g. /data/file.json or /data/\*.json or /\*/\*json
+            unwrap_first_level (bool): if true, then the first level of keys is unwrapped and treated as columns. Missing values for the first level are filled in with None.
+            treat_heterogenous_lists_as_tuples (bool): if true, then lists where JSON element types differ are parsed as tuples. if false, keeps the type as list. This will likely lead to more fallback rows.
+        Returns:
+            tuplex.dataset.DataSet: A Tuplex Dataset object that allows further ETL operations
+        """
 
-    assert isinstance(pattern, str), 'file pattern must be given as str'
-    assert isinstance(unwrap_first_level, bool), 'unwrap_first_level must be a bool'
-    assert isinstance(treat_heterogenous_lists_as_tuples, bool), 'treat_heterogenous_lists_as_tuples must be a bool'
+        assert isinstance(pattern, str), "file pattern must be given as str"
+        assert isinstance(unwrap_first_level, bool), "unwrap_first_level must be a bool"
+        assert isinstance(treat_heterogenous_lists_as_tuples, bool), (
+            "treat_heterogenous_lists_as_tuples must be a bool"
+        )
 
-    ds = DataSet()
-    ds._dataSet = self._context.json(pattern, unwrap_first_level, treat_heterogenous_lists_as_tuples, sampling_mode)
-    return ds
+        ds = DataSet()
+        ds._dataSet = self._context.json(
+            pattern,
+            unwrap_first_level,
+            treat_heterogenous_lists_as_tuples,
+            sampling_mode,
+        )
+        return ds
 
-
-    def orc(self, pattern: str, columns: Optional[List[str]] = None, sampling_mode:SamplingMode=SamplingMode.FIRST_ROWS|SamplingMode.LAST_ROWS|SamplingMode.FIRST_FILE) -> "DataSet":
+    def orc(
+        self,
+        pattern: str,
+        columns: Optional[List[str]] = None,
+        sampling_mode: SamplingMode = SamplingMode.FIRST_ROWS
+        | SamplingMode.LAST_ROWS
+        | SamplingMode.FIRST_FILE,
+    ) -> "DataSet":
         """reads orc files.
         Args:
             pattern (str): a file glob pattern, e.g. /data/file.csv or /data/\*.csv or /\*/\*csv
@@ -432,7 +465,9 @@ def json(self, pattern:str, unwrap_first_level:bool=True, treat_heterogenous_lis
         assert isinstance(columns, list) or columns is None, (
             "columns must be a list or None"
         )
-        assert isinstance(sampling_mode, SamplingMode), 'sampling_mode must be one or a combination of the allowed SamplingMode values'
+        assert isinstance(sampling_mode, SamplingMode), (
+            "sampling_mode must be one or a combination of the allowed SamplingMode values"
+        )
 
         ds = DataSet()
         ds._dataSet = self._context.orc(pattern, columns, sampling_mode)

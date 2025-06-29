@@ -100,7 +100,7 @@ class Metrics:
         """
         assert self._metrics
         return self._metrics.getGenerateLLVMTime()
-        
+
     def as_json(self) -> str:
         """
         all measurements as json encoded string
