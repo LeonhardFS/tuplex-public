@@ -1728,11 +1728,11 @@ namespace tuplex {
             } else if (val->getType() == Type::getDoubleTy(_context)) {
                 sconst = builder.CreateGlobalStringPtr(msg + " [f64] : 0x%" PRIx64 "\n");
                 casted_val = builder.CreateBitCast(val, i64Type());
-            } else if (val->getType() == Type::getInt8PtrTy(_context, 0)) {
+            } else if (val->getType() == i8ptrType()) {
                 sconst = builder.CreateGlobalStringPtr(msg + " [i8*] : [%p] %s\n");
             }
-            auto fmt = builder.CreatePointerCast(sconst, llvm::Type::getInt8PtrTy(_context, 0));
-            if (val->getType() != Type::getInt8PtrTy(_context, 0))
+            auto fmt = builder.CreatePointerCast(sconst, i8ptrType());
+            if (val->getType() != i8ptrType())
                 builder.CreateCall(printf_F, {fmt, casted_val});
             else
                 builder.CreateCall(printf_F, {fmt, casted_val, casted_val});
@@ -1748,12 +1748,12 @@ namespace tuplex {
 
             // hack NULL VALUE as i8ptr ==> it's actually a const and thus not needed!
             if (t == python::Type::NULLVALUE)
-                return Type::getInt8PtrTy(_context);
+                return i8ptrType();
 
             // string type is a primitive, hence we can return it
             if (t == python::Type::STRING ||
                 t == python::Type::PYOBJECT)
-                return Type::getInt8PtrTy(_context);
+                return i8ptrType();
 
             if(t.isDictionaryType()) {
                 if(t.isStructuredDictionaryType() || t.isSparseStructuredDictionaryType()) {
@@ -1824,11 +1824,10 @@ namespace tuplex {
                 }
 
                 if (rt == python::Type::STRING) {
-
                     // this here results in an error.
                     // => fix this!
                     std::vector<llvm::Type*> member_types;
-                    member_types.push_back(Type::getInt8PtrTy(_context));
+                    member_types.push_back(i8ptrType());
                     member_types.push_back(Type::getInt1Ty(_context));
                     llvm::ArrayRef<llvm::Type *> members(member_types);
 
@@ -2203,7 +2202,7 @@ namespace tuplex {
             std::string name = twine + std::to_string(_global_counters[twine]++);
 
             // create global variable
-            auto llvm_gvar_type = llvm::Type::getInt8PtrTy(_context, 0);
+            auto llvm_gvar_type = i8ptrType();
             auto gvar = createNullInitializedGlobal(name, llvm_gvar_type);
 
             // get the builders
@@ -2806,6 +2805,7 @@ namespace tuplex {
                             assert(args[0]->getType()->isPointerTy());
                             assert(args[1]->getType()->isPointerTy());
 
+#if LLVM_VERSION_MAJOR < 17
                             // fetch input/output type
                             auto out_llvm_type = args[0]->getType()->getPointerElementType();
                             auto in_llvm_type = args[1]->getType()->getPointerElementType();
@@ -2819,6 +2819,9 @@ namespace tuplex {
                             auto in_type = lookupPythonType(in_llvm_name);
                             auto out_type = lookupPythonType(out_llvm_name);
                             ss<<"corresponds to: "<<in_type.desc()<<" -> "<<out_type.desc()<<"\n";
+#else
+                            ss<<"function @"<<func_name<<": "<<"use LLVM version < 17 to inspect types.\n";
+#endif
                         }
                     } else {
                         ss<<"function @" + func_name + " not found in LLVM module\n";

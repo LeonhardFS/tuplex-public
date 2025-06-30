@@ -476,7 +476,7 @@ namespace tuplex {
             }
 
             inline llvm::Type *i8ptrType() {
-#ifdef LLVM_VERSION_MAHOR <= 19
+#if LLVM_VERSION_MAJOR <= 19
                 return llvm::Type::getInt8PtrTy(_context, 0);
 #else
                 return llvm::PointerType::get(llvm::Type::getInt8Ty(_context), 0);

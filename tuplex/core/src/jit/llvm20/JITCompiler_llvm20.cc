@@ -13,10 +13,15 @@
 
 #include <llvm/IR/IRBuilder.h>
 
+#ifndef LLVM_VERSION_MAJOR
+#error "need to define LLVM version"
+#endif
+
+#include <llvm/IR/IRBuilder.h>
+
 #if LLVM_VERSION_MAJOR >= 20
 #include <jit/llvm20/JITCompiler_llvm20.h>
 
-#include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/ExecutionEngine/JITSymbol.h>
 #include <llvm/ExecutionEngine/Orc/IndirectionUtils.h>
 #include <llvm/ExecutionEngine/Orc/JITTargetMachineBuilder.h>
@@ -63,21 +68,15 @@ namespace tuplex {
 
     static std::vector<std::string> getFeatureList() {
         using namespace llvm;
-        SubtargetFeatures Features;
-
-        // If user asked for the 'native' CPU, we need to autodetect features.
-        // This is necessary for x86 where the CPU might not support all the
-        // features the autodetected CPU name lists in the target. For example,
-        // not all Sandybridge processors support AVX.
-        StringMap<bool> HostFeatures;
-        if (sys::getHostCPUFeatures(HostFeatures))
-            for (auto &F : HostFeatures)
-                Features.AddFeature(F.first(), F.second);
-
-        return Features.getFeatures();
+        std::vector<std::string> features;
+        for (const auto& kv : sys::getHostCPUFeatures()) {
+            if (kv.second)
+                features.emplace_back(kv.first());
+        }
+        return features;
     }
 
-    JITCompiler::JITCompiler(const llvm::CodeGenOpt::Level& codegen_opt_level) {
+    JITCompiler::JITCompiler(const llvm::CodeGenOptLevel& codegen_opt_level) {
 
         codegen::initLLVM(); // lazy initialization of LLVM backend.
 
@@ -132,7 +131,6 @@ namespace tuplex {
         _lljit = std::move(jitFuture.get());
         if(!_lljit)
             throw std::runtime_error("failed to access LLJIT pointer");
-
 
         auto& JD = _lljit->getMainJITDylib();
         // JD.define to add symbols according to https://llvm.org/docs/ORCv2.html#how-to-create-jitdylibs-and-set-up-linkage-relationships
