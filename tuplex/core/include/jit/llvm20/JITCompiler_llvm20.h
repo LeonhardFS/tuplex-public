@@ -11,9 +11,9 @@
 // need to include some llvm file, so version is picked up
 #include <llvm/IR/IRBuilder.h>
 
-#if LLVM_VERSION_MAJOR > 9 && LLVM_VERSION_MAJOR < 20
-#ifndef TUPLEX_JITCOMPILER_LLVM13_H
-#define TUPLEX_JITCOMPILER_LLVM13_H
+#if LLVM_VERSION_MAJOR > 9
+#ifndef TUPLEX_JITCOMPILER_LLVM20_H
+#define TUPLEX_JITCOMPILER_LLVM20_H
 
 // common interface
 #include <jit/IJITCompiler.h>
@@ -30,7 +30,7 @@ namespace tuplex {
     // JIT compiler based on LLVM's ORCv2 JIT classes
     class JITCompiler : public IJITCompiler {
     public:
-        ATTRIBUTE_NO_SANITIZE_ADDRESS JITCompiler(const llvm::CodeGenOpt::Level& codegen_opt_level=llvm::CodeGenOpt::Default);
+        ATTRIBUTE_NO_SANITIZE_ADDRESS JITCompiler(const llvm::CodeGenOptLevel& codegen_opt_level=llvm::CodeGenOptLevel::Default);
         ~JITCompiler();
 
         inline bool compileObjectBuffer(const std::string &object_buffer) { return compileObjectBuffer(object_buffer, ""); }

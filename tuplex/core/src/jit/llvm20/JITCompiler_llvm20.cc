@@ -8,14 +8,13 @@
 //  License: Apache 2.0                                                                                               //
 //--------------------------------------------------------------------------------------------------------------------//
 // need to include some llvm file, so version is picked up
-#ifndef LLVM13_JITCOMPILER_HEADER_
-#define LLVM13_JITCOMPILER_HEADER_
+#ifndef LLVM20_JITCOMPILER_HEADER_
+#define LLVM20_JITCOMPILER_HEADER_
 
 #include <llvm/IR/IRBuilder.h>
 
-#if LLVM_VERSION_MAJOR >= 10 && LLVM_VERSION_MAJOR < 20
-#include <jit/llvm13/JITCompiler_llvm13.h>
-
+#if LLVM_VERSION_MAJOR >= 20
+#include <jit/llvm20/JITCompiler_llvm20.h>
 
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/ExecutionEngine/JITSymbol.h>
@@ -26,13 +25,8 @@
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 #include <llvm/Object/ObjectFile.h>
-#if LLVM_VERSION_MAJOR < 14
-#include <llvm/Support/TargetRegistry.h>
-#else
 #include <llvm/MC/TargetRegistry.h>
-#endif
 #include <llvm/Support/TargetSelect.h>
-#include <llvm/Support/Host.h>
 #include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
 #include <llvm/ExecutionEngine/SectionMemoryManager.h>
 #include <llvm/ExecutionEngine/JITEventListener.h>

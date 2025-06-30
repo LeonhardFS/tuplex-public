@@ -115,7 +115,7 @@ namespace tuplex {
              */
             inline llvm::Value *currentChar(IRBuilder &builder) {
                 auto ptr = currentPtr(builder);
-                auto i8ptr_type = llvm::Type::getInt8PtrTy(_env->getContext(), 0);
+                auto i8ptr_type = _env->i8ptrType();
                 // assert(ptr->getType() == i8ptr_type);
                 // assert(_endPtr->getType() == i8ptr_type);
                 assert(ptr->getType()->isPointerTy());
@@ -127,8 +127,8 @@ namespace tuplex {
 
             llvm::Value *clampWithStartPtr(IRBuilder &builder, llvm::Value *ptr) {
                 assert(_inputPtr);
-                assert(_inputPtr->getType() == llvm::Type::getInt8PtrTy(_env->getContext(), 0));
-                assert(ptr->getType() == llvm::Type::getInt8PtrTy(_env->getContext(), 0));
+                assert(_inputPtr->getType() == _env->i8ptrType());
+                assert(ptr->getType() == _env->i8ptrType());
                 auto cond = builder.CreateICmpULT(builder.CreatePtrToInt(ptr, _env->i64Type()),
                                                   builder.CreatePtrToInt(_inputPtr, _env->i64Type()));
                 auto endval = builder.CreateSelect(cond, _inputPtr, ptr);
@@ -137,8 +137,8 @@ namespace tuplex {
 
             inline llvm::Value *clampWithEndPtr(IRBuilder &builder, llvm::Value *ptr) {
                 assert(_endPtr);
-                assert(_endPtr->getType() == llvm::Type::getInt8PtrTy(_env->getContext(), 0));
-                assert(ptr->getType() == llvm::Type::getInt8PtrTy(_env->getContext(), 0));
+                assert(_endPtr->getType() == _env->i8ptrType());
+                assert(ptr->getType() == _env->i8ptrType());
                 auto cond = builder.CreateICmpULT(builder.CreatePtrToInt(ptr, _env->i64Type()),
                                                   builder.CreatePtrToInt(_endPtr, _env->i64Type()));
                 auto endval = builder.CreateSelect(cond, ptr, _endPtr);
@@ -279,7 +279,7 @@ namespace tuplex {
             }
 
             llvm::Value *isCellQuoted(IRBuilder &builder, llvm::Value *cellBegin, llvm::Value *cellEnd) {
-                auto i8ptr_type = llvm::Type::getInt8PtrTy(_env->getContext(), 0);
+                auto i8ptr_type = _env->i8ptrType();
                 assert(cellBegin->getType() == i8ptr_type);
                 assert(cellBegin->getType() == i8ptr_type);
 
