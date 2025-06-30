@@ -255,11 +255,7 @@ namespace tuplex {
                                                   to,
                                                   Reloc::PIC_,
                                                   CodeModel::Large,
-#if LLVM_VERSION_MAJOR < 20
-                                                  CodeGenOpt::Aggressive
-#else
-CodeGenOptLevel::Aggressive
-#endif
+                                                  LLVM_CODEGEN_OPT_LEVEL_AGGRESSIVE
                                                   );
         }
 

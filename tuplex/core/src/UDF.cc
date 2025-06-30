@@ -906,11 +906,11 @@ namespace tuplex {
 
 
         auto string_constant = builder.CreateGlobalStringPtr(_pickledCode, "pickled_" + func_name);
-        llvm::Value* codeAsPickledString = builder.CreatePointerCast(string_constant, llvm::Type::getInt8PtrTy(context, 0));
+        llvm::Value* codeAsPickledString = builder.CreatePointerCast(string_constant, env.i8ptrType());
         llvm::Value* codeLength = env.i64Const(_pickledCode.length());
 
         // call now deserialize function
-        auto deserializeFuncType = FunctionType::get(Type::getInt8PtrTy(context, 0), {Type::getInt8PtrTy(context, 0),
+        auto deserializeFuncType = FunctionType::get(env.i8ptrType(), {env.i8ptrType(),
                                                                                       Type::getInt64Ty(context)}, false);
         auto deserializeFunc = mod->getOrInsertFunction("deserializePythonFunction", deserializeFuncType);
 
@@ -919,10 +919,10 @@ namespace tuplex {
 
         // call release function in destructor block
         builder.SetInsertPoint(destructorBlock);
-        auto releaseFuncType = FunctionType::get(Type::getVoidTy(context), {Type::getInt8PtrTy(context, 0)}, false);
+        auto releaseFuncType = FunctionType::get(Type::getVoidTy(context), {env.i8ptrType()}, false);
         auto releaseFunc = mod->getOrInsertFunction("releasePythonFunction", releaseFuncType);
         assert(releaseFunc);
-        assert(funcPtr->getType() == Type::getInt8PtrTy(context, 0));
+        assert(funcPtr->getType() == env.i8ptrType());
         builder.CreateCall(releaseFunc, {funcPtr});
 
         // store now function pointer for callPythonCode
@@ -930,10 +930,10 @@ namespace tuplex {
 
         // use a simple wrapper function to call to python
         // int32_t callPythonCode(PyObject* func, uint8_t** out, int64_t* out_size, uint8_t* input, int64_t input_size, int32_t in_typeHash, int32_t out_typeHash)
-        auto wrapperFuncType = FunctionType::get(Type::getInt32Ty(context), {Type::getInt8PtrTy(context, 0),
-                                                                             Type::getInt8PtrTy(context, 0)->getPointerTo(0),
-                                                                             Type::getInt64PtrTy(context, 0),
-                                                                             Type::getInt8PtrTy(context, 0),
+        auto wrapperFuncType = FunctionType::get(Type::getInt32Ty(context), {env.i8ptrType(),
+                                                                             env.i8ptrType()->getPointerTo(0),
+                                                                             env.i64ptrType(),
+                                                                             env.i8ptrType(),
                                                                              Type::getInt64Ty(context),
                                                                              Type::getInt32Ty(context),
                                                                              Type::getInt32Ty(context)}, false);

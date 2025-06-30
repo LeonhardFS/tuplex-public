@@ -23,10 +23,7 @@
 #include <jit/llvm20/JITCompiler_llvm20.h>
 
 #include <llvm/ExecutionEngine/JITSymbol.h>
-#include <llvm/ExecutionEngine/Orc/IndirectionUtils.h>
 #include <llvm/ExecutionEngine/Orc/JITTargetMachineBuilder.h>
-#include <llvm/IR/Function.h>
-#include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 #include <llvm/Object/ObjectFile.h>
@@ -35,12 +32,10 @@
 #include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
 #include <llvm/ExecutionEngine/SectionMemoryManager.h>
 #include <llvm/ExecutionEngine/JITEventListener.h>
-#include <llvm/ExecutionEngine/JITLink/JITLinkMemoryManager.h>
 #include <llvm/ExecutionEngine/Orc/ExecutionUtils.h>
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
-#include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
-#include <llvm/ExecutionEngine/Orc/TargetProcess/TargetExecutionUtils.h>
-#include <llvm/ExecutionEngine/SectionMemoryManager.h>
+#include <llvm/ExecutionEngine/Orc/AbsoluteSymbols.h>
+
 
 // C functions
 #include <hashmap.h>
@@ -249,8 +244,10 @@ namespace tuplex {
         jitlib.addGenerator(std::move(*ProcessSymbolsGenerator));
 
         // define symbols from custom symbols for this jitlib
+        llvm::orc::SymbolMap sym_map;
         for(auto keyval: _customSymbols)
-            auto rc = jitlib.define(absoluteSymbols({{Mangle(keyval.first), keyval.second}}));
+            sym_map.insert(std::make_pair(Mangle(keyval.first), keyval.second));
+        auto rc = jitlib.define(absoluteSymbols(sym_map));
 
         _dylibs.push_back(&jitlib); // save reference for search
         auto err = _lljit->addObjectFile(jitlib, std::move(mem_buffer)); //_lljit->addIRModule(jitlib, std::move(tsm.get()));

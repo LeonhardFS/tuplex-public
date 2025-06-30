@@ -58,16 +58,13 @@ namespace tuplex {
          * @param Name for which to link
          * @param addr of Symbol
          */
-        template<typename Function> void registerSymbol(const std::string& Name, Function f) {
+        template<typename Function> void registerSymbol(const std::string& Name, Function f, bool isCallable=false) {
             using namespace llvm;
             using namespace llvm::orc;
-
-            auto addr = reinterpret_cast<llvm::JITTargetAddress>(f);
-            assert(addr);
-
+            assert(f);
             // with addressof a C++ function can be hacked into this.
             // however may lead to hard to debug bugs!
-            _customSymbols[Name] = JITEvaluatedSymbol(addr, JITSymbolFlags::Exported);
+            _customSymbols[Name] = ExecutorSymbolDef::fromPtr(f, isCallable ? JITSymbolFlags::Callable : JITSymbolFlags::Exported);
         }
 
     private:
@@ -79,7 +76,7 @@ namespace tuplex {
         std::vector<llvm::orc::JITDylib*> _dylibs; // for name lookup search
 
         // custom symbols
-        std::unordered_map<std::string, llvm::JITEvaluatedSymbol> _customSymbols;
+        std::unordered_map<std::string, llvm::orc::ExecutorSymbolDef> _customSymbols;
 
         void defineCustomSymbols(llvm::orc::JITDylib &jitlib);
     };

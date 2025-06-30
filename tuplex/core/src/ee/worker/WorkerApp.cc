@@ -96,7 +96,7 @@ namespace tuplex {
             _compiler = std::make_shared<JITCompiler>();
 
         if(!_fastCompiler)
-            _fastCompiler = std::make_shared<JITCompiler>(llvm::CodeGenOpt::None); // <-- no codegen opt to circumvent bug.
+            _fastCompiler = std::make_shared<JITCompiler>(LLVM_CODEGEN_OPT_LEVEL_NONE); // <-- no codegen opt to circumvent bug.
 
         initThreadEnvironments(_settings.numThreads);
 
