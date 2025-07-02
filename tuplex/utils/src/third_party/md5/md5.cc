@@ -31,7 +31,7 @@ documentation and/or software.
 */
 
 /* interface header */
-#include "md5.h"
+#include <third_party/md5/md5.h>
 
 /* system implementation headers */
 #include <cstdio>

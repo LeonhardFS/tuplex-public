@@ -806,6 +806,15 @@ namespace tuplex {
         return entry;
     }
 
+    uint8_t *S3FileCache::get(const URI &uri, size_t range_start, size_t range_end, option<size_t> uri_size) {
+
+        // no lock here, have callers be responsible for thos.
+
+        // Query cache for uri, if not found return nullptr.
+        auto it =
+        return nullptr;
+    }
+
     // cf. https://raw.githubusercontent.com/mohaps/lrucache11/master/LRUCache11.hpp
 }
 
