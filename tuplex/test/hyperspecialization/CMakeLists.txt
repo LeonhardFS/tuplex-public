@@ -16,4 +16,4 @@ target_link_libraries(testhyperspecial
         ${Python3_LIBRARIES}
 )
 
-gtest_add_tests(TARGET testhyperspecial TEST_PREFIX "")
+gtest_add_tests(TARGET testhyperspecial)

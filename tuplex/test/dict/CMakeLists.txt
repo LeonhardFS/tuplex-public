@@ -19,4 +19,4 @@ TARGET_LINK_LIBRARIES(testdict
         ${Python3_LIBRARIES}
         )
 
-gtest_add_tests(TARGET testdict TEST_PREFIX "")
+gtest_add_tests(TARGET testdict)

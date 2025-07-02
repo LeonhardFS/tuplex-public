@@ -25,4 +25,4 @@ TARGET_LINK_LIBRARIES(testio
         protobuf::libprotobuf
         )
 
-gtest_add_tests(TARGET testio TEST_PREFIX "")
+gtest_add_tests(TARGET testio)

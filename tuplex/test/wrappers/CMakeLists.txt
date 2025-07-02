@@ -48,4 +48,4 @@ else()
             )
 endif()
 
-gtest_add_tests(TARGET testwrappers TEST_PREFIX "")
+gtest_add_tests(TARGET testwrappers)

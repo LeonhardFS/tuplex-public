@@ -868,6 +868,11 @@ int main(int argc, char* argv[]) {
 
 //    static_assert(false == SIMDJSON_THREADS_ENABLED, "threads disabled");
 
+    cout << "simdjson v" << SIMDJSON_VERSION << endl;
+    cout << "Detected the best implementation for your machine: " << simdjson::get_active_implementation()->name();
+    cout << "(" << simdjson::get_active_implementation()->description() << ")" << endl;
+
+
     // parse arguments
     string input_pattern;
     string output_path = "local-output";

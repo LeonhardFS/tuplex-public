@@ -1165,11 +1165,11 @@ FetchContent_Declare(
         simdjson
         GIT_REPOSITORY https://github.com/simdjson/simdjson.git
         GIT_SHALLOW TRUE
-        GIT_TAG tags/v3.10.1
+        GIT_TAG tags/v3.13.0
         OVERRIDE_FIND_PACKAGE
 )
 # set(SIMDJSON_JUST_LIBRARY ON CACHE INTERNAL "")
-# set(SIMDJSON_BUILD_STATIC ON CACHE INTERNAL "")
+ set(SIMDJSON_BUILD_STATIC ON CACHE INTERNAL "") # required for arm64?
 find_package(simdjson REQUIRED)
 get_target_property(simdjson_INCLUDE_DIRS simdjson::simdjson INCLUDE_DIRECTORIES)
 
