@@ -388,10 +388,10 @@ namespace tuplex {
 
             // void* userData, int64_t rowNumber, int64_t ExceptionCode, uint8_t* inputBuffer, int64_t inputBufferSize
             FunctionType *func_type = FunctionType::get(Type::getInt64Ty(ctx),
-                                                        {Type::getInt8PtrTy(ctx, 0),
+                                                        {env.i8ptrType(),
                                                          Type::getInt64Ty(ctx),
                                                          Type::getInt64Ty(ctx),
-                                                         Type::getInt8PtrTy(ctx, 0),
+                                                         env.i8ptrType(),
                                                          Type::getInt64Ty(ctx)}, false);
             auto func = Function::Create(func_type, Function::ExternalLinkage, name, pipFunc->getParent());
 

@@ -320,12 +320,12 @@ namespace tuplex {
             logger.info("Total Stage Decode took " + std::to_string(timer.time()) + "s");
 #else
             // use custom JSON encoding
-        auto decompressed_str = decompress_string(data);
-        logger.info("Decompressed Code context from " + sizeToMemString(compressed_str.size()) + " to " + sizeToMemString(decompressed_str.size()));
-        Timer deserializeTimer;
-        ctx = codegen::CodeGenerationContext::fromJSON(decompressed_str);
-        logger.info("Deserialization of Code context took " + std::to_string(deserializeTimer.time()) + "s");
-        logger.info("Total Stage Decode took " + std::to_string(timer.time()) + "s");
+            auto decompressed_str = decompress_string(data);
+            logger.info("Decompressed Code context from " + sizeToMemString(data.size()) + " to " + sizeToMemString(decompressed_str.size()));
+            Timer deserializeTimer;
+            ctx = codegen::CodeGenerationContext::fromJSON(decompressed_str);
+            logger.info("Deserialization of Code context took " + std::to_string(deserializeTimer.time()) + "s");
+            logger.info("Total Stage Decode took " + std::to_string(timer.time()) + "s");
 #endif
             return ctx;
         }
