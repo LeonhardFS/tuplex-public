@@ -567,7 +567,9 @@ namespace tuplex {
             assert(pathContext.outputSchema.getRowType() != python::Type::UNKNOWN);
 
             // special case: empty pipeline
-            if (pathContext.outputSchema.getRowType().parameters().empty() && pathContext.inputSchema.getRowType().parameters().empty()) {
+            auto input_column_count = extract_columns_from_type(pathContext.inputSchema.getRowType());
+            auto output_column_count = extract_columns_from_type(pathContext.outputSchema.getRowType());
+            if (0 == input_column_count && 0 == output_column_count) {
                 logger.info("no pipeline code generated, empty pipeline");
                 return ret;
             }

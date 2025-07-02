@@ -13,6 +13,9 @@ TARGET_LINK_LIBRARIES(testutils
         libutils
         ${GTest_LIBRARIES}
         ${AWSSDK_LINK_LIBRARIES}
+        absl::base
+        absl::flat_hash_map
+        absl::hash
         )
 
 gtest_add_tests(TARGET testutils)
