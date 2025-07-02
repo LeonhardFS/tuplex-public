@@ -195,8 +195,10 @@ namespace tuplex {
                     size += 8 + el.getPtrSize();
                 } else if(type.isStructuredDictionaryType()) {
                     size += 8 + struct_dict_get_size(el); // regarded as var-length field.
+                    added_var_field = 8; // -- if other tests fail, check this here.
                 } else if(type.isListType()) {
                     size += 8 + el.serialized_list_size();
+                    added_var_field = 8; //  -- if other tests fail, check this here.
                 } else {
                     // not supported, default back. -> this is also true for nested tuples...
                     return getSerializer().length();
