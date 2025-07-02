@@ -1709,24 +1709,35 @@ namespace python {
                 return false;
             // order may be different when names are present, so do in-check
            std::vector<int> to_indices;
-           int pos = 0;
-            for(const auto& name : from_names) {
-                auto it = std::find(to_names.cbegin(), to_names.cend(), name);
-                if(it == to_names.end())
-                    return false;
-                to_indices.push_back(std::distance(to_names.cbegin(), it));
-                pos++;
+
+            // are there names?
+            if (!to_names.empty() && !from_names.empty()) {
+                int pos = 0;
+                for(const auto& name : from_names) {
+                    auto it = std::find(to_names.cbegin(), to_names.cend(), name);
+                    if(it == to_names.end())
+                        return false;
+                    to_indices.push_back(std::distance(to_names.cbegin(), it));
+                    pos++;
+                }
+
+                // Check whether types can be upcast.
+                auto from_types = from.get_column_types();
+                for(unsigned i = 0; i < from_types.size(); ++i) {
+                    if(!canUpcastType(from_types[i], to.get_column_type(to_indices[i])))
+                        return false;
+                }
+            } else {
+                // 1:1 mapping.
+                auto from_types = from.get_column_types();
+                for(unsigned i = 0; i < from_types.size(); ++i) {
+                    if(!canUpcastType(from_types[i], to.get_column_type(i)))
+                        return false;
+                }
             }
 
-            // check whether types can be upcast
-            auto from_types = from.get_column_types();
-            for(unsigned i = 0; i < from_types.size(); ++i) {
-                if(!canUpcastType(from_types[i], to.get_column_type(to_indices[i])))
-                    return false;
-            }
             return true;
         }
-
 
         return false;
     }
