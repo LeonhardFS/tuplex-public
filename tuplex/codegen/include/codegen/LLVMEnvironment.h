@@ -281,7 +281,7 @@ namespace tuplex {
                 // Check that module has a layout string attached.
                 std::string dl_layout_str = _module->getDataLayoutStr();
 #if LLVM_VERSION_MAJOR < 20
-                return std::make_unique<llvm::DataLayout>(_env->getModule().get());
+                return std::make_unique<llvm::DataLayout>(_module.get());
 #else
                 return std::make_unique<llvm::DataLayout>(dl_layout_str);
 #endif
