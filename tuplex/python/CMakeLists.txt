@@ -17,7 +17,7 @@ message(STATUS "Pybind11 uses python version ${Python3_VERSION}")
 set(PYBIND11_FINDPYTHON OFF CACHE INTERNAL "") 
 set(PYBIND11_PYTHON_VERSION "${Python3_VERSION}" CACHE INTERNAL "")
 FetchContent_Declare(pybind11 GIT_REPOSITORY https://github.com/pybind/pybind11
-                             GIT_TAG        v2.11.1 )
+                             GIT_TAG        v2.13.6)
 FetchContent_GetProperties(pybind11)
 if(NOT pybind11_POPULATED)
     # Disable cmake warning, need to update to FetchContent_MakeAvailable eventually.
@@ -146,6 +146,7 @@ FILE(COPY ${CMAKE_CURRENT_SOURCE_DIR}/tuplex/utils/__init__.py
         ${CMAKE_CURRENT_SOURCE_DIR}/tuplex/utils/tracebacks.py
         ${CMAKE_CURRENT_SOURCE_DIR}/tuplex/utils/version.py
         ${CMAKE_CURRENT_SOURCE_DIR}/tuplex/utils/globs.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/tuplex/utils/dllist.py
         DESTINATION ${PYTHON_DIST_DIR}/tuplex/utils)
 
 FILE(COPY ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_tuples.py

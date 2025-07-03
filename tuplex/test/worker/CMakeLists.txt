@@ -32,4 +32,4 @@ message(STATUS "Building tests for worker ${WORKER_NAME}")
 # mark worker & runtime as dependency so they get build
 add_dependencies(testworker ${WORKER_NAME} runtime)
 
-gtest_add_tests(TARGET testworker TEST_PREFIX "")
+gtest_add_tests(TARGET testworker)

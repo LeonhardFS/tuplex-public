@@ -11,7 +11,7 @@
 // need to include some llvm file, so version is picked up
 #include <llvm/IR/IRBuilder.h>
 
-#if LLVM_VERSION_MAJOR > 9
+#if LLVM_VERSION_MAJOR > 9 && LLVM_VERSION_MAJOR < 20
 #ifndef TUPLEX_JITCOMPILER_LLVM13_H
 #define TUPLEX_JITCOMPILER_LLVM13_H
 

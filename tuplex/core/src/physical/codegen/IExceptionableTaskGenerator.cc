@@ -26,8 +26,8 @@ namespace tuplex {
 
             // create function with arguments
             auto retType = _env->i64Type();
-            std::vector<Type*> paramTypes{llvm::Type::getInt8PtrTy(context, 0),
-                                          llvm::Type::getInt8PtrTy(context, 0),
+            std::vector<Type*> paramTypes{_env->i8ptrType(),
+                                          _env->i8ptrType(),
                                           _env->i64Type()};
             std::vector<std::string> paramNames{"userData", "input_ptr", "input_size"};
             assert(paramNames.size() == paramTypes.size());
@@ -51,7 +51,7 @@ namespace tuplex {
 
             // minimum variables required for exception handling (to call handler)
             IRBuilder builder(_entryBlock);
-            addVariable(builder, "currentInputPtr", llvm::Type::getInt8PtrTy(context, 0), i8nullptr());
+            addVariable(builder, "currentInputPtr", _env->i8ptrType(), i8nullptr());
             addVariable(builder, "currentInputRowLength", _env->i64Type(), _env->i64Const(0));
             addVariable(builder, "row", _env->i64Type(), _env->i64Const(0));
             addVariable(builder, "outputTotalBytesWritten", _env->i64Type(), _env->i64Const(0));
@@ -65,8 +65,8 @@ namespace tuplex {
             addVariable(builder, "exceptionOperatorID", _env->i64Type(), _env->i64Const(0));
 
             // serialization
-            addVariable(builder, "outputBasePtr", llvm::Type::getInt64PtrTy(context, 0), i64nullptr());
-            addVariable(builder, "outputPtr", llvm::Type::getInt8PtrTy(context, 0), i8nullptr());
+            addVariable(builder, "outputBasePtr", _env->i64ptrType(), i64nullptr());
+            addVariable(builder, "outputPtr", _env->i8ptrType(), i8nullptr());
             addVariable(builder, "outputCapacityLeft", _env->i64Type(), _env->i64Const(0));
             addVariable(builder, "outputRowsWritten", _env->i64Type(), _env->i64Const(0));
 
@@ -94,11 +94,11 @@ namespace tuplex {
             if(_handler) { // only add call to handler if a valid pointer is given
 
                 // create call to exception handler
-                std::vector<Type *> eh_argtypes{Type::getInt8PtrTy(context, 0),
+                std::vector<Type *> eh_argtypes{_env->i8ptrType(),
                                                 _env->i64Type(),
                                                 _env->i64Type(),
                                                 _env->i64Type(),
-                                                Type::getInt8PtrTy(context, 0),
+                                                _env->i8ptrType(),
                                                 _env->i64Type()};
                 FunctionType *eh_FT = FunctionType::get(Type::getVoidTy(context), eh_argtypes, false);
 
@@ -261,8 +261,8 @@ namespace tuplex {
                 // request new memory by calling external C function requestOutputMemory
 
                 builder.SetInsertPoint(insufficientCapacityBB);
-                vector<Type*> argtypes{Type::getInt8PtrTy(context, 0), _env->i64Type(), _env->i64Type()->getPointerTo(0)};
-                FunctionType *FT = FunctionType::get(Type::getInt8PtrTy(context, 0), argtypes, false);
+                vector<Type*> argtypes{_env->i8ptrType(), _env->i64Type(), _env->i64Type()->getPointerTo(0)};
+                FunctionType *FT = FunctionType::get(_env->i8ptrType(), argtypes, false);
 
                 auto func_ptr_type = PointerType::get(FT, 0);
 
@@ -288,7 +288,7 @@ namespace tuplex {
                 // check for null. If so (i.e. no memory returned), if so exit task function immediately
                 // --> also if capacity returned is less than minRequested.
                 auto valid_capacity = builder.CreateICmpSGE(getVariable(builder, "outputCapacityLeft"), minRequired);
-                auto valid_memory = builder.CreateICmpNE(output_ptr, llvm::ConstantPointerNull::get(Type::getInt8PtrTy(context, 0)));
+                auto valid_memory = builder.CreateICmpNE(output_ptr, llvm::ConstantPointerNull::get(llvm::cast<PointerType>(_env->i8ptrType())));
                 auto validmem_cond = builder.CreateAnd(valid_capacity, valid_memory);
 
                 // need one more helper block which initializes memory region (could be left out when external request does that...)

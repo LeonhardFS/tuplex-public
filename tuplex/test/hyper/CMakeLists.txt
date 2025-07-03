@@ -21,4 +21,4 @@ target_link_libraries(testhyper
         simdjson::simdjson
 )
 
-gtest_add_tests(TARGET testhyper TEST_PREFIX "")
+gtest_add_tests(TARGET testhyper)

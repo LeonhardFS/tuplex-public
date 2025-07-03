@@ -24,7 +24,7 @@ namespace tuplex {
         void CSVParserGenerator::build(IExceptionableTaskGenerator::reqMemory_f requestOutputMemory) {
             using namespace llvm;
             auto& context = _env->getContext();
-            auto i8ptr_type = Type::getInt8PtrTy(context, 0);
+            auto i8ptr_type = _env->i8ptrType();
 
             // create parse row function
             _rowGenerator.build();
@@ -114,11 +114,11 @@ namespace tuplex {
             // call handler
             if(_handler) {
                 // create call to exception handler
-                std::vector<Type *> eh_argtypes{Type::getInt8PtrTy(context, 0),
+                std::vector<Type *> eh_argtypes{_env->i8ptrType(),
                                                 _env->i64Type(),
                                                 _env->i64Type(),
                                                 _env->i64Type(),
-                                                Type::getInt8PtrTy(context, 0),
+                                                _env->i8ptrType(),
                                                 _env->i64Type()};
                 FunctionType *eh_FT = FunctionType::get(Type::getVoidTy(context), eh_argtypes, false);
 

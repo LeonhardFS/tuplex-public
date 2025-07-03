@@ -176,7 +176,7 @@ namespace tuplex {
             // start with requiring all columns from action node!
             // there's a subtle difference now b.c. output schema for csv was changed to str
             // --> use therefore input schema of the operator!
-            auto num_cols = node->getInputSchema().getRowType().parameters().size();
+            auto num_cols = extract_columns_from_type(node->getInputSchema().getRowType());
             for(unsigned i = 0; i < num_cols; ++i)
                 cols.emplace_back(i);
             projectionPushdown(node, nullptr, cols); // what about drop operators?

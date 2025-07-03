@@ -248,6 +248,11 @@ llvm::Type* createStructType(llvm::LLVMContext& ctx, const python::Type &type, c
 
         // @TODO: special case empty tuple! also doesn't need to be represented
 
+#if LLVM_VERSION_MAJOR < 17
+        auto i8ptr_type = llvm::Type::getInt8PtrTy(ctx, 0);
+#else
+        auto i8ptr_type = llvm::PointerType::get(ctx, 0);
+#endif
         if(python::Type::BOOLEAN == t) {
             // i8
             //memberTypes.push_back(getBooleanType());
@@ -260,10 +265,10 @@ llvm::Type* createStructType(llvm::LLVMContext& ctx, const python::Type &type, c
             // double
             memberTypes.push_back(llvm::Type::getDoubleTy(ctx));
         } else if(python::Type::STRING == t) {
-            memberTypes.push_back(llvm::Type::getInt8PtrTy(ctx, 0));
+            memberTypes.push_back(i8ptr_type);
             numVarlenFields++;
         } else if(python::Type::GENERICDICT == t || t.isDictionaryType()) { // dictionary
-            memberTypes.push_back(llvm::Type::getInt8PtrTy(ctx, 0));
+            memberTypes.push_back(i8ptr_type);
             numVarlenFields++;
         } else if(python::Type::NULLVALUE == t || python::Type::EMPTYTUPLE == t || python::Type::EMPTYDICT == t) {
             // leave out. Not necessary to represent it!

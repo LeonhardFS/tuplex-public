@@ -130,7 +130,7 @@ set(WORKER_NAME tuplex-worker)
 # uncomment to get verbose cmake output
 # set(CMAKE_VERBOSE_MAKEFILE ON)
 
-message(STATUS "additional cmake module path is ${CMAKE_MODULE_PATH}")
+message(STATUS "Additional cmake module path is: ${CMAKE_MODULE_PATH}")
 include("${CMAKE_SOURCE_DIR}/cmake/ucm.cmake") #handy package to manipulate compiler flags
 include("${CMAKE_SOURCE_DIR}/cmake/CPM.cmake") # package manager from https://github.com/cpm-cmake/CPM.cmake
 # for debug mode export all symbols
@@ -377,6 +377,7 @@ if(BUILD_WITH_AWS)
         endif()
     endif()
     find_package(AWSSDK REQUIRED COMPONENTS s3 s3-crt core lambda transfer)
+    message(STATUS "AWS SDK version: ${AWSSDK_VERSION}")
     message(STATUS "AWS libs: ${AWSSDK_LINK_LIBRARIES}")
     message(STATUS "AWS include dirs: ${AWSSDK_INCLUDE_DIR}")
     if(AWSSDK_FOUND)
@@ -1164,11 +1165,11 @@ FetchContent_Declare(
         simdjson
         GIT_REPOSITORY https://github.com/simdjson/simdjson.git
         GIT_SHALLOW TRUE
-        GIT_TAG tags/v3.10.1
+        GIT_TAG tags/v3.13.0
         OVERRIDE_FIND_PACKAGE
 )
 # set(SIMDJSON_JUST_LIBRARY ON CACHE INTERNAL "")
-# set(SIMDJSON_BUILD_STATIC ON CACHE INTERNAL "")
+ set(SIMDJSON_BUILD_STATIC ON CACHE INTERNAL "") # required for arm64?
 find_package(simdjson REQUIRED)
 get_target_property(simdjson_INCLUDE_DIRS simdjson::simdjson INCLUDE_DIRECTORIES)
 

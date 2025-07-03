@@ -4,9 +4,10 @@
 
 #include "gtest/gtest.h"
 
+#include <Context.h>
+
 #ifdef BUILD_WITH_CEREAL
 #include <CustomArchive.h>
-#include <Context.h>
 
 // Test to check more efficient encoding.
 TEST(TypeSys, EfficientTypeSerialization) {

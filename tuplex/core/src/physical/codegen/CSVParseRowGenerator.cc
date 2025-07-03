@@ -55,7 +55,7 @@ namespace tuplex {
                 auto &context = _env->getContext();
                 bool packed = false;
                 std::string twine = "csvparse_t";
-                auto i8ptr_type = Type::getInt8PtrTy(context, 0);
+                auto i8ptr_type = _env->i8ptrType();
 
 
                 std::vector<Type *> vTypes;
@@ -588,7 +588,7 @@ namespace tuplex {
             auto &context = _env->getContext();
             auto linkage = internalOnly ? Function::InternalLinkage : Function::ExternalLinkage;
             auto func_name = "parse_row";
-            auto i8ptr_type = Type::getInt8PtrTy(context, 0);
+            auto i8ptr_type = _env->i8ptrType();
 
             createFunction(internalOnly);
 
@@ -625,8 +625,8 @@ namespace tuplex {
             auto idx1 = builder.CreateGEP(resultType(), _resultPtr, {_env->i32Const(0), _env->i32Const(1)});
             auto idx2 = builder.CreateGEP(resultType(), _resultPtr, {_env->i32Const(0), _env->i32Const(2)});
             builder.CreateStore(_env->i64Const(0), idx0);
-            builder.CreateStore(llvm::ConstantPointerNull::get(Type::getInt8PtrTy(context, 0)), idx1);
-            builder.CreateStore(llvm::ConstantPointerNull::get(Type::getInt8PtrTy(context, 0)), idx2);
+            builder.CreateStore(llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(_env->i8ptrType())), idx1);
+            builder.CreateStore(llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(_env->i8ptrType())), idx2);
             builder.CreateRet(_env->i32Const(ecToI32(ExceptionCode::SUCCESS)));
 
             // continue setup
@@ -1023,7 +1023,7 @@ namespace tuplex {
         void CSVParseRowGenerator::fillResultCode(IRBuilder& builder, bool errorOccurred) {
             using namespace llvm;
             auto &context = _env->getContext();
-            auto i8ptr_type = Type::getInt8PtrTy(context, 0);
+            auto i8ptr_type = _env->i8ptrType();
 
             auto lineStart = builder.CreateLoad(i8ptr_type, _lineBeginVar);
             auto lineEnd = builder.CreateLoad(i8ptr_type, _lineEndVar);
@@ -1130,7 +1130,7 @@ namespace tuplex {
                         if(python::Type::BOOLEAN == type.withoutOption()) {
                             // call fast_atob(...)
                             std::vector<Type *> argtypes{i8ptr_type, i8ptr_type,
-                                                         Type::getInt8PtrTy(context, 0)}; // bool is implemented as i8*
+                                                         _env->i8ptrType()}; // bool is implemented as i8*
                             FunctionType *FT = FunctionType::get(Type::getInt32Ty(context), argtypes, false);
                             auto func = _env->getModule()->getOrInsertFunction("fast_atob", FT);
                             auto i8_tmp_ptr = _env->CreateFirstBlockAlloca(builder, builder.getInt8Ty()); // could be single, lazy var
@@ -1224,7 +1224,7 @@ namespace tuplex {
             using namespace llvm;
             using namespace std;
             auto &context = _env->getContext();
-            auto i8ptr_type = Type::getInt8PtrTy(context, 0);
+            auto i8ptr_type = _env->i8ptrType();
 
             // create function
             // takes the following arguments:

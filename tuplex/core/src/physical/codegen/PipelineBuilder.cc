@@ -2104,10 +2104,12 @@ namespace tuplex {
             // create (internal) llvm function to be inlined with all contents
             auto& context = pipFunc->getContext();
 
+            auto i8ptr_type = pip.env().i8ptrType();
+
             // signature is basically i8* userData, ?* row
             FunctionType *func_type = FunctionType::get(Type::getInt64Ty(context),
-                                                        {Type::getInt8PtrTy(context, 0),
-                                                         Type::getInt8PtrTy(context, 0),
+                                                        {i8ptr_type,
+                                                         i8ptr_type,
                                                          Type::getInt64Ty(context), Type::getInt64Ty(context)}, false);
             auto func = Function::Create(func_type, Function::ExternalLinkage, name, pipFunc->getParent());
 

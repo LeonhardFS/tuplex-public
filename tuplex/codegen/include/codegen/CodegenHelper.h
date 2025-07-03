@@ -56,6 +56,17 @@
 #include <nlohmann/json.hpp>
 #include <cstddef>
 
+// LLVM cross-version definitions.
+// defines for codegen levels, done to be compatible with multiple LLVM versions.
+#if LLVM_VERSION_MAJOR < 20
+#define LLVM_CODEGEN_OPT_LEVEL_NONE llvm::CodeGenOpt::None
+#define LLVM_CODEGEN_OPT_LEVEL_AGGRESSIVE llvm::CodeGenOpt::Aggressive
+#else
+#define LLVM_CODEGEN_OPT_LEVEL_NONE llvm::CodeGenOptLevel::None
+#define LLVM_CODEGEN_OPT_LEVEL_AGGRESSIVE llvm::CodeGenOptLevel::Aggressive
+#endif
+
+
 namespace tuplex {
     namespace codegen {
 

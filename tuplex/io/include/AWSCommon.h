@@ -79,6 +79,13 @@ namespace tuplex {
      */
     extern bool isValidAWSZone(const std::string& zone);
 
+    /*!
+    * Use this function to suggest to Tuplex the state of the AWS SDK, e.g. if in the process the
+    * Aws sdk is already initialized in some form.
+    * @param overrideAwssdkInitializedValue
+    */
+    extern void setExternalAwssdk(bool overrideAwssdkInitializedValue);
+
     inline std::string decodeAWSBase64(const std::string& log) {
         std::stringstream ss;
         // Decode the result header to see requested log information

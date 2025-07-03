@@ -1603,7 +1603,7 @@ namespace tuplex {
 
             // check if t is pointer type to struct type
             if (t->isPointerTy()) {
-#if (LLVM_VERSION_MAJOR > 14)
+#if (LLVM_VERSION_MAJOR > 14 && LLVM_VERSION_MAJOR < 17)
                 if(t->isOpaquePointerTy())
                     return "ptr";
 #elif (LLVM_VERSION_MAJOR >= 17)
@@ -1650,14 +1650,14 @@ namespace tuplex {
 
         void LLVMEnvironment::debugCellPrint(const codegen::IRBuilder& builder, llvm::Value *cellStart, llvm::Value *cellEnd) {
             using namespace llvm;
-            auto i8ptr_type = Type::getInt8PtrTy(_context, 0);
+            auto i8ptr_type = i8ptrType();
 
             // cast to i8* ptr if necessary
             assert(cellStart->getType() == i8ptr_type);
             assert(cellEnd->getType() == i8ptr_type);
 
             std::vector<Type *> argtypes{i8ptr_type, i8ptr_type};
-            FunctionType *FT = FunctionType::get(Type::getInt8PtrTy(_context, 0), argtypes, false);
+            FunctionType *FT = FunctionType::get(i8ptrType(), argtypes, false);
             auto func = _module->getOrInsertFunction("_cellPrint", FT);
             builder.CreateCall(func, {cellStart, cellEnd});
 
@@ -1686,12 +1686,13 @@ namespace tuplex {
                 sconst = builder.CreateGlobalStringPtr(msg + " [i64] : %" PRId64 "\n");
             } else if (val->getType() == Type::getDoubleTy(_context)) {
                 sconst = builder.CreateGlobalStringPtr(msg + " [f64] : %.12f\n");
-            } else if (val->getType() == Type::getInt8PtrTy(_context, 0)) {
+            } else if (val->getType() == i8ptrType()) {
+                // TODO: This won't work for LLVM16+ anymore.
                 sconst = builder.CreateGlobalStringPtr(msg + " [i8*] : [%p] %." + std::to_string(max_str_print) + "s\n");
             } else if(val->getType()->isPointerTy()) {
                 // get internal name
                 auto name = getLLVMTypeName(val->getType());
-                casted_val = builder.CreatePointerCast(val, llvm::Type::getInt8PtrTy(_context, 0));
+                casted_val = builder.CreatePointerCast(val, i8ptrType());
                 sconst = builder.CreateGlobalStringPtr(msg + " [" + name + "] : [%p]\n");
             } else {
                 sconst = builder.CreateGlobalStringPtr(getLLVMTypeName(val->getType()) + "[??] : [%p]\n");
@@ -1700,8 +1701,8 @@ namespace tuplex {
 
             assert(sconst);
 
-            auto fmt = builder.CreatePointerCast(sconst, llvm::Type::getInt8PtrTy(_context, 0));
-            if (val->getType() != Type::getInt8PtrTy(_context, 0))
+            auto fmt = builder.CreatePointerCast(sconst, i8ptrType());
+            if (val->getType() != i8ptrType())
                 builder.CreateCall(printf_F, {fmt, casted_val});
             else
                 builder.CreateCall(printf_F, {fmt, casted_val, casted_val});
@@ -1727,11 +1728,11 @@ namespace tuplex {
             } else if (val->getType() == Type::getDoubleTy(_context)) {
                 sconst = builder.CreateGlobalStringPtr(msg + " [f64] : 0x%" PRIx64 "\n");
                 casted_val = builder.CreateBitCast(val, i64Type());
-            } else if (val->getType() == Type::getInt8PtrTy(_context, 0)) {
+            } else if (val->getType() == i8ptrType()) {
                 sconst = builder.CreateGlobalStringPtr(msg + " [i8*] : [%p] %s\n");
             }
-            auto fmt = builder.CreatePointerCast(sconst, llvm::Type::getInt8PtrTy(_context, 0));
-            if (val->getType() != Type::getInt8PtrTy(_context, 0))
+            auto fmt = builder.CreatePointerCast(sconst, i8ptrType());
+            if (val->getType() != i8ptrType())
                 builder.CreateCall(printf_F, {fmt, casted_val});
             else
                 builder.CreateCall(printf_F, {fmt, casted_val, casted_val});
@@ -1747,12 +1748,12 @@ namespace tuplex {
 
             // hack NULL VALUE as i8ptr ==> it's actually a const and thus not needed!
             if (t == python::Type::NULLVALUE)
-                return Type::getInt8PtrTy(_context);
+                return i8ptrType();
 
             // string type is a primitive, hence we can return it
             if (t == python::Type::STRING ||
                 t == python::Type::PYOBJECT)
-                return Type::getInt8PtrTy(_context);
+                return i8ptrType();
 
             if(t.isDictionaryType()) {
                 if(t.isStructuredDictionaryType() || t.isSparseStructuredDictionaryType()) {
@@ -1823,11 +1824,10 @@ namespace tuplex {
                 }
 
                 if (rt == python::Type::STRING) {
-
                     // this here results in an error.
                     // => fix this!
                     std::vector<llvm::Type*> member_types;
-                    member_types.push_back(Type::getInt8PtrTy(_context));
+                    member_types.push_back(i8ptrType());
                     member_types.push_back(Type::getInt1Ty(_context));
                     llvm::ArrayRef<llvm::Type *> members(member_types);
 
@@ -2202,7 +2202,7 @@ namespace tuplex {
             std::string name = twine + std::to_string(_global_counters[twine]++);
 
             // create global variable
-            auto llvm_gvar_type = llvm::Type::getInt8PtrTy(_context, 0);
+            auto llvm_gvar_type = i8ptrType();
             auto gvar = createNullInitializedGlobal(name, llvm_gvar_type);
 
             // get the builders
@@ -2805,6 +2805,7 @@ namespace tuplex {
                             assert(args[0]->getType()->isPointerTy());
                             assert(args[1]->getType()->isPointerTy());
 
+#if LLVM_VERSION_MAJOR < 17
                             // fetch input/output type
                             auto out_llvm_type = args[0]->getType()->getPointerElementType();
                             auto in_llvm_type = args[1]->getType()->getPointerElementType();
@@ -2818,6 +2819,9 @@ namespace tuplex {
                             auto in_type = lookupPythonType(in_llvm_name);
                             auto out_type = lookupPythonType(out_llvm_name);
                             ss<<"corresponds to: "<<in_type.desc()<<" -> "<<out_type.desc()<<"\n";
+#else
+                            ss<<"function @"<<func_name<<": "<<"use LLVM version < 17 to inspect types.\n";
+#endif
                         }
                     } else {
                         ss<<"function @" + func_name + " not found in LLVM module\n";

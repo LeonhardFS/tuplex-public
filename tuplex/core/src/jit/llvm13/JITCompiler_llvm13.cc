@@ -13,7 +13,7 @@
 
 #include <llvm/IR/IRBuilder.h>
 
-#if LLVM_VERSION_MAJOR >= 10
+#if LLVM_VERSION_MAJOR >= 10 && LLVM_VERSION_MAJOR < 20
 #include <jit/llvm13/JITCompiler_llvm13.h>
 
 

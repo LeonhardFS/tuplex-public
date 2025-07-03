@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-#----------------------------------------------------------------------------------------------------------------------#
+# ----------------------------------------------------------------------------------------------------------------------#
 #                                                                                                                      #
 #                                       Tuplex: Blazing Fast Python Data Science                                       #
 #                                                                                                                      #
@@ -7,17 +7,22 @@
 #  (c) 2017 - 2021, Tuplex team                                                                                        #
 #  Created by Leonhard Spiegelberg first on 1/1/2021                                                                   #
 #  License: Apache 2.0                                                                                                 #
-#----------------------------------------------------------------------------------------------------------------------#
+# ----------------------------------------------------------------------------------------------------------------------#
 import logging
 import typing
+
 try:
-    from .libexec.tuplex import _Context
-    from .libexec.tuplex import _Metrics
+    # Module import needed to initialize capture, should revisit.
+    from .libexec.tuplex import (
+        _Context,  # noqa: F401
+        _Metrics,
+    )
 except ModuleNotFoundError as e:
     logging.error("need to compiled Tuplex first, details: {}".format(e))
     _Metrics = typing.Any
 
 import json
+
 
 class Metrics:
     """
@@ -25,7 +30,7 @@ class Metrics:
     context object.
     """
 
-    def __init__(self, metrics: _Metrics):
+    def __init__(self, metrics: _Metrics) -> None:
         """
         Creates a Metrics object by using the context object
         to set its metric parameter and store the resulting
@@ -95,7 +100,7 @@ class Metrics:
         """
         assert self._metrics
         return self._metrics.getGenerateLLVMTime()
-        
+
     def as_json(self) -> str:
         """
         all measurements as json encoded string
@@ -105,7 +110,7 @@ class Metrics:
         assert self._metrics
         return self._metrics.getJSONString()
 
-    def as_dict(self):
+    def as_dict(self) -> dict:
         """
         all measurements in nested dictionary
         Returns:

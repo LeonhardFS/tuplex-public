@@ -104,3 +104,5 @@ job/
 
 benchmarks/nextconf/hyperspecialization/github/.local/
 benchmarks/nextconf/hyperspecialization/github/local/
+
+.python-version

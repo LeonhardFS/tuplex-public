@@ -1094,7 +1094,7 @@ TEST_F(JsonTuplexTest, FilePartitioning) {
 
         std::cout<<"part "<<num_parts<<": start read..."<<std::endl;
         reader->setRange(rangeStart, rangeEnd);
-        reader->read(uri);
+        reader->read(uri, nullptr);
         std::cout<<"done, read "<<pluralize(reader->inputRowCount(), "row")<<std::endl;
         total_rows += reader->inputRowCount();
         std::cout<<"total rows: "<<total_rows<<std::endl;

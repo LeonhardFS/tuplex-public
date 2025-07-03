@@ -770,20 +770,6 @@ namespace tuplex {
             return serializeCellVector(builder, cell_strs, cell_sizes);
         }
 
-        inline bool is_str_like_llvm_type(llvm::Type* type) {
-            if(!type)
-                return false;
-            if(type->isPointerTy() && type->getPointerElementType()->isIntegerTy(8))
-                return true; //i8ptrtype
-
-//            std::string str;
-//            llvm::raw_string_ostream os(str);
-//            type->print(os);
-//            os.flush();
-//            std::cout<<str<<std::endl;
-            return false;
-        }
-
         SerializableValue serialize_cell_vector(LLVMEnvironment& env, const IRBuilder& builder,
                                                 const std::vector<llvm::Value *> &cells,
                                                 const std::vector<llvm::Value *> &cell_sizes,

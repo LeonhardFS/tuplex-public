@@ -62,7 +62,7 @@ FetchContent_Declare(
         simdjson
         GIT_REPOSITORY https://github.com/simdjson/simdjson.git
         GIT_SHALLOW TRUE
-        GIT_TAG tags/v3.8.0
+        GIT_TAG tags/v3.13.0
 )
 
 # FetchContent_MakeAvailable(simdjson)
@@ -70,7 +70,7 @@ FetchContent_Declare(
 if(NOT simdjson_POPULATED)
     FetchContent_Populate(simdjson)
     # Disable threads for simdjson
-    set(SIMDJSON_ENABLE_THREADS OFF CACHE INTERNAL "Disable dimsjon threads")
+    set(SIMDJSON_ENABLE_THREADS OFF CACHE INTERNAL "Disable simdjson threads")
     add_subdirectory(${simdjson_SOURCE_DIR} ${simdjson_BINARY_DIR})
 endif()
 

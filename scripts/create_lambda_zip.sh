@@ -4,6 +4,8 @@
 
 set -euxo pipefail
 
+export DOCKER_DEFAULT_PLATFORM=linux/amd64
+
 echo ">>> Building Lambda runner"
 DEFAULT_PYTHON3_VERSION=$(python3 --version | cut -d ' ' -f2)
 echo "-- detected system python version is ${DEFAULT_PYTHON3_VERSION}"

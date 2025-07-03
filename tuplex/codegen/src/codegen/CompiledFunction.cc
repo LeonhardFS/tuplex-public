@@ -188,19 +188,26 @@ namespace tuplex {
 
                 args.serializationCode(builder, temporary_input, serializedSize, failureBlock);
 
+#if LLVM_VERSION_MAJOR >= 16
+                auto i8ptr_type = PointerType::get(context, 0);
+                auto i64ptr_type = PointerType::get(context, 0);
+#else
+                auto i8ptr_type = Type::getInt8PtrTy(context, 0);
+                auto i64ptr_type = Type::getInt64PtrTy(context, 0);
+#endif
                 // now call python function
                 // use a simple wrapper function to call to python
                 // int32_t callPythonCode(PyObject* func, uint8_t** out, int64_t* out_size, uint8_t* input, int64_t input_size, int32_t in_typeHash, int32_t out_typeHash)
-                auto wrapperFuncType = FunctionType::get(Type::getInt32Ty(context), {Type::getInt8PtrTy(context, 0),
-                                                                                     Type::getInt8PtrTy(context, 0)->getPointerTo(0),
-                                                                                     Type::getInt64PtrTy(context, 0),
-                                                                                     Type::getInt8PtrTy(context, 0),
+                auto wrapperFuncType = FunctionType::get(Type::getInt32Ty(context), {i8ptr_type,
+                                                                                     i8ptr_type->getPointerTo(0),
+                                                                                     i64ptr_type,
+                                                                                     i8ptr_type,
                                                                                      Type::getInt64Ty(context),
                                                                                      Type::getInt32Ty(context),
                                                                                      Type::getInt32Ty(context)}, false);
 
                 auto wrapperFunc = mod->getOrInsertFunction(_pythonInvokeName, wrapperFuncType);
-                auto output_var_type = Type::getInt8PtrTy(context, 0); // use i8* type.
+                auto output_var_type = i8ptr_type; // use i8* type.
                 auto outputVar = builder.CreateAlloca(output_var_type);
                 auto outputSizeVar = builder.CreateAlloca(Type::getInt64Ty(context));
                 auto resCode = builder.CreateCall(wrapperFunc, {function_ptr,

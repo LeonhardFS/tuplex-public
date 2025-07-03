@@ -132,7 +132,11 @@ protected:
     void createHelpers(const tuplex::codegen::CSVParseRowGenerator& gen) {
         using namespace llvm;
         auto& context = env->getContext();
+#if LLVM_VERSION_MAJOR < 17
         auto i8ptr_type = Type::getInt8PtrTy(context, 0);
+#else
+        auto i8ptr_type = PointerType::get(context, 0);
+#endif
 
         auto retType = i8ptr_type;
         std::vector<Type*> paramTypes{gen.resultType()->getPointerTo(0)};

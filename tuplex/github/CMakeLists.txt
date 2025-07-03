@@ -11,7 +11,7 @@ FetchContent_Declare(
         simdjson
         GIT_REPOSITORY https://github.com/simdjson/simdjson.git
         GIT_SHALLOW TRUE
-        GIT_TAG tags/v3.8.0
+        GIT_TAG tags/v3.13.0
 )
 
 # FetchContent_MakeAvailable(simdjson) # --> does not work yet with customization, update cmake file for this.
