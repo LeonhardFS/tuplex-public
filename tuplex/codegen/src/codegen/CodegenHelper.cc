@@ -207,7 +207,7 @@ namespace tuplex {
             StringMap<bool> HostFeatures;
 #if LLVM_VERSION_MAJOR < 20
             if (!sys::getHostCPUFeatures(HostFeatures))
-                throw std::runtime_error(std::string(__FILE__) + ":" + std::string(__LINE__) + " failed getting cpu features.");
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " failed getting cpu features.");
 #else
             HostFeatures = sys::getHostCPUFeatures();
 #endif
