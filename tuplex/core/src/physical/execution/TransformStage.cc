@@ -227,6 +227,9 @@ namespace tuplex {
         // hashKeyType is the type in which the key is stored. (NOT INCLUDING OPT!)
         python::Type hashKeyType = result.keyType; // remove option b.c. of null-bucket design. @TODO: this is not 100% correct, because inner options will also get sacrificed by this...
 
+        if (hashKeyType.isRowType())
+            hashKeyType = hashKeyType.get_columns_as_tuple_type();
+
         // special case: If keyRowType is option or tuple with single content -> nullbucket is used!
         if(hashKeyType.isOptionType())
             hashKeyType = hashKeyType.getReturnType();
@@ -333,6 +336,11 @@ namespace tuplex {
                 uint64_t keylen = 0;
                 auto input_schema = Schema(Schema::MemoryLayout::ROW, result.keyType);
                 auto out_row_type = outputSchema.getRowType();
+
+                // @TODO: allow for rowtype directly here as well.
+                if (out_row_type.isRowType())
+                    out_row_type = out_row_type.get_columns_as_tuple_type();
+
                 while((key = hashmap_get_next_key(hashtable, &iterator, &keylen)) != nullptr) {
                     Row r;
 

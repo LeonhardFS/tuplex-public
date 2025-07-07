@@ -36,6 +36,10 @@ namespace tuplex {
 
         // check type.
         void checkRowType(const python::Type& rowType) {
+
+            if (rowType.isRowType())
+                return;
+
             assert(rowType.isExceptionType() || rowType.isTupleType());
             if(rowType.isTupleType())
                 for(auto t : rowType.parameters())

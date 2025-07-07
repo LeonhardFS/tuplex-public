@@ -333,8 +333,8 @@ namespace tuplex {
         size_t i = 0;
         auto n = v.size();
         while(i <= n) {
-            i += floor(log(random()) / log(1 - W)) + 1;
-            if(i <= n) {
+            i += std::max(0ul, static_cast<size_t>(floor(log(random()) / log(1 - W)))) + 1;
+            if(i < n) {
                 R[randi(0ul, R.size() - 1)] = v[i];
                 W = W * exp(log(random()) / k);
             }

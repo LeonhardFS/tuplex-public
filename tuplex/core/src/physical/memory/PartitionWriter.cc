@@ -42,14 +42,19 @@ namespace tuplex {
     }
 
     bool PartitionWriter::writeRow(const tuplex::Row &row) {
-        // check rows match
-        if(python::Type::propagateToTupleType(row.getRowType()) != _schema.getRowType()) {
+
 #ifndef NDEBUG
+        auto target_row_type = _schema.getRowType();
+        if (target_row_type.isRowType())
+            target_row_type = target_row_type.get_columns_as_tuple_type();
+
+        // check rows match
+        if(python::Type::propagateToTupleType(row.getRowType()) != target_row_type) {
             Logger::instance().defaultLogger().error("attempting to write row with type " +
-            row.getRowType().desc() + " to partition with type " + _schema.getRowType().desc());
-#endif
+            row.getRowType().desc() + " to partition with type " + target_row_type.desc());
             return false;
         }
+#endif
 
         size_t bytesRequired = row.serializedLength();
 

@@ -772,6 +772,11 @@ namespace tuplex {
                 // unique makes all the columns required: add them all in
                 auto rowtype = aop->getInputSchema().getRowType();
 
+                // TODO: make downstream work with BOTH row and tuple type.
+                if (rowtype.isRowType())
+                    rowtype = rowtype.get_columns_as_tuple_type();
+
+
                 assert(rowtype.isTupleType());
                 set<size_t> cols(requiredCols.begin(), requiredCols.end());
                 for (int i = 0; i < rowtype.parameters().size(); ++i) {

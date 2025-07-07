@@ -2560,29 +2560,29 @@ namespace tuplex {
             using namespace llvm;
             auto& logger = Logger::instance().logger("PipelineBuilder");
 
-            assert(rowType.isTupleType());
+            assert(rowType.isTupleType() || rowType.isRowType());
 
-            if((_lastRowResult.flattenedTupleType().parameters().size() != flattenedType(rowType).parameters().size())) {
-                logger.error("types not compatible.");
+            if((_lastRowResult.flattenedTupleType().parameters().size() != flattenedType(rowType.isRowType() ? rowType.get_columns_as_tuple_type() : rowType).parameters().size())) {
+                logger.error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " types not compatible.");
                 return false;
             }
 
             // restricted upcast?
             if(!col_indices.empty()) {
                 auto col_types = _lastRowResult.getTupleType().parameters();
+                auto target_col_types = rowType.isRowType() ? rowType.get_column_types() : rowType.parameters();
                 for(auto idx : col_indices) {
                     if(idx < col_types.size())
-                        col_types[idx] = rowType.parameters()[idx];
+                        col_types[idx] = target_col_types[idx];
                 }
                 auto restricted_row_type = python::Type::makeTupleType(col_types);
                 return addTypeUpgrade(restricted_row_type);
             }
 
-
             IRBuilder builder(_lastBlock);
             try {
                 logger.debug("upcasting from " + _lastRowResult.getTupleType().desc() + " to " + rowType.desc());
-                _lastRowResult = _lastRowResult.upcastTo(builder, rowType, true);
+                _lastRowResult = _lastRowResult.upcastTo(builder, rowType.isRowType() ? rowType.get_columns_as_tuple_type() : rowType, true);
             } catch (const std::exception& e) {
                 logger.error("type upcast failed: " + std::string(e.what()));
                 return false;
