@@ -210,7 +210,7 @@ namespace tuplex {
                                        python::Type::propagateToTupleType(aggType), t_policy);
             assert(python::Type::UNKNOWN != uni_agg_type);
             auto uni_output_type = unifyTypes(python::Type::propagateToTupleType(std::get<1>(params[1])),
-                                             python::Type::propagateToTupleType(rowType),
+                                             python::Type::propagateToTupleType(rowType.isRowType() ? rowType.get_columns_as_tuple_type() : rowType),
                                              t_policy);
             assert(python::Type::UNKNOWN != uni_output_type);
 
@@ -219,11 +219,11 @@ namespace tuplex {
             ftAgg.deserializationCode(builder, out_row_buf);
 
             // deserialize using rowTypeAsTupleType
-            FlattenedTuple ftRow(env); ftRow.init(rowType);
+            FlattenedTuple ftRow(env); ftRow.init(rowType.isRowType() ? rowType.get_columns_as_tuple_type() : rowType);
             ftRow.deserializationCode(builder, args["row"]);
 
             // compile the UDF now and call it.
-            auto combinedType = python::Type::makeTupleType({aggType, rowType}); // this should be compatible to input type of aggUDF!
+            auto combinedType = python::Type::makeTupleType({aggType, rowType.isRowType() ? rowType.get_columns_as_tuple_type() : rowType}); // this should be compatible to input type of aggUDF!
             FlattenedTuple ftin(env);
             ftin.init(combinedType);
             ftin.set(builder, {0}, ftAgg);

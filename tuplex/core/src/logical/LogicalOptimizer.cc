@@ -761,7 +761,8 @@ namespace tuplex {
                 // However, we need a better solution for the aggregate function...
                 // this will also involve rewriting...
                 auto rowtype = aop->getInputSchema().getRowType();
-
+                if (rowtype.isRowType())
+                    rowtype = rowtype.get_columns_as_tuple_type();
                 assert(rowtype.isTupleType());
                 set<size_t> cols(requiredCols.begin(), requiredCols.end());
                 for (int i = 0; i < rowtype.parameters().size(); ++i) {

@@ -44,7 +44,7 @@ namespace tuplex {
                 auto val = indexInVector(k, parent->columns());
                 if(val < 0) throw std::runtime_error("Column " + k + " not in columns (Aggregate)");
 
-                if(val >= parent->getOutputSchema().getRowType().parameters().size())
+                if(val >= extract_columns_from_type(parent->getOutputSchema().getRowType()))
                     throw std::runtime_error("invalid index for key column");
                 _keyColsInParent.push_back(val);
             }
@@ -91,6 +91,19 @@ namespace tuplex {
         Schema getInputSchema() const override { return parent()->getOutputSchema(); }
 
         virtual std::vector<Row> getSample(const size_t num) const override {
+            // Want to bound time spent in aggregate sampling of pipeline.
+            // Output result depends on aggregation type, but want to capture some type transforms.
+            switch (aggType()){
+                case AggregateType::AGG_UNIQUE:
+                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " aggregate type not supported");
+                case AggregateType::AGG_BYKEY:
+                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " aggregate type not supported");
+                case AggregateType::AGG_GENERAL:
+                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " aggregate type not supported");
+            default:
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " aggregate type not supported");
+            }
+
             return parent()->getSample(num);
         }
 
