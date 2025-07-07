@@ -1447,6 +1447,11 @@ namespace tuplex {
         }
 
         inline int hashtableKeyWidth(const python::Type &t) {
+
+            // HACK: Need to revamp groupby/aggregate infrastructure.
+            if (t.isTupleType() && t.parameters().size() == 1)
+                return hashtableKeyWidth(t.parameters().front());
+
             if (t.withoutOption() == python::Type::I64 ||
                 (t.isTupleType() &&
                  t.parameters().size() == 1 &&

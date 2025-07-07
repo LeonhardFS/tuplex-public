@@ -78,9 +78,18 @@ namespace tuplex {
         }
     }
 
+
+    // Cases:
+    // A regular transform stage.
+    // --> | b_1, ..., b_m |
+    // A partitioned transform stage.
+    // --> | k_1, ..., k_n | b_1, ..., b_m |
+    // A distinct transform stage.
+    // --> | k_1, ..., k_n|
+
     /*!
-     * describes a stage which maps/filters/loads/saves data.
-     * execute as narrow stage with per-node/per-thread parallelism.
+     * Describes a stage which maps/filters/loads/saves data.
+     * Execute as narrow stage with per-node/per-thread parallelism.
      */
     class TransformStage : public PhysicalStage {
     public:
@@ -88,8 +97,6 @@ namespace tuplex {
         ~TransformStage() override = default;
 
         friend class ::tuplex::codegen::StageBuilder;
-//        friend bool hyperspecialize(TransformStage *stage, const URI& uri,
-//                                    size_t file_size, double nc_threshold, size_t sample_limit, bool enable_cf);
         friend bool hyperspecialize(TransformStage *stage,
                              const URI& uri,
                              size_t file_size,
@@ -193,10 +200,6 @@ namespace tuplex {
         Schema normalCaseOutputSchema() const { return _normalCaseOutputSchema; }
         Schema normalCaseInputSchema() const { return _normalCaseInputSchema; }
 
-        //         python::Type _normalHashOutputKeyType;
-        //        python::Type _normalHashOutputBucketType;
-        //        python::Type _generalHashOutputKeyType;
-        //        python::Type _generalHashOutputBucketType;
         python::Type normalCaseHashKeyType() const { return _normalHashOutputKeyType; }
         python::Type generalCaseHashKeyType() const { return _generalHashOutputKeyType; }
         python::Type normalCaseHashBucketType() const { return _normalHashOutputBucketType; }

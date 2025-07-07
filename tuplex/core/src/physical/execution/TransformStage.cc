@@ -982,12 +982,13 @@ namespace tuplex {
         if(registerSymbols &&  !resolveExceptionCallbackName().empty())
             jit.registerSymbol(resolveExceptionCallbackName(), ResolveTask::exceptionCallback());
 
-        if(registerSymbols && outputMode() == EndPointMode::HASHTABLE && !resolveExceptionCallbackName().empty()) {
+        if(registerSymbols && outputMode() == EndPointMode::HASHTABLE && !resolveHashCallbackName().empty()) {
             auto ht_width = codegen::hashtableKeyWidth(generalCaseHashKeyType());
-            if(ht_width == 0) {
+            if(ht_width == 0)
                 // constant key
-                throw std::runtime_error("constant key in resolve task not yet supported. implement...");
-            } if(ht_width == 8) {
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " constant key in resolve task not yet supported. implement...");
+
+            if(8 == ht_width) {
                 // this logic is HIGHLY questionable and should be checked...
                 logger.debug("change problematic logic here...");
                 if(_slowCodePath.aggregateAggregateFuncName.empty())

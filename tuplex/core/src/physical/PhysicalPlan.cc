@@ -325,7 +325,7 @@ namespace tuplex {
                     builder.addMemoryOutput(outputNode, outputNode->getOutputSchema(), outputNode->getID(),
                                             outputDataSetID);
 
-                // is lat node aggregate?
+                // is last node aggregate?
                 if(outputNode->type() == LogicalOperatorType::AGGREGATE) {
                     auto aop = dynamic_cast<AggregateOperator*>(outputNode.get()); assert(aop);
 
@@ -360,7 +360,11 @@ namespace tuplex {
                     auto schema = aop->parent()->getOutputSchema();
                     if(aop->aggType() == AggregateType::AGG_UNIQUE) {
                         // @TODO: maybe do this via intermediates? And then combine everything?
-                        builder.addHashTableOutput(aop, schema, false, false, {}, schema.getRowType(),
+                        auto key_type = schema.getRowType();
+                        auto keys = std::vector<size_t>(extract_columns_from_type(key_type), 0);
+                        for (unsigned i = 0; i < keys.size(); ++i)
+                            keys[i] = i;
+                        builder.addHashTableOutput(aop, schema, false, false, keys, key_type,
                                                    python::Type::UNKNOWN);
                         hashGroupedDataType = AggregateType::AGG_UNIQUE; // need to process the output hashtable to rows
                     } else if(aop->aggType() == AggregateType::AGG_BYKEY) {

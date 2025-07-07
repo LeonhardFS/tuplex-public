@@ -1444,7 +1444,7 @@ namespace tuplex {
                             throw std::runtime_error("unsupported aggregate type");
                         }
 
-                        break; // aggregate isn't codegen'd
+                        break; // aggregate isn't code generated.
                     }
 
                     default: {
@@ -1636,7 +1636,7 @@ namespace tuplex {
             if(!_operators.empty() && _operators.back()->getID() != node->getID())
                 _operators.push_back(node);
 
-            assert(!bucketizeOthers || (bucketizeOthers && !colKeys.empty())); // can't bucketize w/o colkey
+            assert(!bucketizeOthers || (bucketizeOthers && !colKeys.empty())); // can't bucketize w/o colkey.
             _outputMode = EndPointMode::HASHTABLE;
             _hashColKeys = colKeys;
             _hashSaveOthers = bucketizeOthers;
@@ -1696,11 +1696,6 @@ namespace tuplex {
             stage->_fileOutputParameters = _fileOutputParameters;
             stage->_inputMode = _inputMode;
             stage->_outputMode = _outputMode;
-
-
-            // // deprecated
-            // stage->_hashOutputKeyType = _hashKeyType;
-            // stage->_hashOutputBucketType = _hashBucketType;
 
             // copy code
             // llvm ir as string is super wasteful, use bitcode instead. Can be faster parsed.
@@ -1926,7 +1921,7 @@ namespace tuplex {
                 stage->_normalCaseColumnsToKeep = boolArrayToIndices<unsigned>(codeGenerationContext.fastPathContext.columnsToRead);
                 stage->_slowCodePath = slowCodePath_f.get();
 
-                // fill in hashing
+                // Fill in hashing.
                 auto hash_key_cols = codeGenerationContext.hashColKeys;
                 stage->_normalHashOutputKeyType = codeGenerationContext.fastPathContext.hashKeyType(hash_key_cols);
                 stage->_normalHashOutputBucketType = codeGenerationContext.fastPathContext.hashBucketType(hash_key_cols);
@@ -1937,6 +1932,14 @@ namespace tuplex {
             // Fill parameters from builder.
             // !!! Make sure to update members of Stagebuilder/this before calling this function. !!!
             fillStageParameters(stage);
+
+            // quick sanity check: make sure for hash table both key/bucket are set!
+            if (stage->outputMode() == EndPointMode::HASHTABLE) {
+                assert(stage->_normalHashOutputKeyType.hash() > 0);
+                assert(stage->_normalHashOutputBucketType.hash() > 0);
+                assert(stage->_generalHashOutputKeyType.hash() > 0);
+                assert(stage->_generalHashOutputBucketType.hash() > 0);
+            }
 
             // DEBUG, write out generated trafo code...
 #ifndef NDEBUG

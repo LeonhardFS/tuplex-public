@@ -91,6 +91,12 @@ TEST_F(AggregateTest, UniqueAirports) {
 
 }
 
+// TODO: Add exhaustive test for unique aggregate.
+// Unique (distinct) is a special case, where basically on no key everything is being hashed/aggregated.
+
+// TODO: unique() optimization rules => can push down unique in each stage and combine later to lower data movement.
+// Check with union() operator as well joins() => combined aggregate.
+
 TEST_F(AggregateTest, StrUniqueTest) {
     using namespace tuplex;
     auto opt = testOptions();

@@ -52,7 +52,6 @@ namespace tuplex {
             _keyType = keyTypeFromParent();
 
             if(!inferAndCheckTypes()) {
-//#ifndef NDEBUG
                 // use defensive programming here...
                 // swap combiner & aggregator => easily to be mixed up.
                 core::swap(_combiner, _aggregator);
@@ -66,10 +65,6 @@ namespace tuplex {
                     throw std::runtime_error("failed to type aggregate operator. Wrong order of parameters within UDFs?");
                 }
                 Logger::instance().defaultLogger().warn("wrong order of functions in aggregate, please fix in source code.");
-//#else
-//                throw std::runtime_error("failed to type aggregate operator. Wrong order of parameters or functions?");
-//#endif
-
             }
         }
 
@@ -137,11 +132,12 @@ namespace tuplex {
          * @return The indices of key columns in parent
          */
         std::vector<size_t> keyColsInParent() const { assert(aggType() == AggregateType::AGG_BYKEY); return _keyColsInParent; }
-        python::Type keyType() const {
-            // assert(aggType() == AggregateType::AGG_BYKEY);
+        inline python::Type keyType() const {
+            return _keyType;
+        }
 
-            return _keyType; }
-        inline python::Type bucketType() const { return _aggregateOutputType; // ? is this correct ?
+        inline python::Type bucketType() const {
+            return _aggregateOutputType; // ? is this correct ?
         }
 
 #ifdef BUILD_WITH_CEREAL

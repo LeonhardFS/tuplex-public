@@ -39,9 +39,9 @@ namespace tuplex {
         // only invoke for aggType() == AggregateType::AGG_BYKEY
         if(aggType() == AggregateType::AGG_BYKEY) {
             copy->_keyColsInParent = keyColsInParent();
-            copy->_keyType = keyType();
         }
 
+        copy->_keyType = keyType();
         copy->_aggregateOutputType = _aggregateOutputType;
 
 //        // important to use here input column names, i.e. stored in base class UDFOperator!
@@ -110,6 +110,9 @@ namespace tuplex {
             // aggregate type unique? -> simply take parent schema
             if(AggregateType::AGG_UNIQUE == aggType()) {
                 setOutputSchema(parent()->getOutputSchema()); // inherit schema from parent
+                // TODO: Can use Row construct here as well.
+                _keyType = getOutputSchema().getRowType();
+                _aggregateOutputType = python::Type::EMPTYTUPLE;
                 return true;
             }
 
