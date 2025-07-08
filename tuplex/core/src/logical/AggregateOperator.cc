@@ -371,11 +371,13 @@ namespace tuplex {
         std::vector<Field> key_fields(keys_in_parent.size());
 
         auto agg_pickled_code = _aggregator.getPickledCode();
+        auto combine_pickled_code = _combiner.getPickledCode();
 
         python::lockGIL();
 
         // deserialize functions.
         auto agg_func = python::deserializePickledFunction(python::getMainModule(), agg_pickled_code.c_str(), agg_pickled_code.length());
+        auto combine_func = python::deserializePickledFunction(python::getMainModule(), combine_pickled_code.c_str(), combine_pickled_code.length());
         auto output_columns = columns();
 
         for (const auto &row : rows) {
@@ -413,10 +415,24 @@ namespace tuplex {
             }
         }
 
-        python::unlockGIL();
-
         // Of each result, combine at least once with neutral element.
-        // TODO.
+        for (auto& kv: map) {
+            auto py_agg_value = python::rowToPython(kv.second, true);
+            auto py_agg_initial_value = python::rowToPython(_initialValue, true);
+
+            PyObject* py_args = PyTuple_New(2);
+            PyTuple_SetItem(py_args, 0, py_agg_value);
+            PyTuple_SetItem(py_args, 1, py_agg_initial_value);
+
+            auto pcr = python::callFunctionEx(combine_func, py_args);
+            if (pcr.exceptionCode != ExceptionCode::SUCCESS) {
+                // fail...
+            } else {
+                kv.second = python::pythonToRowWithDictUnwrap(pcr.res, output_columns);
+            }
+        }
+
+        python::unlockGIL();
 
         // mash rows together.
         std::vector<Row> result;
