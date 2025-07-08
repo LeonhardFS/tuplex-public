@@ -15,6 +15,7 @@
 #include <Field.h>
 #include <ExceptionCodes.h>
 #include <TypeHelper.h>
+#include <cstddef>
 
 #ifdef BUILD_WITH_CEREAL
 #include "cereal/access.hpp"
@@ -367,6 +368,20 @@ namespace tuplex {
 
         return expanded_dest_column_names;
     }
+}
 
+// Make Row hashable.
+namespace std {
+    template <> struct hash<tuplex::Row> {
+        size_t operator()(const tuplex::Row& row) const {
+            using std::hash;
+
+            size_t h = 0;
+            auto fields = row.to_vector();
+            for (const auto& f: fields)
+                ::std::hash_combine(h, f.hash());
+            return h;
+        }
+    };
 }
 #endif //TUPLEX_ROW_H

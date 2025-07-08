@@ -361,4 +361,73 @@ namespace tuplex {
         if(keyType.parameters().size() == 1) keyType = keyType.parameters().front();
         return keyType;
     }
+
+    std::vector<Row> AggregateOperator::aggByKeySample(size_t num) const {
+        auto rows = parent()->getSample(num);
+
+        // Hash rows by key.
+        std::unordered_map<Row, Row> map;
+        auto keys_in_parent = keyColsInParent();
+        std::vector<Field> key_fields(keys_in_parent.size());
+
+        auto agg_pickled_code = _aggregator.getPickledCode();
+
+        python::lockGIL();
+
+        // deserialize functions.
+        auto agg_func = python::deserializePickledFunction(python::getMainModule(), agg_pickled_code.c_str(), agg_pickled_code.length());
+        auto output_columns = columns();
+
+        for (const auto &row : rows) {
+            auto fields = row.to_vector();
+            for (unsigned int i = 0; i < keys_in_parent.size(); i++)
+                key_fields[i] = fields[keys_in_parent[i]];
+            auto key_row = Row::from_vector(key_fields);
+
+            // Check if key_row is contained, if not init with initial aggregate.
+            auto it = map.find(key_row);
+            PyObject* py_agg_value = nullptr;
+            if (it == map.end()) {
+                py_agg_value = python::rowToPython(_initialValue, true);
+            } else {
+                py_agg_value = python::rowToPython(it->second, true);
+            }
+            auto py_row = python::rowToPython(row, true);
+
+            PyObject* py_args = PyTuple_New(2);
+            PyTuple_SetItem(py_args, 0, py_agg_value);
+            PyTuple_SetItem(py_args, 1, py_row);
+
+            // // debug: print object.
+            // Py_XINCREF(py_args);
+            // std::cout<<"ROW:  "<<python::PyString_AsString(py_args)<<std::endl;
+
+            // Run aggregator function.
+            auto pcr = python::callFunctionEx(agg_func, py_args);
+
+            if (pcr.exceptionCode != ExceptionCode::SUCCESS) {
+                // fail...
+            } else {
+                auto res = python::pythonToRowWithDictUnwrap(pcr.res, output_columns);
+                map[key_row] = res;
+            }
+        }
+
+        python::unlockGIL();
+
+        // Of each result, combine at least once with neutral element.
+        // TODO.
+
+        // mash rows together.
+        std::vector<Row> result;
+        for (const auto& kv: map) {
+            auto fields = kv.first.to_vector();
+            auto fields_agg = kv.second.to_vector();
+            std::copy(fields_agg.begin(), fields_agg.end(), std::back_inserter(fields));
+
+            result.push_back(Row::from_vector(fields).with_columns(columns()));
+        }
+        return result;
+    }
+
 }

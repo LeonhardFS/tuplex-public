@@ -97,7 +97,7 @@ namespace tuplex {
                 case AggregateType::AGG_UNIQUE:
                     throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " aggregate type not supported");
                 case AggregateType::AGG_BYKEY:
-                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " aggregate type not supported");
+                    return aggByKeySample(num);
                 case AggregateType::AGG_GENERAL:
                     throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " aggregate type not supported");
             default:
@@ -180,6 +180,8 @@ namespace tuplex {
         bool inferAndCheckTypes();
 
         python::Type keyTypeFromParent() const;
+
+        std::vector<Row> aggByKeySample(size_t num) const;
     };
 }
 

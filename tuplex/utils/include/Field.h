@@ -223,6 +223,14 @@ namespace tuplex {
 
         python::Type getType() const { return _type; }
 
+        std::size_t hash() const {
+            if (hasPtrData()) {
+                std::hash<std::string> hasher;
+                return hasher(desc());
+            }
+            return _iValue + _isNull;
+        }
+
         /*!
          * enforces internal representation to be of option type,
          * sets null indicator
