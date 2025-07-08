@@ -950,7 +950,7 @@ namespace tuplex {
         // -------------------------------------------------------------------
         // 2.) MAIN MEMORY processing tasks
         timer.reset();
-        Logger::instance().defaultLogger().info("initializing transform stage.");
+        Logger::instance().defaultLogger().info("Initializing transform stage.");
 
         // ==> init using optionally hashmaps from dependents
         int64_t init_rc = 0;

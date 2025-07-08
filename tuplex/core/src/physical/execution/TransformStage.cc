@@ -590,6 +590,9 @@ namespace tuplex {
             pr.second = 0;
         }
 
+        p->setBytesWritten(total_serialized_size);
+        p->setNumRows(unique_rows.size());
+
         // free allocated memory of rows.
         for(auto& pr : unique_rows) {
             delete pr.first;
@@ -597,9 +600,6 @@ namespace tuplex {
             pr.second = 0;
         }
         unique_rows.clear();
-
-        p->setBytesWritten(total_serialized_size);
-        p->setNumRows(unique_rows.size());
 
         // special case: if the type is 0 length serialized, add a dummy row!
         if(result.keyType.isZeroSerializationSize() && total_serialized_size == 0 && result.null_bucket != nullptr) {
