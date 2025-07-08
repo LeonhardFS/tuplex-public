@@ -446,4 +446,17 @@ namespace tuplex {
         return result;
     }
 
+    std::vector<Row> AggregateOperator::aggUniqueSample(size_t num) const {
+        auto rows = parent()->getSample(num);
+        // Hash rows by key.
+        std::unordered_map<Row, unsigned> map;
+        for (const auto& row : rows)
+            map[row]++;
+
+        std::vector<Row> result;
+        for (const auto& kv: map)
+            result.push_back(kv.first);
+        return result;
+    }
+
 }

@@ -95,7 +95,7 @@ namespace tuplex {
             // Output result depends on aggregation type, but want to capture some type transforms.
             switch (aggType()){
                 case AggregateType::AGG_UNIQUE:
-                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " aggregate type not supported");
+                    return aggUniqueSample(num);
                 case AggregateType::AGG_BYKEY:
                     return aggByKeySample(num);
                 case AggregateType::AGG_GENERAL:
@@ -182,6 +182,8 @@ namespace tuplex {
         python::Type keyTypeFromParent() const;
 
         std::vector<Row> aggByKeySample(size_t num) const;
+
+        std::vector<Row> aggUniqueSample(size_t num) const;
     };
 }
 
