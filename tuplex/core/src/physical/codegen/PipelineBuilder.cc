@@ -1404,7 +1404,7 @@ namespace tuplex {
                                                                      false);
                 auto callback_func = env().getModule()->getOrInsertFunction(callbackName, hashCallback_type);
                 builder.CreateCall(callback_func,
-                                   {_argUserData, key, keyNull, cbool_const(ctx, bucketize), bucket, bucketSize});
+                                   {_argUserData, key, builder.CreateZExtOrTrunc(keyNull, llvm_cbool_type), cbool_const(ctx, bucketize), bucket, bucketSize});
             } else {
                 assert(hashtableWidth == 0xFFFFFFFF);
                 FunctionType *hashCallback_type = FunctionType::get(Type::getVoidTy(ctx),
