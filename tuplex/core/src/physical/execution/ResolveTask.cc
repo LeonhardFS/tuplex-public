@@ -1038,6 +1038,19 @@ default:
     void ResolveTask::executeInOrder() {
         auto& logger = Logger::instance().logger("resolve task");
 
+        bool needToUpcastNormalToGeneral = false;
+        bool normalAndGeneralDiffer = commonCaseOutputSchema() != normalCaseOutputSchema();
+        if (normalAndGeneralDiffer) {
+            needToUpcastNormalToGeneral = python::canUpcastToRowType(normalCaseOutputSchema().getRowType(), commonCaseOutputSchema().getRowType());
+            std::stringstream ss;
+            ss<<"In resolve task normal and general case schemas differ.";
+            if (needToUpcastNormalToGeneral)
+                ss<<" Can upcast normal to general rows.";
+            else
+                ss<<" Can not upcast normal to general rows, need to create separate partitions.";
+            logger.debug(ss.str());
+        }
+
         // Determine if normal partitions exist
         if(!_partitions.empty()) {
             // merge normal partitions and resolved ones (incl. lookup)
@@ -1389,7 +1402,10 @@ default:
             // ==> can be used for quick merging!
             size_t size = readOutputRowSize(_normalPtr, _normalPtrBytesRemaining);
 
-            writeRow(_normalPtr, size);
+            if (needToUpcastNormalToGeneral)
+                writeNormalRowAndUpcastToGeneralRow(_normalPtr, size);
+            else
+                writeRow(_normalPtr, size);
             _normalPtr += size;
             _normalPtrBytesRemaining -= size;
             _normalRowNumber++;
@@ -1465,8 +1481,28 @@ default:
         return 0;
     }
 
-    void ResolveTask::writeRow(const uint8_t *buf, size_t bufSize) {
+    void ResolveTask::writeNormalRowAndUpcastToGeneralRow(const uint8_t* normalBuf, size_t normalBufSize) {
+        const auto& normal_case_row_type = normalCaseOutputSchema().getRowType();
+        const auto& general_case_row_type = commonCaseOutputSchema().getRowType();
+#ifndef NDEBUG
+        // ensure upcast compatible.
+        if (!python::canUpcastToRowType(normal_case_row_type, general_case_row_type))
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " internal error, can not upcast rows. Wrong logic?");
+#endif
+        if (normal_case_row_type == general_case_row_type)
+            return writeRow(normalBuf, normalBufSize);
 
+        Row row = Row::fromMemory(normalCaseOutputSchema(), normalBuf, normalBufSize);
+        row = row.upcastedRow(general_case_row_type);
+        auto buf_size = row.serializedLength() + 32;
+        auto buf = new uint8_t[buf_size];
+        buf_size = row.serializeToMemory(buf, buf_size);
+        writeRow(buf, buf_size);
+        delete [] buf;
+    }
+
+
+    void ResolveTask::writeRow(const uint8_t *buf, size_t bufSize) {
         // when hash table is activated, output here has to go to a hash table!
         assert(!hasHashTableSink());
 

@@ -358,6 +358,11 @@ namespace tuplex {
          */
         void writeRow(const uint8_t* buf, size_t bufSize);
 
+        /*!
+         * assume normalBuf to be given in normal case format, upcast to general format and write.
+         */
+        void writeNormalRowAndUpcastToGeneralRow(const uint8_t* normalBuf, size_t normalBufSize);
+
         void emitNormalRows();
 
         size_t readOutputRowSize(const uint8_t* buf, size_t bufSize);

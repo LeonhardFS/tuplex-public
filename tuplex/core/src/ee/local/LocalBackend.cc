@@ -1472,9 +1472,9 @@ namespace tuplex {
         auto targetNormalCaseOutputSchema = tstage->normalCaseOutputSchema();
         auto targetGeneralCaseOutputSchema = tstage->outputSchema();
 
-        // should cases not get persisted separately?
-        if(!tstage->persistSeparateCases())
-            targetNormalCaseOutputSchema = targetGeneralCaseOutputSchema; // both are the same!
+        // // should cases not get persisted separately?
+        // if(!tstage->persistSeparateCases())
+        //     targetNormalCaseOutputSchema = targetGeneralCaseOutputSchema; // both are the same!
 
         for(const auto& task : tasks) {
             auto tt = dynamic_cast<TransformTask *>(task);
