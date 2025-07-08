@@ -81,6 +81,13 @@ namespace tuplex {
 
                 std::string errMessage = "code generation for Python UDF failed.\n\nDetails: " + std::string(e.what());
 
+#ifndef NDEBUG
+                // Write full module to disk.
+                auto modCode = printModule(env->getModule().get(), true);
+                trim(modCode);
+                logger.error("full module:\n\n" + modCode + "\n");
+#endif
+
                 // remove from llvm module
                 if(!_irFuncName.empty()) {
                     auto func = env->getModule()->getFunction(_irFuncName);
@@ -97,6 +104,7 @@ namespace tuplex {
                 }
 
                 logger.error(errMessage);
+
                 return false;
             }
 

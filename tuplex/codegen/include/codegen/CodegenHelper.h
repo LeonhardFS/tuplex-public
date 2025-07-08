@@ -76,7 +76,7 @@ namespace tuplex {
             assert(bb);
             if(!bb->empty()) {
                 if(llvm::isa<llvm::BranchInst>(bb->back()))
-                    throw std::runtime_error("Basic Block " + bb->getName().str() + " ends with br (or cond br) instruction.");
+                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Basic Block " + bb->getName().str() + " ends with br (or cond br) instruction.");
             }
 #endif
         }
@@ -564,7 +564,9 @@ namespace tuplex {
 
              inline llvm::LoadInst *CreateLoad(llvm::Type *Ty, llvm::Value *Ptr, const char *Name) const {
 
-                 last_inst_no_branch_guard(get_or_throw().GetInsertBlock());
+                 // Check whether insert point is last.
+                 if (get_or_throw().GetInsertBlock() && get_or_throw().GetInsertPoint() == get_or_throw().GetInsertBlock()->end())
+                    last_inst_no_branch_guard(get_or_throw().GetInsertBlock());
 
                  assert(Ty);
 #if LLVM_VERSION_MAJOR <= 9
@@ -581,7 +583,9 @@ namespace tuplex {
 
              inline llvm::LoadInst *CreateLoad(llvm::Type *Ty, llvm::Value *Ptr, const std::string &Name = "") const {
 
-                 last_inst_no_branch_guard(get_or_throw().GetInsertBlock());
+                // Check whether insert point is last.
+                if (get_or_throw().GetInsertBlock() && get_or_throw().GetInsertPoint() == get_or_throw().GetInsertBlock()->end())
+                    last_inst_no_branch_guard(get_or_throw().GetInsertBlock());
 
                  assert(Ty);
 #if LLVM_VERSION_MAJOR <= 9
@@ -1064,6 +1068,18 @@ namespace tuplex {
                 return ir_string;
         }
 
+        inline std::string printModule(llvm::Module* mod, bool withLineNumbers=false) {
+            std::string ir_string;
+            llvm::raw_string_ostream os{ir_string};
+            assert(mod);
+            mod->print(os, nullptr, false);
+            os.flush();
+            if(withLineNumbers)
+                return core::withLineNumbers(ir_string);
+            else
+                return ir_string;
+        }
+
         /*!
          * get a builder for the first block in a function. The first block may be linked already.
          * @param builder
@@ -1389,6 +1405,11 @@ namespace tuplex {
         template<> inline llvm::Type* ctypeToLLVM<const char*>(llvm::LLVMContext& ctx) {
             static_assert(sizeof(const char*) == 8, "const char* must be 8 byte");
             return llvm::Type::getInt8Ty(ctx)->getPointerTo(0);
+        }
+
+        template<> inline llvm::Type* ctypeToLLVM<int32_t*>(llvm::LLVMContext& ctx) {
+            static_assert(sizeof(int32_t) == 4, "int32_t must be 32bit");
+            return llvm::Type::getInt32Ty(ctx)->getPointerTo(0);
         }
 
         template<> inline llvm::Type* ctypeToLLVM<int64_t*>(llvm::LLVMContext& ctx) {

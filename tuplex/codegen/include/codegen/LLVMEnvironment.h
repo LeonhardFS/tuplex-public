@@ -729,11 +729,11 @@ namespace tuplex {
              * @return
              */
             inline llvm::Constant *i32Const(const int32_t val) {
-                return llvm::Constant::getIntegerValue(llvm::Type::getInt32Ty(_context), llvm::APInt(32, val));
+                return llvm::Constant::getIntegerValue(llvm::Type::getInt32Ty(_context), llvm::APInt(32, static_cast<uint32_t>(val)));
             }
 
             inline llvm::Constant *i64Const(const int64_t val) {
-                return llvm::Constant::getIntegerValue(llvm::Type::getInt64Ty(_context), llvm::APInt(64, val));
+                return llvm::Constant::getIntegerValue(llvm::Type::getInt64Ty(_context), llvm::APInt(64, static_cast<uint64_t>(val)));
             }
 
             inline llvm::Constant* f64Const(const double val) {
