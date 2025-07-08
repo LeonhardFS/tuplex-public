@@ -270,6 +270,9 @@ namespace tuplex {
             // if not - fail.
             // hint the aggregator function. It does have to have two input params too.
             auto rowtype = conf.row_type;
+            if (rowtype.isRowType())
+                rowtype = rowtype.get_columns_as_tuple_type();
+
             if(rowtype.parameters().size() == 1) // unpack one level
                 rowtype = rowtype.parameters().front();
             retypeTwoParamUDF(_aggregator, aggregateType, rowtype);
@@ -327,9 +330,9 @@ namespace tuplex {
             if(final_type == python::Type::UNKNOWN)
                 throw std::runtime_error("incompatible types in aggregate operator");
 
-            // aggregate by key needs to keep the key columns
+            // aggregate by key needs to keep the key columns.
             if(AggregateType::AGG_BYKEY == aggType()) {
-                auto parent_row_types = conf.row_type.parameters();
+                auto parent_row_types = conf.row_type.isRowType() ? conf.row_type.get_column_types() : conf.row_type.parameters();
                 std::vector<python::Type> final_row_type;
                 for(const auto &idx : keyColsInParent()) final_row_type.push_back(parent_row_types[idx]);
                 // TODO(rahuly): should this be a recursive flatten?

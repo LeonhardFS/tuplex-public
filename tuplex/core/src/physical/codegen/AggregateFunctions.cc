@@ -125,10 +125,20 @@ namespace tuplex {
 
             auto ftOut = cf.callWithExceptionHandler(builder, ftin, resultVar, exceptionBlock, exceptionVar);
 
-            // check that the output type matches the expectation (agg!)
+            // check that the output type matches the expectation,
+            // it doesn't need to necessarily - i.e. semantics guarantee combiner to be called at least once.
+            // In the case of a constant e.g., this means optimizations may occur.
+            // ==> right now those optimizations are not supported, instead we upcast to the generic type.
             auto out_type = python::Type::propagateToTupleType(ftOut.getTupleType());
             if(out_type != python::Type::propagateToTupleType(aggType)) {
-                throw std::runtime_error("output mismatch in combine aggregate, is: " + out_type.desc() + " expected: " + aggType.desc());
+
+                // is it a deoptimization case? I.e., can upcast ftOut?
+                if (deoptimizedType(out_type) != deoptimizedType(python::Type::propagateToTupleType(aggType)))
+                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " output mismatch"
+                                                                                                      " in combine aggregate, is: " + out_type.desc() + " expected: " + aggType.desc());
+
+                // Deoptimize.
+                ftOut = ftOut.upcastTo(builder, python::Type::propagateToTupleType(aggType));
             }
 
             // if it's variably allocated, free out after combine and realloc...
