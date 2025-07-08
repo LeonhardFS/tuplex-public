@@ -718,10 +718,11 @@ namespace tuplex {
             auto resVal = variableBuilder.CreateAlloca(cf.getLLVMResultType(env()), 0, nullptr);
 
             // get input for this UDF
-            assert((columnToMapIndex == 0 && !_lastSchemaType.isTupleType()) || columnToMapIndex < _lastSchemaType.parameters().size());
+            assert((columnToMapIndex == 0 && !_lastSchemaType.isTupleType()) || columnToMapIndex < extract_columns_from_type(_lastSchemaType));
 
+            assert(_lastSchemaType.isTupleType() || _lastSchemaType.isRowType());
             // index here is already the optimized one, aka when selectionPushDown is used...
-            auto elementType = _lastSchemaType.isTupleType() ? _lastSchemaType.parameters()[columnToMapIndex] : _lastSchemaType;
+            auto elementType = _lastSchemaType.isTupleType() ? _lastSchemaType.parameters()[columnToMapIndex] : _lastSchemaType.get_column_type(columnToMapIndex);
             assert(elementType.withoutOption().isPrimitiveType()); // only primitives yet supported!
             // convert to Flattened Tuple
 
@@ -756,7 +757,12 @@ namespace tuplex {
             // copy to new vals
             FlattenedTuple ftOut(&env());
 
-            auto params = _lastSchemaType.isTupleType() ? _lastSchemaType.parameters() : std::vector<python::Type>({_lastSchemaType});
+            std::vector<python::Type> params{_lastSchemaType};
+            if (_lastSchemaType.isTupleType())
+                params = _lastSchemaType.parameters();
+            else if (_lastSchemaType.isRowType())
+                params = _lastSchemaType.get_column_types();
+
             // update with result of UDF
             params[columnToMapIndex] = cf.output_python_type;
             auto finalType = python::Type::makeTupleType(params);

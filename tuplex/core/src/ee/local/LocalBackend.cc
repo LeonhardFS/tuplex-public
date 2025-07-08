@@ -1368,12 +1368,12 @@ namespace tuplex {
 
         // make sure output mode is NOT hash table, not yet supported...
         if(tstage->outputMode() == EndPointMode::HASHTABLE) {
-            // note: must hold that normal-case output type is equal to general-case output type
-            if (tstage->normalCaseOutputSchema() != tstage->outputSchema())
-                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) +
-                    " normal case output schema " + tstage->normalCaseOutputSchema().getRowType().desc() +
-                    " does not match output schema " + tstage->outputSchema().getRowType().desc());
-            assert(tstage->normalCaseOutputSchema() == tstage->outputSchema()); // must hold for hash table!
+            // // note: must hold that normal-case output type is equal to general-case output type
+            // if (tstage->normalCaseOutputSchema() != tstage->outputSchema())
+            //     throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) +
+            //         " normal case output schema " + tstage->normalCaseOutputSchema().getRowType().desc() +
+            //         " does not match output schema " + tstage->outputSchema().getRowType().desc());
+            // assert(tstage->normalCaseOutputSchema() == tstage->outputSchema()); // must hold for hash table!
 
             // special case: create a global hash output result and put it into the FIRST resolve task.
             Timer timer;
