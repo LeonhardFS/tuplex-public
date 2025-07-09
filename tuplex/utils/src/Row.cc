@@ -367,7 +367,8 @@ namespace tuplex {
         assert(canUpcastToRowType(getRowType(), targetType));
 
         auto num_fields = _values.size();
-        auto targetTypes = targetType.parameters();
+        assert(targetType.isRowType() || targetType.isTupleType());
+        auto targetTypes = targetType.isRowType() ? targetType.get_column_types() : targetType.parameters();
         vector<Field> fields;
         for(unsigned i = 0; i < num_fields; ++i) {
             auto t = _values[i].getType();
