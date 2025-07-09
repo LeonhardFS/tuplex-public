@@ -3909,6 +3909,301 @@ namespace tuplex {
             return get_value_from_cjson(builder, cjson_val, subType);
         }
 
+        void BlockGeneratorVisitor::subscript(const python::Type& expected_subscript_return_type,
+          SerializableValue value,
+          python::Type value_type,
+          SerializableValue index,
+          python::Type index_type,
+          ASTNode* expression_node,
+          ASTNode* value_node) {
+
+          auto builder = _lfb->getIRBuilder();
+
+          if (index_type.isOptionType()) {
+                assert(index.is_null);
+
+                // add check
+                if (value_type.withoutOption().isDictionaryType()) {
+                    // KeyError
+                    _lfb->addException(builder, ExceptionCode::KEYERROR, index.is_null, "KeyError for dict.[]");
+                } else {
+                    // TypeError
+                    _lfb->addException(builder, ExceptionCode::TYPEERROR, index.is_null, "TypeError for dict.[]");
+                }
+            }
+            // remove option from index_type
+            index_type = index_type.withoutOption();
+
+            if (value_type.isOptionType()) {
+                // None can't be indexed, i.e. null check here!
+                assert(value.is_null);
+
+                _lfb->addException(builder, ExceptionCode::TYPEERROR, value.is_null, "TypeError, can't subscript None");
+            }
+            value_type = value_type.withoutOption();
+
+            // there are two options:
+            // either the value is a string or a struct type (aka tuple)
+            if (value_type.isTupleType()) {
+
+                // for empty tuple, there will be always an error here!
+
+                int tupleNumElements = value_type.parameters().size();
+
+                // correct for negative indices (once)
+                auto cmp = builder.CreateICmp(llvm::CmpInst::Predicate::ICMP_SLT, index.val, _env->i64Const(0));
+                index = SerializableValue(builder.CreateSelect(cmp,
+                                                               builder.CreateAdd(index.val,
+                                                                                 _env->i64Const(tupleNumElements)),
+                                                               index.val),
+                                          index.size);
+
+                // there are 3 cases
+                // case 1: expression is a constant/scalar value => compilable
+                // case 2: value is a tuple of elements with identical type => compilable
+                // case 3: expression is a variable (runtime) and tuple has elements with different types => not compilable, needs
+                // to be run via interpreter.
+
+                // case 1: to be implemented
+                if (isStaticValue(expression_node, true)) {
+                    auto ret = indexTupleWithStaticExpression(expression_node, value_node, index, value);
+                    if(ret.size)
+                        assert(ret.size->getType() == _env->i64Type());
+                    addInstruction(ret.val, ret.size, ret.is_null);
+                    return;
+                }
+                // case 2: load to array & then select via gep (homogenous tuple case)
+                else if (tupleElementsHaveSameType(value_type)) {
+                    auto ret = homogenous_tuple_dynamic_get_element(*_env, builder,
+                                                                    value_type, value.val, index.val);
+
+                    addInstruction(ret.val, ret.size, ret.is_null);
+                    return;
+                } else {
+                    // case 3: give error
+                    addInstruction(logErrorV(
+                            "Can't compile index operator, need to run code via interpreter. Index expressions must be "
+                            "either compile time static or the tuple to be indexed comprised of elements with identic type."));
+
+                    return;
+                }
+
+            } else if (value_type == python::Type::STRING
+                       && expected_subscript_return_type == python::Type::STRING) {
+
+                assert(value.val->getType() == _env->i8ptrType());
+
+                auto strlength = builder.CreateSub(value.size, _env->i64Const(1));
+
+                // correct for negative indices (once)
+                auto cmp = builder.CreateICmp(llvm::CmpInst::Predicate::ICMP_SLT, index.val, _env->i64Const(0));
+                index = SerializableValue(builder.CreateSelect(cmp,
+                                                               builder.CreateAdd(index.val,
+                                                                                 strlength),
+                                                               index.val),
+                                          index.size);
+
+
+                // @TODO: this here throws an exception... --> correct! but then weird things happen?
+
+                // first perform index check, if fails --> exception!
+                auto indexcmp = _env->indexCheck(builder, index.val, strlength);
+                _lfb->addException(builder, ExceptionCode::INDEXERROR, _env->i1neg(builder, indexcmp), "IndexError for str.[]");
+
+                // normal code goes on (builder variable has been updated)
+                // copy out one char string here
+                auto newstr = builder.CreatePointerCast(builder.malloc(_env->i64Const(2)),
+                                                        _env->i8ptrType()); // indexing string will return one char string!
+                // do via load & store, no need for memcpy here yet
+                auto charAtIndex = builder.CreateLoad(builder.getInt8Ty(), builder.MovePtrByBytes(value.val, index.val));
+                assert(charAtIndex->getType() == llvm::Type::getInt8Ty(builder.getContext()));
+
+                // store charAtIndex at ptr
+                builder.CreateStore(charAtIndex, newstr);
+                builder.CreateStore(_env->i8Const(0), builder.MovePtrByBytes(newstr, 1));
+
+                // add serializedValue
+                addInstruction(newstr, _env->i64Const(2));
+
+            } else if (value_type == python::Type::GENERICDICT) {
+
+                // throw error for genericdict
+                std::stringstream ss;
+                ss << "subscript generic dictionary with::";
+                ss << "\n  index type: " << expression_node->getInferredType().desc();
+                ss << "\n  value type: " << value_node->getInferredType().desc();
+                ss << "\n  index llvm type: " << _env->getLLVMTypeName(index.val->getType());
+                ss << "\n  value llvm type: " << _env->getLLVMTypeName(value.val->getType());
+                ss << "\n  expected return type of [] operation: "<<expected_subscript_return_type.desc();
+
+                _logger.debug(ss.str());
+
+                if(index_type.isConstantValued())
+                    index_type = deoptimizedType(index_type);
+
+                auto subval = subscript_generic_dict(*_env, *_lfb, builder, value, index, index_type, expected_subscript_return_type);
+
+                // OLD:
+                // auto subval = subscriptCJSONDictionary(sub, index, index_type, value);
+                _lfb->setLastBlock(builder.GetInsertBlock());
+                addInstruction(subval.val, subval.size, subval.is_null);
+            } else if(value_type.isListType()) {
+                if(value_type == python::Type::EMPTYLIST) {
+                    _lfb->addException(builder, ExceptionCode::INDEXERROR, _env->i1Const(true), "IndexError on empty list []");
+                    addInstruction(nullptr, nullptr);
+                } else {
+                    // new:
+                    auto list_ptr = value.val;
+                    auto list_type = value_type;
+
+                    auto num_elements = list_length(*_env, builder, list_ptr, list_type);
+
+#ifndef NDEBUG
+                    // _env->printValue(builder, index.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " indexing [] into list of type " + list_type.desc() + " with value: ");
+                    // _env->printValue(builder, num_elements, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + _funcNames.top()+ ": list has #elements: ");
+#endif
+
+                    // correct for negative indices (once)
+                    auto cmp = builder.CreateICmp(llvm::CmpInst::Predicate::ICMP_SLT, index.val, _env->i64Const(0));
+                    index = SerializableValue(builder.CreateSelect(cmp, builder.CreateAdd(index.val, num_elements), index.val), index.size);
+
+                    // first perform index check, if it fails --> exception!
+                    auto indexcmp = _env->indexCheck(builder, index.val, num_elements);
+                    _lfb->addException(builder, ExceptionCode::INDEXERROR, _env->i1neg(builder, indexcmp), "IndexError on list");
+
+                    // load val and add
+                    auto el = list_load_value(*_env, builder, list_ptr, list_type, index.val);
+                    addInstruction(el.val, el.size, el.is_null);
+                    _lfb->setLastBlock(builder.GetInsertBlock());
+                }
+            } else if (value.val && value.val->getType() == _env->getMatchObjectPtrType() &&
+                       value_type == python::Type::MATCHOBJECT) {
+                auto ind = builder.CreateMul(_env->i64Const(2), index.val);
+                auto match_object = value.val;
+                auto ovector = builder.CreateLoad(_env->i64ptrType(), builder.CreateStructGEP(match_object, _env->getMatchObjectType(), 0));
+                auto subject = builder.CreateLoad(_env->i8ptrType(), builder.CreateStructGEP(match_object, _env->getMatchObjectType(), 1));
+                auto subject_len = builder.CreateLoad(_env->i64Type(), builder.CreateStructGEP(match_object, _env->getMatchObjectType(), 2));
+                // TODO: add some boundary checking here, probably with _env->indexCheck (remember that 0 is a valid choice)
+                auto start = builder.CreateLoad(builder.getInt64Ty(), builder.CreateGEP(builder.getInt64Ty(), ovector, ind));
+                auto end = builder.CreateLoad(builder.getInt64Ty(), builder.CreateGEP(builder.getInt64Ty(), ovector, builder.CreateAdd(ind, _env->i64Const(1))));
+
+                auto ret = stringSliceInst({subject, subject_len}, start, end, _env->i64Const(1));
+                _lfb->setLastBlock(builder.GetInsertBlock());
+                addInstruction(ret.val, ret.size);
+            } else {
+
+                // option types?
+                if(value_type.isOptionType()) {
+                    // None indexed produces
+                    // TypeError: 'NoneType' object is not subscriptable
+                    assert(value.is_null);
+                    _lfb->addException(builder, ExceptionCode::TYPEERROR, value.is_null, "'NoneType' object is not subscriptable");
+                    value_type = value_type.withoutOption();
+                }
+
+                // check if value is of struct dict type
+                if(value_type.isStructuredDictionaryType()) {
+                    SerializableValue ret;
+                    if(subscriptStructDict(builder, &ret, value_type, value, index_type, index, expression_node)) {
+
+#ifndef NDEBUG
+                        // _env->debugPrint(builder, "Subscripting struct.dict of type " + value_type.desc() + " yielding result type " + sub->getInferredType().desc() + ", result is: ");
+                        // if(ret.is_null)
+                        //     _env->printValue(builder, ret.is_null,  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result is_null: ");
+                        // if(ret.val)
+                        //     _env->printValue(builder, ret.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result value: ");
+                        // if(ret.size)
+                        //     _env->printValue(builder, ret.size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result size: ");
+#endif
+
+                        _lfb->setLastBlock(builder.GetInsertBlock());
+                        addInstruction(ret.val, ret.size, ret.is_null);
+                        return;
+                    } else {
+                        fatal_error("Failed to subscript struct.dict of type " + value_type.desc());
+                    }
+                }
+
+                if(value_type.isRowType()) {
+
+                    // special case: row with single element
+                  if (value_type.get_column_count() == 1) {
+
+                    SerializableValue element;
+                    auto rc = subscriptRow(builder, &element, value_type, value, python::Type::I64, SerializableValue{_env->i64Const(0), nullptr, nullptr}, nullptr);
+                    auto element_type = value_type.get_column_type(0);
+                    subscript(expected_subscript_return_type, element, element_type, index, index_type, expression_node, nullptr);
+                    return;
+                  }
+
+                    SerializableValue ret;
+                    if(subscriptRow(builder, &ret, value_type, value, index_type, index, expression_node)) {
+
+#ifndef NDEBUG
+                       // _env->debugPrint(builder, "Subscripting Row yielding result type " + sub->getInferredType().desc() + ", result is: ");
+                       // if(sub->getInferredType().withoutOption().isStructuredDictionaryType()) {
+                       //     if(ret.is_null)
+                       //         _env->printValue(builder, ret.is_null,  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result is_null: ");
+                       //     struct_dict_print(*_env, builder, ret, sub->getInferredType().withoutOption());
+                       // } else {
+                       //     if(ret.is_null)
+                       //         _env->printValue(builder, ret.is_null,  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result is_null: ");
+                       //     if(ret.val)
+                       //         _env->printValue(builder, ret.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result value: ");
+                       //     if(ret.size)
+                       //         _env->printValue(builder, ret.size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result size: ");
+                       // }
+#endif
+                        _lfb->setLastBlock(builder.GetInsertBlock());
+                        addInstruction(ret.val, ret.size, ret.is_null);
+                        return;
+                    }
+                }
+
+                if(value_type.isSparseStructuredDictionaryType()) {
+                    // special behavior compared to struct dict, i.e. if key is not found -> normal-case exception.
+                    SerializableValue ret;
+                    if(subscriptSparseStructDict(builder, &ret, value_type, value, index_type, index, expression_node)) {
+                        // block open? i.e. no early exit? If not, return.
+                        if(!blockOpen(builder.GetInsertBlock()))
+                            return;
+
+                        _lfb->setLastBlock(builder.GetInsertBlock());
+                        addInstruction(ret.val, ret.size, ret.is_null);
+                        return;
+                    }
+                }
+
+                if(value_type == python::Type::PYOBJECT) {
+                    _lfb->setLastBlock(builder.GetInsertBlock());
+                    // deoptimization -> go to general case/interpreter case.
+                    _lfb->exitWithException(ExceptionCode::NORMALCASEVIOLATION, "[] on pyobject.");
+                    return;
+//                    _lfb->addException(builder, ExceptionCode::NORMALCASEVIOLATION, _env->i1Const(true), "[] on pyobject.");
+//                    auto dummy = _env->dummyValue(builder, sub->getInferredType());
+//                    _lfb->setLastBlock(builder.GetInsertBlock());
+//                    addInstruction(dummy.val, dummy.size, dummy.is_null);
+//                    return;
+                    // check what the result is supposed to be, use dummy to continue compilation.
+                }
+
+                // undefined
+                std::stringstream ss;
+                ss << "unsupported type encountered with [] operator.";
+                ss << "\nindex type: " << expression_node->getInferredType().desc();
+                ss << "\nvalue type: " << value_node->getInferredType().desc();
+                if(index.val)
+                    ss << "\nindex llvm type: " << _env->getLLVMTypeName(index.val->getType());
+                else
+                    ss << "\nindex llvm type: <nullptr>";
+                if(value.val)
+                    ss << "\nvalue llvm type: " << _env->getLLVMTypeName(value.val->getType());
+                else
+                    ss << "\nvalue llvm type: <nullptr>";
+                error(ss.str());
+            }
+        }
+
         void BlockGeneratorVisitor::visit(NSubscription *sub) {
             if(earlyExit())return;
 
@@ -3993,284 +4288,8 @@ namespace tuplex {
                 }
             }
 
-
-            if (index_type.isOptionType()) {
-                assert(index.is_null);
-
-                // add check
-                if (value_type.withoutOption().isDictionaryType()) {
-                    // KeyError
-                    _lfb->addException(builder, ExceptionCode::KEYERROR, index.is_null, "KeyError for dict.[]");
-                } else {
-                    // TypeError
-                    _lfb->addException(builder, ExceptionCode::TYPEERROR, index.is_null, "TypeError for dict.[]");
-                }
-            }
-            // remove option from index_type
-            index_type = index_type.withoutOption();
-
-            if (value_type.isOptionType()) {
-                // None can't be indexed, i.e. null check here!
-                assert(value.is_null);
-
-                _lfb->addException(builder, ExceptionCode::TYPEERROR, value.is_null, "TypeError, can't subscript None");
-            }
-            value_type = value_type.withoutOption();
-
-            // there are two options:
-            // either the value is a string or a struct type (aka tuple)
-            if (value_type.isTupleType()) {
-
-                // for empty tuple, there will be always an error here!
-
-                int tupleNumElements = value_type.parameters().size();
-
-                // correct for negative indices (once)
-                auto cmp = builder.CreateICmp(llvm::CmpInst::Predicate::ICMP_SLT, index.val, _env->i64Const(0));
-                index = SerializableValue(builder.CreateSelect(cmp,
-                                                               builder.CreateAdd(index.val,
-                                                                                 _env->i64Const(tupleNumElements)),
-                                                               index.val),
-                                          index.size);
-
-                // there are 3 cases
-                // case 1: expression is a constant/scalar value => compilable
-                // case 2: value is a tuple of elements with identical type => compilable
-                // case 3: expression is a variable (runtime) and tuple has elements with different types => not compilable, needs
-                // to be run via interpreter.
-
-                auto expression = sub->_expression.get();
-
-                // case 1: to be implemented
-                if (isStaticValue(expression, true)) {
-                    auto ret = indexTupleWithStaticExpression(expression, sub->_value.get(), index, value);
-                    if(ret.size)
-                        assert(ret.size->getType() == _env->i64Type());
-                    addInstruction(ret.val, ret.size, ret.is_null);
-                    return;
-                }
-                // case 2: load to array & then select via gep (homogenous tuple case)
-                else if (tupleElementsHaveSameType(value_type)) {
-                    auto ret = homogenous_tuple_dynamic_get_element(*_env, builder,
-                                                                    value_type, value.val, index.val);
-
-                    addInstruction(ret.val, ret.size, ret.is_null);
-                    return;
-                } else {
-                    // case 3: give error
-                    addInstruction(logErrorV(
-                            "Can't compile index operator, need to run code via interpreter. Index expressions must be "
-                            "either compile time static or the tuple to be indexed comprised of elements with identic type."));
-
-                    return;
-                }
-
-            } else if (value_type == python::Type::STRING
-                       && sub->getInferredType() == python::Type::STRING) {
-
-                assert(value.val->getType() == _env->i8ptrType());
-
-                auto strlength = builder.CreateSub(value.size, _env->i64Const(1));
-
-                // correct for negative indices (once)
-                auto cmp = builder.CreateICmp(llvm::CmpInst::Predicate::ICMP_SLT, index.val, _env->i64Const(0));
-                index = SerializableValue(builder.CreateSelect(cmp,
-                                                               builder.CreateAdd(index.val,
-                                                                                 strlength),
-                                                               index.val),
-                                          index.size);
-
-
-                // @TODO: this here throws an exception... --> correct! but then weird things happen?
-
-                // first perform index check, if fails --> exception!
-                auto indexcmp = _env->indexCheck(builder, index.val, strlength);
-                _lfb->addException(builder, ExceptionCode::INDEXERROR, _env->i1neg(builder, indexcmp), "IndexError for str.[]");
-
-                // normal code goes on (builder variable has been updated)
-                // copy out one char string here
-                auto newstr = builder.CreatePointerCast(builder.malloc(_env->i64Const(2)),
-                                                        _env->i8ptrType()); // indexing string will return one char string!
-                // do via load & store, no need for memcpy here yet
-                auto charAtIndex = builder.CreateLoad(builder.getInt8Ty(), builder.MovePtrByBytes(value.val, index.val));
-                assert(charAtIndex->getType() == llvm::Type::getInt8Ty(context));
-
-                // store charAtIndex at ptr
-                builder.CreateStore(charAtIndex, newstr);
-                builder.CreateStore(_env->i8Const(0), builder.MovePtrByBytes(newstr, 1));
-
-                // add serializedValue
-                addInstruction(newstr, _env->i64Const(2));
-
-            } else if (value_type == python::Type::GENERICDICT) {
-
-                // which return type is expected?
-                auto expected_return_type = sub->getInferredType();
-
-                // throw error for genericdict
-                std::stringstream ss;
-                ss << "subscript generic dictionary with::";
-                ss << "\n  index type: " << sub->_expression->getInferredType().desc();
-                ss << "\n  value type: " << sub->_value->getInferredType().desc();
-                ss << "\n  index llvm type: " << _env->getLLVMTypeName(index.val->getType());
-                ss << "\n  value llvm type: " << _env->getLLVMTypeName(value.val->getType());
-                ss << "\n  expected return type of [] operation: "<<expected_return_type.desc();
-
-                _logger.debug(ss.str());
-
-                if(index_type.isConstantValued())
-                    index_type = deoptimizedType(index_type);
-
-                auto subval = subscript_generic_dict(*_env, *_lfb, builder, value, index, index_type, expected_return_type);
-
-                // OLD:
-                // auto subval = subscriptCJSONDictionary(sub, index, index_type, value);
-                _lfb->setLastBlock(builder.GetInsertBlock());
-                addInstruction(subval.val, subval.size, subval.is_null);
-            } else if(value_type.isListType()) {
-                if(value_type == python::Type::EMPTYLIST) {
-                    _lfb->addException(builder, ExceptionCode::INDEXERROR, _env->i1Const(true), "IndexError on empty list []");
-                    addInstruction(nullptr, nullptr);
-                } else {
-                    // new:
-                    auto list_ptr = value.val;
-                    auto list_type = value_type;
-
-                    auto num_elements = list_length(*_env, builder, list_ptr, list_type);
-
-#ifndef NDEBUG
-                    // _env->printValue(builder, index.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " indexing [] into list of type " + list_type.desc() + " with value: ");
-                    // _env->printValue(builder, num_elements, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + _funcNames.top()+ ": list has #elements: ");
-#endif
-
-                    // correct for negative indices (once)
-                    auto cmp = builder.CreateICmp(llvm::CmpInst::Predicate::ICMP_SLT, index.val, _env->i64Const(0));
-                    index = SerializableValue(builder.CreateSelect(cmp, builder.CreateAdd(index.val, num_elements), index.val), index.size);
-
-                    // first perform index check, if it fails --> exception!
-                    auto indexcmp = _env->indexCheck(builder, index.val, num_elements);
-                    _lfb->addException(builder, ExceptionCode::INDEXERROR, _env->i1neg(builder, indexcmp), "IndexError on list");
-
-                    // load val and add
-                    auto el = list_load_value(*_env, builder, list_ptr, list_type, index.val);
-                    addInstruction(el.val, el.size, el.is_null);
-                    _lfb->setLastBlock(builder.GetInsertBlock());
-                }
-            } else if (value.val && value.val->getType() == _env->getMatchObjectPtrType() &&
-                       value_type == python::Type::MATCHOBJECT) {
-                auto ind = builder.CreateMul(_env->i64Const(2), index.val);
-                auto match_object = value.val;
-                auto ovector = builder.CreateLoad(_env->i64ptrType(), builder.CreateStructGEP(match_object, _env->getMatchObjectType(), 0));
-                auto subject = builder.CreateLoad(_env->i8ptrType(), builder.CreateStructGEP(match_object, _env->getMatchObjectType(), 1));
-                auto subject_len = builder.CreateLoad(_env->i64Type(), builder.CreateStructGEP(match_object, _env->getMatchObjectType(), 2));
-                // TODO: add some boundary checking here, probably with _env->indexCheck (remember that 0 is a valid choice)
-                auto start = builder.CreateLoad(builder.getInt64Ty(), builder.CreateGEP(builder.getInt64Ty(), ovector, ind));
-                auto end = builder.CreateLoad(builder.getInt64Ty(), builder.CreateGEP(builder.getInt64Ty(), ovector, builder.CreateAdd(ind, _env->i64Const(1))));
-
-                auto ret = stringSliceInst({subject, subject_len}, start, end, _env->i64Const(1));
-                _lfb->setLastBlock(builder.GetInsertBlock());
-                addInstruction(ret.val, ret.size);
-            } else {
-
-                // option types?
-                if(value_type.isOptionType()) {
-                    // None indexed produces
-                    // TypeError: 'NoneType' object is not subscriptable
-                    assert(value.is_null);
-                    _lfb->addException(builder, ExceptionCode::TYPEERROR, value.is_null, "'NoneType' object is not subscriptable");
-                    value_type = value_type.withoutOption();
-                }
-
-                // check if value is of struct dict type
-                if(value_type.isStructuredDictionaryType()) {
-                    SerializableValue ret;
-                    if(subscriptStructDict(builder, &ret, value_type, value, index_type, index, sub->_expression.get())) {
-
-#ifndef NDEBUG
-                        // _env->debugPrint(builder, "Subscripting struct.dict of type " + value_type.desc() + " yielding result type " + sub->getInferredType().desc() + ", result is: ");
-                        // if(ret.is_null)
-                        //     _env->printValue(builder, ret.is_null,  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result is_null: ");
-                        // if(ret.val)
-                        //     _env->printValue(builder, ret.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result value: ");
-                        // if(ret.size)
-                        //     _env->printValue(builder, ret.size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result size: ");
-#endif
-
-                        _lfb->setLastBlock(builder.GetInsertBlock());
-                        addInstruction(ret.val, ret.size, ret.is_null);
-                        return;
-                    } else {
-                        fatal_error("Failed to subscript struct.dict of type " + value_type.desc());
-                    }
-                }
-
-                if(value_type.isRowType()) {
-                    SerializableValue ret;
-                    if(subscriptRow(builder, &ret, value_type, value, index_type, index, sub->_expression.get())) {
-
-#ifndef NDEBUG
-                       // _env->debugPrint(builder, "Subscripting Row yielding result type " + sub->getInferredType().desc() + ", result is: ");
-                       // if(sub->getInferredType().withoutOption().isStructuredDictionaryType()) {
-                       //     if(ret.is_null)
-                       //         _env->printValue(builder, ret.is_null,  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result is_null: ");
-                       //     struct_dict_print(*_env, builder, ret, sub->getInferredType().withoutOption());
-                       // } else {
-                       //     if(ret.is_null)
-                       //         _env->printValue(builder, ret.is_null,  std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result is_null: ");
-                       //     if(ret.val)
-                       //         _env->printValue(builder, ret.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result value: ");
-                       //     if(ret.size)
-                       //         _env->printValue(builder, ret.size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript result size: ");
-                       // }
-#endif
-                        _lfb->setLastBlock(builder.GetInsertBlock());
-                        addInstruction(ret.val, ret.size, ret.is_null);
-                        return;
-                    }
-                }
-
-                if(value_type.isSparseStructuredDictionaryType()) {
-                    // special behavior compared to struct dict, i.e. if key is not found -> normal-case exception.
-                    SerializableValue ret;
-                    if(subscriptSparseStructDict(builder, &ret, value_type, value, index_type, index, sub->_expression.get())) {
-                        // block open? i.e. no early exit? If not, return.
-                        if(!blockOpen(builder.GetInsertBlock()))
-                            return;
-
-                        _lfb->setLastBlock(builder.GetInsertBlock());
-                        addInstruction(ret.val, ret.size, ret.is_null);
-                        return;
-                    }
-                }
-
-                if(value_type == python::Type::PYOBJECT) {
-                    _lfb->setLastBlock(builder.GetInsertBlock());
-                    // deoptimization -> go to general case/interpreter case.
-                    _lfb->exitWithException(ExceptionCode::NORMALCASEVIOLATION, "[] on pyobject.");
-                    return;
-//                    _lfb->addException(builder, ExceptionCode::NORMALCASEVIOLATION, _env->i1Const(true), "[] on pyobject.");
-//                    auto dummy = _env->dummyValue(builder, sub->getInferredType());
-//                    _lfb->setLastBlock(builder.GetInsertBlock());
-//                    addInstruction(dummy.val, dummy.size, dummy.is_null);
-//                    return;
-                    // check what the result is supposed to be, use dummy to continue compilation.
-                }
-
-                // undefined
-                std::stringstream ss;
-                ss << "unsupported type encountered with [] operator.";
-                ss << "\nindex type: " << sub->_expression->getInferredType().desc();
-                ss << "\nvalue type: " << sub->_value->getInferredType().desc();
-                if(index.val)
-                    ss << "\nindex llvm type: " << _env->getLLVMTypeName(index.val->getType());
-                else
-                    ss << "\nindex llvm type: <nullptr>";
-                if(value.val)
-                    ss << "\nvalue llvm type: " << _env->getLLVMTypeName(value.val->getType());
-                else
-                    ss << "\nvalue llvm type: <nullptr>";
-                error(ss.str());
-            }
+            subscript(sub->getInferredType(), value, value_type, index,
+              index_type, sub->_expression.get(), sub->_value.get());
         }
 
         // helper function to check whether options can be cast

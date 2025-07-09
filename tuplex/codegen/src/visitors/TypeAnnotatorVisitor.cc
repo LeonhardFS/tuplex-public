@@ -1376,6 +1376,21 @@ namespace tuplex {
         return true;
     }
 
+    inline python::Type subscriptTypeWithType(const python::Type& t, const python::Type index_type) {
+        // Which ones do support sequence protocol? Should define more broadly...
+        // @TODO. --> need to fuse the logic here with visit below.
+
+      auto is_integer_index = index_type.withoutOption() == python::Type::I64 || index_type.withoutOption() == python::Type::BOOLEAN;
+        if (t == python::Type::STRING && is_integer_index) {
+          return python::Type::STRING;
+        }
+
+        if (t.isListType() && is_integer_index)
+          return t.elementType();
+
+        return python::Type::UNKNOWN;
+    }
+
     void TypeAnnotatorVisitor::visit(NSubscription *sub) {
         // special case: annotation? can ignore visit.
         if(sub->hasAnnotation()) {
@@ -1521,19 +1536,44 @@ namespace tuplex {
             bool rc_string = false;
             if((rc_integer = try_to_get_static_integer_index_from_expression(sub->_expression.get(), type.get_column_count(), &index)) ||
                     (rc_string = try_to_get_static_string_based_integer_index_from_expression(sub->_expression.get(), type.get_column_names(), &index))) {
-                // check if valid index
+                // Check if valid index.
                 if(index < 0 || index >= type.get_column_count()) {
-                    auto ec_code = rc_integer ? ExceptionCode::INDEXERROR : ExceptionCode::KEYERROR;
-                    sub->setInferredType(get_exception_type(ec_code)); // should be
 
-                    // get more context:
-                    std::stringstream ss;
-                    ss<<"Index error: tried to access row element at position " + std::to_string(index);
-                    ss<<"\nrc_integer: "<<std::boolalpha<<rc_integer<<" rc_string: "<<std::boolalpha<<rc_string;
-                    ss<<"\nnum columns: "<<type.get_column_count();
-                    ss<<"\nexpression: "<<astToString(sub->_expression.get());
-                    ss<<"\ncolumn names: "<<type.get_column_names();
-                    error(ss.str());
+                    // There is another special case here:
+                    // I.e., if the function has a single parameter AND the single parameter supports indexing, check if ok.
+                    if(type.get_column_count() == 1) {
+                        // Is the single row element indexable by an expression?
+                        auto element_type = type.get_column_type(0);
+                        auto subscript_type = subscriptTypeWithType(element_type, index_type);
+                        if (subscript_type != python::Type::UNKNOWN)
+                            sub->setInferredType(subscript_type);
+                        else {
+                            auto ec_code = rc_integer ? ExceptionCode::INDEXERROR : ExceptionCode::KEYERROR;
+                            sub->setInferredType(get_exception_type(ec_code)); // should be
+
+                            // get more context:
+                            std::stringstream ss;
+                            ss<<"Index error: tried to access row element at position " + std::to_string(index);
+                            ss<<" or subscript single column of type "<<element_type.desc()<<" with "<<std::to_string(index);
+                            ss<<"\nrc_integer: "<<std::boolalpha<<rc_integer<<" rc_string: "<<std::boolalpha<<rc_string;
+                            ss<<"\nnum columns: "<<type.get_column_count();
+                            ss<<"\nexpression: "<<astToString(sub->_expression.get());
+                            ss<<"\ncolumn names: "<<type.get_column_names();
+                            error(ss.str());
+                        }
+                    } else {
+                        auto ec_code = rc_integer ? ExceptionCode::INDEXERROR : ExceptionCode::KEYERROR;
+                        sub->setInferredType(get_exception_type(ec_code)); // should be
+
+                        // get more context:
+                        std::stringstream ss;
+                        ss<<"Index error: tried to access row element at position " + std::to_string(index);
+                        ss<<"\nrc_integer: "<<std::boolalpha<<rc_integer<<" rc_string: "<<std::boolalpha<<rc_string;
+                        ss<<"\nnum columns: "<<type.get_column_count();
+                        ss<<"\nexpression: "<<astToString(sub->_expression.get());
+                        ss<<"\ncolumn names: "<<type.get_column_names();
+                        error(ss.str());
+                    }
                 } else {
                     sub->setInferredType(type.get_column_type(index));
                 }

@@ -229,7 +229,14 @@ namespace tuplex {
                 if(PARAM_USE_ROW_TYPE && val_type.isRowType() && sub->_value->type() == ASTNodeType::Identifier) {
                     NIdentifier* id = (NIdentifier*)sub->_value.get();
                     if(std::find(_argNames.begin(), _argNames.end(), id->_name) != _argNames.end()) {
-                        if(sub->_expression->type() == ASTNodeType::Number) {
+
+                        // special case: single column -> indexing on it basically means fully used always.
+                        // This is also for the case of e.g. Row("abc") --> lambda x: x[2] where the string arg is accessed.
+                        if (_numColumns == 1) {
+                           _argFullyUsed[id->_name] = true;
+                        }
+                        // capture the _numColumns !=1 && .. chain here.
+                        else if(sub->_expression->type() == ASTNodeType::Number) {
                             NNumber* num = (NNumber*)sub->_expression.get();
                             // can save this one!
                             auto idx = num->getI64();

@@ -643,6 +643,11 @@ namespace codegen {
          */
         SerializableValue subscriptCJSONDictionary(NSubscription *sub, SerializableValue index, const python::Type& index_type, SerializableValue value);
 
+        void subscript(const python::Type& expected_subscript_return_type, SerializableValue value, python::Type value_type,
+          SerializableValue index, python::Type index_type,
+          ASTNode* expression_node=nullptr,
+          ASTNode* value_node=nullptr);
+
         llvm::Value* cJSONObjectFromValue(const IRBuilder& builder, const SerializableValue& value, python::Type type);
 
         // helper function to generate if/else statements

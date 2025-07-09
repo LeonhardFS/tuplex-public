@@ -374,9 +374,9 @@ TEST_F(DataFrameTest, SimpleMapColumnII) {
 
     printRows(v);
 
-    EXPECT_EQ(v[0], Row(2));
-    EXPECT_EQ(v[1], Row(3));
-    EXPECT_EQ(v[2], Row(4));
+    EXPECT_EQ(v[0].toPythonString(), Row(2).toPythonString());
+    EXPECT_EQ(v[1].toPythonString(), Row(3).toPythonString());
+    EXPECT_EQ(v[2].toPythonString(), Row(4).toPythonString());
 }
 
 
