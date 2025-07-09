@@ -1042,7 +1042,7 @@ namespace tuplex {
         ASTNode* replace(ASTNode* parent, ASTNode* node) override;
 
         bool _tupleArgument;
-        size_t _numColumns;
+        int64_t _numColumns;
         bool _singleLambda;
         std::unordered_map<size_t, size_t> _rewriteMap;
         std::vector<std::string> _argNames;
@@ -1050,7 +1050,7 @@ namespace tuplex {
         python::Type _newInputType;
     public:
         RewriteVisitor(const std::unordered_map<size_t, size_t> &rewriteMap) : _tupleArgument(false),
-        _numColumns(0), _singleLambda(false), _rewriteMap(rewriteMap) {}
+        _numColumns(-1), _singleLambda(false), _rewriteMap(rewriteMap) {}
 
 
         python::Type getRewrittenInputRowType() const { return _newInputType; }
@@ -1302,6 +1302,9 @@ namespace tuplex {
             if((row_type.isTupleType() && row_type != python::Type::EMPTYTUPLE) || (row_type.isRowType() && row_type != python::Type::EMPTYROW)) {
                 _tupleArgument = true;
                 _numColumns = extract_columns_from_type(row_type);
+            } else {
+                _tupleArgument = false;
+                _numColumns = 1;
             }
         } else {
             _tupleArgument = false;
