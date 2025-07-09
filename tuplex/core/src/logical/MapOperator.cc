@@ -217,8 +217,8 @@ namespace tuplex {
             }
 
             // check it matches output schema!
-            assert(getOutputSchema().getRowType().isTupleType());
-            assert(getOutputSchema().getRowType().parameters().size() == cols_to_keep.size());
+            assert(getOutputSchema().getRowType().isTupleType() || getOutputSchema().getRowType().isRowType());
+            assert(extract_columns_from_type(getOutputSchema().getRowType()) == cols_to_keep.size());
             _outputColumns = cols_to_keep;
         }
     }

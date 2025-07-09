@@ -559,7 +559,7 @@ namespace tuplex {
             return schema;
         }
         // must be tuple type OR should be exception type only.
-        assert(_outputSchema.getRowType().isTupleType() || _outputSchema.getRowType().isExceptionType());
+        assert(_outputSchema.getRowType().isTupleType() || _outputSchema.getRowType().isRowType() || _outputSchema.getRowType().isExceptionType());
         return _outputSchema;
     }
 

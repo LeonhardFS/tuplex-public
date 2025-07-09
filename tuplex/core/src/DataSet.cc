@@ -414,7 +414,7 @@ namespace tuplex {
     }
 
     size_t DataSet::numColumns() const {
-        assert(schema().getRowType().isTupleType());
+        assert(schema().getRowType().isTupleType() || schema().getRowType().isRowType());
         return extract_columns_from_type(this->schema().getRowType());
     }
 
