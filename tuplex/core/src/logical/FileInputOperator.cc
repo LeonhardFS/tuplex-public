@@ -920,6 +920,18 @@ namespace tuplex {
             // set column names from stat
             // Note: call this BEFORE applying type hints!
             _columnNames = _header ? csvstat.columns() : std::vector<std::string>();
+
+            // If column names are explicitly given, overwrite.
+            if (!column_name_hints.empty()) {
+                if (column_name_hints.size() != csvstat.columnCount()) {
+                    std::stringstream ss;
+                    ss<<"column names given "<<column_name_hints<<" ("<<pluralize(column_name_hints.size(), "column")<<") differ from detected column count ("<<csvstat.columnCount()<<")";
+                    logger.warn(ss.str());
+                    // @TODO: clarify behavior here.
+                }
+                _columnNames = column_name_hints;
+            }
+
             if(!_header || csvstat.columns().empty()) {
                 // Important to set here number of columns, because columnNames will be empty.
                 _columnsToSerialize = std::vector<bool>(csvstat.columnCount(), true);

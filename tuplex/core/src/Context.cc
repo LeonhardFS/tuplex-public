@@ -562,7 +562,7 @@ namespace tuplex {
                 if(!identical) {
                     // make error dataset
                     std::stringstream errStream;
-                    errStream<<"detected columns "<<detectedColumns<<" do not match given columns "<<columns;
+                    errStream<<__FILE__<<":"<<__LINE__<<" detected columns "<<detectedColumns<<" do not match given columns "<<columns;
                     return makeError(errStream.str());
                 }
             }
