@@ -1763,9 +1763,20 @@ namespace tuplex {
                 slot.var = Variable(*_env, builder, type, name);
 
                 // special case tuple: may have been passed as ptr
-                if(type.isTupleType() && param.val && param.val->getType()->isPointerTy()) {
-                    auto llvm_tuple_type = _env->pythonToLLVMType(type);
-                    param.val = builder.CreateLoad(llvm_tuple_type, param.val);
+                if(type != python::Type::EMPTYTUPLE && type.isTupleType() && type.parameters().size() == 1 && param.val && param.val->getType()->isPointerTy()) {
+                    // new
+                    param = tuple_load_element(*_env, builder, param.val, type, 0);
+
+
+                    // old
+                    // auto llvm_tuple_type = _env->pythonToLLVMType(type);
+                    // param.val = builder.CreateLoad(llvm_tuple_type, param.val);
+                }
+
+                // same true for Row type, i.e. Row['A' -> str] or so.
+                // Un
+                if(type != python::Type::EMPTYROW && type.isRowType() && type.get_column_count() == 1 && param.val && param.val->getType()->isPointerTy()) {
+                    param = tuple_load_element(*_env, builder, param.val, type.get_columns_as_tuple_type(), 0);
                 }
 
                 // lists can be modified, so declare via alloca -> allows for modification (closure!)
@@ -4126,15 +4137,15 @@ namespace tuplex {
 
                 if(value_type.isRowType()) {
 
-                    // special case: row with single element
-                  if (value_type.get_column_count() == 1) {
-
-                    SerializableValue element;
-                    auto rc = subscriptRow(builder, &element, value_type, value, python::Type::I64, SerializableValue{_env->i64Const(0), nullptr, nullptr}, nullptr);
-                    auto element_type = value_type.get_column_type(0);
-                    subscript(expected_subscript_return_type, element, element_type, index, index_type, expression_node, nullptr);
-                    return;
-                  }
+                  //   // special case: row with single element
+                  // if (value_type.get_column_count() == 1) {
+                  // //
+                  //   SerializableValue element;
+                  //   auto rc = subscriptRow(builder, &element, value_type, value, python::Type::I64, SerializableValue{_env->i64Const(0), nullptr, nullptr}, nullptr);
+                  //   auto element_type = value_type.get_column_type(0);
+                  //   subscript(expected_subscript_return_type, element, element_type, index, index_type, expression_node, nullptr);
+                  //   return;
+                  // }
 
                     SerializableValue ret;
                     if(subscriptRow(builder, &ret, value_type, value, index_type, index, expression_node)) {

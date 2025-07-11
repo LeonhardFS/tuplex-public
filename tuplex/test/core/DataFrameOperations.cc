@@ -569,7 +569,11 @@ TEST_F(DataFrameTest, IsKeywordAndFilter) {
 
 TEST_F(DataFrameTest, FastPreview) {
     using namespace tuplex;
-    Context c(microTestOptions());
+
+    auto opt = microTestOptions();
+    // opt.set("tuplex.experimental.traceExecution", "true");
+    // opt.set("tuplex.useLLVMOptimizer", "false");
+    Context c(opt);
 
     // show on a couple rows should be faster by simply using the sample as input...
     // --> note: should also work with fallback!

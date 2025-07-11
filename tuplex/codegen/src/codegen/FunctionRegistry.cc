@@ -1666,8 +1666,9 @@ namespace tuplex {
             // call strLower from runtime
             using namespace llvm;
             assert(caller.val->getType() == _env.i8ptrType());
+            assert(caller.size && caller.size->getType() == _env.i64Type());
 
-            // implemeneted in runtime
+            // Implemented in runtime.
             FunctionType *ft = FunctionType::get(_env.i8ptrType(), {_env.i8ptrType(), _env.i64Type()}, false);
             auto func = _env.getModule()->getOrInsertFunction("strLower", ft);
 

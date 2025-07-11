@@ -63,8 +63,8 @@ namespace tuplex {
                 if(!pipFunc)
                     throw std::runtime_error("error in pipeline function");
 
-                // debug:
-                // env().debugPrint(builder, "parsed following tuple from CSV: ");
+                // // debug:
+                // env().debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " parsed following tuple from CSV: ");
                 // ft.print(builder);
 
                 auto res = PipelineBuilder::call(builder, pipFunc, ft, userData, builder.CreateLoad(builder.getInt64Ty(), outputRowNumberVar), initIntermediate(builder));

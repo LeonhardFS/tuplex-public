@@ -203,9 +203,14 @@ namespace tuplex {
                     resCode = ExceptionCode::NORMALCASEVIOLATION; // this is a bit of a hack, but makes sense
                     _exceptionHandler(_userData, ecToI64(resCode), _operatorID, rowNumber, null_value_buf, 24);
                 } else {
-                    // could be propagated to badparse string input, but there should be a general case existing...
-                    // this should not happen in text-reader...
-                    std::cerr<<"TextReader failure (should not happen), Row "<<rowNumber<<" exception: "<<exceptionCodeToString(resCode)<<std::endl;
+
+                    // Is it a negative number? --> Then not an exception but rather the amount of bytes parsed!
+                    int64_t bytes_parsed = -static_cast<int64_t>(resCode);
+                    if (static_cast<int64_t>(resCode) > 0) {
+                        // could be propagated to badparse string input, but there should be a general case existing...
+                        // this should not happen in text-reader...
+                        std::cerr<<"TextReader failure (should not happen), Row "<<rowNumber<<" exception: "<<exceptionCodeToString(resCode)<<std::endl;
+                    }
                 }
             }
 

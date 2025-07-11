@@ -70,6 +70,12 @@
 #define LLVM_CODEGEN_OPT_LEVEL_AGGRESSIVE llvm::CodeGenOptLevel::Aggressive
 #endif
 
+// Helper variable whether APIs like getPointerElementType() work or not.
+#if LLVM_VERSION_MAJOR < 15
+#define LLVM_ONLY_PTR_TYPES false
+#else
+#define LLVM_ONLY_PTR_TYPES true
+#endif
 
 namespace tuplex {
     namespace codegen {
@@ -1120,7 +1126,7 @@ namespace tuplex {
             SerializableValue() : val(nullptr), size(nullptr), is_null(nullptr)   {}
             SerializableValue(llvm::Value *v, llvm::Value* s) : val(v), size(s), is_null(nullptr) {
 #ifndef NDEBUG
-#if LLVM_VERSION_MAJOR <= 16
+#if LLVM_VERSION_MAJOR <= 15
                 if(s) {
                    auto stype = s->getType();
                    if(stype->isPointerTy())
@@ -1132,7 +1138,7 @@ namespace tuplex {
             }
             SerializableValue(llvm::Value *v, llvm::Value* s, llvm::Value* n) : val(v), size(s), is_null(n) {
 #ifndef NDEBUG
-#if LLVM_VERSION_MAJOR < 16
+#if LLVM_VERSION_MAJOR < 15
                 if(s) {
                     auto stype = s->getType();
                     if(stype->isPointerTy())
