@@ -1394,6 +1394,29 @@ namespace tuplex {
 #endif
         }
 
+        llvm::Value* call_cjson_get_size(const IRBuilder& builder, llvm::Value* cjson_obj) {
+            // only works for objects!
+            assert(builder.GetInsertBlock());
+            assert(builder.GetInsertBlock()->getParent());
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+            auto& ctx = mod->getContext();
+
+#ifdef USE_YYJSON_INSTEAD
+            // doc:
+            // yyjson_api_inline size_t yyjson_mut_obj_size	(	yyjson_mut_val *	obj	)
+            // Returns the number of key-value pairs in this object. Returns 0 if obj is NULL or type is not object.
+            auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+
+            auto func = getOrInsertFunction(mod, "yyjson_mut_obj_size", ctypeToLLVM<size_t>(ctx),
+                                            (llvm::Type*)ctypeToLLVM<char*>(ctx));
+            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_get_size (yyjson)");
+            return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt64Ty(ctx));
+#else
+#error "not yet implemented, get corresponding cjson function.
+#endif
+        }
+
         llvm::Value* call_cjson_getarraysize(const IRBuilder& builder, llvm::Value* cjson_array) {
             assert(cjson_array);
             assert(builder.GetInsertBlock());

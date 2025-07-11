@@ -1772,6 +1772,7 @@ namespace tuplex {
         extern llvm::Value* get_cjson_as_float(const IRBuilder& builder, llvm::Value* cjson_obj);
         extern llvm::Value* get_cjson_as_boolean(const IRBuilder& builder, llvm::Value* cjson_obj);
         extern SerializableValue get_cjson_as_string_value(const IRBuilder& builder, llvm::Value* cjson_obj);
+        extern llvm::Value* call_cjson_get_size(const IRBuilder& builder, llvm::Value* cjson_obj);
 
         extern llvm::Value* call_cjson_create_empty(const IRBuilder& builder);
 

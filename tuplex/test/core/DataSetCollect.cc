@@ -58,6 +58,13 @@ TEST_F(DataSetTest, LenOptionCall) {
     ASSERT_EQ(v2.size(), 2);
     EXPECT_EQ(v2[0].getInt(0), 2);
 
+    // nested version, checks that correct size is called on json objects.
+    auto f_dictB = Field::from_str_data(std::string("{\"a\":30,\"b\":{\"c\":10}}"), python::Type::GENERICDICT);
+    Row row2B({f_dictB});
+    auto v2B = c.parallelize(std::vector<Row>{row2B, row2B}).map(UDF("lambda x: len(x)")).collectAsVector();
+    ASSERT_EQ(v2B.size(), 2);
+    EXPECT_EQ(v2B[0].getInt(0), 2);
+
     auto f_list = Field(List::from_vector({Field(10.0), Field(20.0)}));
     Row row3({f_list});
     auto v3 = c.parallelize(std::vector<Row>{row3, row3}).map(UDF("lambda x: len(x)")).collectAsVector();

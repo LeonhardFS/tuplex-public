@@ -940,6 +940,7 @@ namespace tuplex {
             jit.registerSymbol("yyjson_mut_str", yyjson_mut_str);
             jit.registerSymbol("yyjson_mut_obj_get", yyjson_mut_obj_get);
             jit.registerSymbol("yyjson_mut_obj_put", yyjson_mut_obj_put);
+            jit.registerSymbol("yyjson_mut_obj_size", yyjson_mut_obj_size);
             jit.registerSymbol("yyjson_mut_is_num", yyjson_mut_is_num);
             jit.registerSymbol("yyjson_mut_is_null", yyjson_mut_is_null);
             jit.registerSymbol("yyjson_mut_is_obj", yyjson_mut_is_obj);

@@ -67,7 +67,7 @@ namespace tuplex {
                 // simple constant
                 return SerializableValue(_env.i64Const(argType.parameters().size()), i64Size);
             } else if (argType.isDictionaryType() || argType == python::Type::GENERICDICT) {
-                auto obj_size = call_cjson_getarraysize(builder, args.front().val);
+                auto obj_size = call_cjson_get_size(builder, args.front().val);
                 return SerializableValue(obj_size, i64Size);
             } else if(argType.isListType() || argType == python::Type::GENERICLIST) {
                 if(argType == python::Type::EMPTYLIST) {
