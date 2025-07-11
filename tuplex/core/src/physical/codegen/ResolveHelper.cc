@@ -191,13 +191,14 @@ namespace tuplex {
                     return ft;
                     break;
                 }
-                case FileFormat::OUTFMT_CSV: {
+                case FileFormat::OUTFMT_CSV:
+                case FileFormat::OUTFMT_TEXT: {
                     // csv is broken up into multiple cells that need to be matched (incl. check on size!)
                     return decodeCSVCells(env, builder, input_op, pip_input_row_type, return_code_on_parse_error, buf, buf_size);
                     break;
                 }
                 default: {
-                    throw std::runtime_error("found input operator with unsupported file format, need to implement...");
+                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " found input operator with unsupported file format" + input_op->name() + ", need to implement...");
                     break;
                 }
             }

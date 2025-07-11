@@ -53,6 +53,10 @@ namespace tuplex {
             // get FlattenedTuple from deserializing all things + perform value conversions/type checks...
             auto ft = parseNormalCaseRow(builder, cellsPtr, sizesPtr);
 
+            // // debug print tuple.
+            // _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " printing input tuple.");
+            // ft.print(builder);
+
             // if pipeline is set, call it!
             if(pipeline()) {
                 auto pipFunc = pipeline()->getFunction();
@@ -201,7 +205,6 @@ namespace tuplex {
                             // _env->printValue(builder, llvm::cast<llvm::Value>(nc_ecCode), "cell source parse failed with code, serializing true data: ");
                             auto serialized_row = serializeBadParseException(builder, cellsPtr, sizesPtr, true, true);
                             ExceptionDetails except_details;
-
                             except_details.badDataPtr = serialized_row.val;
                             except_details.badDataLength = serialized_row.size;
                             except_details.fmt = exception_serialization_format();

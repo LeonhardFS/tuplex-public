@@ -200,14 +200,22 @@ namespace tuplex {
             using namespace llvm;
             SubtargetFeatures Features;
 
+            auto& logger = Logger::instance().defaultLogger();
+
             // If user asked for the 'native' CPU, we need to autodetect feat3ures.
             // This is necessary for x86 where the CPU might not support all the
             // features the autodetected CPU name lists in the target. For example,
             // not all Sandybridge processors support AVX.
             StringMap<bool> HostFeatures;
 #if LLVM_VERSION_MAJOR < 20
-            if (!sys::getHostCPUFeatures(HostFeatures))
-                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " failed getting cpu features.");
+            if (!sys::getHostCPUFeatures(HostFeatures)) {
+                std::stringstream ss;
+                ss<<std::string(__FILE__) + ":" + std::to_string(__LINE__) + " failed getting cpu features.";
+                ss<<" This may indicate presence of a newer CPU architecture, for which Tuplex compiled with LLVM "<<LLVM_VERSION_STRING<<" does not have support.";
+                ss<<" LLVM target machine name is: "<<llvm::sys::getHostCPUName().str()<<".";
+                logger.warn(ss.str());
+                return ""; // no features, generic CPU.
+            }
 #else
             HostFeatures = sys::getHostCPUFeatures();
 #endif
@@ -1032,7 +1040,7 @@ namespace tuplex {
             }
 
             llvm::TargetOptions opt;
-#if LLVM_VERSION_MAJOR == 9
+#if LLVM_VERSION_MAJOR < 16
             auto RM = llvm::Optional<llvm::Reloc::Model>();
 #else
             auto RM = std::optional<llvm::Reloc::Model>(llvm::Reloc::Model());
@@ -1104,7 +1112,7 @@ namespace tuplex {
             j["llvmVersion"] = LLVM_VERSION_STRING;
             j["targetTriple"] = target_triple;
             j["cpu"] = cpu;
-#if LLVM_VERSION_MAJOR == 9
+#if LLVM_VERSION_MAJOR < 16
             j["cpuCores"] = llvm::sys::getHostNumPhysicalCores();
 #else
             j["cpuCores"] = llvm::get_physical_cores();
@@ -1113,7 +1121,7 @@ namespace tuplex {
 
             // get data layout
             llvm::TargetOptions opt;
-#if LLVM_VERSION_MAJOR == 9
+#if LLVM_VERSION_MAJOR < 16
             auto RM = llvm::Optional<llvm::Reloc::Model>();
 #else
             auto RM = std::optional<llvm::Reloc::Model>(llvm::Reloc::Model());

@@ -21,8 +21,12 @@
 
 #if LLVM_VERSION_MAJOR > 9
 #include <llvm/AsmParser/Parser.h>
-#include <llvm/TargetParser/Host.h>
+#endif
 
+#if LLVM_VERSION_MAJOR >= 16
+#include <llvm/TargetParser/Host.h>
+#else
+#include <llvm/Support/Host.h>
 #endif
 
 #if LLVM_VERSION_MAJOR >= 9

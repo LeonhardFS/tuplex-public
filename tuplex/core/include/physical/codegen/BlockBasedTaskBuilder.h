@@ -135,6 +135,8 @@ namespace tuplex {
                     auto eh_func = codegen::exception_handler_prototype(env().getContext(), env().getModule().get(), _exceptionHandlerName);
                     // simple call to exception handler...
 
+                    // _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " calling except handler");
+
                     // encode here serialization format as part of exception code
 #warning "refactor this more nicely!"
                     assert(fmt != ExceptionSerializationFormat::UNKNOWN);
