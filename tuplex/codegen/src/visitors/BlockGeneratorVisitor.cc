@@ -1762,16 +1762,15 @@ namespace tuplex {
                 builder.CreateStore(_env->i1Const(true), slot.definedPtr); // params are always defined!!!
                 slot.var = Variable(*_env, builder, type, name);
 
-                // special case tuple: may have been passed as ptr
-                if(type != python::Type::EMPTYTUPLE && type.isTupleType() && type.parameters().size() == 1 && param.val && param.val->getType()->isPointerTy()) {
-                    // new
-                    param = tuple_load_element(*_env, builder, param.val, type, 0);
-
-
-                    // old
-                    // auto llvm_tuple_type = _env->pythonToLLVMType(type);
-                    // param.val = builder.CreateLoad(llvm_tuple_type, param.val);
+                // special case tuple: may have been passed as ptr.
+                // This logic ONLY applies for tuples. I.e., this is to canonicalize to struct (instead of struct*).
+                // --> LLVM related.
+                if(type.isTupleType() && param.val && param.val->getType()->isPointerTy()) {
+                    auto llvm_tuple_type = _env->pythonToLLVMType(type);
+                    param.val = builder.CreateLoad(llvm_tuple_type, param.val);
                 }
+
+                // TODO: unwrapping tuple element??
 
                 // same true for Row type, i.e. Row['A' -> str] or so.
                 // Un
@@ -3056,7 +3055,8 @@ namespace tuplex {
                 auto var = slot->var.load(builder);
 
 #ifndef NDEBUG
-                // _env->debugPrint(builder, "accessing var " + slot->var.name + " =", var.val);
+                // debug:
+                // printValue(builder, var, slot->type, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " accessing var " + slot->var.name + " =");
 #endif
                 addInstruction(var.val, var.size, var.is_null);
                 return;
@@ -3895,6 +3895,29 @@ namespace tuplex {
             }
         }
 
+        void BlockGeneratorVisitor::printValue(const IRBuilder& builder,
+            const SerializableValue& value,
+            const python::Type& value_type,
+            const std::string& message) {
+            if (!message.empty())
+                _env->debugPrint(builder, message);
+            _env->debugPrint(builder, "Printing value of python type: " + value_type.desc());
+
+            // tuple? print with FT tuple!
+            if (value_type.isTupleType()) {
+                auto ft = FlattenedTuple::fromLLVMStructVal(_env, builder, value.val, value_type);
+                ft.print(builder);
+            } else {
+                // primitive, print as is.
+                if (value.val)
+                    _env->printValue(builder, value.val, "val: ");
+                if (value.size)
+                    _env->printValue(builder, value.size, "size: ");
+                if (value.is_null)
+                    _env->printValue(builder, value.is_null, "is_null: ");
+            }
+        }
+
         // Use offsets from the layout of the cJSON struct to fetch the correct values
         SerializableValue BlockGeneratorVisitor::subscriptCJSONDictionary(NSubscription *sub, SerializableValue index,
                                                                           const python::Type &index_type,
@@ -4298,6 +4321,10 @@ namespace tuplex {
                     return;
                 }
             }
+
+            // debug:
+            // printValue(builder, value, value_type, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " value to be []");
+            // printValue(builder, value, index_type, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " index used for []");
 
             subscript(sub->getInferredType(), value, value_type, index,
               index_type, sub->_expression.get(), sub->_value.get());

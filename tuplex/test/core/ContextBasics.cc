@@ -42,6 +42,9 @@ TEST_F(ContextBasicsTest, multiPartitionResultset) {
     ContextOptions co = testOptions();
     co.set("tuplex.partitionSize", "100B"); // super small partition size
     co.set("tuplex.executorMemory", "1MB");
+    // co.set("tuplex.experimental.traceExecution", "true");
+    co.set("tuplex.executorCount", "0");
+    // co.set("tuplex.useLLVMOptimizer", "false");
 
     // following code would lead to an IndexError
     //c.parallelize([("hello", "test")] * 100000).map(lambda x: x[4]).collect()

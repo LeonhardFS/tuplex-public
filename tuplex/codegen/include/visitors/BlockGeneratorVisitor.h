@@ -738,6 +738,9 @@ namespace codegen {
                                                  const python::Type &idx_expr_type,
                                                  const SerializableValue &idx_expr,
                                                  ASTNode *idx_expr_node);
+
+        // Debug helper.
+        void printValue(const IRBuilder& builder, const SerializableValue& value, const python::Type& value_type, const std::string& message="");
     protected:
 
         // override such it throws
