@@ -481,18 +481,20 @@ namespace tuplex {
                 // special case: coltypes could be single element & tuple!
                 if(_colTypes.back().size() == 1)
                     unified_type = unifyTypes(_colTypes.back().front(), _inputRowType, t_policy);
-                if(unified_type != python::Type::UNKNOWN) {
-                    // update colTypes accordingly!
-                    for(auto& colType : _colTypes)
-                        colType = unified_type.parameters();
-                } else {
-                    // leave as is? do not warn?
-                    // auto err_str = "sample object (type=" + sample_row_type.desc()
-                    //        + ") given doesn't match or can be unified with input row type (type="
-                    //        + _inputRowType.desc() + ")";
-                    //
-                    // PyErr_SetString(PyExc_TypeError, err_str.c_str());
-                }
+
+                // // Logic??
+                // if(unified_type != python::Type::UNKNOWN) {
+                //     // update colTypes accordingly!
+                //     for(auto& colType : _colTypes)
+                //         colType = unified_type.parameters();
+                // } else {
+                //     // leave as is? do not warn?
+                //     // auto err_str = "sample object (type=" + sample_row_type.desc()
+                //     //        + ") given doesn't match or can be unified with input row type (type="
+                //     //        + _inputRowType.desc() + ")";
+                //     //
+                //     // PyErr_SetString(PyExc_TypeError, err_str.c_str());
+                // }
             }
         }
 

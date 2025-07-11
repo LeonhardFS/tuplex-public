@@ -3245,7 +3245,6 @@ namespace tuplex {
 
                 call_cjson_object_set_item(builder, ret, key, value);
             }
-            assert(ret->getType()->isPointerTy());
             auto size = call_cjson_to_string(builder, ret).size;
             return SerializableValue(ret, size, _env->i1Const(false));
         }
