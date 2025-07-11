@@ -665,6 +665,12 @@ TEST_F(DataSetTest, MapColumnTypingBug) {
     // reported as https://github.com/tuplex/tuplex/issues/96
     using namespace tuplex;
 
+    // TODO: this is a slow test in debug mode (~3min). Main reason is the slow hash table to result set conversion.
+    // Want to speed that one up, e.g. with code generated piece.
+#ifndef NDEBUG
+    GTEST_SKIP_("MapColumnTypingBug slow test in debug mode.");
+#endif
+
     Context c(microTestOptions());
     // c.csv("zillow_data.csv").mapColumn('title', lambda x: x + "-hi").filter(lambda a: False)
     auto v = c.csv("../resources/zillow_data.csv").mapColumn("title", UDF("lambda x: x + '-hi'")).unique().collectAsVector();//.filter(UDF("lambda a: False")).collectAsVector();

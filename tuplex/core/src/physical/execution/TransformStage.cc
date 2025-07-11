@@ -341,6 +341,9 @@ namespace tuplex {
                 if (out_row_type.isRowType())
                     out_row_type = out_row_type.get_columns_as_tuple_type();
 
+                auto num_entries = hashmap_bucket_count(hashtable);
+
+                size_t pos = 0;
                 while((key = hashmap_get_next_key(hashtable, &iterator, &keylen)) != nullptr) {
                     Row r;
 
@@ -363,6 +366,7 @@ namespace tuplex {
 
                     // save row to partition
                     pw.writeRow(r);
+                    pos++;
                 }
             }
         }
