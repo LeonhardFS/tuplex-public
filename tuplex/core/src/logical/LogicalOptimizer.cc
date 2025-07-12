@@ -1045,7 +1045,7 @@ namespace tuplex {
                     // non-empty UDF?
                     // simply return all indices, i.e. all columns are now to be kept!
                     // @TODO: can avoid rewrite if it's identity map!
-                    auto numElements = mop->getOutputSchema().getRowType().parameters().size();
+                    auto numElements = extract_columns_from_type(mop->getOutputSchema().getRowType());
                     vector<size_t> colsToKeep;
                     for(int i = 0; i < numElements; ++i)
                         colsToKeep.emplace_back(i);

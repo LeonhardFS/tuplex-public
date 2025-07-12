@@ -175,7 +175,7 @@ namespace tuplex {
 
             // for now: do not support row type
             if((type.isRowType()) || (type.isTupleType() && type.parameters().size() == 1 && type.parameters().front().isRowType()))
-                throw std::runtime_error("row type not yet supported");
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Row type not yet supported.");
 
             // special case: empty tuple
             if(python::Type::EMPTYTUPLE == type || python::Type::EMPTYROW == type) {

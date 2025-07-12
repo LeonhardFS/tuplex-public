@@ -153,14 +153,15 @@ namespace tuplex {
             python::Type getReturnType() const;
 
             /*!
-             * returns how the data would be represented as row type
+             * Returns how the data would be represented as row type.
              * @return
              */
             inline python::Type getRowType() const {
                 auto t = getReturnType();
                 if(t == python::Type::EMPTYTUPLE)
                     return python::Type::makeTupleType({python::Type::EMPTYTUPLE}); // ((),) as special case
-                // propagate to tuple type!
+                if (t.isRowType())
+                    return t;
                 return python::Type::propagateToTupleType(t);
             }
 
