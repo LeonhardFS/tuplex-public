@@ -811,7 +811,6 @@ namespace tuplex {
         // no lock here, have callers be responsible for thos.
 
         // Query cache for uri, if not found return nullptr.
-        auto it =
         return nullptr;
     }
 
