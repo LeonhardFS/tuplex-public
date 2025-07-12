@@ -995,22 +995,41 @@ namespace tuplex {
         bool is_key_val = true;
         python::Type keyType, valType;
         if(dict->_pairs.size() > 0) {
-            keyType = dict->_pairs[0].first->getInferredType();
-            valType = dict->_pairs[0].second->getInferredType(); // save the key type, val type of the first pair
+
+            // special case: All keys constant? => Same constant? Can aggressively reduce.
+            bool all_keys_constant = true;
+            bool all_vals_constant = true;
+            for (const auto& p : dict->_pairs) {
+                if (!p.first->getInferredType().isConstantValued())
+                    all_keys_constant = false;
+                if (!p.second->getInferredType().isConstantValued())
+                    all_vals_constant = false;
+                if (!all_keys_constant && !all_vals_constant)
+                    break;
+            }
+
+            // Use deoptimized types here.
+            keyType = deoptimizedType(dict->_pairs[0].first->getInferredType());
+            valType = deoptimizedType(dict->_pairs[0].second->getInferredType()); // save the key type, val type of the first pair
+
             for(const auto& p: dict->_pairs) { // check if every pair has the same key type, val type
                 //  keyType = unifyTypes(keyType, p.first->getInferredType(), _policy.allowNumericTypeUnification);
                 //                valType = unifyTypes(valType, p.second->getInferredType(), _policy.allowNumericTypeUnification);
                 // @TODO note: might need to use here
-                if(p.first->getInferredType() != keyType || p.second->getInferredType() != valType) {
+
+                auto nextKeyType = deoptimizedType(p.first->getInferredType());
+                auto nextValType = deoptimizedType(p.second->getInferredType());
+
+                if(nextKeyType != keyType || nextValType != valType) {
                     // also for None case
-                    if (valType.isDictionaryType() && p.second->getInferredType() == python::Type::EMPTYDICT) {
+                    if (valType.isDictionaryType() && nextValType == python::Type::EMPTYDICT) {
                         continue;
-                    } else if (valType == python::Type::EMPTYDICT && p.second->getInferredType().isDictionaryType()) {
+                    } else if (valType == python::Type::EMPTYDICT && nextValType.isDictionaryType()) {
                         // upcast valType
-                        valType = p.second->getInferredType();
+                        valType = nextValType;
                     } else if (valType == python::Type::NULLVALUE) {
-                        valType = python::Type::makeOptionType(p.second->getInferredType());
-                    } else if (p.second->getInferredType() == python::Type::NULLVALUE) {
+                        valType = python::Type::makeOptionType(nextValType);
+                    } else if (nextValType == python::Type::NULLVALUE) {
                         valType = python::Type::makeOptionType(valType);
                     } else {
                         is_key_val = false; // if they are not the same, then it is not of type Dictionary[Key, Val]
@@ -1018,6 +1037,34 @@ namespace tuplex {
                     }
                 }
             }
+
+            // Check for constants and upgrade types if all pair constants match.
+            if (all_keys_constant) {
+                auto key_constant = dict->_pairs[0].first->getInferredType().constant();
+                bool all_key_constants_equal = true;
+                for (const auto& p : dict->_pairs) {
+                    if (p.first->getInferredType().constant() != key_constant) { // constant compare
+                        all_key_constants_equal = false;
+                        break;
+                    }
+                }
+                if (all_key_constants_equal)
+                    keyType = dict->_pairs[0].first->getInferredType();
+            }
+            if (all_vals_constant) {
+                auto val_constant = dict->_pairs[0].second->getInferredType().constant();
+                bool all_vals_constants_equal = true;
+                for (const auto& p : dict->_pairs) {
+                    if (p.second->getInferredType().constant() != val_constant) { // constant compare
+                        all_vals_constants_equal = false;
+                        break;
+                    }
+                }
+                if (all_vals_constants_equal)
+                    valType = dict->_pairs[0].second->getInferredType();
+            }
+
+            // Note: If all_keys_constant and all_vals_constant -> optimizer pass may DEPENDING on access pattern upgrade to struct dict?
 
             if(keyType != python::Type::UNKNOWN && valType != python::Type::UNKNOWN) { // indicates whether every key, val have the same type
                 dict->setInferredType(python::Type::makeDictionaryType(keyType, valType));

@@ -115,6 +115,13 @@ namespace tuplex {
         return str_ptr;
     }
 
+    yyjson_mut_doc* yyjson_init_doc_with_root() {
+        // Manual in-memory init for {}.
+        auto doc = yyjson_init_doc();
+        yyjson_mut_doc_set_root(doc, yyjson_mut_obj(doc));
+        return doc;
+    }
+
     yyjson_mut_doc* JsonItem_to_yyjson_mut_doc(codegen::JsonItem* item) {
         // TODO: could optimize this, for now go indirection route of dump/unparse
         std::stringstream ss;

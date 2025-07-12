@@ -1674,7 +1674,7 @@ namespace tuplex {
 #ifdef USE_YYJSON_INSTEAD
 
             // this is a custom function, which sets up also the runtime allocator to be used within yyjson.
-            auto func_doc_init = getOrInsertFunction(mod, "yyjson_init_doc", i8ptrType(ctx));
+            auto func_doc_init = getOrInsertFunction(mod, "yyjson_init_doc_with_root", i8ptrType(ctx));
             auto func_doc_get_root = getOrInsertFunction(mod, "yyjson_mut_doc_get_root", i8ptrType(ctx), i8ptrType(ctx));
             auto yy_doc = builder.CreateCall(func_doc_init);
             auto yy_root_item = builder.CreateCall(func_doc_get_root, {yy_doc});
@@ -1685,7 +1685,7 @@ namespace tuplex {
 
             // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_create_empty");
 
-            set_yyjson_mut_doc(builder, yy_ret_val, yy_doc); // <-- this may lead to modificaitons if subdict is returned, this should be correct. dict.copy() creates deep copy of elements.
+            set_yyjson_mut_doc(builder, yy_ret_val, yy_doc); // <-- this may lead to modifications if subdict is returned, this should be correct. dict.copy() creates deep copy of elements.
             set_yyjson_mut_obj(builder, yy_ret_val, yy_root_item);
             return builder.CreateLoad(llvm_type, yy_ret_val);
 #else
@@ -1827,18 +1827,13 @@ namespace tuplex {
 
         }
 
-        llvm::Value* call_cjson_from_value(const IRBuilder& builder, const SerializableValue& value, const python::Type& type, llvm::Value* cjson_obj) {
+        llvm::Value* value_to_yyjson_mut(const IRBuilder& builder, const SerializableValue& value, const python::Type& type, llvm::Value* yydoc) {
             using namespace llvm;
             assert(builder.GetInsertBlock());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
             auto& ctx = mod->getContext();
             auto i8ptrtype = ctypeToLLVM<char*>(ctx);
-    #ifdef USE_YYJSON_INSTEAD
-
-            if (!cjson_obj) {
-                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " cjson_obj required in yyjson mode for call_cjson_from_value. Is nullptr.");
-            }
 
             // Create a yyjson_mut_val to be used as value for yyjson_mut_obj_put.
             if(type.isOptionType()) {
@@ -1852,11 +1847,11 @@ namespace tuplex {
 
                 builder.CreateCondBr(value.is_null, bbIsNull, bbIsNotNull);
                 builder.SetInsertPoint(bbIsNull);
-                auto null_value = call_cjson_from_value(builder, {}, python::Type::NULLVALUE);
+                auto null_value = value_to_yyjson_mut(builder, {}, python::Type::NULLVALUE, yydoc);
                 builder.CreateBr(bbDone);
 
                 builder.SetInsertPoint(bbIsNotNull);
-                auto non_null_value = call_cjson_from_value(builder, value, type.withoutOption());
+                auto non_null_value = value_to_yyjson_mut(builder, value, type.withoutOption(), yydoc);
                 builder.CreateBr(bbDone);
 
                 auto phi = builder.CreatePHI(i8ptrtype, 2);
@@ -1864,8 +1859,6 @@ namespace tuplex {
                 phi->addIncoming(non_null_value, bbIsNotNull);
                 return phi;
             }
-
-            auto yydoc = get_yyjson_doc(builder, cjson_obj);
 
             // regular, primitive types.
             if(python::Type::NULLVALUE == type) {
@@ -1896,10 +1889,47 @@ namespace tuplex {
 
             if (type.isConstantValued()) {
                 auto v = constantValuedTypeToLLVM(builder, type);
-                return call_cjson_from_value(builder, v, type.underlying(), cjson_obj);
+                return value_to_yyjson_mut(builder, v, type.underlying(), yydoc);
             }
 
-            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented in yyjson mode.");
+            return nullptr;
+        }
+
+        llvm::Value* call_cjson_from_value(const IRBuilder& builder, const SerializableValue& value, const python::Type& type, llvm::Value* cjson_obj) {
+            using namespace llvm;
+            assert(builder.GetInsertBlock());
+            auto mod = builder.GetInsertBlock()->getParent()->getParent();
+            assert(mod);
+            auto& ctx = mod->getContext();
+            auto i8ptrtype = ctypeToLLVM<char*>(ctx);
+    #ifdef USE_YYJSON_INSTEAD
+
+            if (!cjson_obj) {
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " cjson_obj required in yyjson mode for call_cjson_from_value. Is nullptr.");
+            }
+
+            // Create new yyjson doc + obj combo.
+            // Create new yyjson doc + obj combo.
+            // this is a custom function, which sets up also the runtime allocator to be used within yyjson.
+            auto func_doc_init = getOrInsertFunction(mod, "yyjson_init_doc_with_root", i8ptrType(ctx));
+            auto func_doc_set_root = getOrInsertFunction(mod, "yyjson_mut_doc_set_root", i8ptrType(ctx), i8ptrType(ctx), i8ptrType(ctx));
+            auto yy_doc = builder.CreateCall(func_doc_init);
+
+            // Convert value.
+            auto yy_val = value_to_yyjson_mut(builder, value, type, yy_doc);
+            if (!yy_val)
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented in yyjson mode.");
+
+            builder.CreateCall(func_doc_set_root, {yy_doc, yy_val});
+
+            auto llvm_type = get_or_create_yyjson_shim_type(builder);
+            auto ctor_builder = builder.firstBlockBuilder(false); // insert at beginning.
+            auto yy_ret_val = ctor_builder.CreateAlloca(llvm_type, 0, nullptr, "yy_retval");
+
+            set_yyjson_mut_doc(builder, yy_ret_val, yy_doc); // <-- this may lead to modifications if subdict is returned,
+            // this should be correct. dict.copy() creates deep copy of elements.
+            set_yyjson_mut_obj(builder, yy_ret_val, yy_val);
+            return builder.CreateLoad(llvm_type, yy_ret_val);
 #endif
             // converts value to cJSON value.
 

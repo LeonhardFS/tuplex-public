@@ -3225,28 +3225,46 @@ namespace tuplex {
             assert(_lfb);
             auto builder = _lfb->getIRBuilder();
 
-            auto ret = call_cjson_create_empty(builder);
+            // correct way to init new empty dict ptr.
+            auto llvm_generic_dict_type = _env->pythonToLLVMType(python::Type::GENERICDICT);
+            auto ret = _env->CreateFirstBlockAlloca(builder, llvm_generic_dict_type);
+            builder.CreateStore(call_cjson_create_empty(builder), ret);
+
+            {
+                auto serialized_dict = call_cjson_to_string(builder, builder.CreateLoad(llvm_generic_dict_type, ret));
+                _env->printValue(builder, serialized_dict.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " after init serialized dict: ");
+            }
+
             for (unsigned i = 0; i < dict->_pairs.size(); ++i) {
-                Value *key = dictionaryKey(_env->getContext(), _env->getModule().get(), builder, keys[i].val,
-                                           dict->_pairs[i].first->getInferredType(),
-                                           dict->_pairs[i].second->getInferredType());
-                if (key == nullptr) {
-                    error("Invalid key for dictionary");
-                    return {};
-                }
+                // // old: support keys beyond string key.
+                // Value *key = dictionaryKey(_env->getContext(), _env->getModule().get(), builder, keys[i].val,
+                //                            dict->_pairs[i].first->getInferredType(),
+                //                            dict->_pairs[i].second->getInferredType());
+                // if (key == nullptr) {
+                //     error("Invalid key for dictionary");
+                //     return {};
+                // }
+
+                auto key = keys[i].val;
+                auto key_type = dict->_pairs[i].first->getInferredType();
+                if (deoptimizedType(key_type) != python::Type::STRING)
+                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " key of type " + key_type.desc() + " not yet supported.");
+
                 // get cJSON object with value
                 auto value_type = dict->_pairs[i].second->getInferredType();
 
                 auto value = call_cjson_from_value(builder, vals[i], value_type, ret);
-                assert(value);
-                #ifndef NDEBUG
-                _env->debugPrint(builder, "calling cJSONAddItem with key=", key);
-                _env->debugPrint(builder, "calling cJSONAddItem with value=", value);
-                #endif
 
+                auto serialized_value =  call_cjson_to_string(builder, value);
+                _env->printValue(builder, serialized_value.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " serialized value to add to dict: ");
+                assert(value);
                 call_cjson_object_set_item(builder, ret, key, value);
             }
-            auto size = call_cjson_to_string(builder, ret).size; // TODO: can this be deleted?
+            auto serialized_dict = call_cjson_to_string(builder, ret);
+
+            _env->printValue(builder, serialized_dict.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " serialized dict: ");
+
+            auto size = serialized_dict.size; // TODO: can this be deleted?
             return SerializableValue(ret, size, _env->i1Const(false));
         }
 
@@ -3288,7 +3306,7 @@ namespace tuplex {
             std::reverse(vals.begin(), vals.end());
             std::reverse(keys.begin(), keys.end());
             // build cJSON object from dict
-g            auto dict_rep = createCJSONFromDict(dict, keys, vals);
+            auto dict_rep = createCJSONFromDict(dict, keys, vals);
             addInstruction(dict_rep.val, dict_rep.size);
         }
 

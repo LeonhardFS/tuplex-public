@@ -3960,11 +3960,11 @@ namespace tuplex {
                 auto item = call_cjson_getitem(builder, value.val, key.val, &item_found);
                 auto item_not_found = env.i1neg(builder, item_found);
 
-                // // debug:
-                // auto dict_as_str = call_cjson_to_string(builder, value.val);
-                // env.printValue(builder, dict_as_str.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript dict: ");
-                // env.printValue(builder, key.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript dict with key: ");
-                // env.printValue(builder, item_not_found, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript dict item not found: ");
+                // debug:
+                auto dict_as_str = call_cjson_to_string(builder, value.val);
+                env.printValue(builder, dict_as_str.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript dict: ");
+                env.printValue(builder, key.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript dict with key: ");
+                env.printValue(builder, item_not_found, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript dict item not found: ");
 
                 lfb.addException(builder, ExceptionCode::KEYERROR, item_not_found, "KeyError for generic dict []");
 
@@ -4075,7 +4075,7 @@ namespace tuplex {
                 } else if (lhs_type == python::Type::I64) {
                     return builder.CreateICmpEQ(lhs.val, rhs.val);
                 }
-            } .
+            }
 
             throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not implemented logic to compare " + lhs_type.desc() + " == " + rhs_type.desc());
         }

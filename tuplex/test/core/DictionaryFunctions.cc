@@ -21,13 +21,15 @@ class DictionaryFunctions : public PyTest {};
 
 TEST_F(DictionaryFunctions, DictionarySubscript) {
     using namespace tuplex;
-    Context c(microTestOptions());
+    auto opt = microTestOptions();
+    opt.set("tuplex.experimental.traceExecution", "true");
+    Context c(opt);
 
     auto v0 = c.parallelize({
             Row("ab"), Row("cd"), Row("ef")
     }).map(UDF("lambda x: {'ab': 1, 'cd': 2, 'ef': 3}[x]")).collectAsVector();
 
-    EXPECT_EQ(v0.size(), 3);
+    ASSERT_EQ(v0.size(), 3);
     ASSERT_EQ(v0[0].getInt(0), 1);
     ASSERT_EQ(v0[1].getInt(0), 2);
     ASSERT_EQ(v0[2].getInt(0), 3);

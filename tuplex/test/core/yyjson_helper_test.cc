@@ -29,4 +29,30 @@ namespace tuplex {
         EXPECT_TRUE(yyjson_is_array_of_objects(yyjson_mut_doc_get_root(yyjson_mut_parse_cc_string("[{}, {},{}]"))));
         EXPECT_TRUE(yyjson_is_array_of_objects(yyjson_mut_doc_get_root(yyjson_mut_parse_cc_string("[{\"a\":20}, {\"b\":10, \"a\":10}]"))));
     }
+
+    TEST(yyjson, construct_from_empty) {
+        // Requires runtime alloc for yyjson allocs.
+        ContextOptions co = ContextOptions::defaults();
+        runtime::init(co.RUNTIME_LIBRARY().toPath());
+
+        auto doc = yyjson_init_doc();
+        yyjson_mut_doc_set_root(doc, yyjson_mut_obj(doc));
+
+        auto root = yyjson_mut_doc_get_root(doc);
+        ASSERT_TRUE(root);
+        int64_t size = -1;
+        std::string view = yyjson_print_to_runtime_str(root, &size);
+        EXPECT_EQ(size, 3);
+        EXPECT_EQ(view, "{}");
+
+        // Check now setting string to value.
+        yyjson_mut_obj_put(root, yyjson_mut_str(doc, "abc"), yyjson_mut_str(doc, "test"));
+        view = yyjson_print_to_runtime_str(root, &size);
+        EXPECT_EQ(view, "{\"abc\":\"test\"}");
+
+        yyjson_mut_doc_set_root(doc, yyjson_mut_str(doc, "hello"));
+        root = yyjson_mut_doc_get_root(doc);
+        view = yyjson_print_to_runtime_str(root, &size);
+        EXPECT_EQ(view, "\"hello\"");
+    }
 }

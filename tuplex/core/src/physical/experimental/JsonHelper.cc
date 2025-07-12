@@ -966,6 +966,8 @@ namespace tuplex {
             // jit.registerSymbol("yyjson_mut_double", yyjson_mut_double);
             jit.registerSymbol("yyjson_mut_double", yyjson_mut_real);
             jit.registerSymbol("yyjson_mut_str", yyjson_mut_str);
+            jit.registerSymbol("yyjson_init_doc_with_root", yyjson_init_doc_with_root);
+            jit.registerSymbol("yyjson_mut_doc_set_root", yyjson_mut_doc_set_root);
 
         }
 

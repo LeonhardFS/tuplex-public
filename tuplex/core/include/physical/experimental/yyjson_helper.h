@@ -21,6 +21,8 @@ namespace tuplex {
 
     extern yyjson_mut_doc* yyjson_mut_parse(const char* str, int64_t str_size);
 
+    extern yyjson_mut_doc* yyjson_init_doc_with_root();
+
     /*!
      * Helper function to parse string to mutable doc. Requires runtime alloc.
      * @param str
