@@ -1827,18 +1827,81 @@ namespace tuplex {
 
         }
 
-        llvm::Value* call_cjson_from_value(const IRBuilder& builder, const SerializableValue& value, const python::Type& type) {
-#ifdef USE_YYJSON_INSTEAD
-            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented in yyjson mode.");
-#endif
-            // converts value to cJSON value.
+        llvm::Value* call_cjson_from_value(const IRBuilder& builder, const SerializableValue& value, const python::Type& type, llvm::Value* cjson_obj) {
             using namespace llvm;
-
             assert(builder.GetInsertBlock());
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
             auto& ctx = mod->getContext();
             auto i8ptrtype = ctypeToLLVM<char*>(ctx);
+    #ifdef USE_YYJSON_INSTEAD
+
+            if (!cjson_obj) {
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " cjson_obj required in yyjson mode for call_cjson_from_value. Is nullptr.");
+            }
+
+            // Create a yyjson_mut_val to be used as value for yyjson_mut_obj_put.
+            if(type.isOptionType()) {
+                // nested -> if null, convert to Json null
+                // else, recursively call.
+                auto func = builder.GetInsertBlock()->getParent();
+
+                auto bbIsNull = BasicBlock::Create(ctx, "cjson_encode_is_null(yyjson)", func);
+                auto bbIsNotNull = BasicBlock::Create(ctx, "cjson_encode_is_not_null(yyjson)", func);
+                auto bbDone = BasicBlock::Create(ctx, "cjson_encode_done(yyjson)", func);
+
+                builder.CreateCondBr(value.is_null, bbIsNull, bbIsNotNull);
+                builder.SetInsertPoint(bbIsNull);
+                auto null_value = call_cjson_from_value(builder, {}, python::Type::NULLVALUE);
+                builder.CreateBr(bbDone);
+
+                builder.SetInsertPoint(bbIsNotNull);
+                auto non_null_value = call_cjson_from_value(builder, value, type.withoutOption());
+                builder.CreateBr(bbDone);
+
+                auto phi = builder.CreatePHI(i8ptrtype, 2);
+                phi->addIncoming(null_value, bbIsNull);
+                phi->addIncoming(non_null_value, bbIsNotNull);
+                return phi;
+            }
+
+            auto yydoc = get_yyjson_doc(builder, cjson_obj);
+
+            // regular, primitive types.
+            if(python::Type::NULLVALUE == type) {
+                auto func = getOrInsertFunction(mod, "yyjson_mut_null", i8ptrtype, i8ptrtype);
+                return builder.CreateCall(func, {yydoc});
+            }
+
+            if(python::Type::BOOLEAN == type) {
+                auto func = getOrInsertFunction(mod, "yyjson_mut_doc", i8ptrtype, i8ptrtype, ctypeToLLVM<cJSON_bool>(ctx));
+                auto v = builder.CreateZExtOrTrunc(value.val, ctypeToLLVM<cJSON_bool>(ctx));
+                return builder.CreateCall(func, {yydoc, v});
+            }
+
+            if(python::Type::I64 == type) {
+                auto func = getOrInsertFunction(mod, "yyjson_mut_int", i8ptrtype, i8ptrtype, ctypeToLLVM<int64_t>(ctx));
+                return builder.CreateCall(func, {yydoc, value.val});
+            }
+
+            if(python::Type::F64 == type) {
+                auto func = getOrInsertFunction(mod, "yyjson_mut_double", i8ptrtype, i8ptrtype, ctypeToLLVM<double>(ctx));
+                return builder.CreateCall(func, {yydoc, value.val});
+            }
+
+            if(python::Type::STRING == type) {
+                auto func = getOrInsertFunction(mod, "yyjson_mut_str", i8ptrtype, i8ptrtype, i8ptrtype);
+                return builder.CreateCall(func, {yydoc, value.val});
+            }
+
+            if (type.isConstantValued()) {
+                auto v = constantValuedTypeToLLVM(builder, type);
+                return call_cjson_from_value(builder, v, type.underlying(), cjson_obj);
+            }
+
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented in yyjson mode.");
+#endif
+            // converts value to cJSON value.
 
             if(type.isOptionType()) {
                 // nested -> if null, convert to Json null

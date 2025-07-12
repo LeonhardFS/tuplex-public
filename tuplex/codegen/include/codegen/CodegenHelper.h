@@ -1750,13 +1750,22 @@ namespace tuplex {
             return func;
         }
 
+
+        template<typename T, typename... Args>
+        void push_back_vec(std::vector<T>& v, Args&&... args) {
+            static_assert((std::is_constructible_v<T, Args&&> && ...));
+            (v.push_back(std::forward<Args>(args)), ...);
+        }
+
         template <typename... ArgsTy>
         llvm::Function* getOrInsertFunction(llvm::Module* mod, const std::string& Name, llvm::Type *RetTy,
-                                      ArgsTy... Args) {
+                                      ArgsTy... args) {
             if(!mod)
                 return nullptr;
-            llvm::SmallVector<llvm::Type*, sizeof...(ArgsTy)> ArgTys{Args...};
-            return getOrInsertFunction(mod, Name, llvm::FunctionType::get(RetTy, ArgTys, false));
+            std::vector<llvm::Type*> v_args;
+            push_back_vec(v_args, std::forward<ArgsTy>(args)...);
+
+            return getOrInsertFunction(mod, Name, llvm::FunctionType::get(RetTy, v_args, false));
         }
 
         // cJSON helper functions (for easier access)
@@ -1796,7 +1805,15 @@ namespace tuplex {
          */
         extern SerializableValue get_value_from_cjson(const IRBuilder& builder, llvm::Value* cjson_obj, const python::Type& type);
 
-        extern llvm::Value* call_cjson_from_value(const IRBuilder& builder, const SerializableValue& value, const python::Type& type);
+        /*!
+         *
+         * @param builder
+         * @param value
+         * @param type
+         * @param cjson_obj optional document for which to create the value, required for yyjson mode.
+         * @return
+         */
+        extern llvm::Value* call_cjson_from_value(const IRBuilder& builder, const SerializableValue& value, const python::Type& type, llvm::Value* cjson_obj=nullptr);
 
 
         // extended cjson function to check homogeneity of list

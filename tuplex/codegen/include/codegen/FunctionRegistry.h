@@ -306,6 +306,19 @@ namespace tuplex {
                                                         const SerializableValue& key,
                                                         const python::Type& key_type,
                                                         const python::Type& expected_return_type);
+
+        /*!
+         * Compares two LLVM values and their python types for equality. Optimized to make quick decisions.
+         * @param env
+         * @param builder
+         * @param lhs
+         * @param lhs_type
+         * @param rhs
+         * @param rhs_type
+         * @return
+         */
+        extern llvm::Value* values_equal(LLVMEnvironment& env, const IRBuilder& builder, const SerializableValue& lhs,
+                                         const python::Type& lhs_type, const SerializableValue& rhs, const python::Type& rhs_type);
     }
 }
 

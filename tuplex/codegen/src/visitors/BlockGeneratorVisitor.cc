@@ -3236,7 +3236,8 @@ namespace tuplex {
                 }
                 // get cJSON object with value
                 auto value_type = dict->_pairs[i].second->getInferredType();
-                auto value = call_cjson_from_value(builder, vals[i], value_type);
+
+                auto value = call_cjson_from_value(builder, vals[i], value_type, ret);
                 assert(value);
                 #ifndef NDEBUG
                 _env->debugPrint(builder, "calling cJSONAddItem with key=", key);
@@ -3245,7 +3246,7 @@ namespace tuplex {
 
                 call_cjson_object_set_item(builder, ret, key, value);
             }
-            auto size = call_cjson_to_string(builder, ret).size;
+            auto size = call_cjson_to_string(builder, ret).size; // TODO: can this be deleted?
             return SerializableValue(ret, size, _env->i1Const(false));
         }
 
@@ -3287,7 +3288,7 @@ namespace tuplex {
             std::reverse(vals.begin(), vals.end());
             std::reverse(keys.begin(), keys.end());
             // build cJSON object from dict
-            auto dict_rep = createCJSONFromDict(dict, keys, vals);
+g            auto dict_rep = createCJSONFromDict(dict, keys, vals);
             addInstruction(dict_rep.val, dict_rep.size);
         }
 
@@ -4221,6 +4222,20 @@ namespace tuplex {
 //                    return;
                     // check what the result is supposed to be, use dummy to continue compilation.
                 }
+
+                if (value_type.isDictionaryType()) {
+                    // Empty dict: simple, key error.
+                    if (value_type == python::Type::EMPTYDICT) {
+                        _lfb->exitWithException(ExceptionCode::KEYERROR, std::string(__FILE__) + ":" + std::to_string(__LINE__) + "empty dict key error");
+                        return;
+                    }
+
+                    // Get key via cjson object.
+                    auto ret = subscript_generic_dict(*_env, *_lfb, builder, value, index, index_type, expected_subscript_return_type);
+                    addInstruction(ret.val, ret.size, ret.is_null);
+                    return;
+                }
+
 
                 // undefined
                 std::stringstream ss;

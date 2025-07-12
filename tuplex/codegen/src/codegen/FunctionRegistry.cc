@@ -3992,11 +3992,92 @@ namespace tuplex {
                     return get_cjson_as_string_value(builder, item);
                 } else if(python::Type::NULLVALUE == expected_return_type) {
 
-                }
+                } else if (expected_return_type.isConstantValued()) {
+                    // first perform key check.
+                    auto ret = subscript_generic_dict(env, lfb, builder, value, key, key_type, expected_return_type.underlying());
 
+                    // need to add additional normal-case check based on value.
+                    auto rhs = constantValuedTypeToLLVM(builder, expected_return_type);
+                    auto is_equal = values_equal(env, builder, ret, expected_return_type.underlying(), rhs, expected_return_type.underlying());
+                    auto not_equal = env.i1neg(builder, is_equal);
+                    lfb.addException(builder, ExceptionCode::NORMALCASEVIOLATION, not_equal, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript [] returning " + expected_return_type.desc() + " failed normal case check.");
+                    lfb.setLastBlock(builder.GetInsertBlock());
+
+                    // Now return constant to fold more efficiently!
+                    return constantValuedTypeToLLVM(builder, expected_return_type);
+                }
             }
 
-            throw std::runtime_error("generic dict [] subscript for key_type=" + key_type.desc() + " and return_type=" + expected_return_type.desc() + " not implemented");
+            if (key_type.isConstantValued()) {
+                // deoptimize and recursively call.
+                auto deoptimized_key = constantValuedTypeToLLVM(builder, key_type);
+                return subscript_generic_dict(env, lfb, builder, value, deoptimized_key, key_type.underlying(), expected_return_type);
+            }
+
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " generic dict [] subscript for key_type=" + key_type.desc() + " and return_type=" + expected_return_type.desc() + " not implemented");
+        }
+
+        llvm::Value* values_equal(LLVMEnvironment& env, const IRBuilder& builder, const SerializableValue& lhs,
+            const python::Type& lhs_type, const SerializableValue& rhs, const python::Type& rhs_type) {
+            using namespace llvm;
+
+            // Special case both not options.
+            if (!lhs_type.isOptionType() && !rhs_type.isOptionType() && lhs_type != rhs_type)
+                return env.i1Const(false);
+
+            // any type constant? deopt.
+            if (lhs_type.isConstantValued())
+                return values_equal(env, builder, constantValuedTypeToLLVM(builder, lhs_type), lhs_type.underlying(), rhs, rhs_type);
+            if (rhs_type.isConstantValued())
+                return values_equal(env, builder, lhs, lhs_type, constantValuedTypeToLLVM(builder, rhs_type), rhs_type.underlying());
+
+
+            // Need to decide based on value.
+
+            // is one option and the other not?
+            if (lhs_type.isOptionType() && !rhs_type.isOptionType()) {
+                // Upcast rhs and reduce case.
+                auto upcasted_rhs_type = python::Type::makeOptionType(rhs_type);
+                auto upcasted_rhs = env.upcastValue(builder, rhs, rhs_type, upcasted_rhs_type);
+                return values_equal(env, builder, lhs, lhs_type, upcasted_rhs, upcasted_rhs_type);
+            }
+
+            if (!lhs_type.isOptionType() && rhs_type.isOptionType()) {
+                // Upcast rhs and reduce case.
+                auto upcasted_lhs_type = python::Type::makeOptionType(lhs_type);
+                auto upcasted_lhs = env.upcastValue(builder, lhs, lhs_type, upcasted_lhs_type);
+                return values_equal(env, builder, upcasted_lhs, upcasted_lhs_type, rhs, rhs_type);
+            }
+
+            if (lhs_type.isOptionType() && rhs_type.isOptionType()) {
+                // Compare first null values, if they differ => values differ.
+                auto null_equality = builder.CreateICmpEQ(lhs.is_null, rhs.is_null);
+                auto bbCurrent = builder.GetInsertBlock();
+                auto bbCompareValues = BasicBlock::Create(env.getContext(), "value_cmp", builder.GetInsertBlock()->getParent());
+                auto bbEnd = BasicBlock::Create(env.getContext(), "value_cmp_done", builder.GetInsertBlock()->getParent());
+                builder.CreateCondBr(null_equality, bbCompareValues, bbEnd);
+
+                // compare values.
+                builder.SetInsertPoint(bbCompareValues);
+                auto value_equality = values_equal(env, builder, lhs, lhs_type.withoutOption(), rhs, rhs_type.withoutOption());
+                auto bbLastCmp = builder.GetInsertBlock();
+
+                auto phi_ret = builder.CreatePHI(env.i1Type(), 2);
+                phi_ret->addIncoming(env.i1Const(true), bbCurrent);
+                phi_ret->addIncoming(value_equality, bbLastCmp);
+                return phi_ret;
+            }
+
+            // Same types? compare values.
+            if (lhs_type == rhs_type) {
+                if (lhs_type == python::Type::STRING) {
+                    // TODO.
+                } else if (lhs_type == python::Type::I64) {
+                    return builder.CreateICmpEQ(lhs.val, rhs.val);
+                }
+            } .
+
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not implemented logic to compare " + lhs_type.desc() + " == " + rhs_type.desc());
         }
 
     }
