@@ -4359,9 +4359,9 @@ namespace tuplex {
                 }
             }
 
-            // debug:
-            printValue(builder, value, value_type, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " value to be []");
-            printValue(builder, value, index_type, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " index used for []");
+            // // debug:
+            // printValue(builder, value, value_type, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " value to be []");
+            // printValue(builder, value, index_type, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " index used for []");
 
             subscript(sub->getInferredType(), value, value_type, index,
               index_type, sub->_expression.get(), sub->_value.get());

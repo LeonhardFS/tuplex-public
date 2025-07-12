@@ -12,6 +12,11 @@
 #include "TestUtils.h"
 
 
+// Note: Numpy doesn't support repeated import in the same process https://github.com/numpy/numpy/issues/28271.
+// Therefore assume ONLY HERE ARE NUMPY tests performed.
+// --> Use a single interpreter/do not restart per test.
+// @TODO: rewrite for that.
+
 class FallbackTest : public PyTest {};
 
 TEST_F(FallbackTest, Numpy_objects) {
@@ -68,11 +73,14 @@ TEST_F(FallbackTest, NonusedExternalMod) {
 
 TEST_F(FallbackTest, ArbitraryPyObjectSerialization) {
 
+    GTEST_SKIP_("fix numpy issues");
+
     using namespace std;
     using namespace tuplex;
 
     python::lockGIL();
     auto np_obj = python::runAndGet("import numpy as np; X = np.zeros(100)", "X");
+    ASSERT_TRUE(np_obj);
 
     auto np_obj_type = PyObject_Type(np_obj);
     auto np_obj_type_name = python::PyString_AsString(np_obj_type);
@@ -100,12 +108,16 @@ TEST_F(FallbackTest, ArbitraryPyObjectSerialization) {
 
 TEST_F(FallbackTest, NonAccessedPyObjectInPipeline) {
 
+    GTEST_SKIP_("fix numpy issues");
+
     using namespace std;
     using namespace tuplex;
 
     python::lockGIL();
     auto np_obj = python::runAndGet("import numpy as np; X = np.zeros(100)", "X");
-
+    python::unlockGIL();
+    ASSERT_TRUE(np_obj);
+    python::lockGIL();
     auto np_obj_type = PyObject_Type(np_obj);
     auto np_obj_type_name = python::PyString_AsString(np_obj_type);
 
@@ -144,6 +156,8 @@ TEST_F(FallbackTest, InvokingNumpyFunctions) {
     // c.parallelize([1, 2, 3, 4]).map(lambda x: [x, x*x, x*x*x]) \
     //                    .map(lambda x: (np.array(x).sum(), np.array(x).mean())).collect()
 
+    GTEST_SKIP_("fix numpy issues");
+
     using namespace std;
     using namespace tuplex;
 
@@ -169,6 +183,8 @@ TEST_F(FallbackTest, InvokingNumpyFunctions) {
 
 
 TEST_F(FallbackTest, InvokingNumpyFunctionsTwoParamLambda) {
+
+    GTEST_SKIP_("fix numpy issues");
 
     using namespace std;
     using namespace tuplex;
