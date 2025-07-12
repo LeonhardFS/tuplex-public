@@ -16,6 +16,10 @@
 #include <TypeHelper.h>
 #include <fstream>
 
+#if BUILD_WITH_CEREAL
+#include <CustomArchive.h>
+#endif
+
 boost::any get_representative_value(const python::Type& type) {
     using namespace tuplex;
     std::unordered_map<python::Type, Field> m{{python::Type::BOOLEAN, Field(false)},
@@ -211,6 +215,8 @@ TEST(TypeSys, StructTypeStringKeyDecodingEncoding) {
 
 #ifdef BUILD_WITH_CEREAL
 TEST(TypeSys, Cerealization) {
+    using namespace tuplex;
+
     auto row_type = python::Type::makeTupleType({python::Type::I64, python::Type::I64, python::Type::PYOBJECT});
     std::ostringstream oss; {
         // cereal::BinaryOutputArchive ar(oss);
