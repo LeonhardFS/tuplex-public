@@ -64,15 +64,24 @@ namespace tuplex {
                 return SerializableValue(builder.CreateSub(args.front().size, _env.i64Const(1)), i64Size);
 
             } else if(argType.isTupleType()) {
-                // simple constant
+                if (argType == python::Type::EMPTYTUPLE)
+                    return SerializableValue(_env.i64Const(0), i64Size);
+
+                // Simple constant.
                 return SerializableValue(_env.i64Const(argType.parameters().size()), i64Size);
             } else if (argType.isDictionaryType() || argType == python::Type::GENERICDICT) {
+                if (argType == python::Type::EMPTYDICT)
+                    return SerializableValue(_env.i64Const(0), i64Size);
+
+                if (argType.isStructuredDictionaryType())
+                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " struct dict length not yet supported.");
+
                 auto obj_size = call_cjson_get_size(builder, args.front().val);
                 return SerializableValue(obj_size, i64Size);
             } else if(argType.isListType() || argType == python::Type::GENERICLIST) {
-                if(argType == python::Type::EMPTYLIST) {
+                if(argType == python::Type::EMPTYLIST)
                     return SerializableValue(_env.i64Const(0), _env.i64Const(8));
-                }
+
                 assert(args.front().val);
                 auto name = _env.getLLVMTypeName(args.front().val->getType());
                 return SerializableValue(_env.getListSize(builder, args.front().val, argType), _env.i64Const(sizeof(int64_t)));
