@@ -3957,6 +3957,10 @@ namespace tuplex {
             if(key_type == python::Type::STRING) {
                 // only string key so far supported.
                 llvm::Value* item_found = nullptr;
+
+                // debug:
+                env.debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " subscript generic dict.", call_cjson_to_string(builder, value.val).val);
+
                 auto item = call_cjson_getitem(builder, value.val, key.val, &item_found);
                 auto item_not_found = env.i1neg(builder, item_found);
 

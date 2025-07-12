@@ -3219,6 +3219,7 @@ namespace tuplex {
 //            }
 //        }
 
+        // TODO: this function should be optimized to become its own in CodegenHelper.
         SerializableValue
         BlockGeneratorVisitor::createCJSONFromDict(NDictionary *dict, const std::vector<SerializableValue> &keys,
                                                    const std::vector<SerializableValue> &vals) {
@@ -3265,6 +3266,7 @@ namespace tuplex {
             _env->printValue(builder, serialized_dict.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " serialized dict: ");
 
             auto size = serialized_dict.size; // TODO: can this be deleted?
+            _lfb->setLastBlock(builder.GetInsertBlock());
             return SerializableValue(ret, size, _env->i1Const(false));
         }
 
@@ -3307,7 +3309,7 @@ namespace tuplex {
             std::reverse(keys.begin(), keys.end());
             // build cJSON object from dict
             auto dict_rep = createCJSONFromDict(dict, keys, vals);
-            addInstruction(dict_rep.val, dict_rep.size);
+            addInstruction(dict_rep.val, dict_rep.size, dict_rep.is_null);
         }
 
         void BlockGeneratorVisitor::visit(NList *list) {
@@ -4251,6 +4253,7 @@ namespace tuplex {
                     // Get key via cjson object.
                     auto ret = subscript_generic_dict(*_env, *_lfb, builder, value, index, index_type, expected_subscript_return_type);
                     addInstruction(ret.val, ret.size, ret.is_null);
+                    _lfb->setLastBlock(builder.GetInsertBlock());
                     return;
                 }
 
@@ -4357,8 +4360,8 @@ namespace tuplex {
             }
 
             // debug:
-            // printValue(builder, value, value_type, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " value to be []");
-            // printValue(builder, value, index_type, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " index used for []");
+            printValue(builder, value, value_type, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " value to be []");
+            printValue(builder, value, index_type, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " index used for []");
 
             subscript(sub->getInferredType(), value, value_type, index,
               index_type, sub->_expression.get(), sub->_value.get());

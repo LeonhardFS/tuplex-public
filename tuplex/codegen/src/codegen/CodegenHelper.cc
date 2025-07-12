@@ -1226,7 +1226,7 @@ namespace tuplex {
 
             auto yyjson_obj = get_yyjson_mut_obj(builder, cjson_obj);
 
-            // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_getitem");
+            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_getitem");
 
             auto yy_doc = get_yyjson_doc(builder, cjson_obj);
             auto yy_ret_item = builder.CreateCall(func, {yyjson_obj, key});
@@ -1647,6 +1647,7 @@ namespace tuplex {
             auto str_size_var = first_builder.CreateAlloca(llvm::Type::getInt64Ty(ctx), 0, nullptr);
 
             auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
+            assert(yy_obj->getType()->isPointerTy());
 
             // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_as_runtime_str");
 

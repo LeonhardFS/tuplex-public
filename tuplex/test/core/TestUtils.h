@@ -143,6 +143,14 @@ protected:
         return co;
     }
 
+    inline tuplex::ContextOptions tracingMicroTestOptions(bool disableLLVMOptimizer=true) {
+        auto opt = microTestOptions();
+        opt.set("tuplex.executorCount", "0");
+        opt.set("tuplex.experimental.traceExecution", "true");
+        opt.set("tuplex.useLLVMOptimizer", tuplex::boolToString(!disableLLVMOptimizer));
+        return opt;
+    }
+
 #ifdef BUILD_WITH_AWS
     inline tuplex::ContextOptions microLambdaOptions() {
         auto co = microTestOptions();

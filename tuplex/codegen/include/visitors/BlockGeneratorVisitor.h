@@ -250,8 +250,11 @@ namespace codegen {
                 if(t.isIteratorType())
                     return false;
 
-                // dictionary type right now mapped to i8* already, so mapping is mutable.
-                return t.isImmutable() || t.isDictionaryType();
+                // Dict is mutable, so pass not by value.
+                if (t.isDictionaryType())
+                    return false;
+
+                return t.isImmutable();
             }
 
         private:
