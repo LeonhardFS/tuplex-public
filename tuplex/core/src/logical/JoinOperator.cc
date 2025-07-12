@@ -229,11 +229,12 @@ namespace tuplex {
     }
 
     Schema JoinOperator::getInputSchema() const {
-        throw std::runtime_error("input schema makes no sense for join operator, because there are two input schemas!");
+        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " input schema makes no sense for join operator, because there are two input schemas!");
         return Schema();
     }
 
     void JoinOperator::projectionPushdown() {
+
 
         // need to rewrite keys etc. here...
         inferSchema();

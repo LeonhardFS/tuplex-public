@@ -201,45 +201,69 @@ namespace tuplex {
                                          int leftKeyIndex,
                                          const python::Type& rightType,
                                          int rightKeyIndex,
-                                         JoinType joinType)  {
+                                         JoinType joinType)
+    {
+        std::vector<python::Type> left_types = leftType.isRowType() ? leftType.get_column_types() : leftType.parameters();
+        std::vector<python::Type> right_types = rightType.isRowType() ? rightType.get_column_types() : rightType.parameters();
 
-#error "fix this row type"
+        std::vector<std::string> left_names;
+        std::vector<std::string> right_names;
+        std::vector<std::string> combined_names;
+        if (leftType.isRowType())
+            left_names = leftType.get_column_names();
+        if (rightType.isRowType())
+            right_names = rightType.get_column_names();
+        if (left_names.empty())
+            for (unsigned i = 0; i < left_types.size(); ++i)
+                left_names.emplace_back("_L" + std::to_string(i));
+        if (right_names.empty())
+            for (unsigned i = 0; i < right_types.size(); ++i)
+                right_names.emplace_back("_R" + std::to_string(i));
+
         // combined schema from row type
         std::vector<python::Type> combinedTypes;
-        for(int i = 0; i < leftType.parameters().size(); ++i) {
-            auto t = leftType.parameters()[i];
-            if(i != leftKeyIndex)
-                combinedTypes.push_back(t);
+        for(int i = 0; i < left_types.size(); ++i) {
+            if(i != leftKeyIndex) {
+                combinedTypes.push_back(left_types[i]);
+                combined_names.push_back(left_names[i]);
+            }
         }
 
         // fetch more restrictive type b.c. it's an inner join...
-        auto leftKeyType = leftType.parameters()[leftKeyIndex];
-        auto rightKeyType = rightType.parameters()[rightKeyIndex];
+        auto leftKeyType = left_types[leftKeyIndex];
+        auto rightKeyType = right_types[rightKeyIndex];
+
+        auto leftName = left_names[leftKeyIndex];
+        auto rightName = right_names[rightKeyIndex];
 
         // if one is option type and the other is not, take
         switch(joinType) {
             case JoinType::LEFT: {
                 // always the left result
                 combinedTypes.push_back(leftKeyType);
+                combined_names.push_back(leftName);
                 break;
             }
             case JoinType::RIGHT: {
                 // always the right result
                 combinedTypes.push_back(rightKeyType);
+                combined_names.push_back(rightName);
                 break;
             }
             case JoinType::INNER: {
                 // more interesting case:
                 // same type => doesn't matter
+                combined_names.push_back(leftName);
+
                 if(leftKeyType == rightKeyType)
                     combinedTypes.push_back(rightKeyType);
                 else {
                     // there are a couple cases. Some should be handled separately, i.e. those resulting in
                     // empty datasets!
                     if(leftKeyType == python::Type::NULLVALUE && !rightKeyType.isOptionType())
-                        throw std::runtime_error("empty datset, should be handled somewhere up the chain!");
+                        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " empty datset, should be handled somewhere up the chain!");
                     else if(!leftKeyType.isOptionType() && rightKeyType == python::Type::NULLVALUE)
-                        throw std::runtime_error("empty datset, should be handled somewhere up the chain!");
+                        throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " empty datset, should be handled somewhere up the chain!");
                     else if(leftKeyType == python::Type::NULLVALUE && rightKeyType.isOptionType())
                         combinedTypes.push_back(python::Type::NULLVALUE);
                     else if(leftKeyType.isOptionType() && rightKeyType == python::Type::NULLVALUE)
@@ -256,9 +280,10 @@ namespace tuplex {
 
 
 
-        for(int i = 0; i < rightType.parameters().size(); ++i) {
-            auto t = rightType.parameters()[i];
+        for(int i = 0; i < right_types.size(); ++i) {
+            auto t = right_types[i];
             if(i != rightKeyIndex) {
+                combined_names.push_back(right_names[i]);
                 // important to make option type (nullable in left join)
                 switch(joinType) {
                     case JoinType::LEFT: {
@@ -274,6 +299,10 @@ namespace tuplex {
                     }
                 }
             }
+        }
+
+        if (leftType.isRowType() && rightType.isRowType()) {
+         return python::Type::makeRowType(combinedTypes, combined_names);
         }
         return python::Type::makeTupleType(combinedTypes);
     }
