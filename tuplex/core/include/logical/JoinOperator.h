@@ -203,6 +203,7 @@ namespace tuplex {
                                          int rightKeyIndex,
                                          JoinType joinType)  {
 
+#error "fix this row type"
         // combined schema from row type
         std::vector<python::Type> combinedTypes;
         for(int i = 0; i < leftType.parameters().size(); ++i) {

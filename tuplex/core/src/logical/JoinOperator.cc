@@ -100,13 +100,16 @@ namespace tuplex {
 
             // indexing asserts...
             assert(leftIndex >= 0 && rightIndex >= 0);
-            assert(leftIndex < left()->getOutputSchema().getRowType().parameters().size());
-            assert(rightIndex < right()->getOutputSchema().getRowType().parameters().size());
-            assert(leftColumns.size() == left()->getOutputSchema().getRowType().parameters().size());
-            assert(rightColumns.size() == right()->getOutputSchema().getRowType().parameters().size());
+            assert(leftIndex < left()->getOutputSchema().getColumnCount());
+            assert(rightIndex < right()->getOutputSchema().getColumnCount());
+            assert(leftColumns.size() == left()->getOutputSchema().getColumnCount());
+            assert(rightColumns.size() == right()->getOutputSchema().getColumnCount());
 
-            auto leftType = left()->getOutputSchema().getRowType().parameters()[leftIndex];
-            auto rightType = right()->getOutputSchema().getRowType().parameters()[rightIndex];
+            auto left_col_types = left()->getOutputSchema().getRowType().isRowType() ? left()->getOutputSchema().getRowType().get_column_types() : left()->getOutputSchema().getRowType().parameters();
+            auto right_col_types = right()->getOutputSchema().getRowType().isRowType() ? right()->getOutputSchema().getRowType().get_column_types() : right()->getOutputSchema().getRowType().parameters();
+
+            auto leftType = left_col_types[leftIndex];
+            auto rightType = right_col_types[rightIndex];
 
             // make sure key types are the same, else abort
             // @TODO: could replace logically with empty result set b.c. python objects
@@ -154,9 +157,6 @@ namespace tuplex {
 
 
             // @TODO: use here combinedTypes
-
-            auto leftTypes = left()->getOutputSchema().getRowType().parameters();
-            auto rightTypes = right()->getOutputSchema().getRowType().parameters();
 
             // Note: if a left or right join is involved, propagate types to Nullables!
             // construct columns

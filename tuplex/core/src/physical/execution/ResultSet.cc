@@ -409,13 +409,17 @@ namespace tuplex {
     Row ResultSet::getNextGeneralRow() {
         assert (!_currentGeneralPartitions.empty());
         auto p = _currentGeneralPartitions.front();
-        assert(_schema == p->schema());
+
+        // This does need not necessarily to hold.
+        // Each partition has its own schema.
+        // assert(_schema == p->schema());
+        auto schema = p->schema();
 
         auto prevRowInd = currentGeneralRowInd();
         _curGeneralByteCounter += 4 * sizeof(int64_t);
         auto ptr = p->lock() + _curGeneralByteCounter;
         auto capacity = p->capacity() - _curGeneralByteCounter;
-        auto row = Row::fromMemory(_schema, ptr, capacity);
+        auto row = Row::fromMemory(schema, ptr, capacity);
         p->unlock();
 
         _curGeneralByteCounter += row.serializedLength();

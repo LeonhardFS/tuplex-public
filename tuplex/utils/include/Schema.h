@@ -66,6 +66,12 @@ namespace tuplex {
         MemoryLayout getMemoryLayout() const  { return _memLayout; }
         python::Type getRowType() const      { return _rowType; }
 
+        size_t getColumnCount() const {
+            if (_rowType.isRowType())
+                return _rowType.get_column_count();
+            return _rowType.parameters().size();
+        }
+
         /*!
          * if no variable length elements (like strings, maps, dicts) are presented and each row has the same size in bytes
          * this function return true
