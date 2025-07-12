@@ -197,9 +197,6 @@ protected:
 
         python::initInterpreter();
 
-        // Clear modules (numpy error, as reported in https://github.com/pybind/pybind11/discussions/5171).
-        PyDict_Clear(PyModule_GetDict(PyImport_AddModule("__main__")));
-
         // release GIL
         python::unlockGIL();
     }

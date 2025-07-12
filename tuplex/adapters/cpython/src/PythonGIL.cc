@@ -216,6 +216,10 @@ namespace python {
             PyErr_Print();
             PyErr_Clear();
         }
+
+        // Clear modules (numpy error, as reported in https://github.com/pybind/pybind11/discussions/5171).
+        PyDict_Clear(PyModule_GetDict(PyImport_AddModule("__main__")));
+
         Py_FinalizeEx();
         // now set to uninitialized.
         interpreterInitialized = false;
