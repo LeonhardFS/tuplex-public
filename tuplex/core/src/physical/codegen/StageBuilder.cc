@@ -1285,26 +1285,27 @@ namespace tuplex {
                 auto node = pathContext.operators[i];
                 assert(node);
                 UDFOperator *udfop = dynamic_cast<UDFOperator *>(node.get());
+                bool rc_code_gen = true;
                 switch (node->type()) {
                     case LogicalOperatorType::MAP: {
-                        slowPip->mapOperation(node->getID(), udfop->getUDF(), _conf.policy.normalCaseThreshold, ctx.allowUndefinedBehavior,
+                        rc_code_gen = slowPip->mapOperation(node->getID(), udfop->getUDF(), _conf.policy.normalCaseThreshold, ctx.allowUndefinedBehavior,
                                               ctx.sharedObjectPropagation);
                         break;
                     }
                     case LogicalOperatorType::FILTER: {
-                        slowPip->filterOperation(node->getID(), udfop->getUDF(), _conf.policy.normalCaseThreshold, ctx.allowUndefinedBehavior,
+                        rc_code_gen = slowPip->filterOperation(node->getID(), udfop->getUDF(), _conf.policy.normalCaseThreshold, ctx.allowUndefinedBehavior,
                                                  ctx.sharedObjectPropagation);
                         break;
                     }
                     case LogicalOperatorType::MAPCOLUMN: {
                         auto mop = dynamic_cast<MapColumnOperator *>(node.get());
-                        slowPip->mapColumnOperation(node->getID(), mop->getColumnIndex(), udfop->getUDF(),
+                        rc_code_gen = slowPip->mapColumnOperation(node->getID(), mop->getColumnIndex(), udfop->getUDF(),
                                                     _conf.policy.normalCaseThreshold, ctx.allowUndefinedBehavior, ctx.sharedObjectPropagation);
                         break;
                     }
                     case LogicalOperatorType::WITHCOLUMN: {
                         auto wop = dynamic_cast<WithColumnOperator *>(node.get());
-                        slowPip->withColumnOperation(node->getID(), wop->getColumnIndex(), udfop->getUDF(),
+                        rc_code_gen = slowPip->withColumnOperation(node->getID(), wop->getColumnIndex(), udfop->getUDF(),
                                                      _conf.policy.normalCaseThreshold, ctx.allowUndefinedBehavior, ctx.sharedObjectPropagation);
                         break;
                     }
@@ -1317,7 +1318,7 @@ namespace tuplex {
                     case LogicalOperatorType::RESOLVE: {
                         // ==> this means slow code path needs to be generated as well!
                         auto rop = std::dynamic_pointer_cast<ResolveOperator>(node);
-                        slowPip->addResolver(rop->ecCode(), rop->getID(), rop->getUDF(), _conf.policy.normalCaseThreshold, ctx.allowUndefinedBehavior,
+                        rc_code_gen = slowPip->addResolver(rop->ecCode(), rop->getID(), rop->getUDF(), _conf.policy.normalCaseThreshold, ctx.allowUndefinedBehavior,
                                              ctx.sharedObjectPropagation);
                         resolvers_found = true;
                         break;
@@ -1330,7 +1331,7 @@ namespace tuplex {
 
                         // always add ignore on slowpath, because else special cases (i.e. exception resolved, throws again etc.)
                         // won't work.
-                        slowPip->addIgnore(iop->ecCode(), iop->getID());
+                        rc_code_gen = slowPip->addIgnore(iop->ecCode(), iop->getID());
                         break;
                     }
                     case LogicalOperatorType::TAKE: {
@@ -1452,6 +1453,13 @@ namespace tuplex {
                                 "found unknown operator " + node->name() +
                                 " for which a pipeline could not be generated");
                     }
+                }
+
+                // codegen failed?
+                if (!rc_code_gen) {
+                    std::stringstream ss;
+                    ss<<"Code generation for operator "<<node->name()<<" failed.";
+                    throw std::runtime_error(ss.str());
                 }
             }
 

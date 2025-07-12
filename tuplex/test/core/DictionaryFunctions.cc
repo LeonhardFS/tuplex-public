@@ -106,7 +106,7 @@ TEST_F(DictionaryFunctions, DictionaryPop) {
     EXPECT_EQ(v2[2], false);
     EXPECT_EQ(v2[3], true);
 
-    // when only a single var is given, then return item if there else produce keyerror
+    // When only a single var is given, then return item if there else produce keyerror.
     auto v3 = c.parallelize({
                                     Row(-11), Row(-2), Row(0), Row(13)
                             }).map(UDF("lambda x: {-2: True, 0: False}.pop(x)"))
