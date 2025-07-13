@@ -83,6 +83,14 @@ namespace tuplex {
         std::string _leftSuffix;
         std::string _rightPrefix;
         std::string _rightSuffix;
+
+        // Keep to allow for linearization of stages and partial retyping.
+        int _leftKeyIndex;
+        int _rightKeyIndex;
+        int _leftColumnCount;
+        int _rightColumnCount;
+
+        void updateIndicesAndCounts();
     public:
         LogicalOperatorType type() const override;
 
@@ -132,17 +140,21 @@ namespace tuplex {
          * @return
          */
         python::Type keyType() const {
-           auto rk = right()->getOutputSchema().getRowType().parameters().at(rightKeyIndex());
-           auto lk = left()->getOutputSchema().getRowType().parameters().at(leftKeyIndex());
+            assert(right());
+            assert(left());
+            auto right_col_types = right()->getOutputSchema().getColumnTypes();
+            auto left_col_types = left()->getOutputSchema().getColumnTypes();
+
+           auto rk = right_col_types.at(rightKeyIndex());
+           auto lk = left_col_types.at(leftKeyIndex());
            if(rk == lk)
               return rk;
-           if(canUpcastType(rk, lk))
+           if(python::canUpcastType(rk, lk))
                return lk;
-           if(canUpcastType(lk, rk))
+           if(python::canUpcastType(lk, rk))
                return rk;
-           throw std::runtime_error("incomaptible key types " + rk.desc() +
+           throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " incompatible key types " + rk.desc() +
            " [right] and " + lk.desc() + " [left] found.");
-
         }
 
         /*!
@@ -150,10 +162,13 @@ namespace tuplex {
          * @return
          */
         python::Type bucketType() const {
+            assert(left());
+            assert(right());
+
             // fetch columns from schema
             std::vector<python::Type> types;
-            auto rt = right()->getOutputSchema().getRowType().parameters();
-            auto lt = left()->getOutputSchema().getRowType().parameters();
+            auto rt = right()->getOutputSchema().getColumnTypes();
+            auto lt = left()->getOutputSchema().getColumnTypes();
 
             if(buildRight()) {
                 for(int i = 0; i < rt.size(); ++i) {
@@ -169,6 +184,7 @@ namespace tuplex {
             return python::Type::makeTupleType(types);
         }
 
+        void partialRetype(const Schema& schema, const std::vector<std::string>& columns);
 
         /*!
          * restrict join on columns, i.e. use a rewrite map for that
@@ -196,13 +212,58 @@ namespace tuplex {
         void inferSchema();
     };
 
+    /*!
+     * computes left and right column mapping map.
+     * I.e., (k, v) will yield index of column k present as column v in the combined type. v will have values 0, ..., n-1 where n = #entries in combinedJoinType (see below).
+     * @param leftType
+     * @param leftKeyIndex
+     * @param rightType
+     * @param rightKeyIndex
+     * @param joinType
+     * @return
+     */
+    inline std::tuple<std::unordered_map<int, int>, std::unordered_map<int, int>> combinedColumnMapping(int leftColumnCount,
+                                                                                                        int leftKeyIndex,
+                                                                                                        int rightColumnCount,
+                                                                                                        int rightKeyIndex) {
+
+        std::unordered_map<int, int> leftColumnMapping;
+        std::unordered_map<int, int> rightColumnMapping;
+
+        int combined_output_pos = 0;
+
+        // combined schema from row type
+        std::vector<python::Type> combinedTypes;
+        for(int i = 0; i < leftColumnCount; ++i) {
+            if(i != leftKeyIndex)
+                leftColumnMapping[i] = combined_output_pos++;
+        }
+
+        // The key column.
+        leftColumnMapping[leftKeyIndex] = combined_output_pos;
+        rightColumnMapping[rightKeyIndex] = combined_output_pos;
+        combined_output_pos++;
+
+        for(int i = 0; i < rightColumnCount; ++i) {
+            if(i != rightKeyIndex)
+                rightColumnMapping[i] = combined_output_pos++;
+        }
+
+        return std::make_tuple(leftColumnMapping, rightColumnMapping);
+    }
+
+    template<class K, class V> std::unordered_map<V, K> swap_map(const std::unordered_map<K, V>& in) {
+        std::unordered_map<V, K> m;
+        for (const auto& p: in)
+            m[p.second] = p.first;
+        return m;
+    }
 
     inline python::Type combinedJoinType(const python::Type& leftType,
                                          int leftKeyIndex,
                                          const python::Type& rightType,
                                          int rightKeyIndex,
-                                         JoinType joinType)
-    {
+                                         JoinType joinType) {
         std::vector<python::Type> left_types = leftType.isRowType() ? leftType.get_column_types() : leftType.parameters();
         std::vector<python::Type> right_types = rightType.isRowType() ? rightType.get_column_types() : rightType.parameters();
 

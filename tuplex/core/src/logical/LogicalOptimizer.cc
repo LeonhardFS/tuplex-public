@@ -62,13 +62,13 @@ namespace tuplex {
         if(!inplace)
             throw std::runtime_error("not yet supported!");
 
-        // make sure it's a stage, i.e. no join etc.!
-        for(auto op : operators)
-            if(op->parents().size() > 1) {
-                logger().error("given operators do not form a stage, found operator " + op->name() +
-                " with " + pluralize(op->parents().size(), "parent"));
-                return {};
-            }
+        // // make sure it's a stage, i.e. no join etc.!
+        // for(const auto& op : operators)
+        //     if(op->parents().size() > 1) {
+        //         logger().error("given operators do not form a stage, found operator " + op->name() +
+        //         " with " + pluralize(op->parents().size(), "parent"));
+        //         return {};
+        //     }
 
         // optimize from the back
         auto last_op = operators.back();
@@ -95,7 +95,8 @@ namespace tuplex {
             // start with requiring all columns from action node!
             // there's a subtle difference now b.c. output schema for csv was changed to str
             // --> use therefore input schema of the operator!
-            auto num_cols = extract_columns_from_type(last_op->getInputSchema().getRowType());
+            auto row_type = last_op->type() == LogicalOperatorType::JOIN ? last_op->getOutputSchema().getRowType() : last_op->getInputSchema().getRowType();
+            auto num_cols = extract_columns_from_type(row_type);
             for(unsigned i = 0; i < num_cols; ++i)
                 cols.emplace_back(i);
             projectionPushdown(last_op, nullptr, cols); // what about dropOperators??
@@ -256,6 +257,11 @@ namespace tuplex {
         q.push(root);
         while(!q.empty()) {
             auto node = q.front(); q.pop();
+
+            // skip nullptrs
+            if (!node)
+                continue;
+
             if(node->type() == LogicalOperatorType::FILTER)
                 v_filters.push_back(node);
             // add all parents to queue
@@ -425,6 +431,8 @@ namespace tuplex {
         q.push(root);
         while(!q.empty()) {
             auto node = q.front(); q.pop();
+            if (!node) // skip nullptr.
+                continue;
             if(node->type() == LogicalOperatorType::FILTER)
                 v_filters.push_back(node);
             // add all parents to queue
@@ -831,8 +839,8 @@ namespace tuplex {
                 }
 #endif
 
-                auto numLeftCols = jop->left()->getOutputSchema().getRowType().parameters().size();
-                auto numRightCols = jop->right()->getOutputSchema().getRowType().parameters().size();
+                auto numLeftCols = jop->left()->getOutputSchema().getColumnCount();
+                auto numRightCols = jop->right()->getOutputSchema().getColumnCount();
                 for(auto idx : requiredCols) {
                     // required is key column + all that fall on left side for left
                     if(idx < numLeftCols)

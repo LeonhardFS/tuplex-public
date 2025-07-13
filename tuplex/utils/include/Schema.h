@@ -72,6 +72,12 @@ namespace tuplex {
             return _rowType.parameters().size();
         }
 
+        std::vector<python::Type> getColumnTypes() const {
+            if (_rowType.isRowType())
+                return _rowType.get_column_types();
+            return _rowType.parameters();
+        }
+
         /*!
          * if no variable length elements (like strings, maps, dicts) are presented and each row has the same size in bytes
          * this function return true

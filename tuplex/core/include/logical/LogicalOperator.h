@@ -354,7 +354,7 @@ namespace tuplex {
      * @param lhs some op
      * @return true if equal, false else
      */
-    extern bool checkBasicEqualityOfOperators(const LogicalOperator& rhs, const LogicalOperator& lhs);
+    extern bool checkBasicEqualityOfOperators(const LogicalOperator& rhs, const LogicalOperator& lhs, bool skip_input_schema_check=false);
 }
 
 #ifdef BUILD_WITH_CEREAL

@@ -36,7 +36,6 @@ namespace tuplex {
 
         // check type.
         void checkRowType(const python::Type& rowType) {
-
             if (rowType.isRowType())
                 return;
 
@@ -1663,7 +1662,7 @@ namespace tuplex {
                     return validation_ok;
                 }
 
-                if(!are_in_and_out_schemas_compatible(lastRowType, op->getInputSchema().getRowType())) {
+                if(op->parents().size() == 1 && !are_in_and_out_schemas_compatible(lastRowType, op->getInputSchema().getRowType())) {
                     logger.error("(" + op->name() + "): input schema "
                                      + op->getInputSchema().getRowType().desc()
                                      + " incompatible with previous operator's output schema "
@@ -1884,9 +1883,12 @@ namespace tuplex {
                             parents.push_back(lastParent); // --> normal case on right side
                         }
 
-                        opt_ops.push_back(std::shared_ptr<LogicalOperator>(new JoinOperator(parents[0], parents[1], jop->leftColumn(), jop->rightColumn(),
-                                                           jop->joinType(), jop->leftPrefix(), jop->leftSuffix(), jop->rightPrefix(),
-                                                           jop->rightSuffix())));
+
+                        std::shared_ptr<JoinOperator> retyped_jop = std::dynamic_pointer_cast<JoinOperator>(jop->clone(false));
+                        retyped_jop->setParents({parents[0], parents[1]});
+                        if (!parents[0] || !parents[1])
+                            retyped_jop->partialRetype(jop->getOutputSchema(), jop->columns());
+                        opt_ops.push_back(retyped_jop);
                         opt_ops.back()->setID(node->getID()); // so lookup map works!
 
 //#error "need a retype operator for the join operation..."
@@ -1896,8 +1898,14 @@ namespace tuplex {
                             stringstream ss;
                             ss<<FLINESTR<<endl;
                             ss<<"retyped "<<node->name()<<endl;
-                            ss<<"\tleft type: "<<jop->left()->getOutputSchema().getRowType().desc()<<endl;
-                            ss<<"\tright type: "<<jop->right()->getOutputSchema().getRowType().desc()<<endl;
+                            if (jop->left())
+                                ss<<"\tleft type: "<<jop->left()->getOutputSchema().getRowType().desc()<<endl;
+                            else
+                                ss<<"\tleft type: nullptr"<<endl;
+                            if (jop->right())
+                                ss<<"\tright type: "<<jop->right()->getOutputSchema().getRowType().desc()<<endl;
+                            else
+                                ss<<"\tright type: nullptr"<<endl;
 
                             logger.debug(ss.str());
                         }

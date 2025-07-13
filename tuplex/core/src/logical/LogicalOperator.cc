@@ -115,7 +115,9 @@ namespace tuplex {
 
         // each parent has this as child
         for(auto& parent : _parents) {
-            parent->_children = {this};
+            // Support nullptr parents.
+            if (parent)
+                parent->_children = {this};
         }
     }
 
@@ -187,8 +189,8 @@ namespace tuplex {
         return shared_from_this();
     }
 
-    bool checkBasicEqualityOfOperators(const LogicalOperator& rhs, const LogicalOperator& lhs) {
-        if(rhs.getInputSchema() != lhs.getInputSchema())
+    bool checkBasicEqualityOfOperators(const LogicalOperator& rhs, const LogicalOperator& lhs, bool skip_input_schema_check) {
+        if(!skip_input_schema_check && rhs.getInputSchema() != lhs.getInputSchema())
             return false;
         if(rhs.getOutputSchema() != lhs.getOutputSchema())
             return false;

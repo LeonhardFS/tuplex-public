@@ -35,31 +35,43 @@ namespace tuplex {
 
         // inner join:
         // schema is to be combined using columns etc.
-        inferSchema();
+        _leftColumnCount = -1;
+        _rightColumnCount = -1;
+        _leftKeyIndex = -1;
+        _rightKeyIndex = -1;
+
+        updateIndicesAndCounts();
+
+        // Only by default perform typing iff both parents are set. Else, need to manually update.
+        if (left && right)
+            inferSchema();
+    }
+
+    void JoinOperator::updateIndicesAndCounts() {
+        if (!columnBasedJoin()) {
+            _leftKeyIndex = 0;
+            _rightKeyIndex = 0;
+            return;
+        }
+
+        if (left()) {
+            if (columnBasedJoin())
+                _leftKeyIndex = indexInVector(_leftColumn.value(), left()->columns());
+            _leftColumnCount = left()->getOutputSchema().getColumnCount();
+        }
+        if (right()) {
+            if (columnBasedJoin())
+                _rightKeyIndex = indexInVector(_rightColumn.value(), right()->columns());
+            _rightColumnCount = right()->getOutputSchema().getColumnCount();
+        }
     }
 
     int64_t JoinOperator::leftKeyIndex() const {
-        // column based?
-        if (columnBasedJoin()) {
-            // search left column in columns. -1 if invalid!
-            assert(left());
-            return indexInVector(_leftColumn.value(), left()->columns());
-        } else {
-            // join is based on (K, V), (K, W) so just give back zero
-            return 0;
-        }
+        return _leftKeyIndex;
     }
 
     int64_t JoinOperator::rightKeyIndex() const {
-        // column based?
-        if (columnBasedJoin()) {
-            // search left column in columns. -1 if invalid!
-            assert(right());
-            return indexInVector(_rightColumn.value(), right()->columns());
-        } else {
-            // join is based on (K, V), (K, W) so just give back zero
-            return 0;
-        }
+        return _rightKeyIndex;
     }
 
     int64_t JoinOperator::outputKeyIndex() const {
@@ -68,6 +80,54 @@ namespace tuplex {
             assert(left() && right());
             return left()->columns().size() - 1; // -1 for index
         } else throw std::runtime_error("not yet supported!");
+    }
+
+    void JoinOperator::partialRetype(const Schema& schema, const std::vector<std::string>& columns) {
+        if (!columnBasedJoin())
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " non column based join not yet implemented.");
+
+        // two modes:
+        // either column based OR (K, V), (K, W) based
+        if ((_leftColumn.has_value() && !_rightColumn.has_value()) ||
+            (!_leftColumn.has_value() && _rightColumn.has_value()))
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " join mode is either column name based or tuple based with types (K, V), (K, W).");
+
+
+        // Get left and right type from schema.
+        auto t = combinedColumnMapping(_leftColumnCount, _leftKeyIndex, _rightColumnCount, _rightKeyIndex);
+        auto left_map = std::get<0>(t);
+        auto right_map = std::get<1>(t);
+
+        auto col_types = schema.getColumnTypes();
+        std::vector<python::Type> left_col_types(left_map.size());
+        std::vector<python::Type> right_col_types(right_map.size());
+        for (const auto& p: left_map)
+            left_col_types[p.first] = col_types[p.second];
+        for (const auto& p: right_map)
+            right_col_types[p.first] = col_types[p.second];
+        auto left_type = python::Type::makeTupleType(left_col_types);
+        auto right_type = python::Type::makeTupleType(right_col_types);
+
+        // Overwrite now types with partial output types!
+        if (left()) {
+            assert(left()->getOutputSchema().getColumnCount() == left_col_types.size());
+            left_type = python::Type::makeTupleType(left()->getOutputSchema().getColumnTypes());
+        }
+        if (right()) {
+            assert(right()->getOutputSchema().getColumnCount() == right_col_types.size());
+            right_type = python::Type::makeTupleType(right()->getOutputSchema().getColumnTypes());
+        }
+
+        // combine types
+        auto combinedRowType = combinedJoinType(left_type,
+                leftKeyIndex(),
+                right_type,
+                rightKeyIndex(),
+                joinType());
+
+        // create schema
+        setOutputSchema(Schema(Schema::MemoryLayout::ROW, combinedRowType));
+        _columns = columns;
     }
 
     void JoinOperator::inferSchema() {
@@ -88,7 +148,6 @@ namespace tuplex {
 
             auto leftColumns = left()->columns();
             auto rightColumns = right()->columns();
-
 
             auto leftIndex = indexInVector(_leftColumn.value(), leftColumns);
             auto rightIndex = indexInVector(_rightColumn.value(), rightColumns);
@@ -193,7 +252,6 @@ namespace tuplex {
             // create schema
             setOutputSchema(Schema(Schema::MemoryLayout::ROW, combinedRowType));
             _columns = columns;
-
         } else {
             // tuple based
             // easier: nothing to worry about.
@@ -234,19 +292,39 @@ namespace tuplex {
     }
 
     void JoinOperator::projectionPushdown() {
-
+        updateIndicesAndCounts();
 
         // need to rewrite keys etc. here...
         inferSchema();
     }
 
     std::shared_ptr<LogicalOperator> JoinOperator::clone(bool cloneParents) const {
-        auto copy = new JoinOperator(cloneParents ? left()->clone() : nullptr, cloneParents ? right()->clone() : nullptr,
+        JoinOperator* copy = nullptr;
+        if (cloneParents)
+            copy = new JoinOperator(left() ? left()->clone() : nullptr, right() ? right()->clone() : nullptr,
                 _leftColumn, _rightColumn, _joinType, _leftPrefix, _leftSuffix, _rightPrefix, _rightSuffix);
+        else {
+            // Set all fields.
+            copy = new JoinOperator();
+            copy->setParents(std::vector<std::shared_ptr<LogicalOperator>>({nullptr, nullptr}));
+            copy->_leftColumn = _leftColumn;
+            copy->_rightColumn = _rightColumn;
+            copy->_joinType = _joinType;
+            copy->_leftPrefix = _leftPrefix;
+            copy->_leftSuffix = _leftSuffix;
+            copy->_rightPrefix = _rightPrefix;
+            copy->_rightSuffix = _rightSuffix;
+            copy->_columns = _columns;
+            copy->setOutputSchema(getOutputSchema());
+        }
         copy->_keyColumn = keyColumn();
+        copy->_leftKeyIndex = _leftKeyIndex;
+        copy->_rightKeyIndex = _rightKeyIndex;
+        copy->_leftColumnCount = _leftColumnCount;
+        copy->_rightColumnCount = _rightColumnCount;
         copy->setDataSet(getDataSet());
         copy->copyMembers(this);
-        assert(checkBasicEqualityOfOperators(*copy, *this));
+        assert(checkBasicEqualityOfOperators(*copy, *this, true));
         return std::shared_ptr<LogicalOperator>(copy);
     }
 }

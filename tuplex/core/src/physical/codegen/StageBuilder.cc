@@ -1741,19 +1741,6 @@ namespace tuplex {
             auto inputNode = path_ctx.inputNode;
             auto operators = path_ctx.operators;
 
-            // sample using strategy?
-            // // force resampling b.c. of thin layer
-            // if(inputNode->type() == LogicalOperatorType::FILEINPUT) {
-            //     auto fop = std::dynamic_pointer_cast<FileInputOperator>(inputNode); assert(fop);
-            //     fop->setInputFiles({uri}, {file_size}, true);
-            // }
-
-//            // is end-point hashtable? need to specialize hashkeytype etc.
-//            if(!path_ctx.operators.empty()) {
-//                auto& last_op = path_ctx.operators.back();
-//                auto last_name = last_op->name();
-//            }
-
             // set for file input operator (when no sample use) the normal-case to be true
             if(!conf.use_sample) {
                 if(inputNode->type() == LogicalOperatorType::FILEINPUT) {
@@ -1802,6 +1789,36 @@ namespace tuplex {
             return path_ctx;
         }
 
+        std::vector<std::shared_ptr<LogicalOperator>> linearize_operators(const std::vector<std::shared_ptr<LogicalOperator>>& in) {
+            std::vector<std::shared_ptr<LogicalOperator>> operators;
+            for (const auto& op : in) {
+                auto cloned_op = op->clone(false);
+                if (!operators.empty()) {
+                    if (cloned_op->type() == LogicalOperatorType::JOIN) {
+                        // special case: set one to nullptr, the other to the right one, depending which stage this is.
+                        auto jop = std::dynamic_pointer_cast<JoinOperator>(op);
+                        if (jop->right() && jop->right()->getID() == operators.back()->getID()) {
+                            cloned_op->setParents({nullptr, operators.back()});
+                        } else if (jop->left() && jop->left()->getID() == operators.back()->getID()) {
+                            cloned_op->setParents({operators.back(), nullptr});
+                        } else {
+                            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " error while linearizing stage.");
+                        }
+                    } else
+                        cloned_op->setParent(operators.back());
+
+                    if(cloned_op->parents().size() == 1)
+                        assert(cloned_op->parent()->getID() == op->parent()->getID());
+                }
+                operators.push_back(cloned_op);
+            }
+            // Check ID validity.
+            assert(operators.size() == in.size());
+            for (unsigned i = 0; i < in.size(); ++i)
+                assert(operators[i]->getID() == in[i]->getID());
+            return operators;
+        }
+
         TransformStage *StageBuilder::build(PhysicalPlan *plan, IBackend *backend) {
             auto& logger = Logger::instance().logger("codegen");
 
@@ -1820,6 +1837,9 @@ namespace tuplex {
                 stage->_fastCodePath = fast;
             } else {
                 // this here is the code-generation part
+
+                // update operators (clone) and make sure there's a linear operator order (i.e., set to nullptr whenever ops like join have two parents).
+                _operators = linearize_operators(_operators);
 
                 // 1. fetch general code generation context
                 auto codeGenerationContext = createCodeGenerationContext();
