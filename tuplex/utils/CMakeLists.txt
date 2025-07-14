@@ -122,13 +122,6 @@ endif()
 # ------
 # dependencies
 
-# set here dependencies, include_targets, link_targets
-if(BUILD_WITH_CEREAL)
-    set(UTILS_DEPENDENCIES fmt spdlog json cereal simdjson)
-else()
-    set(UTILS_DEPENDENCIES fmt spdlog json simdjson)
-endif()
-
 set(UTILS_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_BINARY_DIR}
         ${fmt_INCLUDE_DIR}
@@ -141,7 +134,18 @@ set(UTILS_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${ZLIB_INCLUDE_DIRS}
         ${simdjson_INCLUDE_DIRS})
 set(UTILS_LIBRARIES Boost::filesystem Boost::thread Boost::system
-        Boost::system Boost::iostreams ${ZLIB_LIBRARIES} ${AWSSDK_LINK_LIBRARIES} simdjson::simdjson yyjson)
+        Boost::system Boost::iostreams ${ZLIB_LIBRARIES} ${AWSSDK_LINK_LIBRARIES} simdjson::simdjson)
+
+# set here dependencies, include_targets, link_targets
+set(UTILS_DEPENDENCIES fmt spdlog json simdjson)
+if(BUILD_WITH_CEREAL)
+    list(APPEND UTILS_DEPENDENCIES cereal)
+endif()
+
+if(USE_YYJSON_INSTEAD)
+    list(APPEND UTILS_DEPENDENCIES yyjson)
+    list(APPEND UTILS_LIBRARIES yyjson)
+endif()
 
 # object library
 add_dependencies(libutils ${UTILS_DEPENDENCIES})

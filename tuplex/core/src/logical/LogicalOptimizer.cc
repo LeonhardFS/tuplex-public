@@ -803,8 +803,65 @@ namespace tuplex {
 
         // traverse
         if(op->type() == LogicalOperatorType::JOIN) {
-
             auto jop = std::dynamic_pointer_cast<JoinOperator>(op); assert(jop);
+
+            // Allow for partial pushdown, if either parent is nullptr.
+            if (!jop->left() || !jop->right()) {
+                if (requiredCols.empty()) {
+                     if (jop->left()) {
+                         auto leftRet = projectionPushdown(jop->left(), jop, requiredCols, dropOperators, ignoreConstantTypedColumns);
+                    }
+                } else {
+                    if (jop->left()) {
+                        set<size_t> reqLeft;
+                        auto numLeftCols = jop->leftColumnCount();
+                        for(auto idx : requiredCols) {
+                            // required is key column + all that fall on left side for left
+                            if(idx < numLeftCols)
+                                reqLeft.insert(idx + (idx >= jop->leftKeyIndex())); // correct for join column drop
+                        }
+                        reqLeft.insert(jop->leftKeyIndex());
+                        auto requiredLeftCols = vector<size_t>(reqLeft.begin(), reqLeft.end());
+                        auto leftRet = projectionPushdown(jop->left(), jop, requiredLeftCols, dropOperators, ignoreConstantTypedColumns);
+
+                        cout<<"left ret: "<<leftRet<<endl;
+                    }
+
+                    if (jop->right()) {
+                        set<size_t> reqRight;
+                        auto numLeftCols = jop->leftColumnCount();
+                        auto numRightCols = jop->rightColumnCount();
+                        for(auto idx : requiredCols) {
+                            // need to correct for left number of cols (join is over one key)
+                            if(idx >= numLeftCols) {
+                                assert(idx < numRightCols + numLeftCols);
+                                reqRight.insert(idx - numLeftCols + (idx - numLeftCols >= jop->rightKeyIndex())); // correct for join column drop
+                            }
+                        }
+                        reqRight.insert(jop->rightKeyIndex());
+                        auto requiredRightCols = vector<size_t>(reqRight.begin(), reqRight.end());
+                        auto rightRet = projectionPushdown(jop->right(), jop, requiredRightCols, dropOperators, ignoreConstantTypedColumns);
+
+                        cout<<"right ret: "<<rightRet<<endl;
+                    }
+
+                    // vector<size_t> colsToKeep;
+                    // for(int i = 0; i < leftRet.size(); ++i)
+                    //     if(i != jop->leftKeyIndex())
+                    //         colsToKeep.push_back(leftRet[i] - (i >= jop->leftKeyIndex()));
+                    // // keep the key column
+                    // colsToKeep.push_back(numLeftColumnsBeforePushdown - 1);
+                    // // fill in columns from right side to keep
+                    // for(int i = 0; i < rightRet.size(); ++i) {
+                    //     if(i != jop->rightKeyIndex())
+                    //         colsToKeep.push_back(numLeftColumnsBeforePushdown + rightRet[i] - (i >= jop->rightKeyIndex()));
+                    // }
+                    // return colsToKeep;
+                }
+
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " need to be implement partial projection pushdown.");
+            }
+
             vector<size_t> leftRet;
             vector<size_t> rightRet;
 

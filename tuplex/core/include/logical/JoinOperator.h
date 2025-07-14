@@ -99,6 +99,10 @@ namespace tuplex {
 
         int64_t leftKeyIndex() const;
         int64_t rightKeyIndex() const;
+
+        inline int64_t leftColumnCount() const { return _leftColumnCount; }
+        inline int64_t rightColumnCount() const { return _rightColumnCount; }
+
         /*!
          * where is the key stored in the final output?
          * @return index of the join key in the final schema
