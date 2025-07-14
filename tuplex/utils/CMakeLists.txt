@@ -143,8 +143,7 @@ if(BUILD_WITH_CEREAL)
 endif()
 
 if(USE_YYJSON_INSTEAD)
-    list(APPEND UTILS_DEPENDENCIES yyjson)
-    list(APPEND UTILS_LIBRARIES yyjson)
+    list(APPEND UTILS_LIBRARIES yyjson::yyjson)
 endif()
 
 # object library

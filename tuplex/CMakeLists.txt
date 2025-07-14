@@ -687,10 +687,17 @@ add_compile_definitions(PCRE2_CODE_UNIT_WIDTH=8)
 include(FetchContent)
 set(FETCHCONTENT_BASE_DIR ${CMAKE_BINARY_DIR}/third_party/src)
 
-FetchContent_Declare(yyjson
-        GIT_REPOSITORY https://github.com/ibireme/yyjson
-        GIT_TAG 0.9.0)
-FetchContent_MakeAvailable(yyjson)
+if(USE_YYJSON_INSTEAD)
+    # Use macos native package for working with delocate wheel.
+    find_package(yyjson)
+    if(NOT yyjson_FOUND)
+        FetchContent_Declare(yyjson
+            GIT_REPOSITORY https://github.com/ibireme/yyjson
+            GIT_TAG 0.11.1 OVERRIDE_FIND_PACKAGE)
+        find_package(yyjson REQUIRED)
+    endif()
+endif ()
+
 
 # add boost & boost python ==> globally added because of its quirks
 # this solution should work across versions...

@@ -72,16 +72,17 @@ if [ "$MACOS_VERSION_MAJOR" -ge 11 ]; then
 else
     # keep as is
     echo "-- Defaulting build to use as minimum target ${MINIMUM_TARGET}"
+    MINIMUM_TARGET=13.0
 fi
 
 pushd $CWD > /dev/null
 cd ..
 
 # fix because of Python
-MINIMUM_TARGET=11.0
+# MINIMUM_TARGET=11.0
 
 # Note: 3.8 only supports tags up to 10.16
-MINIMUM_TARGET=10.13
+# MINIMUM_TARGET=10.13
 
 # Note: protobuf 3.20 - 3.21.2 is broken for MacOS, do not use those versions
 export CIBW_BEFORE_BUILD_MACOS="brew install protobuf coreutils zstd zlib libmagic llvm@16 aws-sdk-cpp pcre2 antlr4-cpp-runtime googletest gflags yaml-cpp celero wget boost ninja snappy libdwarf libelf"
