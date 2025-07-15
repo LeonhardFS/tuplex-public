@@ -35,15 +35,11 @@
 #include <logical/FileOutputOperator.h>
 #include <logical/AggregateOperator.h>
 
-#ifdef BUILD_WITH_AWS
 // include protobuf serialization of TrafoStage for Lambda executor
 #include <utils/Messages.h>
 
-#endif
-
 namespace tuplex {
 
-#ifdef BUILD_WITH_AWS
     inline FileFormat proto_toFileFormat(messages::FileFormat fmt) {
         switch(fmt) {
             case messages::FileFormat::FF_CSV:
@@ -58,7 +54,6 @@ namespace tuplex {
                 return FileFormat::OUTFMT_UNKNOWN;
         }
     }
-#endif
 
     // forward declaration of friend class
     namespace codegen {
@@ -107,12 +102,10 @@ namespace tuplex {
 
         std::vector<Partition*> inputPartitions() const { return _inputPartitions; }
 
-#ifdef BUILD_WITH_AWS
         std::unique_ptr<messages::TransformStage> to_protobuf() const;
         // helper to be called after hyperspecialization as well.
         void fill_schemas_into_protobuf(messages::TransformStage* msg) const;
         static std::unique_ptr<TransformStage> from_protobuf(const messages::TransformStage& msg);
-#endif
 
         /*!
          * set input files to stage (will be serialized to partitions on driver)
@@ -688,8 +681,6 @@ namespace tuplex {
             }
 
             // protobuf serialization
-#ifdef BUILD_WITH_AWS
-
             StageCodePath(const messages::CodePath& p) : codeFormat(static_cast<codegen::CodeFormat>(p.codeformat())), code(p.code()), initStageFuncName(p.initstagefuncname()),
                                                          releaseStageFuncName(p.releasestagefuncname()), funcStageName(p.funcstagename()),
                                                          funcProcessRowName(p.funcprocessrowname()), writeFileCallbackName(p.writefilecallbackname()),
@@ -726,7 +717,6 @@ namespace tuplex {
                 fill(c);
                 return c;
             }
-#endif
         };
 
 

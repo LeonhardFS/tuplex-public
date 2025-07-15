@@ -78,12 +78,12 @@ namespace python {
     static std::atomic<PyThreadState*> gilState(nullptr);
 
     void registerWithInterpreter() {
-        if(!interpreterInitialized) {
-            interpreterInitialized = true;
-            gil_main_thread_id = std::this_thread::get_id();
-            gil_id = gil_main_thread_id;
-            gilState = PyGILState_GetThisThreadState();
-        }
+        // if(!interpreterInitialized) {
+        //     interpreterInitialized = true;
+        //     gil_main_thread_id = std::this_thread::get_id();
+        //     gil_id = gil_main_thread_id;
+        //     gilState = PyGILState_GetThisThreadState();
+        // }
     }
 
     void lockGIL() {

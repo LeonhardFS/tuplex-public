@@ -256,17 +256,8 @@ if(BUILD_FOR_CI)
 endif()
 
 ## Protobuf
-if(BUILD_WITH_AWS)
-    # building with AWS backend support?
-    # communication with AWS Lambda happens via protobuf, i.e. make sure protobuf compiler
-    # is installed
-    set(PROTOBUF_REQUIRED True)
-endif()
-
-if(BUILD_WITH_ORC)
-    # ORC requires protobuf for schema
-    set(PROTOBUF_REQUIRED True)
-endif()
+# always required because of worker.
+set(PROTOBUF_REQUIRED True)
 
 # if protobuf is required, add as lib here.
 if(PROTOBUF_REQUIRED)

@@ -102,6 +102,7 @@ namespace tuplex {
 
         // init s3 cache if required
         if(_settings.s3PreCacheSize != 0) {
+#ifdef BUILD_WITH_AWS
             // make sure s3 system is initialized
             auto s3impl = VirtualFileSystem::getS3FileSystemImpl();
             if(!s3impl) {
@@ -121,6 +122,7 @@ namespace tuplex {
                 logger().info("Disable previously active S3 cache.");
 
             s3impl->disableReadCache();
+#endif
         }
 
         return true;
@@ -702,9 +704,10 @@ namespace tuplex {
             // First stage to invoke.
             int num_to_invoke = req.stage().invocationcount(0);
             std::string lambda_endpoint;
+#ifdef BUILD_WITH_AWS
             if(req.env().end() != req.env().find(AWS_LAMBDA_ENDPOINT_KEY))
                 lambda_endpoint = req.env().at(AWS_LAMBDA_ENDPOINT_KEY);
-
+#endif
 
             // Check how many parts there are, distribute between this worker and the Lambdas to invoke.
             // This lambda gets the first part.
@@ -854,6 +857,7 @@ namespace tuplex {
     }
 
     void WorkerApp::preCacheS3(const std::vector<FilePart> &parts) {
+#ifdef BUILD_WITH_AWS
         // pre-cache in S3 file cache all the parts!
         Timer timer;
         auto& cache = S3FileCache::instance();
@@ -905,6 +909,7 @@ namespace tuplex {
         double s3ReadSpeed = (total_cached / (1024.0 * 1024.0)) / cache_time;
         ss<<"Cached "<<total_cached<<" bytes in "<<cache_time<<"s from S3 ("<<s3ReadSpeed<<" MB/s)";
         logger().info(ss.str());
+#endif
     }
 
     int
@@ -1057,12 +1062,16 @@ namespace tuplex {
                 } else {
                     logger().info("Worker called with noop, computing as if there was an empty result.");
                 }
-            } catch(const s3exception& e) {
+            }
+#ifdef BUILD_WITH_AWS
+            catch(const s3exception& e) {
                 auto err_msg = "S3 exception occurred in single-threaded mode: " + std::string(e.what());
                 logger().error(err_msg);
                 processCodes[0] = WORKER_ERROR_S3;
                 processErrorMessages[0] = err_msg;
-            } catch(const std::exception& e) {
+            }
+#endif
+            catch(const std::exception& e) {
                 auto err_msg = "exception occurred in single-threaded mode: " + std::string(e.what());
                 logger().error(err_msg);
                 processCodes[0] = WORKER_ERROR_EXCEPTION;
@@ -1122,12 +1131,16 @@ namespace tuplex {
                         } else {
                             logger().info("Worker called with noop, computing as if there was an empty result.");
                         }
-                    } catch(const s3exception& e) {
+                    }
+#ifdef BUILD_WITH_AWS
+                    catch(const s3exception& e) {
                         auto err_msg = std::string("exception recorded: ") + e.what();
                         logger().error(err_msg);
                         processCodes[threadNo] = WORKER_ERROR_S3;
                         processErrorMessages[threadNo] = err_msg;
-                    } catch(const std::exception& e) {
+                    }
+#endif
+                    catch(const std::exception& e) {
                         auto err_msg = std::string("exception recorded: ") + e.what();
                         logger().error(err_msg);
                         processCodes[threadNo] = WORKER_ERROR_EXCEPTION;
@@ -4022,6 +4035,7 @@ namespace tuplex {
                 return false;
             }
 
+#if BUILD_WITH_AWS
             // There may be more than one endpoint supplied. Right now mostly for testing purposes.
             // Find first valid endpoint.
             if(endpoint.find(";") != std::string::npos) {
@@ -4046,9 +4060,12 @@ namespace tuplex {
             }
 
             VirtualFileSystem::removeS3FileSystem();
+#endif
+
             NetworkSettings ns;
             ns.endpointOverride = endpoint;
 
+#ifdef BUILD_WITH_AWS
             // Amazon endpoints end with .amazonaws.com.
             // For a list of available endpoints, cf. https://docs.aws.amazon.com/general/latest/gr/s3.html
             // For non-Aws endpoints (i.e., local minio) disable SSL.
@@ -4059,6 +4076,7 @@ namespace tuplex {
             }
             VirtualFileSystem::addS3FileSystem(access_key, secret_key, "", "", ns);
             logger().info("Updated S3 endpoint to " + endpoint + ".");
+#endif
         }
         return true;
     }
