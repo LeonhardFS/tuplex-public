@@ -2977,10 +2977,10 @@ namespace tuplex {
                         }
                     }
                 }
-                if(node && node->getID() != input_node()->getID())
-                    operators_post_op.push_back(node);
 
                 // go on...
+                if (node) // set to nullptr if filtered out.
+                    operators_post_op.push_back(node);
                 node = next_node;
             }
             if(node)

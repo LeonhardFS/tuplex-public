@@ -1776,7 +1776,7 @@ namespace tuplex {
                 columnsToRead = fop->columnsToSerialize();
             } else {
                 readSchema = planner.input_node()->getInputSchema();
-                inputSchema = path_ctx.inputNode->getOutputSchema();
+                inputSchema = planner.input_node()->getOutputSchema();
             }
             logger.debug("read schema is: " + readSchema.getRowType().desc());
             path_ctx.inputNode = planner.input_node();
@@ -1833,7 +1833,7 @@ namespace tuplex {
         TransformStage *StageBuilder::build(PhysicalPlan *plan, IBackend *backend) {
             auto& logger = Logger::instance().logger("codegen");
 
-            TransformStage *stage = new TransformStage(plan, backend, _stageNumber, _conf.policy.allowUndefinedBehavior);
+             TransformStage *stage = new TransformStage(plan, backend, _stageNumber, _conf.policy.allowUndefinedBehavior);
 
             bool mem2mem = _inputMode == EndPointMode::MEMORY && _outputMode == EndPointMode::MEMORY;
 
