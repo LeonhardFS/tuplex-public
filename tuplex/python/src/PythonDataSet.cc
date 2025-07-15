@@ -986,6 +986,8 @@ namespace tuplex {
             auto schema = partition->schema();
             // single value? --> reset rowtype by one level
             auto type = schema.getRowType();
+            if (type.isRowType())
+                type = type.get_columns_as_tuple_type();
             assert(type.isTupleType());
             if (type.parameters().size() == 1)
                 type = type.parameters().front();
