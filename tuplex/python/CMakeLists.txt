@@ -65,7 +65,7 @@ target_include_directories(${MODULE_NAME} PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_BINARY_DIR})
 if(APPLE)
-target_link_libraries(${MODULE_NAME} PUBLIC Backward::Interface
+target_link_libraries(${MODULE_NAME} #PUBLIC Backward::Interface
         PRIVATE
         libcodegen
         libcore

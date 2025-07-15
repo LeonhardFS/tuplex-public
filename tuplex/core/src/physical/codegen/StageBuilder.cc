@@ -392,6 +392,8 @@ namespace tuplex {
             _inputColumns = csvop->columns(); // after projection pushdown, columns hold the result!
             _inputFileFormat = csvop->fileFormat();
             _inputNode = std::dynamic_pointer_cast<LogicalOperator>(csvop);
+            _operators.clear();
+            _operators.push_back(_inputNode);
         }
 
         std::string StageBuilder::formatBadUDFNode(tuplex::UDFOperator *udfop) {
@@ -823,7 +825,7 @@ namespace tuplex {
                     }
                     default: {
                         std::stringstream ss;
-                        ss<<"found unknown operator " + node->name() +
+                        ss<<__FILE__<<":"<<__LINE__<<" found unknown operator " + node->name() +
                           " for which a pipeline could not be generated";
                         logger.error(ss.str());
                         throw std::runtime_error(ss.str());
@@ -1287,6 +1289,11 @@ namespace tuplex {
                 UDFOperator *udfop = dynamic_cast<UDFOperator *>(node.get());
                 bool rc_code_gen = true;
                 switch (node->type()) {
+                    // skip input nodes, they're handled separately as part of the stage wrapper.
+                    case LogicalOperatorType::PARALLELIZE:
+                    case LogicalOperatorType::FILEINPUT:
+                        break;
+
                     case LogicalOperatorType::MAP: {
                         rc_code_gen = slowPip->mapOperation(node->getID(), udfop->getUDF(), _conf.policy.normalCaseThreshold, ctx.allowUndefinedBehavior,
                                               ctx.sharedObjectPropagation);
@@ -1449,9 +1456,10 @@ namespace tuplex {
                     }
 
                     default: {
-                        throw std::runtime_error(
-                                "found unknown operator " + node->name() +
-                                " for which a pipeline could not be generated");
+                            std::stringstream ss;
+                            ss<<__FILE__<<":"<<__LINE__<<"found unknown operator "<<node->name()<<
+                                " for which a pipeline could not be generated";
+                        throw std::runtime_error(ss.str());
                     }
                 }
 
@@ -1618,6 +1626,8 @@ namespace tuplex {
             _inputMode = EndPointMode::MEMORY;
             _inputFileFormat = FileFormat::OUTFMT_TUPLEX;
             _inputNode = node;
+            _operators.clear();
+            _operators.push_back(_inputNode);
         }
 
         void StageBuilder::addMemoryOutput(std::shared_ptr<LogicalOperator> node, const Schema &schema, int64_t opID, int64_t dsID) {
@@ -1749,7 +1759,8 @@ namespace tuplex {
             }
 
             // node need to find some smart way to QUICKLY detect whether the optimization can be applied or should be rather skipped...
-            codegen::StagePlanner planner(inputNode, operators, conf.policy.normalCaseThreshold);
+            assert(inputNode->getID() == operators.front()->getID());
+            codegen::StagePlanner planner(operators, conf.policy.normalCaseThreshold);
             apply_stage_builder_conf_to_planner(conf, planner);
             planner.optimize();
 
@@ -2157,7 +2168,8 @@ namespace tuplex {
                         logger.info("Applying simplify-large-structs(threshold=" + std::to_string(threshold) + ") to slow compiled code path.");
 
                         // apply to slow path the simplify-large-struct pass in order to save compilation time on the client.
-                        StagePlanner planner(ctx.slowPathContext.inputNode, ctx.slowPathContext.operators, 0.5);
+                        assert(ctx.slowPathContext.inputNode->getID() == ctx.slowPathContext.operators.front()->getID());
+                        StagePlanner planner(ctx.slowPathContext.operators, 0.5);
                         planner.disableAll();
 
                         planner.enableSimplifyLargeStructs(threshold);

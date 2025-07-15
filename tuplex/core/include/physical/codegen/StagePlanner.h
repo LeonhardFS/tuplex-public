@@ -126,25 +126,30 @@ namespace tuplex {
              * @param inputNode the input node of the stage (parent of first operator)
              * @param operators operators following the input node.
              */
-            StagePlanner(const std::shared_ptr<LogicalOperator>& inputNode,
-                         const std::vector<std::shared_ptr<LogicalOperator>>& operators,
-                         double nc_threshold) : _inputNode(inputNode),
-                                                _operators(operators), _nc_threshold(nc_threshold),
+            StagePlanner(const std::vector<std::shared_ptr<LogicalOperator>>& operators,
+                         double nc_threshold) : _operators(operators), _nc_threshold(nc_threshold),
                                                 _useNVO(false), _useConstantFolding(false), _useDelayedParsing(false),
                                                 _useSparsifyStructs(false), _simplifyLargeStructs(false), _largeStructThreshold(0) {
-                assert(inputNode);
                 for(auto op : operators)
                     assert(op);
                 enableAll();
 
+                if (!input_node())
+                    return;
+
                 // no optimizations carried out yet, hence store the original types for later lookup.
-                assert(inputNode);
-                if(LogicalOperatorType::FILEINPUT == inputNode->type()) {
-                    auto fop = std::dynamic_pointer_cast<FileInputOperator>(inputNode);
+                if(LogicalOperatorType::FILEINPUT == input_node()->type()) {
+                    auto fop = std::dynamic_pointer_cast<FileInputOperator>(input_node());
                     _unprojected_unoptimized_row_type = fop->getInputSchema().getRowType();
                 } else {
-                    _unprojected_unoptimized_row_type = inputNode->getOutputSchema().getRowType();
+                    _unprojected_unoptimized_row_type = input_node()->getOutputSchema().getRowType();
                 }
+            }
+
+            inline std::shared_ptr<LogicalOperator> input_node() const {
+                if (_operators.empty())
+                    return std::shared_ptr<LogicalOperator>(nullptr);
+                return _operators.front();
             }
 
              /*!
@@ -161,10 +166,6 @@ namespace tuplex {
 
             std::vector<std::shared_ptr<LogicalOperator>> optimized_operators() const {
                 return _operators;
-            }
-
-            std::shared_ptr<LogicalOperator> input_node() const {
-                return _inputNode;
             }
 
             /*!
@@ -235,9 +236,9 @@ namespace tuplex {
                 auto unopt = unprojected_unoptimized_row_type();
 
                 // calc via projection matrix (only for fileinput)
-                if(_inputNode && LogicalOperatorType::FILEINPUT == _inputNode->type()) {
+                if(input_node() && LogicalOperatorType::FILEINPUT == input_node()->type()) {
                     auto col_types = unopt.parameters();
-                    auto fop = std::dynamic_pointer_cast<FileInputOperator>(_inputNode);
+                    auto fop = std::dynamic_pointer_cast<FileInputOperator>(input_node());
                     auto cols_to_serialize = fop->columnsToSerialize();
                     assert(cols_to_serialize.size() == fop->inputColumnCount());
                     assert(cols_to_serialize.size() == col_types.size());
@@ -252,33 +253,32 @@ namespace tuplex {
                 }
             }
             python::Type unprojected_optimized_row_type() const {
-                assert(_inputNode);
-                if(LogicalOperatorType::FILEINPUT == _inputNode->type()) {
-                    auto fop = std::dynamic_pointer_cast<FileInputOperator>(_inputNode);
+                assert(input_node());
+                if(LogicalOperatorType::FILEINPUT == input_node()->type()) {
+                    auto fop = std::dynamic_pointer_cast<FileInputOperator>(input_node());
                     auto t = fop->getOptimizedInputSchema().getRowType();
                     assert(extract_columns_from_type(t) == extract_columns_from_type(unprojected_unoptimized_row_type()));
                     return t;
                 } else {
                     // normal-case is always the propagated schema
-                    return _inputNode->getOutputSchema().getRowType();
+                    return input_node()->getOutputSchema().getRowType();
                 }
             }
 
             python::Type projected_optimized_row_type() const {
-                assert(_inputNode);
-                if(LogicalOperatorType::FILEINPUT == _inputNode->type()) {
-                    auto fop = std::dynamic_pointer_cast<FileInputOperator>(_inputNode);
+                assert(input_node());
+                if(LogicalOperatorType::FILEINPUT == input_node()->type()) {
+                    auto fop = std::dynamic_pointer_cast<FileInputOperator>(input_node());
                     return fop->getOptimizedOutputSchema().getRowType();
                 } else {
                     // normal-case is always the propagated schema
-                    return _inputNode->getOutputSchema().getRowType();
+                    return input_node()->getOutputSchema().getRowType();
                 }
             }
 
             bool promoteFilters(std::vector<Row>* filtered_sample=nullptr);
 
         private:
-            std::shared_ptr<LogicalOperator> _inputNode;
             std::vector<std::shared_ptr<LogicalOperator>> _operators;
             std::vector<NormalCaseCheck> _checks;
 

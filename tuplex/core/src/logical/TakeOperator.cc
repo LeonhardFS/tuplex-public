@@ -14,7 +14,8 @@
 namespace tuplex {
     TakeOperator::TakeOperator(const std::shared_ptr<LogicalOperator>& parent, const int64_t numElements) : LogicalOperator::LogicalOperator(parent), _limit(numElements) {
         // take schema from parent node
-        setOutputSchema(this->parent()->getOutputSchema());
+        if (parent)
+            setOutputSchema(this->parent()->getOutputSchema());
     }
 
     bool TakeOperator::good() const {
@@ -34,7 +35,7 @@ namespace tuplex {
     std::shared_ptr<LogicalOperator> TakeOperator::clone(bool cloneParents) const {
         // create clone of this operator
         auto copy = new TakeOperator(cloneParents ? parent()->clone() : nullptr, _limit);
-
+        copy->setOutputSchema(getOutputSchema());
         copy->setDataSet(getDataSet()); // weak ptr to old dataset...
         copy->copyMembers(this);
         assert(checkBasicEqualityOfOperators(*copy, *this));

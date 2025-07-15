@@ -57,7 +57,7 @@ namespace tuplex {
         std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::filterReordering(const std::vector<Row>& sample) {
             // todo
 
-            return vec_prepend(_inputNode, _operators);
+            return _operators;
         }
 
 
@@ -194,23 +194,23 @@ namespace tuplex {
             auto& logger = Logger::instance().logger("specializing stage optimizer");
 
             // check current input node schema, if it contains no struct_dict - can skip.
-            if(!_inputNode) {
-                logger.error("internal problem with _inputNode, skipping.");
-                return vec_prepend(_inputNode, _operators);
+            if(!input_node()) {
+                logger.error("internal problem with input_node(), skipping.");
+                return _operators;
             }
 
             if(sample.empty()) {
                 logger.info("Empty sample, skipping sparsifyStructs optimization.");
-                return vec_prepend(_inputNode, _operators);
+                return _operators;
             }
 
             // TODO: could sparsify within operators as well.
 
-            auto struct_dict_found = input_schema_contains_structs(_inputNode->getOutputSchema());
+            auto struct_dict_found = input_schema_contains_structs(input_node()->getOutputSchema());
 
             if(!struct_dict_found) {
                 logger.error("Skipping sparsify-struct pass, because no struct dicts found in input operator.");
-                return vec_prepend(_inputNode, _operators);
+                return _operators;
             }
 
             // get column names from sample.
@@ -238,7 +238,7 @@ namespace tuplex {
             // go through operators with sample, and then for each record which paths are accessed:
             std::unordered_map<LogicalOperator*, SparsifyInfo> info_map;
             bool done=false;
-            for(const auto& op : vec_prepend(_inputNode, _operators)) {
+            for(const auto& op : _operators) {
                 if(done)
                     break;
 
@@ -387,7 +387,7 @@ namespace tuplex {
             // for each operator, it is now known which access paths there are.
             // next step is to (by reversing) identify the file operators valid paths in order to sparsify.
             std::vector<LogicalOperator*> r_operators;
-            for(const auto& op : vec_prepend(_inputNode, _operators))
+            for(const auto& op : _operators)
                 r_operators.push_back(op.get());
             std::reverse(r_operators.begin(), r_operators.end());
 
@@ -455,16 +455,16 @@ namespace tuplex {
             // erase now all columns which aren't present in input operator
             std::vector<std::string> columns_to_remove;
             for(const auto& kv : column_to_access_path_map) {
-                if(indexInVector(kv.first, _inputNode->columns()) < 0)
+                if(indexInVector(kv.first, input_node()->columns()) < 0)
                     columns_to_remove.push_back(kv.first);
             }
             for(auto name : columns_to_remove)
                 column_to_access_path_map.erase(name);
 
             // sparsify now.
-            auto r_row_type = _inputNode->getOutputSchema().getRowType();
+            auto r_row_type = input_node()->getOutputSchema().getRowType();
             std::vector<std::vector<access_path_t>> r_access_paths;
-            for(auto name : _inputNode->columns()) {
+            for(auto name : input_node()->columns()) {
                 r_access_paths.push_back({});
                 if(column_to_access_path_map.find(name) != column_to_access_path_map.end()) {
                     r_access_paths.back() = column_to_access_path_map[name];
@@ -599,7 +599,7 @@ namespace tuplex {
             }
 
             // Overwrite input node with new sparse type & propagate through operators.
-            auto inputNode = _inputNode->clone(false);
+            auto inputNode = input_node()->clone(false);
             RetypeConfiguration conf;
             conf.row_type = sparse_type;
             if(sparse_type.isRowType()) {
@@ -656,6 +656,9 @@ namespace tuplex {
             auto lastParent = inputNode;
             // retype the other operators.
             for(const auto& op : _operators) {
+                if (op->getID() == inputNode->getID())
+                    continue;
+
                 // clone operator & specialize!
                 auto opt_op = op->clone(false);
                 opt_op->setParent(lastParent);
@@ -701,16 +704,16 @@ namespace tuplex {
             auto& logger = Logger::instance().logger("specializing stage optimizer");
 
             // check whether input node contains any struct types.
-            auto struct_dict_found = input_schema_contains_structs(_inputNode->getOutputSchema());
+            auto struct_dict_found = input_schema_contains_structs(input_node()->getOutputSchema());
 
             if(!struct_dict_found) {
                 logger.info("Skipping simplify-large-structs pass, because no struct dicts found in input operator.");
-                return vec_prepend(_inputNode, _operators);
+                return _operators;
             }
 
             // structs are found, for each struct count now depth and then simplify
-            auto columns = _inputNode->columns();
-            auto tuple_row_type = _inputNode->getOutputSchema().getRowType();
+            auto columns = input_node()->columns();
+            auto tuple_row_type = input_node()->getOutputSchema().getRowType();
             if(tuple_row_type.isRowType())
                 tuple_row_type = tuple_row_type.get_columns_as_tuple_type();
             assert(columns.size() == tuple_row_type.parameters().size());
@@ -741,7 +744,7 @@ namespace tuplex {
                 // TOOD: retype.
 
                 // Overwrite input node with new sparse type & propagate through operators.
-                auto inputNode = _inputNode->clone(false);
+                auto inputNode = input_node()->clone(false);
                 RetypeConfiguration conf;
                 conf.row_type = new_row_type;
                 if(new_row_type.isRowType()) {
@@ -759,6 +762,9 @@ namespace tuplex {
                 auto lastParent = inputNode;
                 // retype the other operators.
                 for(const auto& op : _operators) {
+                    if (op->getID() == inputNode->getID())
+                        continue;
+
                     // clone operator & specialize!
                     auto opt_op = op->clone(false);
                     opt_op->setParent(lastParent);
@@ -785,7 +791,7 @@ namespace tuplex {
             }
 
             // no change.
-            return vec_prepend(_inputNode, _operators);
+            return _operators;
         }
 
         std::vector<std::shared_ptr<LogicalOperator>> StagePlanner::applyLogicalOptimizer() {
@@ -793,13 +799,13 @@ namespace tuplex {
 
             auto& logger = Logger::instance().logger("specializing stage optimizer");
 
-            if(!_inputNode || !_inputNode->isDataSource()) {
+            if(!input_node() || !input_node()->isDataSource()) {
                 logger.info("Skipping apply-logical-optimizer optimization because no data source found.");
                 // no change.
-                return vec_prepend(_inputNode, _operators);
+                return _operators;
             }
 
-            auto opt_ops = vec_prepend(_inputNode, _operators);
+            auto opt_ops = _operators;
 
             // Init logical optimizer.
             // Data source may require fewer columns to get accessed.
@@ -820,8 +826,8 @@ namespace tuplex {
             std::vector<size_t> out_accessed_columns;
             std::vector<size_t> out_accessed_columns_before_opt;
             // project each when input op present
-            if(_inputNode && _inputNode->type() == LogicalOperatorType::FILEINPUT) {
-                auto fop = std::dynamic_pointer_cast<FileInputOperator>(_inputNode);
+            if(input_node() && input_node()->type() == LogicalOperatorType::FILEINPUT) {
+                auto fop = std::dynamic_pointer_cast<FileInputOperator>(input_node());
                 for(const auto& idx : accessed_columns)
                     out_accessed_columns.emplace_back(fop->projectReadIndex(idx));
                 for(const auto& idx : accessed_columns_before_opt)
@@ -895,7 +901,7 @@ namespace tuplex {
                 _checks.push_back(check);
 
             // no change.
-            return vec_prepend(_inputNode, _operators);
+            return _operators;
         }
 
         python::Type simplify_constant_single_types(const python::Type& tuple_type) {
@@ -929,7 +935,7 @@ namespace tuplex {
             if(!_useConstantFolding || sample.size() < MINIMUM_SAMPLES_REQUIRED || sample.size() <= 1) {
                 if(sample.size() < MINIMUM_SAMPLES_REQUIRED)
                     logger.warn("not enough samples to reliably apply constant folding optimization, consider increasing sample size.");
-                 return vec_prepend(_inputNode, _operators);
+                 return _operators;
             }
 
             // should have at least 100 samples to determine this...
@@ -963,15 +969,15 @@ namespace tuplex {
             // no column constants? skip optimization!
             if(ds.constant_column_indices().empty()) {
                 logger.debug("skipping constant folding optimization, no constants detected.");
-                return vec_prepend(_inputNode, _operators);
+                return _operators;
             }
 
             // clone input operator
-            auto inputNode = _inputNode ? _inputNode->clone() : nullptr;
+            auto inputNode = input_node() ? input_node()->clone() : nullptr;
             if(inputNode) {
-                inputNode->setID(_inputNode->getID());
+                inputNode->setID(input_node()->getID());
                 if(inputNode->type() == LogicalOperatorType::FILEINPUT)
-                    std::dynamic_pointer_cast<FileInputOperator>(inputNode)->cloneCaches(*((FileInputOperator*)_inputNode.get()));
+                    std::dynamic_pointer_cast<FileInputOperator>(inputNode)->cloneCaches(*((FileInputOperator*)input_node().get()));
             }
 
 
@@ -1088,6 +1094,8 @@ namespace tuplex {
 
             // retype the other operators.
             for(const auto& op : _operators) {
+                if (op->getID() == inputNode->getID())
+                    continue;
 
                 // clone operator & specialize!
                 auto opt_op = op->clone();
@@ -1439,10 +1447,14 @@ namespace tuplex {
 
             std::stringstream os;
 
+            // Empty stage? skip.
+            if (_operators.empty())
+                return;
+
             // clear checks
             //_checks.clear();
 
-            vector<shared_ptr<LogicalOperator>> optimized_operators = vec_prepend(_inputNode, _operators);
+            vector<shared_ptr<LogicalOperator>> optimized_operators = _operators;
             auto& logger = Logger::instance().logger("specializing stage optimizer");
 
             logger.info("StagePlanner optimizing stage of " + pluralize(_operators.size() + 1, "operator") + ".");
@@ -1455,7 +1467,7 @@ namespace tuplex {
             std::vector<Row> sample;
             if(use_sample)
                 sample = fetchInputSample();
-            std::vector<std::string> sample_columns = _inputNode ? _inputNode->columns() : std::vector<std::string>();
+            std::vector<std::string> sample_columns = input_node() ? input_node()->columns() : std::vector<std::string>();
 
             // columns may change, reflect here.
             if(use_sample && !sample.empty()) {
@@ -1481,7 +1493,7 @@ namespace tuplex {
                 if(!use_sample) {
                     logger.debug("Skipping filter promotion, because use of sample is deactivated.");
                 } else {
-                    auto input_columns_before = _inputNode->columns();
+                    auto input_columns_before = input_node()->columns();
 
                     std::vector<Row> sample_after_filter;
                     auto rc_filter = promoteFilters(&sample_after_filter);
@@ -1505,9 +1517,9 @@ namespace tuplex {
                                                          return check.type == CheckType::CHECK_FILTER;
                                                      })) {
                         logger.info("retyping b.c. of promoted filter");
-                        auto input_type_before_promo = _inputNode->getOutputSchema().getRowType();
+                        auto input_type_before_promo = input_node()->getOutputSchema().getRowType();
                         sample = fetchInputSample();
-                        sample_columns = _inputNode ? _inputNode->columns() : std::vector<std::string>();
+                        sample_columns = input_node() ? input_node()->columns() : std::vector<std::string>();
 
                         if(!sample.empty()) {
                             os<<"First sample (retype due to filter promo):\n";
@@ -1518,7 +1530,7 @@ namespace tuplex {
 
                         retypeOperators(sample, sample_columns, use_sample);
 
-                        auto input_type_after_promo = _inputNode->getOutputSchema().getRowType();
+                        auto input_type_after_promo = input_node()->getOutputSchema().getRowType();
                         if(input_type_after_promo == input_type_before_promo) {
                             logger.debug("input row type didn't change due to promoted filter.");
                         } else {
@@ -1544,13 +1556,13 @@ namespace tuplex {
                     logger.debug("Skipping constant-folding, because use of sample is deactivated.");
                 } else {
                     // perform only when input op is present (could do later, but requires sample!)
-                    if(_inputNode && _inputNode->type() == LogicalOperatorType::FILEINPUT) {
+                    if(input_node() && input_node()->type() == LogicalOperatorType::FILEINPUT) {
                         logger.info("Performing constant folding optimization (sample size=" + std::to_string(sample.size()) + ")");
                         optimized_operators = constantFoldingOptimization(sample, sample_columns);
 
                         // overwrite internal operators to apply subsequent optimizations
-                        _inputNode = _inputNode ? optimized_operators.front() : nullptr;
-                        _operators = _inputNode ? vector<shared_ptr<LogicalOperator>>{optimized_operators.begin() + 1,
+                        input_node() = input_node() ? optimized_operators.front() : nullptr;
+                        _operators = input_node() ? vector<shared_ptr<LogicalOperator>>{optimized_operators.begin() + 1,
                                                                                       optimized_operators.end()}
                                                 : optimized_operators;
 
@@ -1570,13 +1582,13 @@ namespace tuplex {
                     logger.debug("Skipping struct sparsification, because use of sample is deactivated.");
                 } else {
                     // perform only when input op is present (could do later, but requires sample!)
-                    if(_inputNode && _inputNode->type() == LogicalOperatorType::FILEINPUT) {
+                    if(input_node() && input_node()->type() == LogicalOperatorType::FILEINPUT) {
                         logger.info("Performing struct sparsification optimization (sample size=" + std::to_string(sample.size()) + ")");
                         optimized_operators = sparsifyStructs(sample, sample_columns);
 
                         // overwrite internal operators to apply subsequent optimizations
-                        _inputNode = _inputNode ? optimized_operators.front() : nullptr;
-                        _operators = _inputNode ? vector<shared_ptr<LogicalOperator>>{optimized_operators.begin() + 1,
+                        input_node() = input_node() ? optimized_operators.front() : nullptr;
+                        _operators = input_node() ? vector<shared_ptr<LogicalOperator>>{optimized_operators.begin() + 1,
                                                                                       optimized_operators.end()}
                                                 : optimized_operators;
 
@@ -1596,18 +1608,18 @@ namespace tuplex {
                 optimized_operators = simplifyLargeStructs(20);
 
                 // overwrite internal operators to apply subsequent optimizations
-                _inputNode = _inputNode ? optimized_operators.front() : nullptr;
-                _operators = _inputNode ? vector<shared_ptr<LogicalOperator>>{optimized_operators.begin() + 1,
+                input_node() = input_node() ? optimized_operators.front() : nullptr;
+                _operators = input_node() ? vector<shared_ptr<LogicalOperator>>{optimized_operators.begin() + 1,
                                                                               optimized_operators.end()}
                                         : optimized_operators;
             }
 
 
             // All optimizations were carried out, if this stage has as input operator a source, perform logical optimization step as last one.
-            if(_inputNode->isDataSource()) {
+            if(input_node()->isDataSource()) {
                 optimized_operators = applyLogicalOptimizer();
-                _inputNode = _inputNode ? optimized_operators.front() : nullptr;
-                _operators = _inputNode ? vector<shared_ptr<LogicalOperator>>{optimized_operators.begin() + 1,
+                input_node() = input_node() ? optimized_operators.front() : nullptr;
+                _operators = input_node() ? vector<shared_ptr<LogicalOperator>>{optimized_operators.begin() + 1,
                                                                               optimized_operators.end()}
                                         : optimized_operators;
             }
@@ -1631,12 +1643,12 @@ namespace tuplex {
             auto& logger = Logger::instance().logger("specializing stage optimizer");
 
             python::Type lastRowType;
-            if(_inputNode) {
-                if(_inputNode->type() == LogicalOperatorType::FILEINPUT) {
-                    auto fop = std::dynamic_pointer_cast<FileInputOperator>(_inputNode);
+            if(input_node()) {
+                if(input_node()->type() == LogicalOperatorType::FILEINPUT) {
+                    auto fop = std::dynamic_pointer_cast<FileInputOperator>(input_node());
                     lastRowType = fop->getOutputSchema().getRowType();
                 } else {
-                    lastRowType = _inputNode->getOutputSchema().getRowType();
+                    lastRowType = input_node()->getOutputSchema().getRowType();
                 }
             } else {
                 if(_operators.empty())
@@ -1684,7 +1696,7 @@ namespace tuplex {
 
 //            // only null-value opt yet supported
 //            if(!_useNVO)
-//                return vec_prepend(_inputNode, _operators);
+//                return vec_prepend(input_node(), _operators);
 
             // special case: cache operator! might have exceptions or no exceptions => specialize depending on that!
             // i.e. an interesting case happens when join(... .cache(), ...) is used. Then, need to upcast result to general case
@@ -1694,22 +1706,22 @@ namespace tuplex {
 
             // no input node or input node not FileInputOperator?
             // => can't specialize...
-            if(!_inputNode)
+            if(!input_node())
                 return _operators;
 
-            if(_inputNode->type() != LogicalOperatorType::FILEINPUT && _inputNode->type() != LogicalOperatorType::CACHE) {
-                logger.debug("Skipping null-value optimization for pipeline because input node is " + _inputNode->name());
+            if(input_node()->type() != LogicalOperatorType::FILEINPUT && input_node()->type() != LogicalOperatorType::CACHE) {
+                logger.debug("Skipping null-value optimization for pipeline because input node is " + input_node()->name());
                 // @TODO: maybe this should also be done using retyping?
-                return vec_prepend(_inputNode, _operators);
+                return _operators;
             }
 
             // fetch optimized schema from input operator
             Schema opt_input_schema;
-            if(_inputNode->type() == LogicalOperatorType::FILEINPUT)
-                opt_input_schema = std::dynamic_pointer_cast<FileInputOperator>(_inputNode)->getOptimizedOutputSchema();
-            else if(_inputNode->type() == LogicalOperatorType::CACHE) {
+            if(input_node()->type() == LogicalOperatorType::FILEINPUT)
+                opt_input_schema = std::dynamic_pointer_cast<FileInputOperator>(input_node())->getOptimizedOutputSchema();
+            else if(input_node()->type() == LogicalOperatorType::CACHE) {
                 throw std::runtime_error("need to fix here case when columns differ...");
-                opt_input_schema = std::dynamic_pointer_cast<CacheOperator>(_inputNode)->getOptimizedOutputSchema();
+                opt_input_schema = std::dynamic_pointer_cast<CacheOperator>(input_node())->getOptimizedOutputSchema();
             } else
                 throw std::runtime_error("internal error in specializing for the normal case");
             auto opt_input_rowtype = opt_input_schema.getRowType();
@@ -1723,14 +1735,14 @@ namespace tuplex {
                 stringstream ss;
                 ss<<FLINESTR<<endl;
                 ss<<"specializing pipeline for normal case ("<<pluralize(_operators.size(), "operator")<<")"<<endl;
-                ss<<"input node: "<<_inputNode->name()<<endl;
+                ss<<"input node: "<<input_node()->name()<<endl;
                 ss<<"optimized schema of input node: "<<opt_input_rowtype.desc()<<endl;
                 logger.debug(ss.str());
             }
 #endif
             {
                 stringstream ss;
-                auto original_input_rowtype = _inputNode->getOutputSchema().getRowType();
+                auto original_input_rowtype = input_node()->getOutputSchema().getRowType();
                 if(opt_input_rowtype != original_input_rowtype)
                     ss<<"NVO can specialize input schema from\n"<<original_input_rowtype.desc()<<"\n- to - \n"<<opt_input_rowtype.desc();
                 else
@@ -1746,8 +1758,8 @@ namespace tuplex {
             // go through ops & specialize (leave jop as is)
             vector<std::shared_ptr<LogicalOperator>> opt_ops;
             std::shared_ptr<LogicalOperator> lastNode = nullptr;
-            auto fop = std::dynamic_pointer_cast<FileInputOperator>(_inputNode->clone());
-            fop->cloneCaches(*((FileInputOperator*)_inputNode.get())); // copy samples!
+            auto fop = std::dynamic_pointer_cast<FileInputOperator>(input_node()->clone());
+            fop->cloneCaches(*((FileInputOperator*)input_node().get())); // copy samples!
 
             // need to restrict potentially?
             auto r_conf = retype_configuration_from(input_row_type, input_column_names);
@@ -1762,7 +1774,11 @@ namespace tuplex {
 
             // go over the other ops from the stage...
             for(const auto& node : _operators) {
-                auto lastParent = opt_ops.empty() ? _inputNode : opt_ops.back();
+
+                if (node->getID() == fop->getID())
+                    continue;
+
+                auto lastParent = opt_ops.back();
                 if(!lastNode)
                     lastNode = lastParent; // set lastNode to parent to make join on fileop work!
 
@@ -2042,9 +2058,9 @@ namespace tuplex {
         }
 
         std::vector<Row> StagePlanner::fetchInputSample() {
-            if(!_inputNode)
+            if(!input_node())
                 return {};
-            return _inputNode->getSample(10000); // 10k rows. -> should be stratified sample?
+            return input_node()->getSample(10000); // 10k rows. -> should be stratified sample?
         }
     }
 
@@ -2149,7 +2165,8 @@ namespace tuplex {
         }
 
         // node need to find some smart way to QUICKLY detect whether the optimization can be applied or should be rather skipped...
-        codegen::StagePlanner planner(inputNode, operators, conf.policy.normalCaseThreshold);
+        assert(inputNode->getID() == operators.front()->getID());
+        codegen::StagePlanner planner(operators, conf.policy.normalCaseThreshold);
         apply_stage_builder_conf_to_planner(conf, planner);
 
         planner.optimize();
@@ -2732,19 +2749,9 @@ namespace tuplex {
         std::vector<size_t> StagePlanner::get_accessed_columns() const {
 
             // start with last operator
-            std::vector<std::shared_ptr<LogicalOperator>> ops;
-            if(_inputNode)
-                ops.push_back(_inputNode);
-            for(auto op : _operators)
-                ops.push_back(op);
-            // reverse!
+            std::vector<std::shared_ptr<LogicalOperator>> ops = _operators;
+            // reverse, i.e. vector now has child -> parent -> grandparent -> ... -> input node
             std::reverse(ops.begin(), ops.end());
-//            // i.e. child -> parent -> grandparent -> ... -> input node
-//            for(auto op : ops) {
-//                if(hasUDF(op.get())) {
-//
-//                }
-//            }
 
             auto node = ops.front();
             std::vector<size_t> cols;
@@ -2812,7 +2819,7 @@ namespace tuplex {
 
             logger.debug("carrying out potential filter promotion");
 
-            if(!_inputNode) {
+            if(!input_node()) {
                 logger.warn("no input node, skip optimization.");
                 return false;
             }
@@ -2827,11 +2834,11 @@ namespace tuplex {
 
             size_t original_sample_size = 0;
             std::vector<Row> original_sample;
-            if(_inputNode->type() == LogicalOperatorType::FILEINPUT) {
-                original_sample_size = std::dynamic_pointer_cast<FileInputOperator>(_inputNode)->storedSampleRowCount();
+            if(input_node()->type() == LogicalOperatorType::FILEINPUT) {
+                original_sample_size = std::dynamic_pointer_cast<FileInputOperator>(input_node())->storedSampleRowCount();
 
                 if(filtered_sample)
-                    original_sample = std::dynamic_pointer_cast<FileInputOperator>(_inputNode)->getSample(original_sample_size);
+                    original_sample = std::dynamic_pointer_cast<FileInputOperator>(input_node())->getSample(original_sample_size);
             }
 
             if(0 == original_sample_size) {
@@ -2853,7 +2860,7 @@ namespace tuplex {
 
             // check if there is at least one filter operator!
             // -> carry then repeated filters out!
-            auto node = _inputNode;
+            auto node = input_node();
             while(node && !node->children().empty()) {
                 assert(node->children().size() == 1); // only single child yet supported...
 
@@ -2887,7 +2894,7 @@ namespace tuplex {
                             auto row = original_sample[idx];
                             // ensure row type (w. columns)
                             if(!row.getRowType().isRowType())
-                                row = row.with_columns(_inputNode->columns());
+                                row = row.with_columns(input_node()->columns());
 
                             current_input_sample.push_back(row);
                         }
@@ -2906,7 +2913,7 @@ namespace tuplex {
                         // can also remove filter from pipeline, because check is identical with filter, i.e. when check is true also filter will be true!
                         // if check doesn't pass, no problem. Row anyway not processed, skip. no problem.
                         // but set to
-                        if(canPromoteFilterToCheck(filter_node) && _inputNode && _inputNode->type() == LogicalOperatorType::FILEINPUT) {
+                        if(canPromoteFilterToCheck(filter_node) && input_node() && input_node()->type() == LogicalOperatorType::FILEINPUT) {
 
                             // promote ONLY if there's a significant schema change with filter promotion.
                             // else, there's no benefit.
@@ -2945,8 +2952,8 @@ namespace tuplex {
 
                             // retype now with input & make smaller
                             RetypeConfiguration conf;
-                            conf.columns = _inputNode->columns();
-                            conf.row_type = _inputNode->getOutputSchema().getRowType();
+                            conf.columns = input_node()->columns();
+                            conf.row_type = input_node()->getOutputSchema().getRowType();
                             conf.is_projected = true;
                             auto ret = filter_node->retype(conf);
                             if(!ret) {
@@ -2962,7 +2969,7 @@ namespace tuplex {
                             assert(current_input_sample.size() == indices_to_keep.size());
 
                             // manipulate input node sample!
-                            std::dynamic_pointer_cast<FileInputOperator>(_inputNode)->setRowsSample(current_input_sample);
+                            std::dynamic_pointer_cast<FileInputOperator>(input_node())->setRowsSample(current_input_sample);
                             logger.debug("replaced samples in input operator with " + pluralize(current_input_sample.size(), "filtered sample"));
                             logger.debug("promoted filter to check: \n" + core::withLineNumbers(filter_node->getUDF().getCode()));
 
@@ -2970,7 +2977,7 @@ namespace tuplex {
                         }
                     }
                 }
-                if(node && node->getID() != _inputNode->getID())
+                if(node && node->getID() != input_node()->getID())
                     operators_post_op.push_back(node);
 
                 // go on...
@@ -3021,7 +3028,7 @@ namespace tuplex {
                 return true;
             }
 
-            auto projectedColumns = _inputNode->columns();
+            auto projectedColumns = input_node()->columns();
 
             // detect majority type
             // detectMajorityRowType(const std::vector<Row>& rows, double threshold, bool independent_columns)
@@ -3033,7 +3040,7 @@ namespace tuplex {
                 if(sample.front().getRowType().isRowType()) // <-- samples should have same type.
                     projectedColumns = sample.front().getRowType().get_column_names();
             } else {
-                majType = _inputNode->getOutputSchema().getRowType();
+                majType = input_node()->getOutputSchema().getRowType();
                 projectedMajType = majType;
 
                 // special case, fileinput operator -> use normal case?
@@ -3101,12 +3108,8 @@ namespace tuplex {
 
             auto optimized_operators = retypeUsingOptimizedInputSchema(projectedMajType, projectedColumns);
 
-            // overwrite internal operators to apply subsequent optimizations
-            _inputNode = _inputNode ? optimized_operators.front() : nullptr;
-            _operators = _inputNode ? std::vector<std::shared_ptr<LogicalOperator>>{optimized_operators.begin() + 1,
-                                                                          optimized_operators.end()}
-                                    : optimized_operators;
-
+            // Overwrite internal operators to apply subsequent optimizations.
+            _operators = optimized_operators;
 
             // run validation after forcing majority sample based type
             auto validation_rc = validatePipeline();
