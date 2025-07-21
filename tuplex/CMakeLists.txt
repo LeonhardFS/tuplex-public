@@ -680,14 +680,15 @@ set(FETCHCONTENT_BASE_DIR ${CMAKE_BINARY_DIR}/third_party/src)
 
 if(USE_YYJSON_INSTEAD)
     # Use macos native package for working with delocate wheel.
-    find_package(yyjson)
+    find_package(yyjson QUIET)
     if(NOT yyjson_FOUND)
         FetchContent_Declare(yyjson
             GIT_REPOSITORY https://github.com/ibireme/yyjson
             GIT_TAG 0.11.1 OVERRIDE_FIND_PACKAGE)
         find_package(yyjson REQUIRED)
+        add_library(yyjson::yyjson ALIAS yyjson)
     endif()
-endif ()
+endif()
 
 
 # add boost & boost python ==> globally added because of its quirks
