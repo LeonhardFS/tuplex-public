@@ -16,6 +16,11 @@
 #include <parser/Parser.h>
 #include <visitors/TypeAnnotatorVisitor.h>
 
+#include <logical/FileInputOperator.h>
+#include <logical/FileOutputOperator.h>
+#include <logical/MapOperator.h>
+#include <logical/WithColumnOperator.h>
+
 // need for these tests a running python interpreter, so spin it up
 class LogicalOperatorTest : public PyTest {};
 

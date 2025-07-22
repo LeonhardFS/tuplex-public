@@ -14,6 +14,8 @@
 
 #include <JsonStatistic.h>
 
+#include "ee/aws/ContainerInfo.h"
+
 namespace tuplex {
 
     // dummy

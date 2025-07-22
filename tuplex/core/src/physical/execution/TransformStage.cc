@@ -1237,8 +1237,6 @@ namespace tuplex {
         return _syms;
     }
 
-#ifdef BUILD_WITH_AWS
-
     static messages::FileFormat fileFormat_toproto(FileFormat fmt) {
         switch(fmt) {
             case FileFormat::OUTFMT_CSV:
@@ -1428,7 +1426,7 @@ namespace tuplex {
 
         return msg;
     }
-#endif
+
 
     void TransformStage::optimizeBitCode(LLVMOptimizer& opt) {
         optimizeIRInCodePath(opt, _fastCodePath);
