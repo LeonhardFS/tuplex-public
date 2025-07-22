@@ -1871,10 +1871,20 @@ namespace tuplex {
         if(_outputSchema == Schema::UNKNOWN)
             return false;
         if(_ast.getFunctionAST()) {
-            // check AST
-            // is there any node?
+            // Check AST, is there any node?
             bool unknown_found = false;
             ApplyVisitor av([](const ASTNode* node) { return true; }, [&unknown_found](ASTNode& node) {
+
+                // Skip a few nodes that do not need a type assigned.
+                switch(node.type()) {
+                    case ASTNodeType::Assert:
+                    case ASTNodeType::Raise:
+                    case ASTNodeType::Assign:
+                        return;
+                    default:
+                        break;
+                }
+
                 if(node.getInferredType() == python::Type::UNKNOWN)
                     unknown_found = true;
             });

@@ -184,6 +184,7 @@ namespace tuplex {
         copy->copyMembers(this);
         copy->setName(_name);
         // assert(checkBasicEqualityOfOperators(*copy, *this));
+        assert(getInputSchema() == copy->getInputSchema());
         return std::shared_ptr<LogicalOperator>(copy);
     }
 
