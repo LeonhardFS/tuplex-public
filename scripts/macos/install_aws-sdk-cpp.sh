@@ -4,6 +4,8 @@ set -euxo pipefail
 
 PREFIX=${PREFIX:-/usr/local}
 AWSSDK_CPP_VERSION=1.11.524 # need at least 1.11.267 because of pyarrow bugs...
+AWS_SDK_COMPONENTS="s3;s3-crt;core;lambda;transfer"
+
 
 # check if dir exists (i.e. restored from cache, then skip)
 if [ -d "${PREFIX}/include/aws" ]; then
@@ -34,7 +36,7 @@ fi
 cd /tmp &&
   git clone --recurse-submodules https://github.com/aws/aws-sdk-cpp.git &&
   cd aws-sdk-cpp && git checkout tags/${AWSSDK_CPP_VERSION} && mkdir build && pushd build &&
-  cmake ${MINIMUM_TARGET} -DCMAKE_INSTALL_PREFIX=${PREFIX} -DCMAKE_BUILD_TYPE=Release -DUSE_OPENSSL=ON -DENABLE_TESTING=OFF -DENABLE_UNITY_BUILD=ON -DCPP_STANDARD=17 -DBUILD_SHARED_LIBS=OFF -DBUILD_ONLY="s3;core;lambda;transfer" .. &&
+  cmake ${MINIMUM_TARGET} -DCMAKE_INSTALL_PREFIX=${PREFIX} -DCMAKE_BUILD_TYPE=Release -DUSE_OPENSSL=ON -DENABLE_TESTING=OFF -DENABLE_UNITY_BUILD=ON -DCPP_STANDARD=17 -DBUILD_SHARED_LIBS=OFF -DBUILD_ONLY="${AWS_SDK_COMPONENTS}" .. &&
   make -j${CPU_CORES} &&
   make install &&
   popd &&
