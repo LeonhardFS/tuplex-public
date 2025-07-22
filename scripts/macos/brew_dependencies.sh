@@ -12,3 +12,5 @@ brew install openjdk@11 cmake coreutils protobuf zstd zlib libmagic llvm pcre2 g
 
 # link (when e.g. used from restoring cache)
 brew link --overwrite cmake coreutils protobuf zstd zlib libmagic llvm pcre2 gflags yaml-cpp celero wget boost googletest libdwarf libelf abseil
+
+echo "Done!"
