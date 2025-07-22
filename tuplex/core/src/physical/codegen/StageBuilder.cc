@@ -820,7 +820,8 @@ namespace tuplex {
                     case LogicalOperatorType::CACHE:
                     case LogicalOperatorType::FILEOUTPUT:
                     case LogicalOperatorType::TAKE:
-                    case LogicalOperatorType::PARALLELIZE: {
+                    case LogicalOperatorType::PARALLELIZE:
+                    case LogicalOperatorType::FILEINPUT: {
                         // skip
                         break;
                     }
