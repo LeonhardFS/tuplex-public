@@ -1806,7 +1806,7 @@ namespace tuplex {
                 auto cloned_op = op->clone(false);
                 if (!operators.empty()) {
                     if (cloned_op->type() == LogicalOperatorType::JOIN) {
-                        // special case: set one to nullptr, the other to the right one, depending which stage this is.
+                        // special case: set one to nullptr, the other to the right one, depending on which stage this is.
                         auto jop = std::dynamic_pointer_cast<JoinOperator>(op);
                         if (jop->right() && jop->right()->getID() == operators.back()->getID()) {
                             cloned_op->setParents({nullptr, operators.back()});
