@@ -23,12 +23,14 @@ namespace tuplex {
     }
 
     std::vector<Row> TakeOperator::getSample(const size_t num) const {
-        // take sample from parent
+        if(!parent())
+            return {};
         return parent()->getSample(num);
     }
 
     std::vector<std::string> TakeOperator::columns() const {
-        assert(parent());
+        if(!parent())
+            return {}; // TODO: save columns? get from row type?
         return parent()->columns();
     }
 

@@ -704,7 +704,7 @@ namespace tuplex {
             auto& logger = Logger::instance().logger("specializing stage optimizer");
 
             // check whether input node contains any struct types.
-            auto struct_dict_found = input_schema_contains_structs(input_node()->getOutputSchema());
+            auto struct_dict_found = !_operators.empty() && input_schema_contains_structs(input_node()->getOutputSchema());
 
             if(!struct_dict_found) {
                 logger.info("Skipping simplify-large-structs pass, because no struct dicts found in input operator.");
@@ -1604,25 +1604,13 @@ namespace tuplex {
             // simplify large structs (threshold 20?)
             // this is necessary because large structs will kill the performance of the LLVM optimizer (in its default -O2 setting).
             // This pass should come after sparsification to allow large structs to get sparsified first.
-            if(_simplifyLargeStructs) {
-                optimized_operators = simplifyLargeStructs(20);
-
-                // overwrite internal operators to apply subsequent optimizations
-                input_node() = input_node() ? optimized_operators.front() : nullptr;
-                _operators = input_node() ? vector<shared_ptr<LogicalOperator>>{optimized_operators.begin() + 1,
-                                                                              optimized_operators.end()}
-                                        : optimized_operators;
-            }
+            if(_simplifyLargeStructs)
+                _operators = simplifyLargeStructs(20);
 
 
             // All optimizations were carried out, if this stage has as input operator a source, perform logical optimization step as last one.
-            if(input_node()->isDataSource()) {
-                optimized_operators = applyLogicalOptimizer();
-                input_node() = input_node() ? optimized_operators.front() : nullptr;
-                _operators = input_node() ? vector<shared_ptr<LogicalOperator>>{optimized_operators.begin() + 1,
-                                                                              optimized_operators.end()}
-                                        : optimized_operators;
-            }
+            if(!_operators.empty() && input_node()->isDataSource())
+                _operators = applyLogicalOptimizer();
 
             // can filters get pushed down even further? => check! constant folding may remove code!
         }
