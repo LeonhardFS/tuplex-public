@@ -64,12 +64,19 @@ namespace tuplex {
                                     const python::Type& keyType,
                                     const python::Type& bucketType);
 
-            void addOperator(const std::shared_ptr<LogicalOperator>& op) {
-                _operators.push_back(op);
-            }
-
             void addFileInput(const std::shared_ptr<FileInputOperator> &csvop);
             void addFileOutput(const std::shared_ptr<FileOutputOperator>& fop);
+
+            inline void addOperator(std::shared_ptr<LogicalOperator> node) {
+                if(!node)
+                    return;
+                if(!_operators.empty()) {
+                    // check (from back), whether operator is already contained. If so, do not add.
+                    if(_operators.back() && _operators.back()->getID() == node->getID())
+                        return;
+                }
+                _operators.push_back(node);
+            }
 
             inline void setOutputLimit(size_t limit) {
                 _outputLimit = limit;

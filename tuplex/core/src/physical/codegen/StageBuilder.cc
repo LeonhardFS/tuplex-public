@@ -393,7 +393,7 @@ namespace tuplex {
             _inputFileFormat = csvop->fileFormat();
             _inputNode = std::dynamic_pointer_cast<LogicalOperator>(csvop);
             _operators.clear();
-            _operators.push_back(_inputNode);
+            addOperator(_inputNode);
         }
 
         std::string StageBuilder::formatBadUDFNode(tuplex::UDFOperator *udfop) {
@@ -1551,9 +1551,7 @@ namespace tuplex {
         }
 
         void StageBuilder::addFileOutput(const std::shared_ptr<FileOutputOperator>& fop) {
-
-            // new: push back op
-            _operators.push_back(fop);
+            addOperator(fop);
 
             _fileOutputParameters["splitSize"] = std::to_string(fop->splitSize());
             _fileOutputParameters["numParts"] = std::to_string(fop->numParts());
@@ -1627,11 +1625,11 @@ namespace tuplex {
             _inputFileFormat = FileFormat::OUTFMT_TUPLEX;
             _inputNode = node;
             _operators.clear();
-            _operators.push_back(_inputNode);
+            addOperator(_inputNode);
         }
 
         void StageBuilder::addMemoryOutput(std::shared_ptr<LogicalOperator> node, const Schema &schema, int64_t opID, int64_t dsID) {
-            _operators.push_back(node);
+            addOperator(node);
 
             // add memory writer
             _outputMode = EndPointMode::MEMORY;
@@ -1652,7 +1650,7 @@ namespace tuplex {
                                               const python::Type& bucketType) {
             // has the operator been already pushed internally? skip. else, add.
             if(!_operators.empty() && _operators.back()->getID() != node->getID())
-                _operators.push_back(node);
+                addOperator(node);
 
             assert(!bucketizeOthers || (bucketizeOthers && !colKeys.empty())); // can't bucketize w/o colkey.
             _outputMode = EndPointMode::HASHTABLE;
