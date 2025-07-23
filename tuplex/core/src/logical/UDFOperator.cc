@@ -171,6 +171,11 @@ namespace tuplex {
             // 1. try to type statically by simply annotating the AST
             logger.debug("performing static typing for UDF in operator " + name());
             _udf.removeTypes(false);
+
+            // Row typify schema.
+            if (PARAM_USE_ROW_TYPE && !parentSchema.getRowType().isRowType() && parent() && !parent()->columns().empty())
+                parentSchema = Schema(parentSchema.getMemoryLayout(), python::Type::makeRowType(parentSchema.getRowType().parameters(), parent()->columns()));
+
             bool success = _udf.hintInputSchema(parentSchema, false, false);
 
             // check what the return type is. If it is of exception type, try to use a sample to get rid off branches that are off
