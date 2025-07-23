@@ -41,25 +41,27 @@ namespace tuplex {
         // remove this from parents
         // b.c. need to maintain invariance manually, i.e. remove from pointers when being deconstructed!
         for(auto& p:  _parents) {
+            if(!p)
+                continue;
             auto it = std::find(p->_children.begin(), p->_children.end(), this);
             if(it != p->_children.end())
                 p->_children.erase(it);
         }
+        _parents.clear();
     }
 
     std::shared_ptr<ResultSet> LogicalOperator::compute(const Context& context) {
-
         auto& logger = Logger::instance().defaultLogger();
-        //logger.info("Starting operator eval.");
 
         Timer planningTimer;
-        // create LogicalPlan from this node
-        LogicalPlan* lp = new LogicalPlan(this);
+        // Create LogicalPlan from this node.
+        std::unique_ptr<LogicalPlan> lp(new LogicalPlan(this));
         assert(lp);
-        PhysicalPlan* pp = lp->createPhysicalPlan(context);
+        std::unique_ptr<PhysicalPlan> pp(lp->createPhysicalPlan(context));
         assert(pp);
         double planningTime = planningTimer.time();
 
+        // Execute physical plan.
         Timer executionTimer;
         pp->execute();
         auto rs = pp->resultSet();
@@ -77,10 +79,9 @@ namespace tuplex {
 
         // Free plan memory, print out time.
         Timer timer;
-        delete lp;
-        delete pp;
-        Logger::instance().defaultLogger().info("Releasing resources (logical + physical plan) took " + std::to_string(timer.time()) + "s.");
-
+        lp.reset();
+        pp.reset();
+        logger.debug("Releasing resources (logical + physical plan) took " + std::to_string(timer.time()) + "s.");
         return rs;
     }
 
