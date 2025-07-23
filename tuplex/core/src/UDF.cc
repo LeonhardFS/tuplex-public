@@ -1875,6 +1875,10 @@ namespace tuplex {
             bool unknown_found = false;
             ApplyVisitor av([](const ASTNode* node) { return true; }, [&unknown_found](ASTNode& node) {
 
+                // Ignore non-visited nodes with annotation that are unvisited.
+                if (node.hasAnnotation() && node.annotation().numTimesVisited == 0)
+                    return;
+
                 // Skip a few nodes that do not need a type assigned.
                 switch(node.type()) {
                     case ASTNodeType::Assert:

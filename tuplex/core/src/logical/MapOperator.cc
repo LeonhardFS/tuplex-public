@@ -23,8 +23,6 @@ namespace tuplex {
                              const std::unordered_map<size_t, size_t>& rewriteMap)
             : UDFOperator::UDFOperator(parent, udf, outputColumnNames, rewriteMap), _name("map") {
 
-        // assert(parent);
-
         bool udf_well_defined = udf.hasWellDefinedTypes();
         bool typeUDF = !udf_well_defined || (parent && parent->getOutputSchema() != _udf.getInputSchema());
 
