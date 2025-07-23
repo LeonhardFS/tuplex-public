@@ -127,7 +127,7 @@ namespace tuplex {
 
         virtual ASTNodeType type() const = 0;
 
-        void setInferredType(const python::Type& type) { _inferredType = type; }
+        virtual void setInferredType(const python::Type& type) { _inferredType = type; }
         virtual python::Type getInferredType() { return _inferredType; }
 
         virtual ASTAnnotation& annotation() {
@@ -1864,6 +1864,13 @@ namespace tuplex {
         virtual void accept(class IVisitor& visitor);
         static const ASTNodeType type_ = ASTNodeType::Attribute;
         virtual ASTNodeType type() const { return type_; }
+
+        // Set type to attribute identifier as well.
+        void setInferredType(const python::Type& type) override {
+            if(_attribute)
+                _attribute->setInferredType(type);
+            ASTNode::setInferredType(type);
+        }
 
         void setObjectType(const python::Type& object_type) { _objectType = object_type; }
         python::Type objectType() const { return _objectType; }
