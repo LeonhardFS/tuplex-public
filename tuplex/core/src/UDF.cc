@@ -1884,6 +1884,7 @@ namespace tuplex {
                     case ASTNodeType::Assert:
                     case ASTNodeType::Raise:
                     case ASTNodeType::Assign:
+                    case ASTNodeType::SliceItem: // <-- its own type?
                         return;
                     default:
                         break;

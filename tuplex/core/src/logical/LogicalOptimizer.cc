@@ -1142,6 +1142,17 @@ namespace tuplex {
                 auto udfop = std::dynamic_pointer_cast<UDFOperator>(op); assert(udfop);
 
 
+#ifdef TRACE_LOGICAL_OPTIMIZATION
+                cout<<"REWRITE "<<op->name()<<" input type: "<<op->getInputSchema().getRowType().desc()<<endl;
+#endif
+                udfop->rewriteParametersInAST(rewriteMap);
+
+                // rewrite all resolvers which follow
+                rewriteAllFollowingResolvers(op, rewriteMap);
+#ifdef TRACE_LOGICAL_OPTIMIZATION
+                cout<<"AFTER "<<op->name()<<" input type: "<<op->getInputSchema().getRowType().desc()<<endl;
+#endif
+
                 // special case withColumn: I.e. a new column is added, need to append to rewrite Map and reqCols!
                 if(op->type() == LogicalOperatorType::WITHCOLUMN) {
                     auto wop = std::dynamic_pointer_cast<WithColumnOperator>(op);
@@ -1158,16 +1169,6 @@ namespace tuplex {
                     }
                 }
 
-#ifdef TRACE_LOGICAL_OPTIMIZATION
-                cout<<"REWRITE "<<op->name()<<" input type: "<<op->getInputSchema().getRowType().desc()<<endl;
-#endif
-                udfop->rewriteParametersInAST(rewriteMap);
-
-                // rewrite all resolvers which follow
-                rewriteAllFollowingResolvers(op, rewriteMap);
-#ifdef TRACE_LOGICAL_OPTIMIZATION
-                cout<<"AFTER "<<op->name()<<" input type: "<<op->getInputSchema().getRowType().desc()<<endl;
-#endif
                 return ret;
             }
 
