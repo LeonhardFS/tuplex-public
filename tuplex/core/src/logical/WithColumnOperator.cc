@@ -384,14 +384,14 @@ namespace tuplex {
             }
 
             UDFOperator::rewriteParametersInAST(m);
-            _columnToMapIndex = calcColumnToMapIndex(UDFOperator::columns(), _newColumn);
+            _columnToMapIndex = calcColumnToMapIndex(inputColumns(), _newColumn);
             setOutputSchema(inferSchema(input_schema, false));
             return;
         }
 
         // rewrite UDF & update schema
         UDFOperator::rewriteParametersInAST(rewriteMap);
-        _columnToMapIndex = calcColumnToMapIndex(UDFOperator::columns(), _newColumn);
+        _columnToMapIndex = calcColumnToMapIndex(inputColumns(), _newColumn);
         setOutputSchema(inferSchema(input_schema, false)); // input schema is not rewritten, but parameters in AST are?
     }
 
@@ -440,7 +440,7 @@ namespace tuplex {
 
         // update UDFOperator
         auto rc = UDFOperator::retype(conf);
-        _columnToMapIndex = calcColumnToMapIndex(UDFOperator::columns(), _newColumn);
+        _columnToMapIndex = calcColumnToMapIndex(inputColumns(), _newColumn);
         if(rc) {
             // update schema with result of UDF operator.
             return true;

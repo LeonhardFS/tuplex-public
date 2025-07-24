@@ -579,7 +579,9 @@ namespace tuplex {
                                     // _env->debugPrint(builder, "cellSize", cellSize);
 
                                 } else {
-                                    logger.warn("unsupported check type encountered");
+                                    std::stringstream ss;
+                                    ss<<__FILE__<<":"<<__LINE__<<" unsupported check type encountered: "<<check.to_string();
+                                    throw std::runtime_error(ss.str());
                                 }
                                 // append to all checks
                                 allChecksPassed = builder.CreateAnd(allChecksPassed, check_cond);

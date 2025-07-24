@@ -1153,21 +1153,21 @@ namespace tuplex {
                 cout<<"AFTER "<<op->name()<<" input type: "<<op->getInputSchema().getRowType().desc()<<endl;
 #endif
 
-                // special case withColumn: I.e. a new column is added, need to append to rewrite Map and reqCols!
-                if(op->type() == LogicalOperatorType::WITHCOLUMN) {
-                    auto wop = std::dynamic_pointer_cast<WithColumnOperator>(op);
-                    assert(wop);
-
-                    size_t colIdx = wop->getColumnIndex();
-                    // in rewrite map?
-                    if(rewriteMap.find(colIdx) == rewriteMap.end()) {
-                        // now always append. Because it doesn't matter anymore!
-                        auto new_idx = ret.size();
-                        rewriteMap[colIdx] = new_idx;
-                        // also append to ret, because further functions might rely on this added column!
-                        ret.push_back(colIdx);
-                    }
-                }
+                // // special case withColumn: I.e. a new column is added, need to append to rewrite Map and reqCols!
+                // if(op->type() == LogicalOperatorType::WITHCOLUMN) {
+                //     auto wop = std::dynamic_pointer_cast<WithColumnOperator>(op);
+                //     assert(wop);
+                //
+                //     size_t colIdx = wop->getColumnIndex();
+                //     // in rewrite map?
+                //     if(rewriteMap.find(colIdx) == rewriteMap.end()) {
+                //         // now always append. Because it doesn't matter anymore!
+                //         auto new_idx = ret.size();
+                //         rewriteMap[colIdx] = new_idx;
+                //         // also append to ret, because further functions might rely on this added column!
+                //         ret.push_back(colIdx);
+                //     }
+                // }
 
                 return ret;
             }

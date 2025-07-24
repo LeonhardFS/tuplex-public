@@ -403,8 +403,8 @@ namespace tuplex {
                 builder.CreateMemCpy(builder.CreateGEP(builder.getInt8Ty(), concatval, llen), R.val, R.size, false);
 #else
 
-                _env->printValue(builder, L.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " left str concat value: ");
-                _env->printValue(builder, R.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " right str concat value: ");
+                // _env->printValue(builder, L.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " left str concat value: ");
+                // _env->printValue(builder, R.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " right str concat value: ");
 
                 // API update here, old API only allows single alignment.
                 // new API allows src and dest alignment separately

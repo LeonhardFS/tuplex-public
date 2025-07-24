@@ -1384,10 +1384,12 @@ namespace tuplex {
 
         // empty UDF, skip.
         if(!root) {
-
+            // Select.
             auto oldSchema = getInputSchema();
-            auto old_input_types = oldSchema.getRowType().parameters();
-            auto numColumns = oldSchema.getRowType().parameters().size();
+            auto row_type = oldSchema.getRowType().isRowType() ? oldSchema.getRowType() : python::Type::makeRowType(oldSchema.getRowType().parameters());
+            auto old_input_types = row_type.get_column_types();
+            auto old_input_columns = row_type.get_column_names();
+            auto numColumns = row_type.get_column_count();
 
             // update schema according to rewrite Map (i.e. go through in sorted fashion)
             vector<size_t> colsToKeep;
@@ -1399,18 +1401,21 @@ namespace tuplex {
 
             // new input type (account for reordering!)
             vector<python::Type> newInputTypes(colsToKeep.size());
+            vector<std::string> newInputColumns(colsToKeep.size());
             int i = 0;
             for(auto col : colsToKeep) {
                 assert(0 <= col && col < numColumns);
+                if (!old_input_columns.empty())
+                    newInputColumns[i] = old_input_columns[col];
                 newInputTypes[i++] = old_input_types[col];
             }
 
             // create new input type
-            auto new_input_type = python::Type::makeTupleType(newInputTypes);
+            auto new_input_type = !PARAM_USE_ROW_TYPE ? python::Type::makeTupleType(newInputTypes) : python::Type::makeRowType(newInputTypes, newInputColumns);
             auto new_schema = Schema(oldSchema.getMemoryLayout(), new_input_type);
+            // Because UDF is empty, this is a pass-through. Set both input = output schema.
             setInputSchema(new_schema);
             setOutputSchema(new_schema);
-
             return true;
         }
 
