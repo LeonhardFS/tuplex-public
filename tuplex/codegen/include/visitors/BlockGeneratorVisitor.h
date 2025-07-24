@@ -281,8 +281,9 @@ namespace codegen {
             Variable var;
             llvm::Value* definedPtr;
             bool isParameter;
+            bool isUnwrappedSingleElementRow;
 
-            VariableSlot() : type(python::Type::UNKNOWN), definedPtr(nullptr), isParameter(false) {}
+            VariableSlot() : type(python::Type::UNKNOWN), definedPtr(nullptr), isParameter(false), isUnwrappedSingleElementRow(false) {}
 
             void generateUnboundLocalCheck(LambdaFunctionBuilder& lfb, codegen::IRBuilder& builder) {
 

@@ -402,6 +402,10 @@ namespace tuplex {
                 builder.CreateMemCpy(builder.CreateGEP(builder.getInt8Ty(), concatval, _env->i64Const(0)), L.val, llen, false);
                 builder.CreateMemCpy(builder.CreateGEP(builder.getInt8Ty(), concatval, llen), R.val, R.size, false);
 #else
+
+                _env->printValue(builder, L.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " left str concat value: ");
+                _env->printValue(builder, R.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " right str concat value: ");
+
                 // API update here, old API only allows single alignment.
                 // new API allows src and dest alignment separately
                 builder.CreateMemCpy(builder.CreateGEP(builder.getInt8Ty(), concatval, _env->i64Const(0)), 0, L.val,
@@ -1764,20 +1768,23 @@ namespace tuplex {
                 builder.CreateStore(_env->i1Const(true), slot.definedPtr); // params are always defined!!!
                 slot.var = Variable(*_env, builder, type, name);
 
+                slot.isUnwrappedSingleElementRow = false;
+
                 // special case tuple: may have been passed as ptr.
                 // This logic ONLY applies for tuples. I.e., this is to canonicalize to struct (instead of struct*).
                 // --> LLVM related.
                 if(type.isTupleType() && param.val && param.val->getType()->isPointerTy()) {
                     auto llvm_tuple_type = _env->pythonToLLVMType(type);
                     param.val = builder.CreateLoad(llvm_tuple_type, param.val);
+                    slot.isUnwrappedSingleElementRow = true;
                 }
 
                 // TODO: unwrapping tuple element??
 
                 // same true for Row type, i.e. Row['A' -> str] or so.
-                // Un
                 if(type != python::Type::EMPTYROW && type.isRowType() && type.get_column_count() == 1 && param.val && param.val->getType()->isPointerTy()) {
                     param = tuple_load_element(*_env, builder, param.val, type.get_columns_as_tuple_type(), 0);
+                    slot.isUnwrappedSingleElementRow = true;
                 }
 
                 // lists can be modified, so declare via alloca -> allows for modification (closure!)
@@ -1791,6 +1798,9 @@ namespace tuplex {
                     assert(param.val);
                     builder.CreateStore(value, param.val); // <-- now a pointer!
                 }
+
+                // // debug:
+                // printValue(builder, param, slot.var.type, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " param " + name);
 
                 // store param into var
                 slot.var.store(builder, param);
@@ -4351,13 +4361,33 @@ namespace tuplex {
             auto value_type = sub->_value->getInferredType();
             auto index_type = sub->_expression->getInferredType();
 
-            // special case: susbcript has a deopt annotation
+            // special case: subscript has a deopt annotation
             if(sub->hasAnnotation()) {
                 if(sub->annotation().deoptException != ExceptionCode::SUCCESS) {
                     _lfb->exitWithException(sub->annotation().deoptException);
                     return;
                 }
             }
+
+            // Special case: Indexing into single-column row.
+            if (sub->_value->type() == ::tuplex::ASTNodeType::Identifier && (value_type.isRowType() || value_type.isTupleType()) && 1 == extract_columns_from_type(value_type)) {
+                // check if slot is parameter (ONLY VALID FOR PARAMETER).
+                auto slot = getSlot(static_cast<NIdentifier*>(sub->_value.get())->_name);
+                if (slot && slot->isUnwrappedSingleElementRow && slot->isParameter) {
+                    // special case: wrap param, and then call unwrap?
+
+                    // @TODO: check for indexing errors.
+
+
+                    // actually can return directly slot.
+                    auto ret = slot->var.load(builder);
+                    addInstruction(ret.val, ret.size, ret.is_null);
+                    _lfb->setLastBlock(builder.GetInsertBlock());
+                    return;
+                }
+            }
+
+
 
             // // debug:
             // printValue(builder, value, value_type, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " value to be []");
