@@ -1773,14 +1773,12 @@ namespace tuplex {
 
                 if (paramType != type) {
                     // differ, correct param.
-                    if (python::Type::propagateToTupleType(type) == paramType && paramType.isTupleType() && paramType.parameters().size() == 1) {
+                    if (!type.isRowType() && python::Type::propagateToTupleType(type) == paramType && paramType.isTupleType() && paramType.parameters().size() == 1) {
                         // unwrap element.
-                        auto ftarg = FlattenedTuple::fromLLVMStructVal(_env, builder, param.val, paramType);
-                        param = SerializableValue(ftarg.get(0), ftarg.getSize(0), ftarg.getIsNull(0));
+                        param = tuple_load_element(*_env, builder, param.val, paramType, 0);
                         slot.isUnwrappedSingleElementRow = true;
                     }
                 }
-
 
                 // special case tuple: may have been passed as ptr.
                 // This logic ONLY applies for tuples. I.e., this is to canonicalize to struct (instead of struct*).
