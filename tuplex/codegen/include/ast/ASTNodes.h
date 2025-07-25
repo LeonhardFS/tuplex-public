@@ -921,15 +921,6 @@ namespace tuplex {
         static const ASTNodeType type_ = ASTNodeType::ParameterList;
         virtual ASTNodeType type() const { return type_; };
 
-        virtual python::Type getInferredType() const {
-            std::vector<python::Type> types;
-            std::for_each(_args.begin(), _args.end(), [this, &types](const std::unique_ptr<ASTNode> &arg) {
-                types.push_back(arg->getInferredType());
-            });
-
-            // return tuple from arguments
-            return python::Type::makeTupleType(types);
-        }
 
 #ifdef BUILD_WITH_CEREAL
         template<class Archive>

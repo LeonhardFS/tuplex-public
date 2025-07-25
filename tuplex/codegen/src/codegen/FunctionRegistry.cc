@@ -2198,14 +2198,16 @@ namespace tuplex {
                     lfb.addException(builder, ExceptionCode::STOPITERATION, _env.i1Const(true), "@TODO: add code point for this except here");
                     return SerializableValue(_env.i64Const(0), _env.i64Const(8));
                 }
-                return _iteratorContextProxy->createIteratorNextCall(lfb, builder, argsType.parameters().front().yieldType(), args[0].val, SerializableValue(nullptr, nullptr), iteratorInfo);
+                return _iteratorContextProxy->createIteratorNextCall(lfb, builder, argsType.parameters().front().yieldType(), args[0].val,
+                    SerializableValue(nullptr, nullptr), python::Type::UNKNOWN, iteratorInfo);
             }
 
             if(argsType.parameters().size() == 2) {
                 if(argsType.parameters().front() == python::Type::EMPTYITERATOR) {
                     return args[1];
                 }
-                return _iteratorContextProxy->createIteratorNextCall(lfb, builder, argsType.parameters().front().yieldType(), args[0].val, args[1], iteratorInfo);
+                return _iteratorContextProxy->createIteratorNextCall(lfb, builder, argsType.parameters().front().yieldType(),
+                    args[0].val, args[1], argsType.parameters()[1], iteratorInfo);
             }
 
             Logger::instance().defaultLogger().error("next() takes 1 or 2 arguments");

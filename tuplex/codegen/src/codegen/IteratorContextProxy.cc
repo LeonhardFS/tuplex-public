@@ -217,10 +217,11 @@ namespace tuplex {
 
         SerializableValue IteratorContextProxy::createIteratorNextCall(LambdaFunctionBuilder &lfb,
                                                                        const codegen::IRBuilder& builder,
-                                                                   const python::Type &yieldType,
-                                                                   llvm::Value *iterator,
-                                                                   const SerializableValue &defaultArg,
-                                                                   const std::shared_ptr<IteratorInfo> &iteratorInfo) {
+                                                                       const python::Type &yieldType,
+                                                                       llvm::Value *iterator,
+                                                                       const SerializableValue &defaultArg,
+                                                                       const python::Type& defaultArgType,
+                                                                       const std::shared_ptr<IteratorInfo> &iteratorInfo) {
             using namespace llvm;
 
             BasicBlock *currBB = builder.GetInsertBlock();
@@ -253,6 +254,14 @@ namespace tuplex {
             auto llvm_yield_type = _env->pythonToLLVMType(yieldType);
             auto default_yield_value = defaultArg.val;
             auto default_yield_size = defaultArg.size;
+
+            // debug:
+            // _env->lookupPythonType(_env->getLLVMTypeName(default_yield_value->getType())).desc()
+
+            // upcast necessary?
+            if (default_yield_value && defaultArgType != yieldType) {
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " unsupported yield type " + yieldType.desc());
+            }
 
             // sometime size is nullptr fill with default (0)
             if(!default_yield_size)

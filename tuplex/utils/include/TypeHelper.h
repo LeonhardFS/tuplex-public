@@ -85,6 +85,9 @@ namespace tuplex {
         if(optType.isStructuredDictionaryType() || optType.isSparseStructuredDictionaryType())
             return optType;
 
+        if(optType.isIteratorType())
+            return optType;
+
         if(optType == python::Type::ANY)
             return python::Type::ANY;
 

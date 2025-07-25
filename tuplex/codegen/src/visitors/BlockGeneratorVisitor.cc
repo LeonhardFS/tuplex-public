@@ -5088,6 +5088,31 @@ namespace tuplex {
                 }
             }
 
+
+            // upcast/deopt args if necessary.
+            std::vector<python::Type> args_types_from_call;
+            for (auto& pos_arg : call->_positionalArguments)
+                args_types_from_call.emplace_back(pos_arg->getInferredType());
+            auto args_type_from_stack = python::Type::makeTupleType(args_types_from_call);
+            if (args_type_from_stack != argsType) {
+                // Check each individual & upcast if necessary.
+                assert(argsType.isTupleType());
+                assert(argsType.parameters().size() == args_type_from_stack.parameters().size());
+                for (unsigned i = 0; i < args_type_from_stack.parameters().size(); ++i) {
+                    auto arg_type = argsType.parameters()[i];
+                    if (args_types_from_call[i] != arg_type) {
+                        if (!python::canUpcastType(args_types_from_call[i], arg_type)) {
+                            std::stringstream ss;
+                            ss<<__FILE__<<":"<<__LINE__<<" can not upcast argument #"<<i<<" from stack given as "<<args_types_from_call[i].desc()<<" to expected "<<arg_type.desc();
+                            throw std::runtime_error(ss.str());
+                        } else {
+                            // upcast:
+                            args[i] = _env->upcastValue(builder, args[i], args_types_from_call[i], arg_type);
+                        }
+                    }
+                }
+            }
+
             // there are now multiple options:
             // either, directly a function object was given (i.e. generated function OR a nullptr, meaning a direct call can be performed)
             if (funcVal.val) {

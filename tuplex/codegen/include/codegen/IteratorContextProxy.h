@@ -92,6 +92,7 @@ namespace tuplex {
              * @param yieldType
              * @param iterator
              * @param defaultArg
+             * @param defaultArgType
              * @param iteratorInfo
              * @return next element generated from the iterator, or default value if iterator is exhausted and a default value is provided
              */
@@ -100,6 +101,7 @@ namespace tuplex {
                                                      const python::Type &yieldType,
                                                      llvm::Value *iterator,
                                                      const SerializableValue &defaultArg,
+                                                     const python::Type& defaultArgType,
                                                      const std::shared_ptr<IteratorInfo> &iteratorInfo);
 
             /*!

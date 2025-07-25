@@ -323,7 +323,9 @@ namespace tuplex {
         for(auto &p : params->_args)
             vTypes.push_back(p->getInferredType());
 
-        params->setInferredType(python::TypeFactory::instance().createOrGetTupleType(vTypes));
+        auto params_type = python::Type::makeTupleType(vTypes);
+        params->setInferredType(params_type);
+        assert(params->getInferredType() == params_type);
     }
 
     void TypeAnnotatorVisitor::visit(NParameter* param) {
