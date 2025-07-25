@@ -76,3 +76,20 @@ TEST_F(LogicalOptimizerTest, FilterBreakdownVisitor) {
     ASSERT_EQ(ranges4.size(), 1);
     ASSERT_EQ(ranges4[0].createLambdaString("a"), "(-3 <= a <= -1) or (1 <= a <= 3)");
 }
+
+TEST_F(LogicalOptimizerTest, RemovableWithColumnOperators) {
+    using namespace tuplex;
+
+    auto conf = microTestOptions();
+    conf.set("tuplex.optimizer.filterPushdown", "true");
+    conf.set("tuplex.optimizer.selectionPushdown", "true");
+    Context c(conf);
+
+    auto v = c.parallelize({Row(1), Row(2), Row(3), Row(4)}, std::vector<std::string>{"x"})
+    .withColumn("squared", UDF("lambda x: x * x")) // <-- this can be dropped through projection pushdown.
+    .selectColumns(std::vector<std::string>{"x"})
+    .collectAsVector();
+
+    ASSERT_EQ(v.size(), 4);
+    EXPECT_EQ(v[0], 1);
+}

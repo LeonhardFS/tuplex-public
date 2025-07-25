@@ -68,6 +68,7 @@ namespace tuplex {
         bool OPT_OPERATOR_REORDERING() const { return stringToBool(_store.at("tuplex.optimizer.operatorReordering")); }
         bool OPT_MERGE_EXCEPTIONS_INORDER() const { return stringToBool(_store.at("tuplex.optimizer.mergeExceptionsInOrder")); }
         bool OPT_SELECTION_PUSHDOWN() const; //! whether to use selection pushdown when reading files. If false, then full data will be always read and thus serialized within memory.
+        bool OPT_AUTO_DROP_COLUMNS() const { return stringToBool(_store.at("tuplex.optimizer.autoDropColumns")); } // whether to drop automatically withColumn/mapColumn operators that aren't accessed.
         bool OPT_SPARSIFY_STRUCTS() const { return stringToBool(_store.at("tuplex.optimizer.sparsifyStructs")); }
         bool OPT_SIMPLIFY_LARGE_STRUCTS() const { return stringToBool(_store.at("tuplex.optimizer.simplifyLargeStructs")); }
         size_t OPT_SIMPLIFY_LARGE_STRUCTS_THRESHOLD() const { return std::stoi(_store.at("tuplex.optimizer.simplifyLargeStructs.threshold")); }

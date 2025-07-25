@@ -70,6 +70,10 @@ namespace tuplex {
 
         // now it's time to unpack or not
         auto udfRetRowType = udfSchema.getRowType();
+        if (!udfRetRowType.isRowType() && !udfRetRowType.isExceptionType())
+            udfRetRowType = python::Type::propagateToTupleType(udfRetRowType);
+        if (udfRetRowType.isRowType())
+            udfRetRowType = udfRetRowType.get_columns_as_tuple_type();
         auto retType = udfRetRowType;
 
         // unknown or ill-defined?
@@ -84,7 +88,7 @@ namespace tuplex {
 
 
         assert(udfRetRowType.isTupleType());
-        if(udfRetRowType.parameters().size() == 1)
+        if(extract_columns_from_type(udfRetRowType) == 1)
             retType = retType.parameters().front();
 
         if(PARAM_USE_ROW_TYPE && parentSchema.getRowType().isRowType()) {

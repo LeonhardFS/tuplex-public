@@ -99,7 +99,7 @@ namespace tuplex {
             auto num_cols = extract_columns_from_type(row_type);
             for(unsigned i = 0; i < num_cols; ++i)
                 cols.emplace_back(i);
-            projectionPushdown(last_op, nullptr, cols); // what about dropOperators??
+            projectionPushdown(last_op, nullptr, cols, _options.OPT_AUTO_DROP_COLUMNS());
         }
 
         // reconstruct array
@@ -180,7 +180,7 @@ namespace tuplex {
             auto num_cols = extract_columns_from_type(node->getInputSchema().getRowType());
             for(unsigned i = 0; i < num_cols; ++i)
                 cols.emplace_back(i);
-            projectionPushdown(node, nullptr, cols); // what about drop operators?
+            projectionPushdown(node, nullptr, cols, _options.OPT_AUTO_DROP_COLUMNS());
 
             // note: could remove identity functions...
             // i.e. lambda x: x or lambda x: (x[0], x[1], ..., x[len(x) - 1]) same for def...
