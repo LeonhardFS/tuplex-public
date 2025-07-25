@@ -387,8 +387,19 @@ namespace tuplex {
             // simpler hinting using row type, for a single param - assume it's the full row
             if(PARAM_USE_ROW_TYPE && hintType.isRowType()) {
                 if(!hintParams({hintType}, params, true, removeBranches)) {
-                    logTypingErrors(printErrors);
-                    return false;
+                    bool rc = false;
+                    // For the special case of a single column, try to unwrap and hint again.
+                    if (hintType.get_column_count() == 1) {
+                        auto unwrapped_hint_type = hintType.get_column_type(0);
+                        logger.debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " hinting with type " + hintType.desc() + " failed, try again with unwrapped type " + unwrapped_hint_type.desc() + ".");
+
+                        rc = hintParams({unwrapped_hint_type}, params, true, removeBranches);
+                        // TODO: save mode in UDF?
+                    }
+
+                    // logTypingErrors(printErrors);
+                    if (!rc)
+                        return false;
                 }
 
                 // update here

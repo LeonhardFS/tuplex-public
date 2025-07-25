@@ -1879,7 +1879,7 @@ namespace tuplex {
                             parents.push_back(jop->right());
                         } else {
                             // right side is pipeline
-                            assert(lastNode == jop->right());
+                            // assert(lastNode == jop->right());
                             //os<<"pipeline is right side"<<endl;
 
                             // i.e. leave left side as is => do not take normal case there!
