@@ -2760,7 +2760,10 @@ namespace tuplex {
             // fill in array elements
             for (int i = 0; i < tupleLength; ++i) {
                 builder.CreateStore(elements[i].val, builder.CreateGEP(llvm_element_type, array, env.i32Const(i)));
-                builder.CreateStore(elements[i].size, builder.CreateGEP(builder.getInt64Ty(), sizes, env.i32Const(i)));
+
+                // Not all elements will have a size (e.g., i64, f64, ...)
+                if (elements[i].size)
+                    builder.CreateStore(elements[i].size, builder.CreateGEP(builder.getInt64Ty(), sizes, env.i32Const(i)));
             }
 
             // load from array

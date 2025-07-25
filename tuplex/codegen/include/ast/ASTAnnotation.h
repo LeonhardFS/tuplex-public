@@ -481,6 +481,10 @@ namespace tuplex {
         void deoptimize() {
             argsType = tuplex::deoptimizedType(argsType);
             for(auto& info : argsIteratorInfo) {
+                // Is info as nullptr allowed?
+                if (!info)
+                    continue;
+
                 if(info.get() == this)
                     continue;
                 info->deoptimize();
