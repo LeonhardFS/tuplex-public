@@ -742,8 +742,10 @@ namespace tuplex {
                 auto wop = std::dynamic_pointer_cast<WithColumnOperator>(op);
                 if(wop->creates_new_column() && !requiredCols.empty()) {
                     auto it = std::find(requiredCols.begin(), requiredCols.end(), wop->getColumnIndex());
-                    if(it != requiredCols.end())
+                    if(it != requiredCols.end()) {
+                        // Erase WithColumnOperator from stage.
                         requiredCols.erase(it);
+                    }
                 }
             }
 
@@ -1136,8 +1138,33 @@ namespace tuplex {
                     return ret;
                 }
             }
+            // the same is true for withColumn IFF dropOperators is false.
+            else if (!dropOperators && op->type() == LogicalOperatorType::WITHCOLUMN) {
+                auto wop = std::dynamic_pointer_cast<WithColumnOperator>(op); assert(wop);
 
-                // UDF and NOT map?
+                auto wop_input_row_type = wop->getInputSchema().getRowType();
+#ifdef TRACE_LOGICAL_OPTIMIZATION
+                // type should NOT change...
+                cout<<"dropOperators=false, so withColumn operator stops effective rewrite."<<endl;
+                cout<<wop->name()<<" type before projection pushdown: "<<wop->getOutputSchema().getRowType().desc()<<endl;
+                cout<<wop->name()<<" number of input columns: "<<extract_columns_from_type(wop->getInputSchema().getRowType())<<endl;
+                cout<<"  rewrite withColumn, number of entries: "<<rewriteMap.size()<<endl;
+#endif
+                wop->rewriteParametersInAST(rewriteMap);
+
+                // rewrite all ResolveOperators following (skip ignore)
+                rewriteAllFollowingResolvers(op, rewriteMap);
+
+#ifdef TRACE_LOGICAL_OPTIMIZATION
+                cout<<"WITHCOLUMN type after projection pushdown: "<<wop->getOutputSchema().getRowType().desc()<<endl;
+                cout<<"rewrite map here with"<<ret<<", stop rewriting."<<endl;
+#endif
+                auto numElements = extract_columns_from_type(wop->getOutputSchema().getRowType());
+                vector<size_t> colsToKeep;
+                for(int i = 0; i < numElements; ++i)
+                    colsToKeep.emplace_back(i);
+                return colsToKeep;
+            } // UDF and NOT map?
             else if(hasUDF(op.get()) && op->type() != LogicalOperatorType::RESOLVE) {
                 auto udfop = std::dynamic_pointer_cast<UDFOperator>(op); assert(udfop);
 
@@ -1152,23 +1179,6 @@ namespace tuplex {
 #ifdef TRACE_LOGICAL_OPTIMIZATION
                 cout<<"AFTER "<<op->name()<<" input type: "<<op->getInputSchema().getRowType().desc()<<endl;
 #endif
-
-                // // special case withColumn: I.e. a new column is added, need to append to rewrite Map and reqCols!
-                // if(op->type() == LogicalOperatorType::WITHCOLUMN) {
-                //     auto wop = std::dynamic_pointer_cast<WithColumnOperator>(op);
-                //     assert(wop);
-                //
-                //     size_t colIdx = wop->getColumnIndex();
-                //     // in rewrite map?
-                //     if(rewriteMap.find(colIdx) == rewriteMap.end()) {
-                //         // now always append. Because it doesn't matter anymore!
-                //         auto new_idx = ret.size();
-                //         rewriteMap[colIdx] = new_idx;
-                //         // also append to ret, because further functions might rely on this added column!
-                //         ret.push_back(colIdx);
-                //     }
-                // }
-
                 return ret;
             }
 

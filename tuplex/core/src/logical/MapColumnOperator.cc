@@ -145,11 +145,10 @@ namespace tuplex {
 
 
     void MapColumnOperator::rewriteParametersInAST(const std::unordered_map<size_t, size_t> &rewriteMap) {
-        // throw std::runtime_error("not sure what's going on here...");
         if(rewriteMap.find(_columnToMapIndex) != rewriteMap.end())
             _columnToMapIndex = rewriteMap.at(_columnToMapIndex);
         else
-            throw std::runtime_error("something wrong here...");
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " something wrong here...");
 
         // update column names
         projectColumns(rewriteMap);
@@ -160,7 +159,7 @@ namespace tuplex {
 
     std::shared_ptr<LogicalOperator> MapColumnOperator::clone(bool cloneParents) const {
         auto copy = new MapColumnOperator(cloneParents ? parent()->clone() : nullptr, _columnToMap,
-                                          UDFOperator::columns(), _udf, UDFOperator::rewriteMap());
+                                          inputColumns(), _udf, UDFOperator::rewriteMap());
         copy->setDataSet(getDataSet());
         copy->copyMembers(this);
         if(cloneParents) // when no parents, input schema which is derived from parent will be uninitialized making the check error out.

@@ -42,7 +42,7 @@ namespace tuplex {
 
         bool performRetypeCheck(const python::Type& input_row_type, bool is_projceted_row_type);
     private:
-        std::vector<std::string> _columnNames;
+        std::vector<std::string> _inputColumnNames; // input column names.
         // need to store rewrite map as well so when cloning AST can be properly rewritten
         std::unordered_map<size_t, size_t> _rewriteMap;
     public:
@@ -67,11 +67,12 @@ namespace tuplex {
             return _udf.getInputSchema();
         }
 
-        // these here are actually the input columns
-        virtual std::vector<std::string> inputColumns() const override { return _columnNames; }
+        // These here are actually the input columns
+        virtual std::vector<std::string> inputColumns() const override { return _inputColumnNames; }
 
-        // is this wrong? should be potential output columns?
-        virtual std::vector<std::string> columns() const override { return _columnNames; }
+        virtual std::vector<std::string> columns() const override {
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " need to overwrite output column method columns()");
+        }
 
         virtual std::unordered_map<size_t, size_t> rewriteMap() const { return _rewriteMap; }
 
@@ -81,7 +82,7 @@ namespace tuplex {
          */
         bool hasWellDefinedTypes() const { return _udf.hasWellDefinedTypes(); }
 
-        void setColumns(const std::vector<std::string>& columns) { assert(_columnNames.empty() || _columnNames.size() == columns.size()); _columnNames = columns; }
+        void setInputColumns(const std::vector<std::string>& columns) { assert(_inputColumnNames.empty() || _inputColumnNames.size() == columns.size()); _inputColumnNames = columns; }
 
         bool retype(const RetypeConfiguration& conf) override;
 

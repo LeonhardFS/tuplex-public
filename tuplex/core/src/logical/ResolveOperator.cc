@@ -155,7 +155,7 @@ namespace tuplex {
 
     std::shared_ptr<LogicalOperator> ResolveOperator::clone(bool cloneParents) const {
         auto copy = new ResolveOperator(cloneParents ? parent()->clone() : nullptr, ecCode(), _udf,
-                                        UDFOperator::columns(), UDFOperator::rewriteMap());
+                                        inputColumns(), UDFOperator::rewriteMap());
         copy->setOutputSchema(getOutputSchema());
         copy->setDataSet(getDataSet());
         copy->copyMembers(this);

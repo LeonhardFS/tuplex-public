@@ -69,7 +69,6 @@ namespace tuplex {
 
         std::vector<Row> getSample(const size_t num) const override;
 
-        std::vector<std::string> inputColumns() const override { return UDFOperator::columns(); }
         std::vector<std::string> columns() const override { return _outputColumns; }
 
         /*!

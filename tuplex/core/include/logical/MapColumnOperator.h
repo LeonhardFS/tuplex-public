@@ -75,6 +75,13 @@ namespace tuplex {
         int getColumnIndex() const { assert(_columnToMapIndex >= 0); return _columnToMapIndex; }
         std::string columnToMap() const { return _columnToMap; }
 
+        virtual std::vector<std::string> columns() const override {
+            // Check that index is valid and valid.
+            auto id = getColumnIndex();
+            assert(id < inputColumns().size());
+            return inputColumns(); // identical, mapColumn does NOT change names.
+        }
+
         void rewriteParametersInAST(const std::unordered_map<size_t, size_t>& rewriteMap) override;
 
         Schema getInputSchema() const override {

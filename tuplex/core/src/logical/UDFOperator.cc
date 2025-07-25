@@ -31,7 +31,7 @@ namespace tuplex {
 
     UDFOperator::UDFOperator(const std::shared_ptr<LogicalOperator>& parent, const UDF& udf,
     const std::vector<std::string>& columnNames,
-    const std::unordered_map<size_t, size_t>& rewriteMap) : LogicalOperator::LogicalOperator(parent), _udf(udf), _columnNames(columnNames), _rewriteMap(rewriteMap) {
+    const std::unordered_map<size_t, size_t>& rewriteMap) : LogicalOperator::LogicalOperator(parent), _udf(udf), _inputColumnNames(columnNames), _rewriteMap(rewriteMap) {
         // assert(parent);
     }
 
@@ -75,8 +75,8 @@ namespace tuplex {
             // first: check whether column names are different, if so apply!
             if(!conf.columns.empty()) {
                 // update internal column names & rewrite UDF accordingly
-                _columnNames = conf.columns;
-                _udf.rewriteDictAccessInAST(_columnNames, "", conf.coltype_hints);
+                _inputColumnNames = conf.columns;
+                _udf.rewriteDictAccessInAST(_inputColumnNames, "", conf.coltype_hints);
             }
 
             if(PARAM_USE_ROW_TYPE)
@@ -164,7 +164,7 @@ namespace tuplex {
             // _udf.resetAST();
 
             // if column names exist, attempt rewrite
-            if(!_udf.rewriteDictAccessInAST(_columnNames))
+            if(!_udf.rewriteDictAccessInAST(_inputColumnNames))
                 return Schema::UNKNOWN;
 
             // 3-stage typing
@@ -372,8 +372,8 @@ namespace tuplex {
         // add columns
         for(auto keyVal : rewriteMap) {
             // index, but only those who fall in range
-            if(keyVal.first < _columnNames.size()) {
-                columnsToRetain[keyVal.second] = _columnNames[keyVal.first];
+            if(keyVal.first < _inputColumnNames.size()) {
+                columnsToRetain[keyVal.second] = _inputColumnNames[keyVal.first];
                 columnsVisited[keyVal.second] = true;
             }
         }
@@ -384,7 +384,7 @@ namespace tuplex {
             ++max_idx;
 
         // overwrite columns + mapping index
-        _columnNames = std::vector<std::string>(columnsToRetain.begin(), columnsToRetain.begin() + max_idx);
+        _inputColumnNames = std::vector<std::string>(columnsToRetain.begin(), columnsToRetain.begin() + max_idx);
     }
 
     void UDFOperator::rewriteParametersInAST(const std::unordered_map<size_t, size_t> &rewriteMap) {

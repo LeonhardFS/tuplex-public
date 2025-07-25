@@ -212,7 +212,7 @@ namespace tuplex {
 
     std::shared_ptr<LogicalOperator> FilterOperator::clone(bool cloneParents) const {
         auto copy = new FilterOperator(cloneParents ? parent()->clone() : nullptr, _udf,
-                                       UDFOperator::columns(),
+                                       inputColumns(),
                                        UDFOperator::rewriteMap());
         copy->setDataSet(getDataSet());
         copy->copyMembers(this);

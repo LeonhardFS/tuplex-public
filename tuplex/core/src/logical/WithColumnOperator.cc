@@ -150,12 +150,13 @@ namespace tuplex {
     }
 
     std::vector<std::string> WithColumnOperator::columns() const {
-        auto columnNames = UDFOperator::columns();
+        auto columnNames = inputColumns();
 
+        // Remap of existing column?
         if(_columnToMapIndex < columnNames.size())
             return columnNames;
 
-        // else, append new column name
+        // Else, append new column name to end.
         std::vector<std::string> v(columnNames.begin(), columnNames.end());
         v.emplace_back(_newColumn);
         return v;
@@ -186,7 +187,7 @@ namespace tuplex {
 
         // check what schema is supposed to be
         std::vector<python::Type> col_types = in_schema.getRowType().parameters();
-        if(_columnToMapIndex < UDFOperator::columns().size()) {
+        if(_columnToMapIndex < inputColumns().size()) {
             col_types[_columnToMapIndex] = udf_ret_type;
         } else {
             col_types.push_back(udf_ret_type);
@@ -396,7 +397,7 @@ namespace tuplex {
     }
 
     std::shared_ptr<LogicalOperator> WithColumnOperator::clone(bool cloneParents) const {
-        auto copy = new WithColumnOperator(cloneParents ? parent()->clone() : nullptr, UDFOperator::columns(),
+        auto copy = new WithColumnOperator(cloneParents ? parent()->clone() : nullptr, inputColumns(),
                                            _newColumn, _udf, UDFOperator::rewriteMap());
         copy->setDataSet(getDataSet());
         // clone id

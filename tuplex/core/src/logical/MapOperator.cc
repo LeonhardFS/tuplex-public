@@ -37,7 +37,7 @@ namespace tuplex {
                     // also overwrite schema in udf b.c. this allows setters/getters to work
                     _udf.setInputSchema(parent->getOutputSchema());
                     _udf.setOutputSchema(parent->getOutputSchema());
-                    UDFOperator::setColumns(parent->columns());
+                    UDFOperator::setInputColumns(parent->columns());
 
                 }
 
@@ -175,7 +175,7 @@ namespace tuplex {
         // @TODO: avoid here the costly retyping but making a faster, better clone.
         auto copy = new MapOperator(cloneParents ? parent()->clone() : nullptr,
                                     _udf,
-                                    UDFOperator::columns(),
+                                    inputColumns(),
                                     UDFOperator::rewriteMap());
         copy->setOutputColumns(_outputColumns); // account for the rewrite visitor
         copy->setDataSet(getDataSet());
@@ -260,7 +260,7 @@ namespace tuplex {
             bool ret = UDFOperator::retype(conf);
 
             // extract output columns / input columns from retype
-            auto input_columns = UDFOperator::columns();
+            auto input_columns = inputColumns();
             //_outputColumns = _udf.extractOutputColumns();
 
             return ret;

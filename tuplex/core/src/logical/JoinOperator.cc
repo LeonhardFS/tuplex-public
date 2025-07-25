@@ -58,11 +58,22 @@ namespace tuplex {
             if (columnBasedJoin())
                 _leftKeyIndex = indexInVector(_leftColumn.value(), left()->columns());
             _leftColumnCount = left()->getOutputSchema().getColumnCount();
+
+            auto left_row_type = left()->getOutputSchema().getRowType();
+            auto left_columns = left()->columns();
+            assert(_leftColumnCount == extract_columns_from_type(left_row_type));
+            if (!left_columns.empty())
+                assert(_leftColumnCount == left_columns.size());
         }
         if (right()) {
             if (columnBasedJoin())
                 _rightKeyIndex = indexInVector(_rightColumn.value(), right()->columns());
             _rightColumnCount = right()->getOutputSchema().getColumnCount();
+
+            auto right_row_type = right()->getOutputSchema().getRowType();
+            auto right_columns = right()->columns();
+            assert(_rightColumnCount == extract_columns_from_type(right_row_type));
+            assert(_rightColumnCount == right_columns.size());
         }
     }
 

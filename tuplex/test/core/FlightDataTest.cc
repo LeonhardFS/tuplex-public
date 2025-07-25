@@ -419,12 +419,12 @@ std::vector<std::string> leftJoinPipelineI(tuplex::Context& ctx) {
                                            "LatitudeSeconds", "LatitudeDirection", "LongitudeDegrees", "LongitudeMinutes",
                                            "LongitudeSeconds", "LongitudeDirection", "Altitude", "LatitudeDecimal", "LongitudeDecimal"},
                             option<bool>::none, option<char>(':'))
-                    // column producing output that is finally omitted, i.e. can be removed from plan.
+            // column producing output that is finally omitted, i.e. can be removed from plan.
             .withColumn("not_needed", UDF("lambda x: x['Country']"))
             .mapColumn("AirportName", UDF("lambda x: string.capwords(x) if x else None", "", ce))
             .mapColumn("AirportCity", UDF("lambda x: string .capwords(x) if x else None", "", ce));
 
-    // join & collect result as string!
+    // Join & collect result as string!
     auto& ds = ctx.csv(path).leftJoin(ds_airport, std::string("ORIGIN"), std::string("IATACode"))
             .selectColumns(vector<string>{"FL_DATE", "DEP_DELAY", "AirportCity", "AirportName", "ICAOCode"});
 
