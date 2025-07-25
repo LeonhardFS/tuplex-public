@@ -77,7 +77,7 @@ namespace tuplex {
             llvm::BasicBlock *_body; // last active block
             llvm::Value *_retValPtr;
 
-            std::map <std::string, SerializableValue> _paramLookup;
+            std::map <std::string, std::tuple<SerializableValue, python::Type>> _paramLookup;
 
             // helper functions
             llvm::Type *retType() { return _fto.getLLVMType(); }
@@ -169,9 +169,16 @@ namespace tuplex {
                 assert(_paramLookup.size() > 0);
                 auto it = _paramLookup.find(name);
                 if(_paramLookup.end() == it)
-                    return SerializableValue(nullptr, nullptr);
-                else
-                    return it->second;
+                    return {};
+                return std::get<0>(it->second);
+            }
+
+            inline python::Type getParameterType(const std::string &name) {
+                assert(_paramLookup.size() > 0);
+                auto it = _paramLookup.find(name);
+                if(_paramLookup.end() == it)
+                    return python::Type::UNKNOWN;
+                return std::get<1>(it->second);
             }
 
             /*!

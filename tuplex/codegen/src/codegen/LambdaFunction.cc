@@ -174,13 +174,13 @@ namespace tuplex {
                     // transform row to tuple type (physical representation)
                     else if(pyArgType.parameters().front().isRowType())
                         pyArgType = pyArgType.parameters().front().get_columns_as_tuple_type();
-
                     // create ftarg from llvm struct val (i.e. the pointer)
                     assert(args.back()->getName() == "inRow");
-                    auto ftarg = FlattenedTuple::fromLLVMStructVal(_env, builder, args.back(), pyArgType);
+                    // Proper way on how to deserialize tuple.
+                    // auto ftarg = FlattenedTuple::fromLLVMStructVal(_env, builder, args.back(), pyArgType);
                     auto argname = static_cast<NParameter *>(params->_args[0].get())->_identifier->_name;
-                    _paramLookup[argname] = SerializableValue(args.back(), nullptr, nullptr); // use the pointer as tuple var!
-
+                    assert(pyArgType.isTupleType());
+                    _paramLookup[argname] = std::make_tuple(SerializableValue(args.back(), nullptr, nullptr), pyArgType); // use the pointer as tuple var!
                 } else {
                     // there is one arg. Because for now, a single arg is always a pointer to a tuple type, load it
                     auto ftarg = FlattenedTuple::fromLLVMStructVal(_env, builder, args.back(), pyArgType);
@@ -188,7 +188,7 @@ namespace tuplex {
 
                     // simple name lookup
                     auto argname = static_cast<NParameter *>(params->_args[0].get())->_identifier->_name;
-                    _paramLookup[argname] = SerializableValue(ftarg.get(0), ftarg.getSize(0), ftarg.getIsNull(0));
+                    _paramLookup[argname] = std::make_tuple(SerializableValue(ftarg.get(0), ftarg.getSize(0), ftarg.getIsNull(0)), pyArgType.parameters().front());
                 }
             } else {
                 assert(args.back()->getName() == "inRow");
@@ -200,7 +200,7 @@ namespace tuplex {
                 // create loads for subtrees...
                 for (int i = 0; i < pyargs.size(); ++i) {
                     auto argname = static_cast<NParameter *>(params->_args[i].get())->_identifier->_name;
-                    _paramLookup[argname] = ftarg.getLoad(builder, {i});
+                    _paramLookup[argname] = std::make_tuple(ftarg.getLoad(builder, {i}), pyArgType.parameters()[i]);
                 }
             }
 

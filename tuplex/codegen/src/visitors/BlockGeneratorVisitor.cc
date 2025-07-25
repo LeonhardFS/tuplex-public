@@ -1751,6 +1751,7 @@ namespace tuplex {
                 auto name = std::get<0>(paramInfo[i]);
                 auto type = std::get<1>(paramInfo[i]);
                 auto param = _lfb->getParameter(name);
+                auto paramType = _lfb->getParameterType(name);
 
 #ifndef NDEBUG
                 if(type.isListType()) {
@@ -1769,6 +1770,17 @@ namespace tuplex {
                 slot.var = Variable(*_env, builder, type, name);
 
                 slot.isUnwrappedSingleElementRow = false;
+
+                if (paramType != type) {
+                    // differ, correct param.
+                    if (python::Type::propagateToTupleType(type) == paramType && paramType.isTupleType() && paramType.parameters().size() == 1) {
+                        // unwrap element.
+                        auto ftarg = FlattenedTuple::fromLLVMStructVal(_env, builder, param.val, paramType);
+                        param = SerializableValue(ftarg.get(0), ftarg.getSize(0), ftarg.getIsNull(0));
+                        slot.isUnwrappedSingleElementRow = true;
+                    }
+                }
+
 
                 // special case tuple: may have been passed as ptr.
                 // This logic ONLY applies for tuples. I.e., this is to canonicalize to struct (instead of struct*).
@@ -3243,7 +3255,7 @@ namespace tuplex {
 
             {
                 auto serialized_dict = call_cjson_to_string(builder, builder.CreateLoad(llvm_generic_dict_type, ret));
-                _env->printValue(builder, serialized_dict.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " after init serialized dict: ");
+                // _env->printValue(builder, serialized_dict.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " after init serialized dict: ");
             }
 
             for (unsigned i = 0; i < dict->_pairs.size(); ++i) {
@@ -3267,13 +3279,13 @@ namespace tuplex {
                 auto value = call_cjson_from_value(builder, vals[i], value_type, ret);
 
                 auto serialized_value =  call_cjson_to_string(builder, value);
-                _env->printValue(builder, serialized_value.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " serialized value to add to dict: ");
+                // _env->printValue(builder, serialized_value.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " serialized value to add to dict: ");
                 assert(value);
                 call_cjson_object_set_item(builder, ret, key, value);
             }
             auto serialized_dict = call_cjson_to_string(builder, ret);
 
-            _env->printValue(builder, serialized_dict.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " serialized dict: ");
+            // _env->printValue(builder, serialized_dict.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " serialized dict: ");
 
             auto size = serialized_dict.size; // TODO: can this be deleted?
             _lfb->setLastBlock(builder.GetInsertBlock());
@@ -6274,7 +6286,7 @@ namespace tuplex {
 
                     auto currVal = builder.CreateLoad(llvm_element_type,
                                                       builder.CreateGEP(llvm_element_type, list_element_array_ptr, curr));
-                    _env->printValue(builder, currVal, "currVal in loop body=");
+                    // _env->printValue(builder, currVal, "currVal in loop body=");
 
                     if(targetType == python::Type::I64 || targetType == python::Type::F64) {
                         // loop variable is of type i64 or f64 (has size 8)
@@ -6351,7 +6363,7 @@ namespace tuplex {
 
                                 // tuple? --> load!
                                 if(list_type.elementType().isTupleType()) {
-                                    _env->printValue(builder, idVal, "loading tuple from pointer: ");
+                                    // _env->printValue(builder, idVal, "loading tuple from pointer: ");
                                     idVal = builder.CreateLoad(llvm_element_type, idVal);
                                 }
 
