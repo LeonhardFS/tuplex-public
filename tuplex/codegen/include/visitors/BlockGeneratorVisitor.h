@@ -188,7 +188,10 @@ namespace codegen {
 #ifndef NDEBUG
                         if(value_to_store->getType()->getPointerTo() != ptr->getType()) {
                             std::stringstream err;
-                            err<<"attempting to store value of LLVM type "<<env->getLLVMTypeName(value_to_store->getType())<<" to slot expecting LLVM type "<<env->getLLVMTypeName(ptr->getType());
+
+                            cpptrace::generate_trace().print(err);
+
+                            err<<__FILE__<<":"<<__LINE__<<" attempting to store value of LLVM type "<<env->getLLVMTypeName(value_to_store->getType())<<" to slot expecting LLVM type "<<env->getLLVMTypeName(ptr->getType());
                             Logger::instance().logger("codegen").error(err.str());
                         }
 #endif

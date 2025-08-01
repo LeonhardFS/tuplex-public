@@ -1763,7 +1763,7 @@ namespace tuplex {
 #endif
 
                 VariableSlot slot;
-                slot.type = type;
+                slot.type = type; // <-- original type.
                 slot.definedPtr = _env->CreateFirstBlockAlloca(builder, _env->i1Type(), name + "_defined");
                 assert(slot.definedPtr);
                 builder.CreateStore(_env->i1Const(true), slot.definedPtr); // params are always defined!!!
@@ -1795,6 +1795,7 @@ namespace tuplex {
                 if(type != python::Type::EMPTYROW && type.isRowType() && type.get_column_count() == 1 && param.val && param.val->getType()->isPointerTy()) {
                     param = tuple_load_element(*_env, builder, param.val, type.get_columns_as_tuple_type(), 0);
                     slot.isUnwrappedSingleElementRow = true;
+                    slot.var = Variable(*_env, builder, type.get_column_type(0), name);
                 }
 
                 // lists can be modified, so declare via alloca -> allows for modification (closure!)
@@ -1809,8 +1810,8 @@ namespace tuplex {
                     builder.CreateStore(value, param.val); // <-- now a pointer!
                 }
 
-                // // debug:
-                // printValue(builder, param, slot.var.type, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " param " + name);
+                 // debug:
+                 printValue(builder, param, slot.var.type, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " param " + name);
 
                 // store param into var
                 slot.var.store(builder, param);
@@ -4387,6 +4388,8 @@ namespace tuplex {
                     // special case: wrap param, and then call unwrap?
 
                     // @TODO: check for indexing errors.
+
+                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " need to fix indexing here.");
 
 
                     // actually can return directly slot.
