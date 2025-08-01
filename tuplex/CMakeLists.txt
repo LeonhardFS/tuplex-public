@@ -702,7 +702,6 @@ if(DEFINED ENV{PYTHON3_VERSION})
     set(PYTHON3_VERSION "$ENV{PYTHON3_VERSION}") # can use env variable as well!
 endif()
 
-
 # check if a specific Python executable was set
 if(PYTHON_EXECUTABLE AND NOT PYTHON3_EXECUTABLE)
     set(PYTHON3_EXECUTABLE ${PYTHON_EXECUTABLE})

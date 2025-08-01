@@ -77,6 +77,8 @@
 #define LLVM_ONLY_PTR_TYPES true
 #endif
 
+#include <cpptrace/from_current.hpp>
+
 namespace tuplex {
     namespace codegen {
 
@@ -141,7 +143,17 @@ namespace tuplex {
 #ifndef NDEBUG
                 // pointer check
                 if(llvm::PointerType::get(Val->getType(), 0) != Ptr->getType()) {
-                    throw std::runtime_error("attempting to store value of incompatible llvm type to llvm pointer");
+
+                    std::stringstream ss;
+
+                    // Try to get traceback.
+                    const auto raw_trace = cpptrace::generate_raw_trace();
+                    ss<<"Traceback: \n";
+                    raw_trace.resolve().print_with_snippets(ss);
+                    ss<<"\n";
+
+                    ss<<std::string(__FILE__)<<":"<<std::to_string(__LINE__)<<" attempting to store value of incompatible llvm type to llvm pointer.";
+                    throw std::runtime_error(ss.str());
                 }
 #endif
 

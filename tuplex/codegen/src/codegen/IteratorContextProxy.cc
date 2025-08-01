@@ -660,7 +660,7 @@ namespace tuplex {
                 retVal = index;
                 retSize = _env.i64Const(8);
             } else if(iterablesType.isTupleType() && python::Type::EMPTYTUPLE != iterablesType) {
-                // works only for homogenoous tuple
+                // works only for homogenous tuple
                 auto element = homogenous_tuple_dynamic_get_element(_env, builder, iterablesType, iterableAlloc, index);
                 return element;
             } else {

@@ -433,6 +433,11 @@ namespace tuplex {
 
                 auto llvm_element_type = pythonToLLVMType(py_element_type);
 
+                // mutable or non-mutable?
+                // if mutable: store as pointer!
+                if(!py_element_type.isImmutable())
+                    llvm_element_type = llvm_element_type->getPointerTo();
+
                 // special case: boolean -> force to i64, b.c. some LLVM passes are broken else
                 if(python::Type::BOOLEAN == py_element_type)
                     llvm_element_type = i64Type();
@@ -1101,7 +1106,15 @@ namespace tuplex {
 
             // extract elements
             auto structValIdx = builder.CreateStructGEP(tuplePtr, llvm_tuple_type, valueOffset);
-            value = builder.CreateLoad(llvm_element_without_option_type, structValIdx);
+
+            // special case: is this a value to be passed by copy or reference?
+            // If by reference, need to pass pointer!
+            if(!elementType.isImmutable()) {
+                // should be a pointer!
+                value = builder.CreateLoad(llvm_element_without_option_type->getPointerTo(), structValIdx);
+            } else {
+                value = builder.CreateLoad(llvm_element_without_option_type, structValIdx);
+            }
 
             // size existing? ==> only for varlen types
             if (!elementType.isFixedSizeType() && !elementType.isStructuredDictionaryType() && !elementType.isSparseStructuredDictionaryType() && !elementType.isListType() && !elementType.isExceptionType()) {
@@ -1229,12 +1242,19 @@ namespace tuplex {
                 if(represented_as_lazy_pointer) {
 
                     // special case: list type of single-valued type. -> just store length as i64!
-                    if(elementType.isListType() && elementType.elementType().isSingleValued()) {
-                        // is it a pointer? then load and store i64, else store i64 directly
-                        if(llvm_val_to_store->getType()->isPointerTy())
-                            llvm_val_to_store = builder.CreateLoad(builder.getInt64Ty(), llvm_val_to_store);
-                        assert(llvm_val_to_store->getType() == builder.getInt64Ty());
-                        builder.CreateStore(llvm_val_to_store, structValIdx);
+                    if(elementType.isListType()) {
+
+                        if(elementType.elementType().isSingleValued()) {
+                            // is it a pointer? then load and store i64, else store i64 directly
+                            if(llvm_val_to_store->getType()->isPointerTy())
+                                llvm_val_to_store = builder.CreateLoad(builder.getInt64Ty(), llvm_val_to_store);
+                            assert(llvm_val_to_store->getType() == builder.getInt64Ty());
+                            builder.CreateStore(llvm_val_to_store, structValIdx);
+                        } else {
+                            // Regular list:
+                            // store pointer.
+                            builder.CreateStore(llvm_val_to_store, structValIdx);
+                        }
                     } else {
 
                         // same as llvm_val_to_store->getType()->getPointerElementType().
@@ -1267,7 +1287,7 @@ namespace tuplex {
                             llvm_val_to_store = ptr;
                         }
 
-                         // however, nested structs/aggs should be memcopied
+                         // however, nested structs/aggregates should be memcopied.
                          auto i8_src = builder.CreatePointerCast(llvm_val_to_store, i8ptrType());
                          auto i8_dest = builder.CreatePointerCast(structValIdx, i8ptrType());
                          auto& DL = _module->getDataLayout();
@@ -2732,7 +2752,7 @@ namespace tuplex {
 
             auto element_type = tuple_type.parameters().front();
             if(element_type.isOptionType())
-                throw std::runtime_error("tuple of option types not yet supported in homogenous tuple access");
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " tuple of option types not yet supported in homogenous tuple access.");
 
             auto llvm_element_type = env.pythonToLLVMType(element_type); // without options
 

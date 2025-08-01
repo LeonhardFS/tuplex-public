@@ -165,10 +165,22 @@ target_include_directories(libcodegen PUBLIC
 
 ASSERT_VAR(LLVM_LIBRARIES)
 
+include(FetchContent)
+FetchContent_Declare(
+        cpptrace
+        GIT_REPOSITORY https://github.com/jeremy-rifkin/cpptrace.git
+        GIT_TAG        v1.0.4 # <HASH or TAG>
+)
+FetchContent_MakeAvailable(cpptrace)
+
+get_target_property(cpptrace_INCLUDE_DIRS cpptrace::cpptrace INCLUDE_DIRECTORIES)
+message(STATUS "cpptrace: ${cpptrace_INCLUDE_DIRS}")
+
 # Declare the library
 target_link_libraries(libcodegen
         PUBLIC
         libutils
+        cpptrace::cpptrace
         PRIVATE
         ${FFI_LIBRARIES}
         ${PCRE2_LIBRARIES}

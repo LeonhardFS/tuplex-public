@@ -263,9 +263,7 @@ TEST_F(IteratorTest, CodegenTestTupleIteratorII) {
 
 TEST_F(IteratorTest, CodegenTestTupleIteratorIIISingleDefault) {
     using namespace tuplex;
-    // Context c(microTestOptions());
-
-    Context c(tracingMicroTestOptions());
+    Context c(microTestOptions());
 
     auto func = "def f(x):\n"
                 "    a = iter(x)\n"

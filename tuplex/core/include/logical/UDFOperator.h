@@ -89,10 +89,10 @@ namespace tuplex {
 #ifdef BUILD_WITH_CEREAL
         // cereal serialization functions
         template<class Archive> void save(Archive &ar) const {
-            ar(::cereal::base_class<LogicalOperator>(this), _udf, _columnNames, _rewriteMap);
+            ar(::cereal::base_class<LogicalOperator>(this), _udf, _inputColumnNames, _rewriteMap);
         }
         template<class Archive> void load(Archive &ar) {
-            ar(::cereal::base_class<LogicalOperator>(this), _udf, _columnNames, _rewriteMap);
+            ar(::cereal::base_class<LogicalOperator>(this), _udf, _inputColumnNames, _rewriteMap);
         }
 #endif
     };
