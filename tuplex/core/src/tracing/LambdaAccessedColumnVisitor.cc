@@ -126,6 +126,9 @@ namespace tuplex {
 
                 NLambda* lambda = (NLambda*)node;
                 auto itype = lambda->_arguments->getInferredType();
+
+                if(itype.isRowType())
+                    itype = itype.get_columns_as_tuple_type();
                 assert(itype.isTupleType());
 
                 // are multiple arguments used or not?
