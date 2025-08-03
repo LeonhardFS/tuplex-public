@@ -278,7 +278,10 @@ namespace tuplex {
             decodeRangeURI(p.first, target_uri, range_start, range_end);
             auto buf = cache.get(target_uri, range_start, range_end);
             if(!buf) {
-                logger().error("Invalid buffer received from cache for " + p.first);
+                std::stringstream ss;
+                ss<<__FILE__<<":"<<__LINE__<<" Invalid buffer received from cache for " + p.first;
+                ss<<cache.chunks_to_string();
+                logger().error(ss.str());
             } else {
                 // Get size
                 size_t buf_size = (range_start == 0 && range_end == 0) ? p.second : range_end - range_start;

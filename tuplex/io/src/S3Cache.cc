@@ -123,12 +123,14 @@ namespace tuplex {
             }
         } else {
             // ok, can store.
-
-            std::stringstream ss;
-            ss<<__FILE__<<":"<<__LINE__<<" Reading chunk from "<<uri.toString()<<" range: "<<range_start<<"-"<<range_end;
-            if(requestWithTransferManager)
-                ss<<" with s3 transfer manager.";
-            logger.info(ss.str());
+            {
+                std::stringstream ss;
+                ss<<__FILE__<<":"<<__LINE__<<" Reading chunk from "<<uri.toString()<<" range: "<<range_start<<"-"<<range_end;
+                ss<<" (size: "<<sizeToMemString(range_end - range_start)<<")";
+                if(requestWithTransferManager)
+                    ss<<" with s3 transfer manager.";
+                logger.info(ss.str());
+            }
 
             auto chunk = requestWithTransferManager ? s3ReadWithTransferManager(uri, range_start, range_end) : s3Read(uri, range_start, range_end);
             {
@@ -137,6 +139,13 @@ namespace tuplex {
                 if(bytes_written)
                     *bytes_written = chunk.size();
                 _chunks.emplace_back(std::move(chunk));
+
+                {
+                    std::stringstream ss;
+                    ss<<__FILE__<<":"<<__LINE__<<" Stored chunk of size "<<sizeToMemString(chunk.size())<<" in S3 cache.";
+                    logger.info(ss.str());
+                }
+
                 return ptr;
             }
         }
@@ -759,7 +768,7 @@ namespace tuplex {
 
         {
             std::stringstream ss;
-            ss<<__FILE__<<":"<<__LINE__<<" Initializing transfer manager with "<<pluralize(max_transfer_manager_threads, "thread");
+            ss<<__FILE__<<":"<<__LINE__<<" Initializing transfer manager with "<<pluralize(max_transfer_manager_threads, "thread")<<".";
             logger.info(ss.str());
         }
 
@@ -774,6 +783,12 @@ namespace tuplex {
         // It must persist until all downloading by the 'transfer_manager' is complete.
         Aws::Utils::Stream::PreallocatedStreamBuf streamBuffer(entry.buf, nbytes);
 
+        {
+            std::stringstream ss;
+            ss<<__FILE__<<":"<<__LINE__<<" Allocated new cache entry for "<<sizeToMemString(nbytes)<<".";
+            logger.info(ss.str());
+        }
+
         auto transfer_manager = Aws::Transfer::TransferManager::Create(transfer_config);
 
         auto downloadHandle = transfer_manager->DownloadFile(uri.s3Bucket(),
@@ -785,6 +800,13 @@ namespace tuplex {
                                                              });
         downloadHandle->WaitUntilFinished();// Block calling thread until download is complete.
         auto downStat = downloadHandle->GetStatus();
+
+        {
+            std::stringstream ss;
+            ss<<__FILE__<<":"<<__LINE__<<" Transfer manager finished with status "<<downStat<<".";
+            logger.info(ss.str());
+        }
+
         if (downStat != Aws::Transfer::TransferStatus::COMPLETED) {
 
             std::stringstream err_stream;
@@ -804,14 +826,14 @@ namespace tuplex {
             logger.error(err_msg);
             throw std::runtime_error(err_msg);
         } else {
+            auto fileSize = downloadHandle->GetBytesTotalSize();
+            retrievedBytes = downloadHandle->GetBytesTransferred();
+
             // all good.
             if(0 == retrievedBytes) {
                 logger.info("empty range");
                 return entry;
             }
-
-            auto fileSize = downloadHandle->GetBytesTotalSize();
-            retrievedBytes = downloadHandle->GetBytesTransferred();
 
             // set entries.
             entry.range_start = range_start;
@@ -840,6 +862,17 @@ namespace tuplex {
 
         // Query cache for uri, if not found return nullptr.
         return nullptr;
+    }
+
+    std::string S3FileCache::chunks_to_string() const {
+        std::stringstream ss;
+        ss<<"S3 Cache: \n";
+        ss<<"max size: "<<sizeToMemString(maxCacheSize())<<" capacity: "<<sizeToMemString(maxCacheSize() - cacheSize())<<" cached: "<<sizeToMemString(cacheSize())<<"\n";
+        ss<<"#chunks: "<<_chunks.size()<<"\n";
+        for(const auto& c: _chunks) {
+            ss<<" - "<<c.uri.toString()<<" range: "<<c.range_start<<"-"<<c.range_end<<" size: "<<sizeToMemString(c.size())<<"\n";
+        }
+        return ss.str();
     }
 
     // cf. https://raw.githubusercontent.com/mohaps/lrucache11/master/LRUCache11.hpp
