@@ -612,8 +612,12 @@ namespace tuplex {
     }
 
     std::unique_ptr<Aws::S3::S3Client> S3FileSystemImpl::make_pure_s3_client() const {
-        if(_runOnLambda)
+        if(_runOnLambda) {
+            std::stringstream ss;
+            ss<<__FILE__<<":"<<__LINE__<<" Creating on Lambda new S3 client.";
+            Logger::instance().defaultLogger().info(ss.str());
             return std::make_unique<Aws::S3::S3Client>(_config);
+        }
 
         return std::make_unique<Aws::S3::S3Client>(_aws_credentials, _config, _payload_signing_policy, _ns.useVirtualAddressing);
     }

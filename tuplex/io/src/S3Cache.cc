@@ -774,13 +774,35 @@ namespace tuplex {
 
         auto executor = Aws::MakeShared<Aws::Utils::Threading::PooledThreadExecutor>("executor", max_transfer_manager_threads);
         Aws::Transfer::TransferManagerConfiguration transfer_config(executor.get());
+        {
+            std::stringstream ss;
+            ss<<__FILE__<<":"<<__LINE__<<" Creating standard S3 client.";
+            logger.info(ss.str());
+        }
         transfer_config.s3Client = _s3fs->make_pure_s3_client();
 
         // Allocate buffer:
-        entry.buf = new uint8_t[nbytes + 32]; // 32 bytes as security.
+        {
+            std::stringstream ss;
+            ss<<__FILE__<<":"<<__LINE__<<" Allocating buffer for new cache entry for nbytes"<<nbytes<<".";
+            logger.info(ss.str());
+        }
+
+        try {
+            entry.buf = new uint8_t[nbytes + 32]; // 32 bytes as security.
+        } catch(const std::bad_alloc& b) {
+            logger.error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " allocating " + std::to_string(nbytes) + " lead to bad alloc.");
+            entry.buf = nullptr;
+            return entry;
+        }
 
         // The local variable 'streamBuffer' is captured by reference in a lambda.
         // It must persist until all downloading by the 'transfer_manager' is complete.
+        {
+            std::stringstream ss;
+            ss<<__FILE__<<":"<<__LINE__<<" Initializing PreallocatedStreamBuf.";
+            logger.info(ss.str());
+        }
         Aws::Utils::Stream::PreallocatedStreamBuf streamBuffer(entry.buf, nbytes);
 
         {
@@ -791,6 +813,11 @@ namespace tuplex {
 
         auto transfer_manager = Aws::Transfer::TransferManager::Create(transfer_config);
 
+        {
+            std::stringstream ss;
+            ss<<__FILE__<<":"<<__LINE__<<" Starting new download via transfer manager.";
+            logger.info(ss.str());
+        }
         auto downloadHandle = transfer_manager->DownloadFile(uri.s3Bucket(),
                                                              uri.s3Key(),
                                                              range_start,
