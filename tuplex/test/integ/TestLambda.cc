@@ -581,7 +581,7 @@ TEST_F(LambdaTest, S3ReadThroughputWorkerApp) {
     using namespace std;
 
     auto pattern = "s3://tuplex-public/data/github_monthly/*.json";
-    size_t parallelism = 300;
+    size_t parallelism = 1000;
     auto v = chunk_uris(pattern, parallelism);
     cout<<"Split into "<<pluralize(v.size(), "part")<<" for parallelism="<<parallelism<<" pattern="<<pattern<<endl;
 
@@ -701,6 +701,8 @@ TEST_F(LambdaTest, S3ReadThroughputWorkerApp) {
 
         auto j = nlohmann::json::parse(env_resource.payload());
         cout<<"IO Throughput information message:\n"<<j.dump(2)<<endl;
+        auto throughput_in_mb_per_s = j["totalBufferSize"].get<size_t>() * 1.0 / j["ioTime"].get<double>() / 1024.0 / 1024.0;
+        cout<<"achieved on Lambda: "<<throughput_in_mb_per_s<<" MB/s ("<<throughput_in_mb_per_s * 8<<" Mbps)";
     }
     EXPECT_TRUE(outcome.IsSuccess());
 }

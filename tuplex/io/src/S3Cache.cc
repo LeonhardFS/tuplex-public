@@ -133,6 +133,9 @@ namespace tuplex {
             }
 
             auto chunk = requestWithTransferManager ? s3ReadWithTransferManager(uri, range_start, range_end) : s3Read(uri, range_start, range_end);
+            // error, e.g. std::bad_alloc.
+            if(!chunk.buf)
+                return nullptr;
             {
                 std::lock_guard<std::mutex> lock(_mutex);
                 auto ptr = chunk.buf;
@@ -763,6 +766,9 @@ namespace tuplex {
             logger.info(ss.str());
         }
         transfer_config.s3Client = _s3fs->make_pure_s3_client();
+#warning "make this here configurable, e.g. via environment variables."
+        transfer_config.bufferSize = 2 * Aws::Transfer::MB5; // increase defaults.
+        transfer_config.transferBufferMaxHeapSize = 10 * Aws::Transfer::MB5; // higher defaults.
 
         // Allocate buffer:
         {
