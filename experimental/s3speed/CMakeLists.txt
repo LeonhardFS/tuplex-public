@@ -5,13 +5,16 @@ project(s3speed)
 # enable c++14
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(SRCS main.cc md5.cc)
+
+# set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -g -march=native -Wall")
 
 # find zlib
 find_package(ZLIB REQUIRED)
 
-find_package(AWSSDK REQUIRED COMPONENTS core s3 s3-crt transfer)
-Message(STATUS "AWSSDK_LINK_LIBRARIES ${AWSSDK_LINK_LIBRARIES}")
+# Build AWS SDK so version is locked.
+include("cmake/awssdk.cmake")
 
 # linking
 add_executable(s3speed ${SRCS})
@@ -19,5 +22,5 @@ add_executable(s3speed ${SRCS})
 # enable export symbols in debug for backtrace
 set_target_properties(s3speed PROPERTIES ENABLE_EXPORTS 1)
 
-target_link_libraries(s3speed PRIVATE ${AWSSDK_LINK_LIBRARIES})
-target_compile_features(s3speed PRIVATE "cxx_std_11")
+target_link_libraries(s3speed PRIVATE ${AWS_LINK_LIBRARIES})
+target_compile_features(s3speed PRIVATE "cxx_std_17")
