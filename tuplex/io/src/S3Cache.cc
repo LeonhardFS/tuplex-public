@@ -735,31 +735,14 @@ namespace tuplex {
         if(!_s3fs)
             throw std::runtime_error("Trying to use S3Cache without an initialized S3 Filesystem.");
 
-        // Get full file, or a part of it?
-        size_t uri_size = 1;
-        if(range_start == 0 && range_end == 0) {
-            // Fetch object size of URI, download the full one then.
-            uri_size = s3GetContentLength(_s3fs->client(), uri);
-            range_end = uri_size;
+        {
+            std::stringstream ss;
+            ss<<__FILE__<<":"<<__LINE__<<" Calling s3ReadWithTransferManager with uri: "<<uri.toString()<<" range_start: "<<range_start<<" range_end: "<<range_end<<".";
+            logger.info(ss.str());
         }
 
-        // issue a S3 read (part) request -> will contain all data etc.
-// simply issue here one direct request
         size_t retrievedBytes = 0;
         size_t nbytes = range_end - range_start;
-        // range header
-        std::string range = "bytes=" + std::to_string(range_start) + "-" + std::to_string(range_start + nbytes - 1);
-        // make AWS S3 part request to uri
-        // check how to retrieve object in poarts
-        AwsS3GetObjectRequest req;
-        req.SetBucket(uri.s3Bucket().c_str());
-        req.SetKey(uri.s3Key().c_str());
-        // retrieve byte range according to http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.35
-        req.SetRange(range.c_str());
-        // Amazon specific header.
-        if(_s3fs->isAmazon()) {
-            req.SetRequestPayer(_requestPayer);
-        }
 
         // Get the object ==> Note: this s3 client is damn slow, need to make it faster in the future...
         Timer timer;
@@ -784,7 +767,7 @@ namespace tuplex {
         // Allocate buffer:
         {
             std::stringstream ss;
-            ss<<__FILE__<<":"<<__LINE__<<" Allocating buffer for new cache entry for nbytes"<<nbytes<<".";
+            ss<<__FILE__<<":"<<__LINE__<<" Allocating buffer for new cache entry for nbytes: "<<nbytes<<".";
             logger.info(ss.str());
         }
 
