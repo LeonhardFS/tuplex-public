@@ -29,5 +29,5 @@ add_executable(s3speed ${SRCS})
 # enable export symbols in debug for backtrace
 set_target_properties(s3speed PROPERTIES ENABLE_EXPORTS 1)
 
-target_link_libraries(s3speed PRIVATE ${AWS_LINK_LIBRARIES})
+target_link_libraries(s3speed PRIVATE ${AWS_LINK_LIBRARIES} ZLIB::ZLIB)
 target_compile_features(s3speed PRIVATE "cxx_std_17")
