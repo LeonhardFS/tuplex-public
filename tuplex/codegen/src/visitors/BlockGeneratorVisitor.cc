@@ -3333,7 +3333,7 @@ namespace tuplex {
             addInstruction(dict_rep.val, dict_rep.size, dict_rep.is_null);
         }
 
-        void BlockGeneratorVisitor::visit(NList *list) {
+        void BlockGeneratorVisitor::visit(NList* list) {
             if(earlyExit())return;
 
             auto num_stack_before = _blockStack.size();
@@ -3387,8 +3387,8 @@ namespace tuplex {
 
                 // Needs to be heap allocated (for case when list is returned). If just used within a function, can use stack.
                 // TODO: optimize allocations.
-                // auto list_ptr = _env->CreateHeapAlloca(builder, list_llvm_type); //_env->CreateFirstBlockAlloca(builder, list_llvm_type);
-                auto list_ptr = _env->CreateFirstBlockAlloca(builder, list_llvm_type);
+                auto list_ptr = _env->CreateHeapAlloca(builder, list_llvm_type); //_env->CreateFirstBlockAlloca(builder, list_llvm_type);
+                //auto list_ptr = _env->CreateFirstBlockAlloca(builder, list_llvm_type);
                 list_init_empty(*_env, builder, list_ptr, list_type);
                 bool initialize_elements_as_null = false; // can skip this b.c. all elements are anyways going to be initialized.
                 initialize_elements_as_null = true; // -> do initialize to prevent errors!
@@ -3408,6 +3408,11 @@ namespace tuplex {
                     }
                     list_store_value(*_env, builder, list_ptr, list_type, _env->i64Const(i), el);
                 }
+
+                // // print
+                // _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " list constructed: ");
+                // list_print(*_env, builder, list_ptr, list_type);
+
                 _lfb->setLastBlock(builder.GetInsertBlock());
                 addInstruction(list_ptr);
             }

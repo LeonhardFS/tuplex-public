@@ -171,7 +171,15 @@ FetchContent_Declare(
         GIT_REPOSITORY https://github.com/jeremy-rifkin/cpptrace.git
         GIT_TAG        v1.0.4 # <HASH or TAG>
 )
+# Fix for ON;FORCE
+set(BUILD_SHARED_LIBS_BACKUP ${BUILD_SHARED_LIBS})
+if("${BUILD_SHARED_LIBS}" MATCHES "ON")
+    set(BUILD_SHARED_LIBS ON)
+else()
+    set(BUILD_SHARED_LIBS OFF)
+endif()
 FetchContent_MakeAvailable(cpptrace)
+set(BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS_BACKUP})
 
 get_target_property(cpptrace_INCLUDE_DIRS cpptrace::cpptrace INCLUDE_DIRECTORIES)
 message(STATUS "cpptrace: ${cpptrace_INCLUDE_DIRS}")
