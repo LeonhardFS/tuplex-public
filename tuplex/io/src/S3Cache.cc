@@ -766,9 +766,8 @@ namespace tuplex {
             logger.info(ss.str());
         }
         transfer_config.s3Client = _s3fs->make_pure_s3_client();
-#warning "make this here configurable, e.g. via environment variables."
-        transfer_config.bufferSize = 2 * Aws::Transfer::MB5; // increase defaults.
-        transfer_config.transferBufferMaxHeapSize = 10 * Aws::Transfer::MB5; // higher defaults.
+        transfer_config.bufferSize = _aws_transfer_manager_buffer_size; // increase defaults.
+        transfer_config.transferBufferMaxHeapSize = _aws_transfer_manager_max_heap_size; // higher defaults.
 
         // Allocate buffer:
         {
@@ -872,9 +871,39 @@ namespace tuplex {
         return entry;
     }
 
-    uint8_t *S3FileCache::get(const URI &uri, size_t range_start, size_t range_end, option<size_t> uri_size) {
+    uint8_t *S3FileCache::get_view(const URI &uri, size_t range_start, size_t range_end, size_t* view_size, option<size_t> uri_size) {
 
-        // no lock here, have callers be responsible for thos.
+        // no lock here, have callers be responsible for those.
+
+        // Check whether cache contains a chunk for the given uri.
+        for(const auto& c: _chunks) {
+            if(c.uri == uri) {
+                // partial result or full match?
+                if(c.range_start == range_start && c.range_end == range_end) {
+                    if(view_size)
+                        *view_size = c.size();
+                    return c.buf;
+                }
+
+                if(c.range_start <= range_start && range_end <= c.range_end) {
+                    // return buffer with proper offsets & size.
+                    if(view_size)
+                        *view_size = range_end - range_start;
+                    return c.buf + (range_start - c.range_start);
+                }
+
+                // clamp towards end.
+                if(c.range_start <= range_start && range_start < c.range_end) {
+                    if(view_size)
+                        *view_size = c.range_end - range_start;
+                    return c.buf + (range_start - c.range_start);
+                }
+            }
+        }
+
+        // invalid, no entry found.
+        if(view_size)
+            *view_size = 0;
 
         // Query cache for uri, if not found return nullptr.
         return nullptr;

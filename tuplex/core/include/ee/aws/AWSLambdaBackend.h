@@ -362,6 +362,19 @@ namespace tuplex {
      */
     extern size_t find_max_chunk_size(std::vector<size_t> sizes, size_t c_min, size_t parallelism);
 
+    /*!
+     * Update the configuration of a lambda.
+     * @param client
+     * @param function_name
+     * @param sizeInMb size from 128MB to 10240MB
+     * @param timeout timeout in seconds from 1 to 900
+     * @return
+     */
+    extern bool update_lambda_configuration(const std::shared_ptr<Aws::Lambda::LambdaClient>& client,
+                                            const std::string& function_name,
+                                            option<size_t> sizeInMb,
+                                            option<size_t> timeout);
+
 }
 
 #endif //TUPLEX_AWSLAMBDABACKEND_H

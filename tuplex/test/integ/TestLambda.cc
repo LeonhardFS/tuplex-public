@@ -582,12 +582,13 @@ TEST_F(LambdaTest, S3ReadThroughputWorkerApp) {
 
     auto pattern = "s3://tuplex-public/data/github_monthly/*.json";
     size_t parallelism = 1000;
+    size_t lambda_timeout = 30; // 30s timeout
+    size_t lambda_size = 10000; // 10G size.
     auto v = chunk_uris(pattern, parallelism);
     cout<<"Split into "<<pluralize(v.size(), "part")<<" for parallelism="<<parallelism<<" pattern="<<pattern<<endl;
 
     // TODO: randomize, for now fix
     auto test_idx = 42;
-
 
     cout<<"Connecting via AWS Lambda client..."<<endl;
 
@@ -639,6 +640,13 @@ TEST_F(LambdaTest, S3ReadThroughputWorkerApp) {
                                    credentials.session_token.c_str());
     auto client = Aws::MakeShared<Aws::Lambda::LambdaClient>("test", cred, clientConfig);
 
+
+    cout<<"Updating Lambda to test settings:\n"<<"timeout: "<<lambda_timeout<<" size: "<<lambda_size<<endl;
+    auto rc = update_lambda_configuration(client, options.AWS_LAMBDA_NAME(), lambda_size, lambda_timeout);
+    ASSERT_TRUE(rc);
+
+    // let changes propagate.
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
     Aws::Lambda::Model::InvokeRequest invoke_req;
     invoke_req.SetFunctionName(options.AWS_LAMBDA_NAME());

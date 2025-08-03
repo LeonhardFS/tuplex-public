@@ -276,20 +276,30 @@ namespace tuplex {
             size_t range_end = 0;
             URI target_uri;
             decodeRangeURI(p.first, target_uri, range_start, range_end);
-            auto buf = cache.get(target_uri, range_start, range_end);
+            size_t buf_size = 0;
+            auto buf = cache.get_view(target_uri, range_start, range_end, &buf_size);
             if(!buf) {
                 std::stringstream ss;
                 ss<<__FILE__<<":"<<__LINE__<<" Invalid buffer received from cache for " + p.first;
                 ss<<cache.chunks_to_string();
                 logger().error(ss.str());
             } else {
+                std::stringstream ss;
                 // Get size
-                size_t buf_size = (range_start == 0 && range_end == 0) ? p.second : range_end - range_start;
+                size_t required_buf_size = (range_start == 0 && range_end == 0) ? p.second : range_end - range_start;
+
+                // full buffer? or partial? -> need loop then.
+                if(required_buf_size != buf_size) {
+                    ss<<__FILE__<<":"<<__LINE__<<" required buffer of size "<<required_buf_size<<" but view only has "<<buf_size<<" bytes.";
+                    logger().error(ss.str());
+                    ss.str("");
+                }
+
                 logger().info("Computing md5 hash over " + sizeToMemString(buf_size) +  ".");
                 MD5 md5;
                 md5.update(buf, buf_size);
                 md5.finalize();
-                std::stringstream ss;
+
                 ss<<"time: "<<timer.time()<<" MD5: "<<md5.hexdigest()<<" uri: "<<p.first<<endl;
                 logger().info(ss.str());
             }

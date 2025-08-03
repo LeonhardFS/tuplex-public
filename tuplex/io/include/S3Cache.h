@@ -40,7 +40,7 @@ namespace tuplex {
         }
 
         // explicit ranges
-        uint8_t* get(const URI& uri, size_t range_start, size_t range_end, option<size_t> uri_size = option<size_t>::none);
+        uint8_t* get_view(const URI& uri, size_t range_start, size_t range_end, size_t* view_size = nullptr, option<size_t> uri_size = option<size_t>::none);
         uint8_t* put(const URI& uri, size_t range_start, size_t range_end, size_t* bytes_written =nullptr, option<size_t> uri_size = option<size_t>::none, bool requestWithTransferManager=false);
         std::future<size_t> putAsync(const URI& uri, size_t range_start, size_t range_end, bool requestWithTransferManager=false);
 
@@ -51,7 +51,7 @@ namespace tuplex {
                  size_t* bytes_written=nullptr);
 
         // helper for full file.
-        uint8_t* get(const URI& uri) { return get(uri, 0, 0); }
+        uint8_t* get(const URI& uri) { return get_view(uri, 0, 0); }
         uint8_t* put(const URI& uri) { return put(uri, 0, 0); }
 
         size_t file_size(const URI& uri);
@@ -66,7 +66,8 @@ namespace tuplex {
     private:
         std::mutex _mutex; // everything for this cache needs to be thread-safe.
 
-        S3FileCache() : _maxSize(128 * 1024 * 1024), _s3fs(nullptr) {
+        S3FileCache() : _maxSize(128 * 1024 * 1024), _s3fs(nullptr), _aws_transfer_manager_buffer_size(2 * Aws::Transfer::MB5),
+                _aws_transfer_manager_max_heap_size(10 * Aws::Transfer::MB5) {
             // 128MB default cache size...
         }
 
@@ -75,6 +76,10 @@ namespace tuplex {
         }
 
         size_t _maxSize; // maximum aggregate size in bytes of cache.
+
+        // transfer manager variables;
+        size_t _aws_transfer_manager_buffer_size;
+        size_t _aws_transfer_manager_max_heap_size;
 
         struct CacheEntry {
             size_t range_start;

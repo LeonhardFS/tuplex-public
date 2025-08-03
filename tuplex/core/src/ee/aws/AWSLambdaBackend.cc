@@ -290,34 +290,15 @@ namespace tuplex {
         // i.e. aws lambda put-function-concurrency --function-name tplxlam --reserved-concurrent-executions $MAX_CONCURRENCY
         //      aws lambda update-function-configuration --function-name tplxlam --memory-size $MEM_SIZE --timeout 60
         // update required?
-        bool needToUpdateConfig = false;
-        Aws::Lambda::Model::UpdateFunctionConfigurationRequest update_req;
-        update_req.SetFunctionName(_functionName.c_str());
-        if (fc->GetTimeout() != _lambdaTimeOut) {
-            update_req.SetTimeout(_lambdaTimeOut);
-            needToUpdateConfig = true;
-        }
+        if (fc->GetTimeout() != _lambdaTimeOut || fc->GetMemorySize() != _lambdaSizeInMB) {
+            logger().info("Updating Lambda settings to timeout: " + std::to_string(_lambdaTimeOut) + "s memory: " +
+                          std::to_string(_lambdaSizeInMB) + " MB.");
 
-        if (fc->GetMemorySize() != _lambdaSizeInMB) {
-            update_req.SetMemorySize(_lambdaSizeInMB);
-            needToUpdateConfig = true;
-        }
-        if (needToUpdateConfig) {
-            logger().info("updating Lambda settings to timeout: " + std::to_string(_lambdaTimeOut) + "s memory: " +
-                          std::to_string(_lambdaSizeInMB) + " MB");
-            auto outcome = client->UpdateFunctionConfiguration(update_req);
-            if (!outcome.IsSuccess()) {
-                std::stringstream ss;
-                ss << outcome.GetError().GetExceptionName().c_str()
-                   << outcome.GetError().GetMessage().c_str();
-
-                throw std::runtime_error("LAMBDA failed update configuration, details: " + ss.str());
-            }
+            update_lambda_configuration(_client, _functionName, _lambdaSizeInMB, _lambdaTimeOut);
             logger().info("Updated Lambda configuration successfully.");
         }
 
         delete fc;
-
         return client;
     }
 
@@ -2924,5 +2905,40 @@ namespace tuplex {
         return requests;
     }
 
+
+    bool update_lambda_configuration(const std::shared_ptr<Aws::Lambda::LambdaClient>& client,
+                                     const std::string& function_name,
+                                     option<size_t> sizeInMb,
+                                     option<size_t> timeout) {
+        Aws::Lambda::Model::UpdateFunctionConfigurationRequest update_req;
+        update_req.SetFunctionName(function_name.c_str());
+        bool need_request=false;
+
+        if(timeout.has_value()) {
+            assert(timeout.value() >= 1 && timeout.value() <= 900);
+            update_req.SetTimeout(timeout.value());
+            need_request = true;
+        }
+
+        if (sizeInMb.has_value()) {
+            assert(sizeInMb.value() >= 128 && sizeInMb.value() <= 10240);
+            update_req.SetMemorySize(sizeInMb.value());
+            need_request = true;
+        }
+        if (need_request) {
+            auto outcome = client->UpdateFunctionConfiguration(update_req);
+            if (!outcome.IsSuccess()) {
+                std::stringstream ss;
+                ss << outcome.GetError().GetExceptionName().c_str()
+                   << outcome.GetError().GetMessage().c_str();
+
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " LAMBDA failed update configuration, details: " + ss.str());
+            }
+            return true;
+        } else {
+            return true;
+        }
+        return false;
+    }
 }
 #endif
