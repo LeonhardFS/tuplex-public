@@ -13,8 +13,15 @@ set(SRCS main.cc md5.cc)
 # find zlib
 find_package(ZLIB REQUIRED)
 
-# Build AWS SDK so version is locked.
-include("cmake/awssdk.cmake")
+# Check if local AWS SDK is available.
+find_package(AWSSDK COMPONENTS core s3 s3-crt)
+if(AWSSDK_FOUND)
+    Message(STATUS "Found local AWS SDK with AWSSDK_LINK_LIBRARIES: ${AWSSDK_LINK_LIBRARIES}")
+    set(AWS_LINK_LIBRARIES ${AWSSDK_LINK_LIBRARIES})
+else()
+    # Build AWS SDK so version is locked.
+    include("cmake/awssdk.cmake")
+endif()
 
 # linking
 add_executable(s3speed ${SRCS})
