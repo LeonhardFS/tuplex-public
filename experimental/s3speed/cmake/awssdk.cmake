@@ -39,7 +39,7 @@ ExternalProject_Add(awssdk
         PREFIX              "thirdparty/awssdk"
         INSTALL_DIR         ${AWS_INSTALL_DIR}
         CMAKE_ARGS
-        -DBUILD_ONLY=core\\$<SEMICOLON>s3\\$<SEMICOLON>s3-crt\\$<SEMICOLON>s3-encryption
+        -DBUILD_ONLY=core\\$<SEMICOLON>transfer\\$<SEMICOLON>s3\\$<SEMICOLON>s3-crt\\$<SEMICOLON>s3-encryption
         -DBUILD_SHARED_LIBS:BOOL=OFF
         -DBUILD_STATIC_LIBS:BOOL=ON
         -DCMAKE_POSITION_INDEPENDENT_CODE:BOOL=ON
