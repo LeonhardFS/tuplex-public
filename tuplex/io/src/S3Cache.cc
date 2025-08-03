@@ -66,6 +66,11 @@ namespace tuplex {
             *bytes_written = 0;
 
         // manipulate range_start, range_end to be valid
+        {
+            std::stringstream ss;
+            ss<<__FILE__<<":"<<__LINE__<<" put "<<uri.toString()<<" into S3FileCache.";
+            logger.info(ss.str());
+        }
 
         // lock and check whether content exists
         {
@@ -76,9 +81,12 @@ namespace tuplex {
             });
 
             // chunk found? then return...
-            if(it != _chunks.end())
+            if(it != _chunks.end()) {
+                std::stringstream ss;
+                ss<<__FILE__<<":"<<__LINE__<<" chunk for "<<it->uri.toString()<<" already present, returning buffer.";
+                logger.info(ss.str());
                 return it->buf + (range_start - it->range_start);
-
+            }
         }
 
         // not found, hence request via S3 and put into array!
@@ -95,6 +103,11 @@ namespace tuplex {
             }
             return nullptr;
         } else if(requested_size + cacheSize() > _maxSize) {
+
+            std::stringstream ss;
+            ss<<__FILE__<<":"<<__LINE__<<" requested size "<<sizeToMemString(requested_size)<<" exceeds capacity left. Need to prune cache entries.";
+            logger.info(ss.str());
+
             _mutex.lock();
             auto prune_rc = pruneBy(requested_size);
             _mutex.unlock();
@@ -110,6 +123,13 @@ namespace tuplex {
             }
         } else {
             // ok, can store.
+
+            std::stringstream ss;
+            ss<<__FILE__<<":"<<__LINE__<<" Reading chunk from "<<uri.toString()<<" range: "<<range_start<<"-"<<range_end;
+            if(requestWithTransferManager)
+                ss<<" with s3 transfer manager.";
+            logger.info(ss.str());
+
             auto chunk = requestWithTransferManager ? s3ReadWithTransferManager(uri, range_start, range_end) : s3Read(uri, range_start, range_end);
             {
                 std::lock_guard<std::mutex> lock(_mutex);
@@ -735,7 +755,15 @@ namespace tuplex {
         // Get the object ==> Note: this s3 client is damn slow, need to make it faster in the future...
         Timer timer;
 
-        auto executor = Aws::MakeShared<Aws::Utils::Threading::PooledThreadExecutor>("executor", std::max(8u, std::thread::hardware_concurrency() * 2));
+        auto max_transfer_manager_threads = std::max(8u, std::thread::hardware_concurrency() * 2);
+
+        {
+            std::stringstream ss;
+            ss<<__FILE__<<":"<<__LINE__<<" Initializing transfer manager with "<<pluralize(max_transfer_manager_threads, "thread");
+            logger.info(ss.str());
+        }
+
+        auto executor = Aws::MakeShared<Aws::Utils::Threading::PooledThreadExecutor>("executor", max_transfer_manager_threads);
         Aws::Transfer::TransferManagerConfiguration transfer_config(executor.get());
         transfer_config.s3Client = _s3fs->make_pure_s3_client();
 
@@ -778,7 +806,7 @@ namespace tuplex {
         } else {
             // all good.
             if(0 == retrievedBytes) {
-                logger.debug("empty range");
+                logger.info("empty range");
                 return entry;
             }
 

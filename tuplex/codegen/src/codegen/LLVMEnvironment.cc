@@ -1243,18 +1243,9 @@ namespace tuplex {
 
                     // special case: list type of single-valued type. -> just store length as i64!
                     if(elementType.isListType()) {
-
-                        if(elementType.elementType().isSingleValued()) {
-                            // is it a pointer? then load and store i64, else store i64 directly
-                            if(llvm_val_to_store->getType()->isPointerTy())
-                                llvm_val_to_store = builder.CreateLoad(builder.getInt64Ty(), llvm_val_to_store);
-                            assert(llvm_val_to_store->getType() == builder.getInt64Ty());
-                            builder.CreateStore(llvm_val_to_store, structValIdx);
-                        } else {
-                            // Regular list:
-                            // store pointer.
-                            builder.CreateStore(llvm_val_to_store, structValIdx);
-                        }
+                        assert(llvm_val_to_store->getType()->isPointerTy());
+                        // Regular list: store pointer.
+                        builder.CreateStore(llvm_val_to_store, structValIdx);
                     } else {
 
                         // same as llvm_val_to_store->getType()->getPointerElementType().
