@@ -14,7 +14,7 @@ set(SRCS main.cc md5.cc)
 find_package(ZLIB REQUIRED)
 
 # Check if local AWS SDK is available.
-find_package(AWSSDK COMPONENTS core s3 s3-crt)
+find_package(AWSSDK COMPONENTS core s3 s3-crt transfer QUIET)
 if(AWSSDK_FOUND)
     Message(STATUS "Found local AWS SDK with AWSSDK_LINK_LIBRARIES: ${AWSSDK_LINK_LIBRARIES}")
     set(AWS_LINK_LIBRARIES ${AWSSDK_LINK_LIBRARIES})
