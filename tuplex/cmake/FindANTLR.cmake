@@ -4,6 +4,11 @@
 #     /Library/Java/JavaVirtualMachines/openjdk-11.jdk
 find_package(Java 11 QUIET COMPONENTS Runtime REQUIRED)
 
+# Check that java executable exists.
+if(NOT EXISTS ${Java_JAVA_EXECUTABLE})
+  message(FATAL_ERROR "Java executable ${Java_JAVA_EXECUTABLE} not found.")
+endif()
+
 if(NOT ANTLR_EXECUTABLE)
   find_program(ANTLR_EXECUTABLE
                NAMES antlr.jar antlr4.jar antlr-4.jar antlr-4.13.2-complete.jar antlr-4.13.1-complete.jar antlr-4.13.0-complete.jar antlr-4.12.0-complete.jar antlr-4.11.1-complete.jar antlr-4.11.0-complete.jar antlr-4.10.1-complete.jar antlr-4.10.0-complete.jar antlr-4.9.3-complete.jar antlr-4.9.2-complete.jar antlr-4.9.1-complete.jar antlr-4.9.0-complete.jar antlr-4.8-complete.jar)

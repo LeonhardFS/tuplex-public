@@ -787,7 +787,7 @@ def run_with_tuplex_on_lambda(args):
 
     tstart = time.time()
 
-    ctx = tuplex.Context(conf)
+    ctx = tuplex.mconf)
     print('>>> Tuplex options: \n{}'.format(json.dumps(ctx.options())))
 
     startup_time = time.time() - tstart

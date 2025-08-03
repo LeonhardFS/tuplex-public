@@ -291,4 +291,51 @@ namespace tuplex {
                 .selectColumns(vector<string>{"type", "repo_id", "year", "number_of_commits"})
                 .tocsv(output_path);
     }
+
+    std::vector<std::pair<std::string, size_t>> chunk_uris(const std::string& pattern, size_t desired_parallelism) {
+        using namespace std;
+
+        // Logic to split everything.
+        vector<tuple<URI,size_t>> uri_infos;
+        VirtualFileSystem::walkPattern(URI(pattern), [&](void *userData, const tuplex::URI &uri, size_t size) {
+            uri_infos.push_back(make_tuple(uri, size));
+            return true;
+        });
+        cout<<"Found "<<pluralize(uri_infos.size(), "uri")<<" to split up into requests."<<endl;
+        auto minimum_chunk_size = memStringToSize("16MB");
+        std::vector<size_t> sizes;
+        for(auto uri_info : uri_infos)
+            sizes.emplace_back(std::get<1>(uri_info));
+
+        auto c_max = find_max_chunk_size(sizes, minimum_chunk_size, desired_parallelism);
+
+        // check:
+        auto& handler = Logger::instance().defaultLogger();
+        auto requests = create_specializing_recursive_requests(uri_infos, minimum_chunk_size, c_max, handler);
+
+        vector<pair<string, size_t>> v;
+        for(const auto& r : requests) {
+            // also the recurisve parts are here.
+            for(unsigned i = 0; i < r.body.inputuris_size(); ++i)
+                v.push_back(make_pair(r.body.inputuris(i), r.body.inputsizes(i)));
+        }
+        return v;
+    }
+
+    std::tuple<Aws::Auth::AWSCredentials, Aws::Client::ClientConfiguration> remote_s3_credentials() {
+
+        auto c = AWSCredentials::get();
+
+        Aws::Auth::AWSCredentials credentials;
+        Aws::Client::ClientConfiguration config;
+        // TODO: fill in if needed.
+        config.region = c.default_region.c_str();
+
+
+        Aws::Auth::AWSCredentials cred(c.access_key.c_str(),
+                                       c.secret_key.c_str(),
+                                       c.session_token.c_str());
+
+        return std::make_tuple(credentials, config);
+    }
 }

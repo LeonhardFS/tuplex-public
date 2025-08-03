@@ -106,7 +106,7 @@ find_package(ANTLR4Runtime REQUIRED)
 # Source code & linking
 file(GLOB_RECURSE SOURCES src/*.cc)
 
-# antlr target
+# Antlr target.
 add_definitions(-DANTLR4CPP_STATIC)
 set(ANTLR4_WITH_STATIC_CRT OFF)
 include(ExternalAntlr4Cpp)
