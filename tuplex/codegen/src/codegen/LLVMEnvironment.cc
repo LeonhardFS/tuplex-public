@@ -740,7 +740,7 @@ namespace tuplex {
                 name = std::regex_replace(name, std::regex("struct\\."), "");
                 return name;
             } else {
-                throw std::runtime_error("unsupported iterable type " + iterated_type.desc());
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " unsupported iterable type " + iterated_type.desc());
                 return "";
             }
         }
@@ -871,7 +871,7 @@ namespace tuplex {
                     // use dummy type for empty iterator
                     return i64Type();
                 }
-                assert(iterableType.isIterableType());
+                assert(deoptimizedType(iterableType).isIterableType());
                 if(iterableType.isIteratorType()) {
                     memberTypes.push_back(llvm::PointerType::get(createOrGetIteratorType(argsIteratorInfo[i]), 0));
                 } else {

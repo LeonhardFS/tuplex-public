@@ -4141,8 +4141,8 @@ namespace tuplex {
                     auto num_elements = list_length(*_env, builder, list_ptr, list_type);
 
 #ifndef NDEBUG
-                    // _env->printValue(builder, index.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " indexing [] into list of type " + list_type.desc() + " with value: ");
-                    // _env->printValue(builder, num_elements, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + _funcNames.top()+ ": list has #elements: ");
+                    _env->printValue(builder, index.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " indexing [] into list of type " + list_type.desc() + " with value: ");
+                    _env->printValue(builder, num_elements, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + _funcNames.top()+ ": list has #elements: ");
 #endif
 
                     // correct for negative indices (once)
@@ -4774,7 +4774,6 @@ namespace tuplex {
                 auto ret = target_tuple.getLoad(builder);
                 assert(ret->getType()->isStructTy());
                 auto size = target_tuple.getSize(builder);
-                addInstruction(ret, size);
 
                 return SerializableValue(ret, size);
             }

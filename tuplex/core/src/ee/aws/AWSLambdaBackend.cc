@@ -2914,6 +2914,9 @@ namespace tuplex {
         update_req.SetFunctionName(function_name.c_str());
         bool need_request=false;
 
+        if (!client)
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " invalid lambda client (nullptr).");
+
         if(timeout.has_value()) {
             assert(timeout.value() >= 1 && timeout.value() <= 900);
             update_req.SetTimeout(timeout.value());

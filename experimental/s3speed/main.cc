@@ -134,7 +134,9 @@ public:
 };
 
 void download_to_buffer(uint8_t* buffer, size_t buffer_size, const std::string& bucket, const std::string& key) {
-    auto s3_client = Aws::MakeShared<Aws::S3::S3Client>("S3Client");
+    Aws::S3::S3ClientConfiguration config;
+    config.maxConnections = 25;
+    auto s3_client = Aws::MakeShared<Aws::S3::S3Client>("S3Client", config);
     auto executor = Aws::MakeShared<Aws::Utils::Threading::PooledThreadExecutor>("executor", 25);
     Aws::Transfer::TransferManagerConfiguration transfer_config(executor.get());
     transfer_config.s3Client = s3_client;

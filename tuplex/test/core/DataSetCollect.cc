@@ -727,7 +727,9 @@ TEST_F(DataSetTest, ListOfNulls) {
     co.set("useLLVMOptimizer", "false");
     Context c(co);
 
-    auto v = c.parallelize({Row(0), Row(1)}).map(UDF(udf_code)).map(UDF("lambda x: x[1]")).collectAsVector();
+    auto v = c.parallelize({Row(0), Row(1)})
+                         .map(UDF(udf_code))
+                         .map(UDF("lambda x: x[1]")).collectAsVector();
     ASSERT_EQ(v.size(), 2);
     EXPECT_EQ(v[0].toPythonString(), "(None,)");
     EXPECT_EQ(v[1].toPythonString(), "(None,)");

@@ -504,7 +504,11 @@ TEST(TypeSys, TimeDecode) {
     auto data = fileToString("../resources/schemas.txt");
     auto lines = splitToLines(data);
 
+#ifdef NDEBUG
     auto N_runs = 250;
+#else
+    auto N_runs = 2;
+#endif
 
     Timer timer;
     for(int i = 0; i < N_runs; ++i) {

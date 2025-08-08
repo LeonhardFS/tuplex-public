@@ -644,7 +644,28 @@ namespace tuplex {
 
                 // special is empty dict, empty list and NULL. I.e. though they in principle are var fields, they are fixed size.
                 // ==> serialize them as 0 (later optimize this away). TODO: this comment is out of date, right? we have optimized the serialization away.
-                if(fieldType.isListType() && !fieldType.elementType().isSingleValued()) {
+                if (fieldType.isListType() && fieldType.elementType().isSingleValued()) {
+
+// TODO: need to test this.
+#warning "need to test serialiazation/deserializaiton of List[None], List[()], ..."
+
+                    // Can simply serialize the size. That is all that is needed. Not a var field.
+                    // struct dicts are a var field (ignore the special case here)
+                    auto list_type = types[i].withoutOption();
+
+                    size = list_serialized_size(*_env, builder, field, list_type);
+
+                    // note: when null, don't serialize anything.
+                    if(types[i].isOptionType())
+                        size = builder.CreateSelect(_tree.get(i).is_null, _env->i64Const(0), size);
+
+                    // Write list size directly to pointer.
+                    builder.CreateStore(size, builder.CreateBitCast(lastPtr, _env->i64ptrType()), false);
+
+                    lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t), "outptr");
+                    serialized_idx++;
+                    continue; // field done.
+                } else if(fieldType.isListType() && !fieldType.elementType().isSingleValued()) {
                     // new list version, similar to struct dict using its own helper functions
                     auto list_type = types[i].withoutOption();
 

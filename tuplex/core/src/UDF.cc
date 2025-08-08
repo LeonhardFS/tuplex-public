@@ -1900,6 +1900,11 @@ namespace tuplex {
                     case ASTNodeType::Assert:
                     case ASTNodeType::Raise:
                     case ASTNodeType::Assign:
+                    case ASTNodeType::Break:
+                    case ASTNodeType::Continue:
+                    case ASTNodeType::While:
+                    case ASTNodeType::For:
+                    case ASTNodeType::Suite:
                     case ASTNodeType::SliceItem: // <-- its own type?
                         return;
                     default:
