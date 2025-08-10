@@ -5113,23 +5113,8 @@ namespace tuplex {
                             ss<<__FILE__<<":"<<__LINE__<<" can not upcast argument #"<<i<<" from stack given as "<<args_types_from_call[i].desc()<<" to expected "<<arg_type.desc();
                             throw std::runtime_error(ss.str());
                         } else {
-
-                            // tuple? print out for debug purposes.
-                            if (args_types_from_call[i].isTupleType()) {
-                                _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " got tuple arg to ucpast: ");
-                                FlattenedTuple ft = FlattenedTuple::fromLLVMStructVal(_env, builder, args[i].val, args_types_from_call[i]);
-                                ft.print(builder);
-                            }
-
                             // upcast:
                             args[i] = _env->upcastValue(builder, args[i], args_types_from_call[i], arg_type);
-
-                            if (arg_type.isTupleType()) {
-                                _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " upcasted tuple arg is: ");
-                                FlattenedTuple ft = FlattenedTuple::fromLLVMStructVal(_env, builder, args[i].val, arg_type);
-                                ft.print(builder);
-                            }
-
                         }
                     }
                 }
@@ -5158,15 +5143,6 @@ namespace tuplex {
                     if(call->hasAnnotation() && call->annotation().iteratorInfo) {
                         auto iterator_info = call->annotation().iteratorInfo;
                         iterator_info->deoptimize(); // <-- important!!!
-
-                        // test dummy:
-                        if (argsType.parameters().size() == 2 && argsType.parameters()[1].isTupleType())
-                        {
-                            _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " got default arg as tuple type");
-                            FlattenedTuple ft = FlattenedTuple::fromLLVMStructVal(_env, builder, args[1].val, argsType.parameters()[1]);
-                            ft.print(builder);
-                        }
-
                         ret = _functionRegistry->createIteratorRelatedSymbolCall(*_lfb, builder, funcName, argsType, retType, args, iterator_info);
                     } else {
                         ret = _functionRegistry->createGlobalSymbolCall(*_lfb, builder, funcName, argsType, retType, args);

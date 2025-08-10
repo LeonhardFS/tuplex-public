@@ -481,21 +481,13 @@ TEST_F(IteratorTest, CodegenTestRangeReverseIteratorII) {
 TEST_F(IteratorTest, CodegenTestZipIteratorI) {
     using namespace tuplex;
     Context c(microTestOptions());
-    // Context c(tracingMicroTestOptions());
-
-    // auto func = "def f(x):\n"
-    //             "    a = zip([1, 2], 'abcd', (3, 4), [('p', 'q'), ('x', 'y')])\n"
-    //             "    b1 = next(a)\n"
-    //             "    b2 = next(a)\n"
-    //             "    b3 = next(a, (-1, 'None', -1, ('!', '!')))\n"
-    //             "    return (b1, b2, b3)";
 
     auto func = "def f(x):\n"
-            "    a = zip([1, 2], 'abcd', (3, 4), [('p', 'q'), ('x', 'y')])\n"
-            "    b1 = next(a)\n"
-            "    b2 = next(a)\n"
-            "    b3 = next(a, (-1, 'None', -1, ('!', '!')))\n" // <-- error here when exhausted!!!
-            "    return (b1, b2, b3)";
+                "    a = zip([1, 2], 'abcd', (3, 4), [('p', 'q'), ('x', 'y')])\n"
+                "    b1 = next(a)\n"
+                "    b2 = next(a)\n"
+                "    b3 = next(a, (-1, 'None', -1, ('!', '!')))\n"
+                "    return (b1, b2, b3)";
 
     auto v = c.parallelize({
         Row(0)
