@@ -1605,6 +1605,11 @@ namespace tuplex {
                 auto to_type = paramsNew[i];
                 auto from = SerializableValue(val, size, is_null);
                 // _env->debugPrint(builder, "upcasting " + from_type.desc() + " -> " + to_type.desc() + " (col=" + std::to_string(i) + ")");
+
+                // avoid infinity loop.
+                assert(!from_type.isTupleType() || from_type == python::Type::GENERICTUPLE || from_type == python::Type::EMPTYTUPLE);
+                assert(!to_type.isTupleType() || to_type == python::Type::GENERICTUPLE || to_type == python::Type::EMPTYTUPLE);
+
                 auto to = _env->upcastValue(builder, from, from_type, to_type);
 
                 // quick check:

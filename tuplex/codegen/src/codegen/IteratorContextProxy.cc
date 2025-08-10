@@ -231,9 +231,13 @@ namespace tuplex {
 
             auto exhausted = updateIteratorIndex(builder, iterator, iteratorInfo);
 
+            _env->printValue(builder, exhausted, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " iterator " + iteratorInfo->iteratorName + " exhausted: ");
+
             // if a default value is provided, use phi nodes to choose from value based on index (iterator not exhausted) or default value (iterator exhausted)
             // else check for exception and return value based on index if iterator not exhausted
             if(defaultArg.val) {
+                _env->debugPrint(builder,std::string(__FILE__) + ":" + std::to_string(__LINE__) + " defaultArg given, depending on exhausted going to next block.");
+                _env->printValue(builder, defaultArg.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " default arg is: ");
                 builder.CreateCondBr(exhausted, defaultArgBB, notExhaustedBB);
             } else {
                 lfb.addException(builder, ExceptionCode::STOPITERATION, exhausted, "@TODO add code point for this except here");
@@ -241,6 +245,7 @@ namespace tuplex {
             }
 
             builder.SetInsertPoint(notExhaustedBB);
+            _env->debugPrint(builder,std::string(__FILE__) + ":" + std::to_string(__LINE__) + " fetching next element.");
             auto nextVal = getIteratorNextElement(builder, yieldType, iterator, iteratorInfo);
             llvm::Value *retValNotExhausted = nextVal.val, *retSizeNotExhausted = nextVal.size;
             builder.CreateBr(endBB);
@@ -278,6 +283,9 @@ namespace tuplex {
                 retSize->addIncoming(retSizeNotExhausted, notExhaustedBB);
                 retVal->addIncoming(default_yield_value, defaultArgBB);
                 retSize->addIncoming(default_yield_size, defaultArgBB);
+
+                _env->debugPrint(builder,std::string(__FILE__) + ":" + std::to_string(__LINE__) + " phi returning.");
+                _env->printValue(builder, retVal, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " iterator return value: ");
                 return SerializableValue(retVal, retSize);
             } else {
                 return SerializableValue(retValNotExhausted, retSizeNotExhausted);

@@ -2875,20 +2875,24 @@ namespace tuplex {
                 // upcast tuples
                 // Load as FlattenedTuple
                 FlattenedTuple val_tuple = FlattenedTuple::fromLLVMStructVal(this, builder, val.val, type);
-                FlattenedTuple target_tuple(this);
-                target_tuple.init(targetType);
+                assert(type != python::Type::GENERICTUPLE && type != python::Type::EMPTYTUPLE);
 
-                auto num_elements = type.parameters().size();
-
-                // put to flattenedtuple (incl. assigning tuples!)
-                for (int i = 0; i < num_elements; ++i) {
-                    // retrieve from tuple itself and then upcast!
-                    auto el_type = val_tuple.fieldType(i);
-                    auto el_target_type = target_tuple.fieldType(i);
-                    SerializableValue el(val_tuple.get(i), val_tuple.getSize(i), val_tuple.getIsNull(i));
-                    auto el_target = upcastValue(builder, el, el_type, el_target_type);
-                    target_tuple.setElement(builder, i, el_target.val, el_target.size, el_target.is_null);
-                }
+                // Old.
+                // FlattenedTuple target_tuple(this);
+                // target_tuple.init(targetType);
+                // auto num_elements = type.parameters().size();
+                //
+                // // put to flattenedtuple (incl. assigning tuples!)
+                // for (int i = 0; i < num_elements; ++i) {
+                //     // retrieve from tuple itself and then upcast!
+                //     auto el_type = val_tuple.fieldType(i);
+                //     auto el_target_type = target_tuple.fieldType(i);
+                //     // because we use the non-flattened version here, get element at first tuple level.
+                //     SerializableValue el = val_tuple.getElement({i});
+                //     auto el_target = upcastValue(builder, el, el_type, el_target_type);
+                //     target_tuple.set(builder, {i}, el_target.val, el_target.size, el_target.is_null);
+                // }
+                auto target_tuple = val_tuple.upcastTo(builder, targetType);
 
                 // get loadable struct type
                 auto ret = target_tuple.getLoad(builder);
