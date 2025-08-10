@@ -520,6 +520,9 @@ namespace tuplex {
                                       const std::shared_ptr<IteratorInfo> &iteratorInfo) {
             using namespace llvm;
 
+            // Need to deoptimize.
+            assert(!iterableType.isOptimizedType());
+
             // empty sequence? -> return dummy value
             if(iterableType == python::Type::EMPTYLIST ||
                iterableType == python::Type::EMPTYTUPLE ||
@@ -613,6 +616,9 @@ namespace tuplex {
         IIterator::initContext(tuplex::codegen::LambdaFunctionBuilder &lfb, const codegen::IRBuilder &builder,
                                const std::vector<SerializableValue> &iterables, const python::Type &iterableType,
                                const std::shared_ptr<IteratorInfo> &iteratorInfo) {
+            // Need to deoptimize.
+            assert(!iterableType.isOptimizedType());
+
             if(iterables.size() != 1) {
                 throw std::runtime_error("iterator expects single argument");
             }
@@ -760,6 +766,8 @@ namespace tuplex {
                                       const tuplex::codegen::SerializableValue &iterable,
                                       const python::Type &iterableType,
                                       const std::shared_ptr<IteratorInfo> &iteratorInfo) {
+            // Need to deoptimize.
+            assert(!iterableType.isOptimizedType());
             return {};
         }
 
@@ -835,6 +843,9 @@ namespace tuplex {
                                  const std::shared_ptr<IteratorInfo> &iteratorInfo) {
 
             using namespace llvm;
+
+            // Need to deoptimize.
+            assert(!iterableType.isOptimizedType());
 
             if(iterables.empty()) {
                 // use dummy value for empty iterator

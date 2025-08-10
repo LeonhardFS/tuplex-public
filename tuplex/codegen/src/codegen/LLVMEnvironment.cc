@@ -498,108 +498,6 @@ namespace tuplex {
             addType(structType, type);
 
             return structType;
-
-//            assert(type.parameters().size() > 0);
-//            // define type
-//            std::vector<llvm::Type *> memberTypes;
-//
-//            auto params = type.parameters();
-//            // count optional elements
-//            int numNullables = 0;
-//            for (int i = 0; i < params.size(); ++i) {
-//                if (params[i].isOptionType()) {
-//                    numNullables++;
-//                    params[i] = params[i].withoutOptionsRecursive();
-//                }
-//
-//                // empty tuple is ok, b.c. it's a primitive
-//                assert(!params[i].isTupleType() ||
-//                       params[i] == python::Type::EMPTYTUPLE); // no nesting at this level here supported!
-//            }
-//
-//            // first, create bitmap as array of i1
-//            if (numNullables > 0) {
-//                // i1 array!
-//                memberTypes.emplace_back(ArrayType::get(Type::getInt1Ty(ctx), numNullables));
-//            }
-//
-//            // size fields at end
-//            int numVarlenFields = 0;
-//
-//            // define bitmap on the fly
-//            for (const auto &el: T.parameters()) {
-//
-//                // optimizing types -> use the actual, underlying type here
-//                auto t = el.isConstantValued() ? el.underlying() : el;
-//
-//                // option
-//                t = t.isOptionType() ? t.getReturnType() : t; // get rid of most outer options
-//
-//
-//                // @TODO: special case empty tuple! also doesn't need to be represented
-//
-//                if (python::Type::BOOLEAN == t) {
-//                    // i8
-//                    // memberTypes.push_back(getBooleanType());
-//
-//                    // compiler bug, use i64 so everything can get optimized...
-//                    memberTypes.push_back(i64Type());
-//
-//                } else if (python::Type::I64 == t) {
-//                    // i64
-//                    memberTypes.push_back(i64Type());
-//                } else if (python::Type::F64 == t) {
-//                    // double
-//                    memberTypes.push_back(llvm::Type::getDoubleTy(ctx));
-//                } else if (python::Type::STRING == t) {
-//                    memberTypes.push_back(llvm::Type::getInt8PtrTy(ctx, 0));
-//                    numVarlenFields++;
-//                } else if (python::Type::PYOBJECT == t) {
-//                    memberTypes.push_back(llvm::Type::getInt8PtrTy(ctx, 0));
-//                    numVarlenFields++;
-//                } else if ((python::Type::GENERICDICT == t || t.isDictionaryType()) && t != python::Type::EMPTYDICT) { // dictionary
-//                    // special case structured dict
-//                    if(t.isStructuredDictionaryType()) {
-//                        memberTypes.push_back(getOrCreateStructuredDictType(t));
-//                        // not classified as var field (var within).
-//                    } else {
-//                        // general i8* pointer to hold C-struct
-//                        memberTypes.push_back(llvm::Type::getInt8PtrTy(ctx, 0));
-//                        numVarlenFields++;
-//                    }
-//                } else if (t.isSingleValued()) {
-//                    // leave out. Not necessary to represent it in memory.
-//                } else if(t.isListType()) {
-//                    memberTypes.push_back(getOrCreateListType(t)); // internal size field...
-//                } else {
-//                    // nested tuple?
-//                    // ==> do lookup!
-//                    // add i64 (for length)
-//                    // and pointer type
-//                    // previously defined? => get!
-//                    if (t.isTupleType()) {
-//                        // recurse!
-//                        // add struct into it (can be accessed via recursion then!!!)
-//                        memberTypes.push_back(getOrCreateTupleType(t, twine));
-//                    } else {
-//                        Logger::instance().logger("codegen").error(
-//                                "not supported type " + el.desc() + " encountered in LLVM struct type creation");
-//                        return nullptr;
-//                    }
-//                }
-//            }
-//
-//            for (int i = 0; i < numVarlenFields; ++i)
-//                memberTypes.emplace_back(size_field_type); // 64 bit int as size
-//
-//            llvm::ArrayRef<llvm::Type *> members(memberTypes);
-//            llvm::Type *structType = llvm::StructType::create(ctx, members, "struct." + twine, packed);
-//
-//            // // add to mapping (make sure it doesn't exist yet!)
-//            assert(_typeMapping.find(structType) == _typeMapping.end());
-//            _typeMapping[structType] = type;
-//
-//            return structType;
         }
 
         llvm::Type *LLVMEnvironment::createOrGetListType(const python::Type &listType, const std::string &twine) {
@@ -723,7 +621,6 @@ namespace tuplex {
 
         std::string LLVMEnvironment::iterator_name_from_type(const python::Type &iterated_type) {
             // there are only a couple types yet supported for iteration
-
             if(iterated_type== python::Type::RANGE) { // this is a unique type
                 return "range";
             } else if(iterated_type.isListType()) {
@@ -773,6 +670,9 @@ namespace tuplex {
         llvm::Type *LLVMEnvironment::createOrGetIterIteratorType(const python::Type &iterableType, const std::string &twine) {
             using namespace llvm;
 
+            // Need to deoptimize.
+            assert(!iterableType.isOptimizedType());
+
             if(iterableType == python::Type::EMPTYLIST || iterableType == python::Type::EMPTYTUPLE) {
                 // use dummy type for empty iterator
                 return i64Type();
@@ -783,6 +683,7 @@ namespace tuplex {
             // iter iterator struct: { pointer to block address (i8*), current index (i64 for range otherwise i32), pointer to iterable struct type,
             // iterable length (for string and tuple)}
             memberTypes.push_back(ctypeToLLVM<char*>(_context));
+
             if(iterableType == python::Type::RANGE) {
                 memberTypes.push_back(llvm::Type::getInt64Ty(_context));
                 memberTypes.push_back(llvm::PointerType::get(getRangeObjectType(), 0));
