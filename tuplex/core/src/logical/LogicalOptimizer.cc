@@ -867,6 +867,8 @@ namespace tuplex {
             vector<size_t> leftRet;
             vector<size_t> rightRet;
 
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " need to fix join projection pushdown.");
+
             // fetch num cols of operators BEFORE correction
             auto numLeftColumnsBeforePushdown = jop->left()->columns().size();
 
@@ -1332,21 +1334,25 @@ namespace tuplex {
             }
             jop->setChildren(children);
 
-            // join -> filter
-            jop->setParents(jop_parents); new_fop->setChild(jop); // (right should have jop as child)
+            assert(jop_parents.size() == 2); // A join needs two parents.
 
-            // link of jop_parents to jop
-            assert(jop_parents.size() == 2);
-            // TODO: do these do anything?
-            jop_parents[0]->replaceChild(fop, jop);
-            jop_parents[1]->replaceChild(fop, jop);
+            // join -> filter
+            jop->setParents(jop_parents);
+            assert(jop->parents().size() == 2);
+
+            // make sure new_fop is linked to job, i.e. job is only child of new_fop?
+            assert(new_fop->children().size() == 1);
+            assert(new_fop->children().at(0) == jop);
+
+            // // link of jop_parents to jop
+            // assert(jop_parents.size() == 2);
+            // // TODO: do these do anything?
+            // jop_parents[0]->replaceChild(fop, jop);
+            // jop_parents[1]->replaceChild(fop, jop);
 
             // filter -> child
             new_fop->setParent(child);
-            assert(child->numChildren() == 2); // new fop, jop
             child->setChild(new_fop);
-
-            // assert(verifyLogicalPlan(jop));
 
             filterPushdown(new_fop, ignoreConstantTypedColumns);
         }

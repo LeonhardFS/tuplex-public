@@ -1145,6 +1145,7 @@ namespace tuplex {
                     // special case: list type of single-valued type. -> just store length as i64!
                     if(elementType.isListType()) {
                         assert(llvm_val_to_store->getType()->isPointerTy());
+
                         // Regular list: store pointer.
                         builder.CreateStore(llvm_val_to_store, structValIdx);
                     } else {

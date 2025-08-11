@@ -197,6 +197,11 @@ namespace tuplex {
                     size += 8 + struct_dict_get_size(el); // regarded as var-length field.
                     added_var_field = 8; // -- if other tests fail, check this here.
                 } else if(type.isListType()) {
+                    // single-valued.
+                    if (type.elementType().isSingleValued()) {
+                        size += 8;
+                        continue;
+                    }
                     size += 8 + el.serialized_list_size();
                     added_var_field = 8; //  -- if other tests fail, check this here.
                 } else {

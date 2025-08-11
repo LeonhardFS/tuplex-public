@@ -645,22 +645,29 @@ namespace tuplex {
                 // special is empty dict, empty list and NULL. I.e. though they in principle are var fields, they are fixed size.
                 // ==> serialize them as 0 (later optimize this away). TODO: this comment is out of date, right? we have optimized the serialization away.
                 if (fieldType.isListType() && fieldType.elementType().isSingleValued()) {
-
-// TODO: need to test this.
-#warning "need to test serialiazation/deserializaiton of List[None], List[()], ..."
-
                     // Can simply serialize the size. That is all that is needed. Not a var field.
                     // struct dicts are a var field (ignore the special case here)
                     auto list_type = types[i].withoutOption();
 
-                    size = list_serialized_size(*_env, builder, field, list_type);
+                    // // size should be 8.
+                    // size = list_serialized_size(*_env, builder, field, list_type);
+                    // _env->printValue(builder, size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " serialized size of list of type " + fieldType.desc() + ": ");
+
+                    size = _env->i64Const(sizeof(int64_t));
+
+                    auto length = list_length(*_env, builder, field, list_type);
 
                     // note: when null, don't serialize anything.
                     if(types[i].isOptionType())
-                        size = builder.CreateSelect(_tree.get(i).is_null, _env->i64Const(0), size);
+                        length = builder.CreateSelect(_tree.get(i).is_null, _env->i64Const(0), length);
 
-                    // Write list size directly to pointer.
-                    builder.CreateStore(size, builder.CreateBitCast(lastPtr, _env->i64ptrType()), false);
+                    _env->printValue(builder, length, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " number of elements of list of type " + fieldType.desc() + ": ");
+
+                    // Write list length (number of elements) directly to pointer.
+                    builder.CreateStore(length, builder.CreateBitCast(lastPtr, _env->i64ptrType()), false);
+
+                    _env->printValue(builder, builder.CreateLoad(_env->i64Type(), lastPtr), std::string(__FILE__) + ":" + std::to_string(__LINE__) + " dummy load of lastPtr" );
+                    _env->printValue(builder, builder.CreateLoad(_env->i64Type(), original_start_ptr), std::string(__FILE__) + ":" + std::to_string(__LINE__) + " dummy load of original_ptr" );
 
                     lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t), "outptr");
                     serialized_idx++;
@@ -715,8 +722,8 @@ namespace tuplex {
                     }
 
                     // // debug print
-                    // _env->printValue(builder, size, "serializing " + fieldType.desc() + " of size: ");
-                    // _env->printValue(builder, offset, "serializing " + fieldType.desc() + " to offset: ");
+                    _env->printValue(builder, size, "serializing " + fieldType.desc() + " of size: ");
+                    _env->printValue(builder, offset, "serializing " + fieldType.desc() + " to offset: ");
 
                     // store offset + length
                     // len | size
@@ -834,7 +841,7 @@ namespace tuplex {
             // return diff
             auto bytes_written = builder.CreatePtrDiff(builder.getInt8Ty(), lastPtr, original_start_ptr);
 
-            // _env->printValue(builder, bytes_written, "bytes written: ");
+            _env->printValue(builder, bytes_written, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " bytes written: ");
             return bytes_written;
         }
 
@@ -1236,13 +1243,18 @@ namespace tuplex {
             auto buf_size = getSize(builder);
 
             // // debug
-            // _env->debugPrint(builder, "buf_size to serialize is: ", buf_size);
+            _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " buf_size to serialize to is: ", buf_size);
 
             // debug print
             auto buf = _env->malloc(builder, buf_size);
 
             // serialize
             serialize(builder, buf);
+
+            // dummy:
+            _env->printValue(builder, builder.CreateLoad(_env->i64Type(), buf), std::string(__FILE__) + ":" + std::to_string(__LINE__) + " dummy load of buf" );
+
+
             return codegen::SerializableValue(buf, buf_size);
         }
 

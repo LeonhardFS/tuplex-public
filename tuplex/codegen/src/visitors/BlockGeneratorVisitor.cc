@@ -3600,12 +3600,15 @@ namespace tuplex {
                 auto hasnorem = builder.CreateICmpEQ(builder.CreateSRem(diff, step), _env->i64Const(0));
                 numiters = builder.CreateSelect(hasnorem, numiters, builder.CreateAdd(numiters, _env->i64Const(1)));
 
+                _env->printValue(builder, numiters, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " num iterations: ");
+
                 // @TODO: Fix with heap allocation here...
                 llvm::Value *list_ptr = _env->CreateFirstBlockAlloca(builder, listLLVMType,
                                                                      "BGV_listComprehensionAlloc");
                 llvm::Value *listSize =  _env->CreateFirstBlockAlloca(builder, _env->i64Type(), "BGV_listComprehensionSize");
 
-                if(list_element_type == python::Type::NULLVALUE || list_element_type == python::Type::EMPTYDICT || list_element_type == python::Type::EMPTYTUPLE) {
+                if(list_element_type.isSingleValued()) {
+                    // simple i64.
                     builder.CreateStore(numiters, list_ptr);
                     builder.CreateStore(_env->i64Const(8), listSize);
                 } else {
@@ -3735,8 +3738,14 @@ namespace tuplex {
                     _lfb->setLastBlock(retBlock);
                 }
 
-                // return list pointer + size
-                addInstruction(list_ptr, builder.CreateLoad(builder.getInt64Ty(), listSize));
+
+                // Debug: check how many elements list has after comprehension.
+                auto list_len = list_length(*_env, builder, list_ptr, list_type);
+                _env->printValue(builder, list_len, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " number of list entries: ");
+                _lfb->setLastBlock(builder.GetInsertBlock());
+
+                // return list pointer
+                addInstruction(list_ptr);
             } else {
                 throw std::runtime_error("Unsupported iterable in list comprehension codegen: " + iterType.desc());
             }

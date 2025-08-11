@@ -616,6 +616,7 @@ namespace tuplex {
             IRBuilder builder(body);
 
             // parse cjson
+            env->printValue(builder, args["obj"], "Parsing json string:");
             auto j = call_cjson_parse(builder, args["obj"]);
             llvm::Value* item_found = nullptr;
             auto item = call_cjson_getitem(builder,j, args["key"], &item_found);
@@ -760,6 +761,12 @@ TEST(LLVMENV, cJSONGetItem) {
     using namespace tuplex;
     using namespace tuplex::codegen;
 
+    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " need to fix this");
+
+#ifndef USE_YYJSON_INSTEAD
+    GTEST_SKIP_("only test with yyjson enabled.");
+#endif
+
     auto jit = make_unique<JITCompiler>();
     // init runtime memory
     runtime::init(ContextOptions::defaults().RUNTIME_LIBRARY().toPath());
@@ -768,6 +775,9 @@ TEST(LLVMENV, cJSONGetItem) {
 
     // build basic add function (for testing)
     auto func = createcJSONGetItemFunction(env.get(), "json_getitem", runtime::rtmalloc);
+
+    // annotate module with line numbers.
+    codegen::annotateModuleWithInstructionPrint(*env->getModule().get());
 
     // emit object file (to string)
     auto obj_buf = compileToObjectFile(*env->getModule().get());
