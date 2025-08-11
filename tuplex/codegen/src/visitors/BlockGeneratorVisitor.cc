@@ -1754,12 +1754,12 @@ namespace tuplex {
                 auto paramType = _lfb->getParameterType(name);
 
 #ifndef NDEBUG
-                if(type.isListType()) {
-                    auto L_length = list_length(*_env, builder, param.val, type);
-                    _env->printValue(builder, L_length, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + _funcNames.top() + ": got parameter " + name + " of list type " + type.desc() + " of length: ");
-                } else if (type.withoutOption().isListType()) {
-                    _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " TODO: need to print " + type.desc());
-                }
+                // if(type.isListType()) {
+                //     auto L_length = list_length(*_env, builder, param.val, type);
+                //     _env->printValue(builder, L_length, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + _funcNames.top() + ": got parameter " + name + " of list type " + type.desc() + " of length: ");
+                // } else if (type.withoutOption().isListType()) {
+                //     _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " TODO: need to print " + type.desc());
+                // }
 #endif
 
                 VariableSlot slot;

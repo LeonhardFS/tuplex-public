@@ -250,40 +250,38 @@ TEST_F(ListFunctions, ListComprehensionII) {
 
 TEST_F(ListFunctions, ListComprehensionIII) {
     using namespace tuplex;
-    // Context c(microTestOptions());
+    Context c(microTestOptions());
 
-    Context c(tracingMicroTestOptions());
-    //
-    // auto v0 = c.parallelize({Row("abcde"), Row("12345"), Row("")}).map(UDF("lambda x: [t for t in x]")).collectAsVector();
-    // ASSERT_EQ(v0.size(), 3);
-    // EXPECT_EQ(v0[0].toPythonString(), "(['a','b','c','d','e'],)");
-    // EXPECT_EQ(v0[1].toPythonString(), "(['1','2','3','4','5'],)");
-    // EXPECT_EQ(v0[2].toPythonString(), "([],)");
-    //
-    // auto v1 = c.parallelize({Row("abcde"), Row("12345")}).map(UDF("lambda x: [1 for t in x]")).collectAsVector();
-    // ASSERT_EQ(v1.size(), 2);
-    // EXPECT_EQ(v1[0].toPythonString(), "([1,1,1,1,1],)");
-    // EXPECT_EQ(v1[1].toPythonString(), "([1,1,1,1,1],)");
-    //
-    // auto v2 = c.parallelize({Row(List(1, 2, 3, 4, 5)), Row(List(1))}).map(UDF("lambda x: [t*t for t in x]")).collectAsVector();
-    // ASSERT_EQ(v2.size(), 2);
-    // EXPECT_EQ(v2[0].toPythonString(), "([1,4,9,16,25],)");
-    // EXPECT_EQ(v2[1].toPythonString(), "([1],)");
-    //
+    auto v0 = c.parallelize({Row("abcde"), Row("12345"), Row("")}).map(UDF("lambda x: [t for t in x]")).collectAsVector();
+    ASSERT_EQ(v0.size(), 3);
+    EXPECT_EQ(v0[0].toPythonString(), "(['a','b','c','d','e'],)");
+    EXPECT_EQ(v0[1].toPythonString(), "(['1','2','3','4','5'],)");
+    EXPECT_EQ(v0[2].toPythonString(), "([],)");
+
+    auto v1 = c.parallelize({Row("abcde"), Row("12345")}).map(UDF("lambda x: [1 for t in x]")).collectAsVector();
+    ASSERT_EQ(v1.size(), 2);
+    EXPECT_EQ(v1[0].toPythonString(), "([1,1,1,1,1],)");
+    EXPECT_EQ(v1[1].toPythonString(), "([1,1,1,1,1],)");
+
+    auto v2 = c.parallelize({Row(List(1, 2, 3, 4, 5)), Row(List(1))}).map(UDF("lambda x: [t*t for t in x]")).collectAsVector();
+    ASSERT_EQ(v2.size(), 2);
+    EXPECT_EQ(v2[0].toPythonString(), "([1,4,9,16,25],)");
+    EXPECT_EQ(v2[1].toPythonString(), "([1],)");
+
     auto v3 = c.parallelize({Row(List(Field::null(), Field::null(), Field::null())), Row(List(Field::null()))}).map(UDF("lambda x: [t for t in x]")).collectAsVector();
     ASSERT_EQ(v3.size(), 2);
     EXPECT_EQ(v3[0].toPythonString(), "([None,None,None],)");
     EXPECT_EQ(v3[1].toPythonString(), "([None],)");
-    //
-    // auto v4 = c.parallelize({Row(List("hello", "world", "!")), Row(List("goodbye"))}).map(UDF("lambda x: [t[1:] for t in x]")).collectAsVector();
-    // ASSERT_EQ(v4.size(), 2);
-    // EXPECT_EQ(v4[0].toPythonString(), "(['ello','orld',''],)");
-    // EXPECT_EQ(v4[1].toPythonString(), "(['oodbye'],)");
-    //
-    // auto v5 = c.parallelize({Row(Tuple("hello", "world", "!")), Row(Tuple("goodbye", "test", "!"))}).map(UDF("lambda x: [t[1:] for t in x]")).collectAsVector();
-    // ASSERT_EQ(v5.size(), 2);
-    // EXPECT_EQ(v5[0].toPythonString(), "(['ello','orld',''],)");
-    // EXPECT_EQ(v5[1].toPythonString(), "(['oodbye','est',''],)");
+
+    auto v4 = c.parallelize({Row(List("hello", "world", "!")), Row(List("goodbye"))}).map(UDF("lambda x: [t[1:] for t in x]")).collectAsVector();
+    ASSERT_EQ(v4.size(), 2);
+    EXPECT_EQ(v4[0].toPythonString(), "(['ello','orld',''],)");
+    EXPECT_EQ(v4[1].toPythonString(), "(['oodbye'],)");
+
+    auto v5 = c.parallelize({Row(Tuple("hello", "world", "!")), Row(Tuple("goodbye", "test", "!"))}).map(UDF("lambda x: [t[1:] for t in x]")).collectAsVector();
+    ASSERT_EQ(v5.size(), 2);
+    EXPECT_EQ(v5[0].toPythonString(), "(['ello','orld',''],)");
+    EXPECT_EQ(v5[1].toPythonString(), "(['oodbye','est',''],)");
 }
 
 TEST_F(ListFunctions, ListIn) {

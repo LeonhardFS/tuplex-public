@@ -403,7 +403,12 @@ namespace tuplex {
                     } else if(type.isListType()) {
                         // lists of fixed size are just represented by a length
                         Value *num_elements = builder.CreateLoad(_env->i64Type(), builder.CreateBitCast(lastPtr, _env->i64ptrType()), twine);
-                        _tree.set(i, codegen::SerializableValue(num_elements, _env->i64Const(sizeof(int64_t)), isnull));
+
+                        // Need to heap allocate.
+                        auto list_ptr = _env->CreateHeapAlloca(builder, _env->i64Type());
+                        builder.CreateStore(num_elements, list_ptr);
+
+                        _tree.set(i, codegen::SerializableValue(list_ptr, _env->i64Const(sizeof(int64_t)), isnull));
                     } else if(type.isConstantValued()) {
                         // simple constant gen
                         _tree.set(i, constantValuedTypeToLLVM(builder, type));
@@ -661,7 +666,7 @@ namespace tuplex {
                     if(types[i].isOptionType())
                         length = builder.CreateSelect(_tree.get(i).is_null, _env->i64Const(0), length);
 
-                    _env->printValue(builder, length, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " number of elements of list of type " + fieldType.desc() + ": ");
+                    // _env->printValue(builder, length, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " number of elements of list of type " + fieldType.desc() + ": ");
 
                     // Write list length (number of elements) directly to pointer.
                     builder.CreateStore(length, builder.CreateBitCast(lastPtr, _env->i64ptrType()), false);
