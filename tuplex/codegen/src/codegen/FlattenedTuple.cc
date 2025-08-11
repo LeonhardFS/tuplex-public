@@ -665,10 +665,6 @@ namespace tuplex {
 
                     // Write list length (number of elements) directly to pointer.
                     builder.CreateStore(length, builder.CreateBitCast(lastPtr, _env->i64ptrType()), false);
-
-                    _env->printValue(builder, builder.CreateLoad(_env->i64Type(), lastPtr), std::string(__FILE__) + ":" + std::to_string(__LINE__) + " dummy load of lastPtr" );
-                    _env->printValue(builder, builder.CreateLoad(_env->i64Type(), original_start_ptr), std::string(__FILE__) + ":" + std::to_string(__LINE__) + " dummy load of original_ptr" );
-
                     lastPtr = builder.MovePtrByBytes(lastPtr, sizeof(int64_t), "outptr");
                     serialized_idx++;
                     continue; // field done.
@@ -841,7 +837,7 @@ namespace tuplex {
             // return diff
             auto bytes_written = builder.CreatePtrDiff(builder.getInt8Ty(), lastPtr, original_start_ptr);
 
-            _env->printValue(builder, bytes_written, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " bytes written: ");
+            // _env->printValue(builder, bytes_written, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " bytes written: ");
             return bytes_written;
         }
 
@@ -1243,17 +1239,13 @@ namespace tuplex {
             auto buf_size = getSize(builder);
 
             // // debug
-            _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " buf_size to serialize to is: ", buf_size);
+            // _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " buf_size to serialize to is: ", buf_size);
 
             // debug print
             auto buf = _env->malloc(builder, buf_size);
 
             // serialize
             serialize(builder, buf);
-
-            // dummy:
-            _env->printValue(builder, builder.CreateLoad(_env->i64Type(), buf), std::string(__FILE__) + ":" + std::to_string(__LINE__) + " dummy load of buf" );
-
 
             return codegen::SerializableValue(buf, buf_size);
         }

@@ -3599,20 +3599,15 @@ namespace tuplex {
                 auto numiters = _env->floorDivision(builder, diff, step);
                 auto hasnorem = builder.CreateICmpEQ(builder.CreateSRem(diff, step), _env->i64Const(0));
                 numiters = builder.CreateSelect(hasnorem, numiters, builder.CreateAdd(numiters, _env->i64Const(1)));
+                // _env->printValue(builder, numiters, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " num iterations: ");
 
-                _env->printValue(builder, numiters, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " num iterations: ");
-
-                // @TODO: Fix with heap allocation here...
-                llvm::Value *list_ptr = _env->CreateFirstBlockAlloca(builder, listLLVMType,
-                                                                     "BGV_listComprehensionAlloc");
-                llvm::Value *listSize =  _env->CreateFirstBlockAlloca(builder, _env->i64Type(), "BGV_listComprehensionSize");
+                // need to allocate heap ptr here due to copy-by-reference semantics.
+                auto *list_ptr = _env->CreateHeapAlloca(builder, listLLVMType, "list_ptr_from_comprehension");
 
                 if(list_element_type.isSingleValued()) {
                     // simple i64.
                     builder.CreateStore(numiters, list_ptr);
-                    builder.CreateStore(_env->i64Const(8), listSize);
                 } else {
-                    builder.CreateStore(builder.CreateAdd(builder.CreateMul(numiters, _env->i64Const(8)), _env->i64Const(8)), listSize);
 
                     // reserve capacity for list
                     list_reserve_capacity(*_env, builder, list_ptr, list_type, numiters, false);
@@ -3738,10 +3733,6 @@ namespace tuplex {
                     _lfb->setLastBlock(retBlock);
                 }
 
-
-                // Debug: check how many elements list has after comprehension.
-                auto list_len = list_length(*_env, builder, list_ptr, list_type);
-                _env->printValue(builder, list_len, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " number of list entries: ");
                 _lfb->setLastBlock(builder.GetInsertBlock());
 
                 // return list pointer
