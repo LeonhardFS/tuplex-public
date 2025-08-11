@@ -36,7 +36,7 @@ namespace tuplex {
             node->accept(*this);
         } catch(TraceException& exc) {
             // nothing todo...
-        } catch(const std::runtime_error& e) {
+        } catch(const std::exception& e) {
             logger().error(e.what());
         } catch(...) {
             // important b.c. of GIL
@@ -439,6 +439,15 @@ namespace tuplex {
                 _symbols.emplace_back(TraceItem::param(sym_id, _args, id->_name));
                 extractedArgs.push_back(_args);
             } else {
+
+                // Check if tuple, if not this indicates a rewrite issue.
+                if (!PyTuple_Check(_args)) {
+                    std::stringstream ss;
+                    ss<<"expected tuple as argument, but got instead ";
+                    ss<<python::PyString_AsString(PyObject_Type(_args))<<": "<<python::PyString_AsString(_args);
+                    throw std::invalid_argument(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + ss.str());
+                }
+
                 assert(PyTuple_Check(_args));
 
                 size_t numProvidedArgs = PyTuple_Size(_args);

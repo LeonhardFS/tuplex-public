@@ -55,4 +55,20 @@ namespace tuplex {
             }
         }
     }
+
+    void check_column_names(const std::vector<std::string>& columns) {
+        // Column names must be:
+        // a.) non-empty
+        // b.) not be _\d+ (i.e. _0, _1, ..., _\d+)
+        for (const auto& name : columns) {
+            if (name.empty())
+                throw std::invalid_argument(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " column name must be non-empty");
+            // check that column name is NOT _\d+
+            if (name.at(0) == '_') {
+                for (unsigned i = 1; i < name.size(); ++i)
+                    if (isdigit(name.at(i)))
+                        throw std::invalid_argument(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " column name " + name + " reserved, can't use.");
+            }
+        }
+    }
 }

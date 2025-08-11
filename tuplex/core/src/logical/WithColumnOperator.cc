@@ -137,6 +137,11 @@ namespace tuplex {
             column_types.push_back(retType);
         }
         auto out_row_type = python::Type::makeRowType(column_types, column_names);
+
+        // quick assert: no nested row type?
+        for (const auto& col_type : out_row_type.get_column_types())
+            assert(!col_type.isRowType());
+
         return Schema(Schema::MemoryLayout::ROW, out_row_type);
     }
 
@@ -186,6 +191,16 @@ namespace tuplex {
         }
 
         if(PARAM_USE_ROW_TYPE && in_schema.getRowType().isRowType()) {
+            // normalize ret type of UDF.
+            if (udf_ret_type.isRowType()) {
+                // single-element?
+                if (udf_ret_type.get_column_count() == 1)
+                    udf_ret_type = udf_ret_type.get_column_type(0);
+                // else? -> tuple?
+                else
+                    udf_ret_type = udf_ret_type.get_columns_as_tuple_type();
+            }
+
             return getOutputSchemaFromReturnAndInputRowType(udf_ret_type, in_schema.getRowType());
         }
 

@@ -452,7 +452,11 @@ namespace tuplex {
 
         assert(ds->_schema.getRowType() != python::Type::UNKNOWN);
 
-        auto op = new ParallelizeOperator(ds->_schema, ds->getPartitions(), ds->columns(), sm);
+        auto column_names = ds->columns();
+        if (column_names.empty())
+            column_names = generate_pseudo_column_names(ds->_schema.getColumnCount());
+
+        auto op = new ParallelizeOperator(ds->_schema, ds->getPartitions(), column_names, sm);
         op->setFallbackPartitions(fallbackPartitions);
         if (partitionGroups.empty()) {
             std::vector<PartitionGroup> defaultPartitionGroups;

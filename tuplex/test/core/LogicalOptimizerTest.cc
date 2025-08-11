@@ -21,20 +21,29 @@ class LogicalOptimizerTest : public PyTest {};
 
 // this test case doesn't work yet :/
 // with new code for WITHCOLUMN in logical optimizer...
-TEST_F(LogicalOptimizerTest, SimpleFilterPushdown) {
+TEST_F(LogicalOptimizerTest, FilterPushdownWithUDFRewrite) {
     using namespace tuplex;
 
     auto conf = microTestOptions();
     conf.set("tuplex.optimizer.filterPushdown", "true");
     Context c(conf);
 
-    c.parallelize({Row(1), Row(2), Row(3), Row(4)})
+    // What is the challenge of the following UDF when pushing it down?
+    // --> lambda a, b: a % 2 == 0 assumes two columns. However, it actually only accesses a single column.
+    // Thus, can push down the column by REWRITING the arguments.
+    // e.g., rewrite to lambda a: a % 2 == 0.
+    // => can then push down the UDF.
+    auto v = c.parallelize({Row(1), Row(2), Row(3), Row(4)})
     .withColumn("squared", UDF("lambda x: x * x"))
     .filter(UDF("lambda a, b: a % 2 == 0"))
     .ignore(ExceptionCode::TYPEERROR)
     .collectAsVector();
 
-    // pushed result should be parallelize.filter.ignore.withcolumn.collectAsVector
+    // logical plan after filter push-down should be parallelize.filter.ignore.withcolumn.collectAsVector
+
+    ASSERT_EQ(v.size(), 2);
+    EXPECT_EQ(v[0].toPythonString(), "(2,)");
+    EXPECT_EQ(v[1].toPythonString(), "(4,)");
 }
 
 TEST_F(LogicalOptimizerTest, FilterBreakdownVisitor) {

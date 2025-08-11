@@ -169,7 +169,7 @@ namespace tuplex {
 
         assert(_context);
         assert(this->_operator);
-        auto op = _context->addOperator(std::shared_ptr<LogicalOperator>(new MapOperator(this->_operator, udf.withCompilePolicy(_context->compilePolicy()), _columnNames)));
+        auto op = _context->addOperator(std::shared_ptr<LogicalOperator>(new MapOperator(this->_operator, udf.withCompilePolicy(_context->compilePolicy()), this->_operator->columns())));
 
         if (!op->good()) {
             Logger::instance().defaultLogger().error("failed to create map operator");
@@ -261,7 +261,7 @@ namespace tuplex {
 
         auto op = _context->addOperator(std::shared_ptr<LogicalOperator>(new MapColumnOperator(this->_operator,
                                                                                                columnName,
-                                                                                               columns(),
+                                                                                               this->_operator->columns(),
                                                                                                udf.withCompilePolicy(_context->compilePolicy()))));
         if (!op->good()) {
             Logger::instance().defaultLogger().error("failed to create mapColumn operator");
@@ -299,7 +299,7 @@ namespace tuplex {
 
         auto op = _context->addOperator(
                 std::shared_ptr<LogicalOperator>(new WithColumnOperator(this->_operator,
-                                       _columnNames,
+                                      this->_operator->columns(),
                                        columnName,
                                        udf.withCompilePolicy(_context->compilePolicy()))));
 
@@ -314,7 +314,7 @@ namespace tuplex {
 
         // set column names
         auto wop = dynamic_cast<WithColumnOperator *>(op.get());
-        dsptr->setColumns(wop->columns());
+        dsptr->setColumns(map_pseudo_column_names(wop->columns()));
 
         // signal check
         if(check_and_forward_signals()) {
@@ -579,7 +579,7 @@ namespace tuplex {
         assert(this->_operator);
         auto op = _context->addOperator(std::shared_ptr<LogicalOperator>(new FilterOperator(this->_operator,
                                                                        udf.withCompilePolicy(_context->compilePolicy()),
-                                                                       _columnNames)));
+                                                                       this->_operator->columns())));
 
         if (!op->good()) {
 
@@ -620,7 +620,7 @@ namespace tuplex {
         assert(this->_operator);
         auto op = _context->addOperator(std::shared_ptr<LogicalOperator>(new ResolveOperator(this->_operator, ec,
                                                                         udf.withCompilePolicy(_context->compilePolicy()),
-                                                                        _columnNames)));
+                                                                        this->_operator->columns())));
         if (!op->good()) {
             Logger::instance().defaultLogger().error("failed to create resolve operator");
             return _context->makeError("failed to add resolve operator to logical plan");

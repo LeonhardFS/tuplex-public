@@ -10,6 +10,8 @@
 
 #include <logical/ParallelizeOperator.h>
 
+#include "logical/FileInputOperator.h"
+
 namespace tuplex {
     ParallelizeOperator::ParallelizeOperator(const Schema& schema,
             const std::vector<Partition*>& normalPartitions,

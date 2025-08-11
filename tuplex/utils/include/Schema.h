@@ -108,5 +108,43 @@ namespace tuplex {
     inline bool operator != (const Schema& rhs, const Schema& lhs) {
        return !(rhs == lhs);
     }
+
+    /*!
+         * verifies columns are valid identifiers, or throws exception.
+         * @param columns array of columns.
+         */
+    extern void check_column_names(const std::vector<std::string>& columns);
+
+    // @TODO: need in show to dealias/remove special names.
+    inline std::vector<std::string> generate_pseudo_column_names(size_t column_count) {
+        using namespace std;
+        vector<string> names(column_count, "_");
+        for(unsigned int i = 0; i < column_count; ++i) {
+            names[i] = "_" + std::to_string(i);
+        }
+        return names;
+    }
+
+    inline bool is_pseudo_column_name(const std::string& name) {
+        if (name.empty())
+            return false;
+        if (name.front() == '_') {
+            for (unsigned int i = 1; i < name.size(); ++i)
+                if (!isdigit(name[i]))
+                    return false;
+            return true;
+        }
+        return false;
+    }
+
+    inline std::vector<std::string> map_pseudo_column_names(const std::vector<std::string>& names, const std::string& replacement_name="") {
+        std::vector<std::string> ans;
+        ans.reserve(names.size());
+        for (const auto& name : names)
+            // pseudo name?
+                ans.push_back(is_pseudo_column_name(name) ? replacement_name : name);
+        return ans;
+    }
+
 }
 #endif //TUPLEX_SCHEMA_H

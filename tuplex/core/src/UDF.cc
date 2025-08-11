@@ -964,6 +964,8 @@ namespace tuplex {
     std::vector<size_t> UDF::getAccessedColumns(bool ignoreConstantTypedColumns) {
 
         // need valid input schema!
+        if (getInputSchema() == Schema::UNKNOWN)
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " invalid input schema.");
         assert(!(getInputSchema() == Schema::UNKNOWN));
 
 

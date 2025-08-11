@@ -256,9 +256,10 @@ namespace tuplex {
         DataSet& cache(bool storeSpecialized=true) { return cache(Schema::MemoryLayout::ROW, storeSpecialized); }
 
         /*!
-         * helper setter without checks, to update internal column names.
+         * helper setter without checks, to update internal column names. These column names are the ones to be displayed to the user.
+         * Each operator internally does have a set of column names incl. pseudo column names like _0, _1, ..., _{n}
          */
-        void setColumns(const std::vector<std::string> &columnNames) { _columnNames = columnNames; }
+        void setColumns(const std::vector<std::string> &columnNames) { _columnNames = map_pseudo_column_names(columnNames); }
 
         // these are actions that cause execution
         virtual std::shared_ptr<ResultSet> collect(std::ostream &os = std::cout);
