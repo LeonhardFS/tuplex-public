@@ -1431,19 +1431,75 @@ namespace tuplex {
                     // get constant map (for info)
                     auto colname_map = std::dynamic_pointer_cast<FilterOperator>(op)->getUDF().constantColumnMap();
 
+                    // special case: Rewrite partial multi-arg access UDFs, e.g. rewrite something like
+                    // lambda x, y: x > 0 to lambda x: x > 0 if need be.
+                    if (current_fop->getUDF().argCount() != 1) {
+
+                        // Check which columns are accessed, and attempt rewrite then.
+                        auto acc_columns_indices = current_fop->getUDF().getAccessedColumns(ignoreConstantTypedColumns);
+                        assert(!current_fop->inputColumns().empty());
+                        std::vector<std::string> acc_columns;
+                        std::vector<std::string> argnames_to_keep;
+                        // TODO: can remove this, make sure above function has these sorted.
+                        std::sort(acc_columns_indices.begin(), acc_columns_indices.end()); // make sure sorted asc.
+                        for (auto idx : acc_columns_indices) {
+                            acc_columns.push_back(current_fop->inputColumns()[idx]);
+                            argnames_to_keep.push_back(current_fop->getUDF().argNames()[idx]);
+                        }
+#ifdef TRACE_LOGICAL_OPTIMIZATION
+                        std::cout<<" -- Need to rewrite multi arg function --"<<std::endl;
+                        std::cout<<"Accessed columns by filter operator are: "<<acc_columns<<std::endl;
+                        std::cout<<"Arg names of filter operator are: "<<current_fop->getUDF().argNames()<<std::endl;
+                        std::cout<<"Arg names to keep for rewrite: "<<argnames_to_keep<<std::endl;
+#endif
+
+                        if (code.empty())
+                            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " pure pickled version not yet supported in filter pushdown.");
+
+                        // simple text based rewrite
+                        if (current_fop->getUDF().isPythonLambda()) {
+
+                            auto lambda_body = code.substr(code.find(':') + 1);
+                            trim(lambda_body);
+                            // No annotations for lambda functions.
+                            code = "lambda " + mkString(argnames_to_keep) + ": " + lambda_body;
+                            pickled_code = ""; // <-- reparse.
+                        } else {
+                            // check first line of def foo(...):
+                            trim(code);
+                            auto lines = splitToLines(code);
+                            // need to keep annotations as well.
+                            if (lines.empty() || !strStartsWith(lines.front(), "def"))
+                                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " expected function, but got invalid code " + code);
+
+                            // pure text-based manipulation.
+                            auto first_line = lines.front();
+                            first_line = first_line.substr(first_line.find('(') + 1);
+                            first_line = first_line.substr(0, first_line.find(')'));
+                            std::stringstream ss;
+                            ss<<"def";
+                            // TODO: implement this, and also the text args.
+                            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " def with multi arg count not yet implemented in filter pushdown");
+                            ss<<"\n";
+                            lines.front() = ss.str();
+                            code = mkString(lines, "\n");
+                            pickled_code = ""; // <-- reparse.
+                        }
+                    }
+
                     auto fop = std::shared_ptr<UDFOperator>(new FilterOperator(grandparent, UDF(code, pickled_code), grandparent->columns()));
                     fop->setID(op->getID()); // clone with ID, important for exception tracking!
 
 #ifdef TRACE_LOGICAL_OPTIMIZATION
                     // debug:
-                    std::cout<<"new filter input schema: "<<fop->getUDF().getInputSchema().getRowType().desc()<<std::endl;
-                    std::cout<<"new filter output schema: "<<fop->getUDF().getOutputSchema().getRowType().desc()<<std::endl;
+                    std::cout<<"UDF of new filter input schema: "<<fop->getUDF().getInputSchema().getRowType().desc()<<std::endl;
+                    std::cout<<"UDF of new filter output schema: "<<fop->getUDF().getOutputSchema().getRowType().desc()<<std::endl;
 
                     std::cout<<"filter input schema: "<<fop->getInputSchema().getRowType().desc()<<std::endl;
                     std::cout<<"filter output schema: "<<fop->getOutputSchema().getRowType().desc()<<std::endl;
 #endif
 
-                    // error here.. this code is wrong when join operator is involved!
+                    // error here... this code is wrong when join operator is involved!
                     // link children -> parent (and vice versa)
                     for(auto& child : children) {
                         //child->setParent(parent);

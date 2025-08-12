@@ -42,8 +42,8 @@ TEST_F(LogicalOptimizerTest, FilterPushdownWithUDFRewrite) {
     // logical plan after filter push-down should be parallelize.filter.ignore.withcolumn.collectAsVector
 
     ASSERT_EQ(v.size(), 2);
-    EXPECT_EQ(v[0].toPythonString(), "(2,)");
-    EXPECT_EQ(v[1].toPythonString(), "(4,)");
+    EXPECT_EQ(v[0].toPythonString(), "(2,4)");
+    EXPECT_EQ(v[1].toPythonString(), "(4,16)");
 }
 
 TEST_F(LogicalOptimizerTest, FilterBreakdownVisitor) {

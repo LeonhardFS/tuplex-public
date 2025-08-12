@@ -106,6 +106,10 @@ namespace tuplex {
         }
 
         llvm::Value *BlockGeneratorVisitor::upCast(const codegen::IRBuilder& builder, llvm::Value *val, llvm::Type *type) {
+
+            assert(val);
+            assert(type);
+
             // check if types are the same, then just return val
             if (val->getType() == type)
                 return val;
@@ -118,7 +122,7 @@ namespace tuplex {
                     else if (type == _env->doubleType())
                         return builder.CreateSIToFP(val, _env->doubleType());
                     else {
-                        error("fatal error: could not upcast type");
+                        error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " could not upcast LLVM IR type from " + _env->getLLVMTypeName(val->getType()) + " to " + _env->getLLVMTypeName(type));
                         return nullptr;
                     }
                 } else if (val->getType() == _env->i64Type()) {

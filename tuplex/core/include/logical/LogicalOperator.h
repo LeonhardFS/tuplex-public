@@ -253,6 +253,31 @@ namespace tuplex {
         virtual bool retype(const RetypeConfiguration& conf) { return false; }
 
         /*!
+         * retype operator and its children.
+         * @param conf
+         * @param recursive
+         * @return true if retyping was successful.
+         */
+        inline bool retypeRecursively(const RetypeConfiguration& conf) {
+            auto rc = retype(conf);
+            if (!rc)
+                return false;
+
+            auto c_conf = conf;
+            c_conf.columns = columns();
+            c_conf.row_type = getOutputSchema().getRowType();
+            c_conf.coltype_hints.clear();
+            c_conf.is_projected = false;
+
+            for (auto& c : _children) {
+                assert(c);
+                if (!c->retypeRecursively(c_conf))
+                    return false;
+            }
+            return true;
+        }
+
+        /*!
          * retype the operator by providing an optional rowTypeAsTupleType
          * @param input_row_type the new input type used for this operator.
          * @param is_projected_row_type whether the new input row type is projected or not. Important, so the case lambda x: x[0] cam be resolved.

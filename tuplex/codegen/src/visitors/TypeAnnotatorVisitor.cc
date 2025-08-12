@@ -662,6 +662,12 @@ namespace tuplex {
         // tuple + simple primitive and not compatible?
         // ==> @TODO!
 
+        // binop for rows not defined. Maybe allow append at some point?
+        if (left_type.isRowType() || right_type.isRowType()) {
+            fatal_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " can not type " + left_type.desc() + opToString(tt) + right_type.desc() + ".");
+            return;
+        }
+
         // a lot of manual checking is needed here now...
         // so far no custom object with operator overloading are yet defined
         // which makes it a bit easier

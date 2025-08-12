@@ -459,6 +459,7 @@ namespace tuplex {
         }
 
         // update UDFOperator
+        getUDF().removeTypes();
         auto rc = UDFOperator::retype(conf);
         _columnToMapIndex = calcColumnToMapIndex(inputColumns(), _newColumn);
         if(rc) {

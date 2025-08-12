@@ -43,6 +43,11 @@ namespace tuplex {
             _func._pyRetType = retType;
 
             auto pyArgType = _func._pyArgType;
+            auto pyRetType = _func._pyRetType;
+
+
+            if (pyRetType.isRowType() && pyRetType.get_column_count() == 1)
+                pyRetType = pyRetType.get_column_type(0);
 
             // special case: single row type -> make tuple type!
             if(pyArgType.parameters().size() == 1 && pyArgType.parameters().front().isRowType()) {
@@ -53,7 +58,7 @@ namespace tuplex {
             }
 
             _fti.init(pyArgType);
-            _fto.init(_func._pyRetType);
+            _fto.init(pyRetType);
 
             // create function + load arguments. Necessary instructions for this are added at the start of the basic body block.
             auto paramType = parameterTypes();

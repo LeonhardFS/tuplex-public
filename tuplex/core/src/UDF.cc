@@ -394,6 +394,11 @@ namespace tuplex {
                         logger.debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " hinting with type " + hintType.desc() + " failed, try again with unwrapped type " + unwrapped_hint_type.desc() + ".");
 
                         rc = hintParams({unwrapped_hint_type}, params, true, removeBranches);
+
+                        // If this worked, track it is unpacked.
+                        if (rc)
+                            _ast.setUnpacking(true);
+
                         // TODO: save mode in UDF?
                     }
 

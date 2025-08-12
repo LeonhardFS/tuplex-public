@@ -354,10 +354,10 @@ TEST_F(DataFrameTest, SimpleWithColumnI) {
 
     printRows(v);
 
-    EXPECT_EQ(v[0], Row(10, 20));
-    EXPECT_EQ(v[1], Row(20, 40));
-    EXPECT_EQ(v[2], Row(3, 6));
-    EXPECT_EQ(v[3], Row(4, 8));
+    EXPECT_EQ(v[0].toPythonString(), Row(10, 20).toPythonString());
+    EXPECT_EQ(v[1].toPythonString(), Row(20, 40).toPythonString());
+    EXPECT_EQ(v[2].toPythonString(), Row(3, 6).toPythonString());
+    EXPECT_EQ(v[3].toPythonString(), Row(4, 8).toPythonString());
 }
 
 

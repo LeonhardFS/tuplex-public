@@ -209,6 +209,36 @@ namespace tuplex {
         bool isPythonLambda() const;
         std::string pythonFunctionName() const;
 
+        [[nodiscard]] inline std::vector<std::string> argNames() const {
+            auto root = _ast.getFunctionAST();
+            if (!root)
+                return {}; // empty udf?
+            switch (root->type()) {
+            case ASTNodeType::Lambda: {
+                    std::vector<std::string> argNames;
+                    for (const auto& arg : dynamic_cast<NLambda*>(root)->_arguments->_args)
+                        argNames.push_back(dynamic_cast<NParameter*>(arg.get())->_identifier->_name);
+                    return argNames;
+            }
+            case ASTNodeType::Function: {
+                    std::vector<std::string> argNames;
+                    for (const auto& arg :  dynamic_cast<NFunction*>(root)->_parameters->_args)
+                        argNames.push_back(dynamic_cast<NParameter*>(arg.get())->_identifier->_name);
+                    return argNames;
+            }
+            default:
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " UDF::argCount: unexpected node type");
+            }
+        }
+
+        /*!
+         * Number of arguments of a function (in total). E.g., lambda x, y: x  has 2.
+         * @return number of arguments.
+         */
+        [[nodiscard]] inline size_t argCount() const {
+            return argNames().size();
+        }
+
         /*!
          * set output schema manually. Helpful i.e. when function is not compilable.
          * @param schema
