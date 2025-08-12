@@ -18,13 +18,14 @@ namespace tuplex {
         option<bool> _multiArgs;
         size_t _numColumns;
         bool _singleLambda;
+        bool _argUnpacked;
         std::vector<std::string> _argNames;
         std::unordered_map<std::string, bool> _argFullyUsed;
         std::unordered_map<std::string, std::vector<size_t>> _argSubscriptIndices;
 
     public:
         LambdaAccessedColumnVisitor() : _multiArgs(option<bool>::none),
-                                        _numColumns(0), _singleLambda(false) {}
+                                        _numColumns(0), _singleLambda(false), _argUnpacked(false) {}
 
         // override subscript to handle special cases, i.e. stop traversal on (nested) dictionaries/lists.
         virtual void visit(NSubscription* n) override;

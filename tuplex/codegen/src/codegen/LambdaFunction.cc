@@ -51,11 +51,19 @@ namespace tuplex {
 
             // special case: single row type -> make tuple type!
             if(pyArgType.parameters().size() == 1 && pyArgType.parameters().front().isRowType()) {
+#error "need to fix this here, i.e. should allow for function type to be Row[...] -> ... as well"
                 if(pyArgType.parameters().front() == python::Type::EMPTYROW)
                     pyArgType = python::Type::EMPTYTUPLE; // no columns
                 else
-                    pyArgType = python::Type::makeTupleType({pyArgType.parameters().front().get_columns_as_tuple_type()}); // convert to tuple type.
+                    pyArgType = !isFirstArgTuple ? pyArgType.parameters().front().get_column_type(0) : python::Type::makeTupleType({pyArgType.parameters().front().get_columns_as_tuple_type()}); // convert to tuple type.
             }
+
+            // TODO????
+            // // update.
+            // _func._pyArgType = pyArgType;
+            // _func._pyRetType = pyRetType;
+
+            assert(pyArgType.isTupleType());
 
             _fti.init(pyArgType);
             _fto.init(pyRetType);
@@ -133,7 +141,10 @@ namespace tuplex {
             assert(lambda);
 
             auto argType = lambda->getInferredType().getParamsType();
+            // always tuple type.
+            assert(argType.isTupleType());
             auto retType = lambda->getInferredType().getReturnType();
+
             _logger.info("generating lambda function for " + argType.desc() + " -> " + retType.desc());
 
             createLLVMFunction(func_name, argType, lambda->isFirstArgTuple(), lambda->_arguments.get(), retType);

@@ -603,7 +603,7 @@ namespace tuplex {
         }
     }
 
-    void TypeAnnotatorVisitor::visit(NLambda *lambda) {
+    void TypeAnnotatorVisitor::visit(NLambda* lambda) {
         // add parameters to current scope
         for(auto& arg : lambda->_arguments->_args) { // these were hinted upfront!
             auto param = dynamic_cast<NParameter*>(arg.get());
@@ -618,13 +618,16 @@ namespace tuplex {
         //==> infer here function type. Needs class for this...
         if(lambda->_arguments) {
             // create tuple type according to all params
+            auto param_type = lambda->_arguments->getInferredType();
+            if (param_type.isTupleType() && param_type.parameters().size() == 1 && param_type.parameters().front().isRowType())
+                param_type = param_type.parameters().front();
             lambda->setInferredType(python::TypeFactory::instance().instance()
-                                            .createOrGetFunctionType(lambda->_arguments->getInferredType(),
+                                            .createOrGetFunctionType(param_type,
                                                                      lambda->_expression->getInferredType()));
         }
         else {
             lambda->setInferredType(python::TypeFactory::instance().instance()
-                                            .createOrGetFunctionType(python::Type::EMPTYTUPLE,
+                                            .createOrGetFunctionType(PARAM_USE_ROW_TYPE ? python::Type::EMPTYROW : python::Type::EMPTYTUPLE,
                                                                      lambda->_expression->getInferredType()));
         }
     }

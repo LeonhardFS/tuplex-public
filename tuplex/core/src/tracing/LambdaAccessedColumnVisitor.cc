@@ -104,6 +104,12 @@ namespace tuplex {
                 for(unsigned i = 0; i < _numColumns; ++i)
                     idxs.insert(i);
             } else {
+
+                // special case:
+                // If the root is unpacked for the single column case, return {0}.
+                if (_argUnpacked)
+                    return {0};
+
                 auto v_idxs = _argSubscriptIndices.at(argName);
                 idxs = std::set<size_t>(v_idxs.begin(), v_idxs.end());
             }
@@ -125,6 +131,7 @@ namespace tuplex {
                 _singleLambda = true;
 
                 NLambda* lambda = (NLambda*)node;
+                _argUnpacked = !lambda->isFirstArgTuple();
                 auto itype = lambda->_arguments->getInferredType();
                 if (itype.isRowType())
                     itype = itype.get_columns_as_tuple_type();
@@ -168,6 +175,7 @@ namespace tuplex {
                 _singleLambda = true;
 
                 NFunction* func = (NFunction*)node;
+                _argUnpacked = !func->isFirstArgTuple();
                 auto itype = func->_parameters->getInferredType();
                 assert(itype.isTupleType());
 

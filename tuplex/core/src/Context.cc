@@ -419,8 +419,12 @@ namespace tuplex {
                     .logger("core")
                     .info("materialized " + sizeToMemString(totalBytesTransferred) + " to " + std::to_string(numPartitions) + " partitions");
 
+            auto column_names = columnNames;
+            if (column_names.empty())
+                column_names = generate_pseudo_column_names(schema.getColumnCount()); // Create dummies.
+
             // set rows
-            dsptr->setColumns(columnNames);
+            dsptr->setColumns(column_names);
             addParallelizeNode(dsptr, std::vector<Partition*>{}, partitionGroups, sampling_mode);
 
             // signal check

@@ -430,12 +430,21 @@ namespace tuplex {
                 auto lam = dynamic_cast<NLambda*>(node);
                 for(auto& arg : lam->_arguments->_args)
                     assignParameterType(arg.get());
+
+                // reset lambda and param list.
+                lam->setInferredType(python::Type::UNKNOWN);
+                lam->setFirstArgTreatment(false);
+                lam->_arguments->setInferredType(python::Type::UNKNOWN);
             }
 
             if(node->type() == ASTNodeType::Function) {
                 auto fun = dynamic_cast<NFunction*>(node);
                 for(auto& arg : fun->_parameters->_args)
                     assignParameterType(arg.get());
+                // reset function and param list.
+                fun->setInferredType(python::Type::UNKNOWN);
+                fun->setFirstArgTreatment(false);
+                fun->_parameters->setInferredType(python::Type::UNKNOWN);
             }
         }
 

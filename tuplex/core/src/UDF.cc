@@ -391,7 +391,9 @@ namespace tuplex {
                     // For the special case of a single column, try to unwrap and hint again.
                     if (hintType.get_column_count() == 1) {
                         auto unwrapped_hint_type = hintType.get_column_type(0);
-                        logger.debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " hinting with type " + hintType.desc() + " failed, try again with unwrapped type " + unwrapped_hint_type.desc() + ".");
+                        logger.debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " hinting with type " + hintType.desc() + " failed, trying again with unwrapped type " + unwrapped_hint_type.desc() + ".");
+                        // need to remove types, to avoid stopping processing prematurely.
+                        removeTypes(false, true);
 
                         rc = hintParams({unwrapped_hint_type}, params, true, removeBranches);
 
