@@ -331,17 +331,20 @@ namespace tuplex {
         _ast.setUnpacking(false);
         if(!hintParams({}, {}, true, removeBranches)) {
             logTypingErrors(printErrors);
-            return true;
+            _inputSchema = Schema::UNKNOWN;
+            _outputSchema = Schema::UNKNOWN;
+            _numInputColumns = 0;
+            return false;
         }
 
         auto input_row_type = PARAM_USE_ROW_TYPE ? python::Type::EMPTYROW : python::Type::EMPTYTUPLE;
         auto return_type = _ast.getReturnType();
 
-        // update here
+        // Update here.
         _inputSchema = Schema(Schema::MemoryLayout::ROW, input_row_type);
         _outputSchema = Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(return_type));
         _numInputColumns = 0;
-        return false;
+        return true;
     }
 
     bool UDF::typeFunctionWithSingleColumn(python::Type hintType, std::vector<std::tuple<std::string, python::Type>> params, bool removeBranches, bool printErrors, MessageHandler& logger) {
