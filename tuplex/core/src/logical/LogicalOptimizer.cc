@@ -615,6 +615,8 @@ namespace tuplex {
                                            bool ignoreConstantTypedColumns) {
         using namespace std;
 
+        auto& logger = Logger::instance().defaultLogger();
+
         if(!op)
             return requiredCols;
 
@@ -666,6 +668,26 @@ namespace tuplex {
 
                     // UDF access of input...
                     accCols = udfop->getUDF().getAccessedColumns(ignoreConstantTypedColumns);
+
+#ifdef TRACE_LOGICAL_OPTIMIZATION
+                    {
+                        std::stringstream ss;
+                        ss<<"operator "<<op->name()<<"(ID="<<op->getID()<<") ";
+                        if (accCols.empty())
+                            ss<<"accesses no input columns.";
+                        else {
+                            auto input_columns = op->inputColumns();
+                            std::vector<std::string> acc_input_columns;
+                            for (auto idx : accCols) {
+                                assert(idx < input_columns.size());
+                                acc_input_columns.push_back(input_columns[idx]);
+                            }
+                            ss<<"accesses input columns: "<<acc_input_columns;
+                        }
+                        logger.info(ss.str());
+                    }
+#endif
+
                     break;
                 }
                 case LogicalOperatorType::MAPCOLUMN: {
@@ -706,7 +728,6 @@ namespace tuplex {
 
                     set<size_t> cols(accCols.begin(), accCols.end());
 
-
                     // go over all resolvers following map and combine required columns with this map operator
                     if(op->children().size() == 1) {
                         auto cur_op = op->children().front();
@@ -724,6 +745,10 @@ namespace tuplex {
                     }
 
                     requiredCols = vector<size_t>(cols.begin(), cols.end());
+                } else {
+                    // map operator that doesn't require any columns.
+                    if (!udfop->getUDF().empty())
+                        requiredCols.clear(); // no columns required, because accCols is empty.
                 }
             }
 
