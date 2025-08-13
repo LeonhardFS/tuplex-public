@@ -351,7 +351,7 @@ namespace tuplex {
         return true;
     }
 
-    bool UDF::typeFunctionWithSingleColumn(python::Type hintType, std::vector<std::tuple<std::string, python::Type>> params, bool removeBranches, bool printErrors, MessageHandler& logger) {
+    bool UDF::typeFunctionWithSingleParameter(python::Type hintType, std::vector<std::tuple<std::string, python::Type>> params, bool removeBranches, bool printErrors, MessageHandler& logger) {
         // This type annotationc case corresponds to:
         // Case 2: function has a single parameter.
         //          Examples:   lambda x: 2 + x
@@ -369,7 +369,7 @@ namespace tuplex {
                 hintType = python::Type::makeRowType(hintType.parameters());
             else
                 hintType = python::Type::makeRowType({hintType});
-            return typeFunctionWithSingleColumn(hintType, params, removeBranches, printErrors, logger);
+            return typeFunctionWithSingleParameter(hintType, params, removeBranches, printErrors, logger);
         }
 
         assert(hintType.isRowType());
@@ -464,7 +464,7 @@ namespace tuplex {
 
         _inputSchema = Schema::UNKNOWN;
         _outputSchema = Schema::UNKNOWN;
-        _numInputColumns = 1;
+        _numInputColumns = hintType.get_column_count(); // input column count can be arbitrary.
         return false;
 
         //
@@ -600,7 +600,7 @@ namespace tuplex {
         // }
     }
 
-    bool UDF::typeFunctionWithMultipleColumns(python::Type& hintType, std::vector<std::tuple<std::string, python::Type>> params, bool removeBranches, bool printErrors, MessageHandler& logger)
+    bool UDF::typeFunctionWithMultipleParameters(python::Type& hintType, std::vector<std::tuple<std::string, python::Type>> params, bool removeBranches, bool printErrors, MessageHandler& logger)
     {
         // unpack > 1 parameter
         _ast.setUnpacking(true);
@@ -713,10 +713,10 @@ namespace tuplex {
 
         // Case 2: hint with single parameter.
         if(1 == params.size())
-            return typeFunctionWithSingleColumn(hintType, params, removeBranches, printErrors, logger);
+            return typeFunctionWithSingleParameter(hintType, params, removeBranches, printErrors, logger);
 
         // Case 3: hint multiple parameters.
-        return typeFunctionWithMultipleColumns(hintType, params, removeBranches, printErrors, logger);
+        return typeFunctionWithMultipleParameters(hintType, params, removeBranches, printErrors, logger);
     }
 
     python::Type UDF::codegenTypeToRowType(const python::Type &type) const {

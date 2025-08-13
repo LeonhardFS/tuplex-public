@@ -77,8 +77,8 @@ namespace tuplex {
         bool hasPythonObjectTyping() const;
 
         bool typeFunctionWithoutParameters(bool removeBranches, bool printErrors, MessageHandler& logger);
-        bool typeFunctionWithSingleColumn(python::Type hintType, std::vector<std::tuple<std::string, python::Type>> params, bool removeBranches, bool printErrors, MessageHandler& logger);
-        bool typeFunctionWithMultipleColumns(python::Type& hintType, std::vector<std::tuple<std::string, python::Type>> params, bool removeBranches, bool printErrors, MessageHandler& logger);
+        bool typeFunctionWithSingleParameter(python::Type hintType, std::vector<std::tuple<std::string, python::Type>> params, bool removeBranches, bool printErrors, MessageHandler& logger);
+        bool typeFunctionWithMultipleParameters(python::Type& hintType, std::vector<std::tuple<std::string, python::Type>> params, bool removeBranches, bool printErrors, MessageHandler& logger);
 
         // check if it's the default rewriteMap or not.
         bool isDefaultRewriteMap(const std::unordered_map<size_t, size_t>& rewriteMap);
