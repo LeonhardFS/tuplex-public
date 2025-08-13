@@ -174,7 +174,7 @@ namespace tuplex {
     UDF& UDF::removeTypes(bool removeAnnotations, bool keep_column_annotation) {
 
         _hintedInputSchema = Schema::UNKNOWN;
-        _inputSchema = Schema::UNKNOWN;
+        setInputSchema(Schema::UNKNOWN);
         _outputSchema = Schema::UNKNOWN;
         _ast.removeParameterTypes();
 
@@ -335,9 +335,8 @@ namespace tuplex {
         _ast.setUnpacking(false);
         if(!hintParams({}, {}, true, removeBranches)) {
             logTypingErrors(printErrors);
-            _inputSchema = Schema::UNKNOWN;
-            _outputSchema = Schema::UNKNOWN;
-            _numInputColumns = 0;
+            setInputSchema(Schema::UNKNOWN);
+            setOutputSchema(Schema::UNKNOWN);
             return false;
         }
 
@@ -345,9 +344,8 @@ namespace tuplex {
         auto return_type = _ast.getReturnType();
 
         // Update here.
-        _inputSchema = Schema(Schema::MemoryLayout::ROW, input_row_type);
-        _outputSchema = Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(return_type));
-        _numInputColumns = 0;
+        setInputSchema(Schema(Schema::MemoryLayout::ROW, input_row_type));
+        setOutputSchema(Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(return_type)));
         return true;
     }
 
@@ -420,9 +418,9 @@ namespace tuplex {
 
             // success and not exception type?
             if (rc) {
-                _inputSchema = Schema(Schema::MemoryLayout::ROW, hintType);
-                _outputSchema = Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType()));
-                _numInputColumns = 1;
+                setInputSchema(Schema(Schema::MemoryLayout::ROW, hintType));
+                setOutputSchema(Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType())));
+                assert(_numInputColumns == 1);
                 return true;
             }
         }
@@ -437,9 +435,9 @@ namespace tuplex {
             rc = false;
 
         if (rc) {
-            _inputSchema = Schema(Schema::MemoryLayout::ROW, hintType);
-            _outputSchema = Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType()));
-            _numInputColumns = 1;
+            setInputSchema(Schema(Schema::MemoryLayout::ROW, hintType));
+            setOutputSchema(Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType())));
+            assert(_numInputColumns == hintType.get_column_count());
             return true;
         }
 
@@ -456,15 +454,14 @@ namespace tuplex {
             ss<<"\t - for "<<param_name<<" typed as "<<hintType.desc()<<": "<<wrapped_return_type.desc()<<"\n";
             ss<<"=> typing function as "<<python::Type::makeFunctionType(hintType, wrapped_return_type).desc();
             logger.info(ss.str());
-            _inputSchema = Schema(Schema::MemoryLayout::ROW, hintType);
-            _outputSchema = Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType()));
-            _numInputColumns = 1;
+            setInputSchema(Schema(Schema::MemoryLayout::ROW, hintType));
+            setOutputSchema(Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType())));
+            assert(_numInputColumns == 1);
             return true;
         }
 
-        _inputSchema = Schema::UNKNOWN;
-        _outputSchema = Schema::UNKNOWN;
-        _numInputColumns = hintType.get_column_count(); // input column count can be arbitrary.
+        setInputSchema(Schema::UNKNOWN);
+        setOutputSchema(Schema::UNKNOWN);
         return false;
 
         //
@@ -609,11 +606,10 @@ namespace tuplex {
         if(PARAM_USE_ROW_TYPE && hintType.isRowType()) {
             if(!hintParams(hintType.get_column_types(), params, true, removeBranches))
                 return false;
-            _inputSchema = Schema(Schema::MemoryLayout::ROW, hintType);
-            _outputSchema = Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType())); // <-- row type??
+            setInputSchema(Schema(Schema::MemoryLayout::ROW, hintType));
+            setOutputSchema(Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType()))); // <-- row type??
             if(hasPythonObjectTyping())
                 markAsNonCompilable();
-            _numInputColumns = _inputSchema.getRowType().get_column_count();
             return true;
         }
 
@@ -644,11 +640,12 @@ namespace tuplex {
             //Logger::instance().logger("type inference").error("multi parameter type hinting not successful.");
             return false;
         }
-        _inputSchema = Schema(Schema::MemoryLayout::ROW, python::Type::makeTupleType(_ast.getParameterTypes().argTypes));
-        _outputSchema = Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType()));
+        setInputSchema(Schema(Schema::MemoryLayout::ROW, python::Type::makeTupleType(_ast.getParameterTypes().argTypes)));
+        setOutputSchema(Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType())));
         if(hasPythonObjectTyping())
             markAsNonCompilable();
-        _numInputColumns = _inputSchema.getRowType().parameters().size();
+
+        assert(_numInputColumns == params.size());
         return true;
     }
 
@@ -676,7 +673,7 @@ namespace tuplex {
             throw std::runtime_error("UDF already typed, can't hint schema. Use retype instead.");
 
         _hintedInputSchema = schema;
-        _inputSchema = Schema::UNKNOWN;
+        setInputSchema(Schema::UNKNOWN);
 
         _ast.setUnpacking(false);
         python::Type hintType = schema.getRowType();
@@ -694,7 +691,10 @@ namespace tuplex {
 
         // shortcut hint with exception type.
         if(hintType.isExceptionType()) {
-            _inputSchema = _outputSchema = Schema(Schema::MemoryLayout::ROW, hintType);
+            auto exception_schema = Schema(Schema::MemoryLayout::ROW, hintType);
+            setInputSchema(exception_schema);
+            setOutputSchema(exception_schema);
+            assert(_numInputColumns == 1);
             return true;
         }
 
@@ -1995,7 +1995,7 @@ namespace tuplex {
             return false;
         }
 
-        _inputSchema = inputSchema; // somehow hintInputSchema overwrites current one? => Restore.
+        setInputSchema(inputSchema); // somehow hintInputSchema overwrites current one? => Restore.
 
         return !_outputSchema.getRowType().isIllDefined();
     }
@@ -2061,9 +2061,9 @@ namespace tuplex {
 
     bool UDF::hasWellDefinedTypes() const {
         // input schema ok?
-        if(_inputSchema == Schema::UNKNOWN)
+        if(getInputSchema() == Schema::UNKNOWN)
             return false;
-        if(_outputSchema == Schema::UNKNOWN)
+        if(getOutputSchema() == Schema::UNKNOWN)
             return false;
         if(_ast.getFunctionAST()) {
             // Check AST, is there any node?
