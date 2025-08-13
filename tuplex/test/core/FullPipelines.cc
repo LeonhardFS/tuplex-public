@@ -378,11 +378,11 @@ namespace tuplex {
                                  "                'response_code': 0,\n"
                                  "                'content_size': 0}";
 
-        auto bad_ips = ctx.csv("../resources/bad_ips_all.txt");
+        auto& bad_ips = ctx.csv("../resources/bad_ips_all.txt");
         ClosureEnvironment ce;
         ce.importModuleAs("re", "re");
         ce.importModuleAs("random", "random");
-        auto requests = ctx.text(logs_path).map(UDF(extractFieldsRegex, "", ce));
+        auto& requests = ctx.text(logs_path).map(UDF(extractFieldsRegex, "", ce));
         requests.setColumns({"ip", "client_id", "user_id", "date", "method", "endpoint", "protocol", "response_code", "content_size"});
         return requests.join(bad_ips, string("ip"), string("BadIPs"));
     }
