@@ -30,6 +30,32 @@ namespace tuplex {
 // 2. LambdaFunction as object with private constructor
 // ==> has static function, so can be used to create a call to it...
 
+        python::Type LambdaFunction::tupleArgType() const {
+            auto t = _pyArgType;
+
+            // must be tuple type.
+            assert(t.isTupleType());
+
+            // special case: single row type -> make tuple type!
+            if(t.parameters().size() == 1 && t.parameters().front().isRowType()) {
+                if(t.parameters().front() == python::Type::EMPTYROW)
+                    t = python::Type::EMPTYTUPLE; // no columns
+                else
+                    t = _unpackFirstArg ? t.parameters().front().get_column_type(0) : python::Type::makeTupleType({t.parameters().front().get_columns_as_tuple_type()}); // convert to tuple type.
+            }
+
+            assert(t.isTupleType());
+            return t;
+        }
+
+        python::Type LambdaFunction::tupleRetType() const {
+            auto t = _pyRetType;
+            if (t.isRowType() && t.get_column_count() == 1)
+                t = t.get_column_type(0);
+
+            return python::Type::propagateToTupleType(t);
+        }
+
         void LambdaFunctionBuilder::createLLVMFunction(const std::string &name, const python::Type &argType,
                                                        bool isFirstArgTuple, NParameterList *parameters,
                                                        const python::Type &retType) {
@@ -41,32 +67,10 @@ namespace tuplex {
             _func._name = name;
             _func._pyArgType = argType;
             _func._pyRetType = retType;
+            _func._unpackFirstArg = !isFirstArgTuple;
 
-            auto pyArgType = _func._pyArgType;
-            auto pyRetType = _func._pyRetType;
-
-
-            if (pyRetType.isRowType() && pyRetType.get_column_count() == 1)
-                pyRetType = pyRetType.get_column_type(0);
-
-            // special case: single row type -> make tuple type!
-            if(pyArgType.parameters().size() == 1 && pyArgType.parameters().front().isRowType()) {
-#error "need to fix this here, i.e. should allow for function type to be Row[...] -> ... as well"
-                if(pyArgType.parameters().front() == python::Type::EMPTYROW)
-                    pyArgType = python::Type::EMPTYTUPLE; // no columns
-                else
-                    pyArgType = !isFirstArgTuple ? pyArgType.parameters().front().get_column_type(0) : python::Type::makeTupleType({pyArgType.parameters().front().get_columns_as_tuple_type()}); // convert to tuple type.
-            }
-
-            // TODO????
-            // // update.
-            // _func._pyArgType = pyArgType;
-            // _func._pyRetType = pyRetType;
-
-            assert(pyArgType.isTupleType());
-
-            _fti.init(pyArgType);
-            _fto.init(pyRetType);
+            _fti.init(_func.tupleArgType());
+            _fto.init(_func.tupleRetType());
 
             // create function + load arguments. Necessary instructions for this are added at the start of the basic body block.
             auto paramType = parameterTypes();
@@ -147,6 +151,12 @@ namespace tuplex {
 
             _logger.info("generating lambda function for " + argType.desc() + " -> " + retType.desc());
 
+            // isFirstArgTuple = false means to unpack for the single-element tuple case the argument.
+            // isFirstArgTuple = true means to keep even the single-element tuple as-is.
+            // --> e.g.
+            // assume x= (1,)
+            // lambda x: x  ==> with isFirstArgTuple=false, this will be i64 -> i64
+            // lanbda x: x[0] ==> with isFirstArgTuple=true, this will be (i64) -> i64.
             createLLVMFunction(func_name, argType, lambda->isFirstArgTuple(), lambda->_arguments.get(), retType);
 
             return *this;
@@ -175,39 +185,24 @@ namespace tuplex {
 
             // clear old lookup
             _paramLookup.clear();
-            auto pyArgType = _func._pyArgType;
+            auto pyArgType = _func.tupleArgType();
 
             std::vector<llvm::Argument *> args;
             for(auto& arg : _func._func->args())
                 args.push_back(&arg);
 
-            if (pyArgType.parameters().size() == 1) {
-                if (isFirstArgTuple && pyArgType.parameters().front() != python::Type::EMPTYTUPLE) {
+            assert(args.back()->getName() == "inRow");
 
-                    // special case: (Row[]) --> HACK
-                    if(pyArgType.parameters().front() == python::Type::EMPTYROW)
-                        pyArgType = python::Type::EMPTYTUPLE;
-                    // transform row to tuple type (physical representation)
-                    else if(pyArgType.parameters().front().isRowType())
-                        pyArgType = pyArgType.parameters().front().get_columns_as_tuple_type();
-                    // create ftarg from llvm struct val (i.e. the pointer)
-                    assert(args.back()->getName() == "inRow");
-                    // Proper way on how to deserialize tuple.
-                    // auto ftarg = FlattenedTuple::fromLLVMStructVal(_env, builder, args.back(), pyArgType);
-                    auto argname = static_cast<NParameter *>(params->_args[0].get())->_identifier->_name;
-                    assert(pyArgType.isTupleType());
-                    _paramLookup[argname] = std::make_tuple(SerializableValue(args.back(), nullptr, nullptr), pyArgType); // use the pointer as tuple var!
-                } else {
-                    // there is one arg. Because for now, a single arg is always a pointer to a tuple type, load it
-                    auto ftarg = FlattenedTuple::fromLLVMStructVal(_env, builder, args.back(), pyArgType);
-                    assert(ftarg.numElements() == 1);
-
-                    // simple name lookup
-                    auto argname = static_cast<NParameter *>(params->_args[0].get())->_identifier->_name;
-                    _paramLookup[argname] = std::make_tuple(SerializableValue(ftarg.get(0), ftarg.getSize(0), ftarg.getIsNull(0)), pyArgType.parameters().front());
-                }
+            // unwrap or not?
+            if (_func._unpackFirstArg) {
+                // load as-is
+                assert(params->_args.size() == 1);
+                auto argname = static_cast<NParameter *>(params->_args[0].get())->_identifier->_name;
+                _paramLookup[argname] = std::make_tuple(SerializableValue(args.back(), nullptr, nullptr), pyArgType);
             } else {
-                assert(args.back()->getName() == "inRow");
+                // unpack.
+                assert(params->_args.size() == pyArgType.parameters().size());
+
                 auto ftarg = FlattenedTuple::fromLLVMStructVal(_env, builder, args.back(), pyArgType);
 
                 // simple name lookup in this case too
@@ -219,6 +214,39 @@ namespace tuplex {
                     _paramLookup[argname] = std::make_tuple(ftarg.getLoad(builder, {i}), pyArgType.parameters()[i]);
                 }
             }
+
+            // if (pyArgType.parameters().size() == 1) {
+            //     // throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " need to revisit logic here.");
+            //
+            //     if (isFirstArgTuple && pyArgType.parameters().front() != python::Type::EMPTYTUPLE) {
+            //
+            //         // special case: (Row[]) --> HACK
+            //         if(pyArgType.parameters().front() == python::Type::EMPTYROW)
+            //             pyArgType = python::Type::EMPTYTUPLE;
+            //         // transform row to tuple type (physical representation)
+            //         else if(pyArgType.parameters().front().isRowType())
+            //             pyArgType = pyArgType.parameters().front().get_columns_as_tuple_type();
+            //         // create ftarg from llvm struct val (i.e. the pointer)
+            //         assert(args.back()->getName() == "inRow");
+            //         // Proper way on how to deserialize tuple.
+            //         // auto ftarg = FlattenedTuple::fromLLVMStructVal(_env, builder, args.back(), pyArgType);
+            //         auto argname = static_cast<NParameter *>(params->_args[0].get())->_identifier->_name;
+            //         assert(pyArgType.isTupleType());
+            //         _paramLookup[argname] = std::make_tuple(SerializableValue(args.back(), nullptr, nullptr), pyArgType); // use the pointer as tuple var!
+            //     } else {
+            //         // there is one arg. Because for now, a single arg is always a pointer to a tuple type, load it
+            //         auto ftarg = FlattenedTuple::fromLLVMStructVal(_env, builder, args.back(), pyArgType);
+            //         assert(ftarg.getTupleType().parameters().size() == 1);
+            //
+            //         // simple name lookup
+            //         auto argname = static_cast<NParameter *>(params->_args[0].get())->_identifier->_name;
+            //         auto single_column_type = pyArgType.parameters().front();
+            //         auto single_column_val = ftarg.getElement({0});
+            //         _paramLookup[argname] = std::make_tuple(single_column_val, single_column_type);
+            //     }
+            // } else {
+            //
+            // }
 
             // update insert block
             setLastBlock(builder.GetInsertBlock());
@@ -237,10 +265,9 @@ namespace tuplex {
             return _func;
         }
 
-        LambdaFunction LambdaFunctionBuilder::addReturn(const SerializableValue &retValue) {
+        LambdaFunction LambdaFunctionBuilder::addReturn(SerializableValue ret, const python::Type& ret_type) {
             assert(_retValPtr);
 
-            auto res = retValue.val;
             auto builder = getIRBuilder();
             auto output_type = _fto.getTupleType();
 
@@ -249,7 +276,7 @@ namespace tuplex {
 
             // there are a couple special cases to handle here
             // 1. retValue might be representing null or one of the constants
-            if(!res && (output_type == python::Type::NULLVALUE ||
+            if(!ret.val && (output_type == python::Type::NULLVALUE ||
                        output_type == python::Type::EMPTYLIST ||
                        output_type == python::Type::EMPTYDICT ||
                        output_type == python::Type::EMPTYLIST)) {
@@ -267,35 +294,40 @@ namespace tuplex {
             }
 
             // retValue might be also a pointer to a tuple type (need to check b.c. of list/dict also using pointers!)
-            if(res && output_type.isTupleType() && res->getType()->isPointerTy() && output_type.isTupleType()) {
-                _fto = FlattenedTuple::fromLLVMStructVal(_env, builder, res, output_type);
-                res = _fto.getLoad(builder);
+            if(ret_type.isTupleType() && ret.val && ret.val->getType()->isPointerTy() && output_type.isTupleType()) {
+                // empty tuple should be handled above.
+                assert(ret_type.withoutOption() != python::Type::EMPTYTUPLE);
+                _fto = FlattenedTuple::fromLLVMStructVal(_env, builder, ret.val, output_type);
+                ret.val = _fto.getLoad(builder);
+                ret.size = nullptr;
+                // keep is-null.
             }
 
             // in the case of a single expression, there may be not a tuple on the stack.
             // for this case, take the result and widen it to a tuple for returning
             // consider for this a function lambda x: x + 2 as simple example
-            else if(!_func._pyRetType.isTupleType()) {
+            else if(!ret_type.withoutOption().isTupleType()) {
                 assert(_fto.numElements() == 1);
                 // assign to fto tuple, create load & update res
                 // can be nullptr for option types...
                 //assert(retValue.val);
                 //assert(retValue.size);
-                _fto.assign(0, retValue.val, retValue.size, retValue.is_null);
-                res = _fto.getLoad(builder);
+                _fto.assign(0, ret.val, ret.size, ret.is_null);
+                ret.val = _fto.getLoad(builder);
             }
 
             // the same applies for emptytuple (special case)
-            if (res->getType() == _env->getEmptyTupleType()) {
+            if (ret.val && ret.val->getType() == _env->getEmptyTupleType()) {
                 // _fto.assign(0, retValue.val, retValue.size, retValue.is_null);
-                res = _fto.getLoad(builder);
+                ret.val = _fto.getLoad(builder);
+                ret.size = nullptr;
             }
 
-            assert(res->getType()->isStructTy()); // needs to be tuple type!
+            assert(ret.val->getType()->isStructTy()); // needs to be tuple type!
             static_assert((int64_t) ExceptionCode::SUCCESS == 0, "define this as 0");
 
-            // store res
-            builder.CreateStore(res, _retValPtr);
+            // Store result, i.e. the loaded tuple struct into the result pointer.
+            builder.CreateStore(ret.val, _retValPtr);
             int64_t ec = (int64_t) ExceptionCode::SUCCESS;
             builder.CreateRet(_env->i64Const(ec));
             _body = nullptr;

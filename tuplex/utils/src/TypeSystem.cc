@@ -206,7 +206,7 @@ namespace python {
         if(param == python::Type::GENERICTUPLE)
             return registerOrGetType(name, AbstractType::FUNCTION, params, ret, std::vector<Type>(), true);
 
-        // convert to tuple representation
+        // Convert to tuple representation. --> i.e. always pack as tuple.
         if(isTupleType(param))
             params = param.parameters();
         else

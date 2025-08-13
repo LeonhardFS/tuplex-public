@@ -28,6 +28,9 @@ enum class CompileError {
     TYPE_ERROR_ITER_CALL_WITH_NONHOMOGENEOUS_TUPLE,
     TYPE_ERROR_ITER_CALL_WITH_DICTIONARY,
     TYPE_ERROR_RETURN_ITERATOR,
+    TYPE_ERROR_ROW_COMPARISON, // comparing an (internal) row with something else.
+    TYPE_ERROR_DICT_COMPARISON, // comparing against a dictionary {...:...}
+    TYPE_ERROR_COMPARISON, // generic type comparison error.
     TYPE_ERROR_NEXT_CALL_DIFFERENT_DEFAULT_TYPE,
     TYPE_ERROR_MIXED_ASTNODETYPE_IN_FOR_LOOP_EXPRLIST, // exprlist (for->target) contains a mix of tuple/list of identifiers and single identifier
     TYPE_ERROR_TYPE_UNSTABLE_IN_LOOP, // types are changing over iterations in loop

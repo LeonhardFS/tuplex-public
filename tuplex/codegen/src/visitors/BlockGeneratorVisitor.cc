@@ -1757,14 +1757,25 @@ namespace tuplex {
                 auto param = _lfb->getParameter(name);
                 auto paramType = _lfb->getParameterType(name);
 
-#ifndef NDEBUG
-                // if(type.isListType()) {
-                //     auto L_length = list_length(*_env, builder, param.val, type);
-                //     _env->printValue(builder, L_length, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " " + _funcNames.top() + ": got parameter " + name + " of list type " + type.desc() + " of length: ");
-                // } else if (type.withoutOption().isListType()) {
-                //     _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " TODO: need to print " + type.desc());
-                // }
-#endif
+
+                // Adjust in the case of unpack, and single-element row the type.
+                bool isUnpacked = false;
+                switch (func->type()) {
+                case ASTNodeType::Function: {
+                        auto f = (NFunction*)func;
+                        isUnpacked = !f->isFirstArgTuple();
+                        fatal_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented.");
+                        break;
+                    }
+                case ASTNodeType::Lambda: {
+                        auto lam = (NLambda*)func;
+                        isUnpacked = !lam->isFirstArgTuple();
+                        break;
+                    }
+                default:
+                    fatal_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " unknown node type encountered.");
+                }
+
 
                 VariableSlot slot;
                 slot.type = type; // <-- original type.
@@ -1772,17 +1783,7 @@ namespace tuplex {
                 assert(slot.definedPtr);
                 builder.CreateStore(_env->i1Const(true), slot.definedPtr); // params are always defined!!!
                 slot.var = Variable(*_env, builder, type, name);
-
-                slot.isUnwrappedSingleElementRow = false;
-
-                if (paramType != type) {
-                    // differ, correct param.
-                    if (!type.isRowType() && python::Type::propagateToTupleType(type) == paramType && paramType.isTupleType() && paramType.parameters().size() == 1) {
-                        // unwrap element.
-                        param = tuple_load_element(*_env, builder, param.val, paramType, 0);
-                        slot.isUnwrappedSingleElementRow = true;
-                    }
-                }
+                slot.isUnwrappedSingleElementRow = isUnpacked;
 
                 // special case tuple: may have been passed as ptr.
                 // This logic ONLY applies for tuples. I.e., this is to canonicalize to struct (instead of struct*).
@@ -1790,16 +1791,6 @@ namespace tuplex {
                 if(type.isTupleType() && param.val && param.val->getType()->isPointerTy()) {
                     auto llvm_tuple_type = _env->pythonToLLVMType(type);
                     param.val = builder.CreateLoad(llvm_tuple_type, param.val);
-                    slot.isUnwrappedSingleElementRow = true;
-                }
-
-                // TODO: unwrapping tuple element??
-
-                // same true for Row type, i.e. Row['A' -> str] or so.
-                if(type != python::Type::EMPTYROW && type.isRowType() && type.get_column_count() == 1 && param.val && param.val->getType()->isPointerTy()) {
-                    param = tuple_load_element(*_env, builder, param.val, type.get_columns_as_tuple_type(), 0);
-                    slot.isUnwrappedSingleElementRow = true;
-                    slot.var = Variable(*_env, builder, type.get_column_type(0), name);
                 }
 
                 // lists can be modified, so declare via alloca -> allows for modification (closure!)
@@ -1813,6 +1804,8 @@ namespace tuplex {
                     assert(param.val);
                     builder.CreateStore(value, param.val); // <-- now a pointer!
                 }
+
+                // TODO: same for dictionaries.
 
                 // // debug:
                 // printValue(builder, param, slot.var.type, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " param " + name);
@@ -3023,13 +3016,16 @@ namespace tuplex {
                 auto retVal = _blockStack.back();
                 _blockStack.pop_back();
 
+
+
+
                 // upcast
                 assert(lambda->getInferredType().isFunctionType());
                 auto lamReturnType = lambda->getInferredType().getReturnType();
                 retVal = upCastReturnType(builder, retVal, lambda->_expression->getInferredType(), lamReturnType);
 
                 // fetch type of child node!
-                _lfb->addReturn(retVal);
+                _lfb->addReturn(retVal, lamReturnType);
             }
 
             delete _lfb;
@@ -3073,7 +3069,7 @@ namespace tuplex {
                         addInstruction(var.val, var.size, var.is_null);
                     } else {
                         std::stringstream ss;
-                        ss<<"slot type is: "<<slot->type.desc()<<" id type is: "<<id->getInferredType().desc();
+                        ss<<__FILE__<<":"<<__LINE__<<" slot type is: "<<slot->type.desc()<<" id type is: "<<id->getInferredType().desc();
                         error("perform upcasting or downcasting, typing issue. Details: " + ss.str());
                     }
                 }
@@ -4389,25 +4385,71 @@ namespace tuplex {
                 }
             }
 
-            // Special case: Indexing into single-column row.
-            if (sub->_value->type() == ::tuplex::ASTNodeType::Identifier && (value_type.isRowType() || value_type.isTupleType()) && 1 == extract_columns_from_type(value_type)) {
-                // check if slot is parameter (ONLY VALID FOR PARAMETER).
-                auto slot = getSlot(static_cast<NIdentifier*>(sub->_value.get())->_name);
-                if (slot && slot->isUnwrappedSingleElementRow && slot->isParameter) {
-                    // special case: wrap param, and then call unwrap?
-
-                    // @TODO: check for indexing errors.
-
-                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " need to fix indexing here.");
-
-
-                    // actually can return directly slot.
-                    auto ret = slot->var.load(builder);
-                    addInstruction(ret.val, ret.size, ret.is_null);
-                    _lfb->setLastBlock(builder.GetInsertBlock());
-                    return;
-                }
-            }
+            // // Special case: Indexing into single-column row.
+            // if (sub->_value->type() == ::tuplex::ASTNodeType::Identifier && (value_type.isRowType() || value_type.isTupleType()) && 1 == extract_columns_from_type(value_type)) {
+            //     // check if slot is parameter (ONLY VALID FOR PARAMETER).
+            //     auto slot = getSlot(static_cast<NIdentifier*>(sub->_value.get())->_name);
+            //     if (slot && slot->isUnwrappedSingleElementRow && slot->isParameter) {
+            //         // special case: wrap param, and then call unwrap?
+            //
+            //         // Type to index is what is wrapped.
+            //         auto type_to_index = value_type.isTupleType() ? value_type.parameters().front() : value_type.get_column_type(0);
+            //         assert(slot->var.type == type_to_index);
+            //
+            //         if (index_type == python::Type::I64) {
+            //             // must be 0.
+            //             auto is_not_zero = builder.CreateICmpNE(index.val, _env->i64Const(0));
+            //             _lfb->addException(builder, ExceptionCode::INDEXERROR, is_not_zero, "index must be 0 for single column index (unwrapped).");
+            //         } else if (index_type == python::Type::STRING) {
+            //             // must be "name" of whatever is given in row type.
+            //             if (!value_type.isRowType())
+            //                 fatal_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " str indexing only supported with row type, but got type " + value_type.desc() + ".");
+            //             if (value_type.get_column_names().empty())
+            //                 fatal_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " row type " + value_type.desc() + " has no column names, can't index with string.");
+            //
+            //             // compare string value.
+            //             auto column_name = value_type.get_column_name(0);
+            //             auto is_eq_to_str = stringEquals(builder, index, column_name);
+            //             auto is_not_eq_to_str = _env->i1neg(builder, is_eq_to_str);
+            //             _lfb->addException(builder, ExceptionCode::INDEXERROR, is_not_eq_to_str, "column " + column_name + " not found in row.");
+            //         } else if (index_type.isConstantValued()) {
+            //             // constant valued is even easier.
+            //             if(index_type.underlying() == python::Type::I64) {
+            //                 auto index_value = std::stoi(index_type.constant());
+            //                 // always index error if NOT 0.
+            //                 if (index_value != 0) {
+            //                     _logger.warn("Encountered constant value for indexing single-column row (" + std::to_string(index_value) + ") that will always lead to errors.");
+            //                     _lfb->addException(builder, ExceptionCode::INDEXERROR, _env->i1Const(true), "constant is not 0.");
+            //                 } // nothing to be done for else case.
+            //             } else if (index_type.underlying() == python::Type::STRING) {
+            //
+            //                 // must be "name" of whatever is given in row type.
+            //                 if (!value_type.isRowType())
+            //                     fatal_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " str indexing only supported with row type, but got type " + value_type.desc() + ".");
+            //                 if (value_type.get_column_names().empty())
+            //                     fatal_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " row type " + value_type.desc() + " has no column names, can't index with string.");
+            //
+            //                 // compare string value.
+            //                 auto column_name = value_type.get_column_name(0);
+            //                 auto index_value = std::string(index_type.constant());
+            //                 if (index_value != column_name) {
+            //                     _logger.warn("Encountered constant value for indexing single-column row (" + index_value + ") that will always lead to errors because it is different from expected column name " + column_name + ".");
+            //                     _lfb->addException(builder, ExceptionCode::INDEXERROR, _env->i1Const(true), "constant is not " + column_name + ".");
+            //                 } // nothing to be done for else case.
+            //             } else {
+            //                 fatal_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " invalid constant index type " + index_type.desc() + ".");
+            //             }
+            //         } else {
+            //             fatal_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " invalid index type " + index_type.desc() + " encountered for single column row.");
+            //         }
+            //
+            //         // actually can return directly slot.
+            //         auto ret = slot->var.load(builder);
+            //         addInstruction(ret.val, ret.size, ret.is_null);
+            //         _lfb->setLastBlock(builder.GetInsertBlock());
+            //         return;
+            //     }
+            // }
 
 
 
@@ -4417,6 +4459,11 @@ namespace tuplex {
 
             subscript(sub->getInferredType(), value, value_type, index,
               index_type, sub->_expression.get(), sub->_value.get());
+
+            // // debug: output of []
+            // auto last_value = _blockStack.back();
+            // printValue(builder, last_value, sub->getInferredType(), std::string(__FILE__) + ":" + std::to_string(__LINE__) + " result of [] is: ");
+            // _lfb->setLastBlock(builder.GetInsertBlock());
         }
 
         // helper function to check whether options can be cast
@@ -4821,7 +4868,7 @@ namespace tuplex {
 
             // assert(canAchieveAtLeastNullCompatibility(retType, desiredRetType));
             if(retType == desiredRetType) {
-                _lfb->addReturn(retVal);
+                _lfb->addReturn(retVal, retType);
                 return;
             }
 
@@ -4887,7 +4934,7 @@ namespace tuplex {
 
             _lfb->setLastBlock(builder.GetInsertBlock()); // now return...
             auto retValue = SerializableValue(ret, size);
-            _lfb->addReturn(retValue);
+            _lfb->addReturn(retValue, desiredRetType);
         }
 
         void BlockGeneratorVisitor::visit(NReturn *ret) {
@@ -4957,7 +5004,7 @@ namespace tuplex {
 
                 _lfb->setLastBlock(builder.GetInsertBlock());
                 // this adds a retValue
-                _lfb->addReturn(retVal);
+                _lfb->addReturn(retVal, funcReturnType);
             } else {
 
                 if(canAchieveAtLeastNullCompatibility(deopt_func_return_type, deopt_target_type)) {

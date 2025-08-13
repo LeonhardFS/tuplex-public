@@ -723,8 +723,8 @@ namespace tuplex {
                     }
 
                     // // debug print
-                    _env->printValue(builder, size, "serializing " + fieldType.desc() + " of size: ");
-                    _env->printValue(builder, offset, "serializing " + fieldType.desc() + " to offset: ");
+                    // _env->printValue(builder, size, "serializing " + fieldType.desc() + " of size: ");
+                    // _env->printValue(builder, offset, "serializing " + fieldType.desc() + " to offset: ");
 
                     // store offset + length
                     // len | size

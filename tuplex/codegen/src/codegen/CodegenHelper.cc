@@ -798,6 +798,10 @@ namespace tuplex {
             return llvm::Constant::getIntegerValue(llvm::Type::getInt1Ty(ctx), llvm::APInt(64, value));
         }
 
+        inline llvm::Value* i1neg(const IRBuilder& builder, llvm::Value* v) {
+            return builder.CreateSub(i1Const(builder.getContext(), true), v);
+        }
+
         llvm::Value* stringCompare(const IRBuilder& builder, llvm::Value *ptr, const std::string &str,
                                    bool include_zero=false) {
 
@@ -851,6 +855,38 @@ namespace tuplex {
 
             return cond;
         }
+
+        llvm::Value* stringEquals(const IRBuilder& builder, const SerializableValue& value, const std::string &str) {
+            using namespace llvm;
+
+            // check length/size.
+            auto size = str.size();
+            assert(size == strlen(str.c_str()) + 1);
+            assert(value.val);
+            if (!value.size)
+                return stringCompare(builder, value.val, str); // quick check.
+
+            auto cond_cmp_content = builder.CreateICmpEQ(value.size, i64Const(builder.getContext(), size));
+            if (value.is_null) {
+                // only need to compare if value is NOT null.
+                auto is_not_null = i1neg(builder, value.is_null);
+                cond_cmp_content = builder.CreateAnd(cond_cmp_content, is_not_null);
+            }
+
+            auto bbCmpContent = BasicBlock::Create(builder.getContext(), "cmp_str_content", builder.GetInsertBlock()->getParent());
+            auto bbCmpDone = BasicBlock::Create(builder.getContext(), "cmp_str_done", builder.GetInsertBlock()->getParent());
+            auto bbCurrent = builder.GetInsertBlock();
+            builder.CreateCondBr(cond_cmp_content, bbCmpContent, bbCmpDone);
+            builder.SetInsertPoint(bbCmpContent);
+            auto is_str_content_equal = stringCompare(builder, value.val, str);
+            bbCmpContent = builder.GetInsertBlock();
+            builder.CreateBr(bbCmpDone);
+            auto phi = builder.CreatePHI(Type::getInt1Ty(builder.getContext()), 2, "str_is_equal");
+            phi->addIncoming(i1Const(builder.getContext(), false), bbCurrent);
+            phi->addIncoming(is_str_content_equal, bbCmpContent);
+            return phi;
+        }
+
 
         llvm::Value *
         NormalCaseCheck::codegenForCell(llvm::IRBuilder<> &builder, llvm::Value *cell_value, llvm::Value *cell_size) {

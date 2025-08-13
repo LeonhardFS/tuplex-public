@@ -29,9 +29,10 @@ namespace tuplex {
             python::Type    _pyRetType;
             llvm::Function  *_func;
             LLVMEnvironment *_env;
+            bool _unpackFirstArg;
 
         public:
-            LambdaFunction() : _func(nullptr), _env(nullptr) {}
+            LambdaFunction() : _func(nullptr), _env(nullptr), _unpackFirstArg(false) {}
 
             /*!
              * LLVM struct type of the returned tuple of this function
@@ -60,6 +61,9 @@ namespace tuplex {
                                           llvm::BasicBlock* const handler,
                                           llvm::Value* const exceptionCode,
                                           const std::vector<llvm::Value*>& args);
+
+            python::Type tupleArgType() const;
+            python::Type tupleRetType() const;
 
             friend class LambdaFunctionBuilder;
         };
@@ -122,11 +126,12 @@ namespace tuplex {
             python::Type pythonRetType() const { return _func._pyRetType; }
 
             /*!
-             * add a return statement
-             * @param retValue the serializablevalue
+             * Adds a return statement, i.e. write value to output.
+             * @param ret the SerializableValue.
+             * @param ret_type the python type of what ret represents.
              * @return itself
              */
-            LambdaFunction addReturn(const SerializableValue &retValue);
+            LambdaFunction addReturn(SerializableValue ret, const python::Type& ret_type);
 
             /*!
              * generates an internal normalcase violation and terminates basic block. After this, getLastBlock will be nullptr.

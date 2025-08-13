@@ -714,9 +714,72 @@ namespace tuplex {
         // first check if this is a simple statement, if so simply use the rhs's result
         if(cmp->_comps.size() == 0)
             cmp->setInferredType(cmp->_left->getInferredType());
-        else
+        else {
+
+            // @TODO.
+            // For each pair check if cmp is supported. Else, set as TypeError.
+
+            // special case: For Row types, issue error, so unpacking works...
+            std::vector<python::Type> types(1, cmp->_left->getInferredType());
+            for (const auto& node : cmp->_comps)
+                types.push_back(deoptimizedType(node->getInferredType()));
+
+            auto type_error = python::Type::byName("TypeError");
+
+            // any row type? error.
+            for (const auto& t : types)
+                if (t.isRowType()) {
+                    addCompileError(CompileError::TYPE_ERROR_ROW_COMPARISON);
+                    cmp->setInferredType(type_error);
+                    fatal_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " invalid use of row.");
+                    return;
+                }
+
+            // Check if cmp operator is defined for type pairs, and can be generated.
+            for (unsigned i = 0; i < cmp->_ops.size(); ++i) {
+                // == and != are always defined for all types.
+                switch (cmp->_ops[i])   {
+                    case TokenType::EQEQUAL:
+                    case TokenType::NOTEQUAL:
+                    case TokenType::IS:
+                    case TokenType::ISNOT:
+                        break;
+                    case TokenType::LESS:
+                    case TokenType::GREATER:
+                    case TokenType::LESSEQUAL:
+                    case TokenType::GREATEREQUAL: {
+                            // if types can be unified, comparison ok.
+                            // list, tuple, set ok
+                            // dict, errors.
+                            auto left_type = types[i];
+                            auto right_type = types[i + 1];
+
+                            if (left_type.isDictionaryType() || right_type.isDictionaryType()) {
+                                cmp->setInferredType(type_error);
+                                addCompileError(CompileError::TYPE_ERROR_DICT_COMPARISON);
+                                return;
+                            }
+
+                            if (left_type != right_type) {
+                                // unification?
+                                auto uni_type = unifyTypes(left_type, right_type);
+                                if (uni_type == python::Type::UNKNOWN) {
+                                    cmp->setInferredType(type_error);
+                                    addCompileError(CompileError::TYPE_ERROR_COMPARISON);
+                                    return;
+                                }
+                            }
+                            break;
+                        }
+                default:
+                    fatal_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " unsupported token type " + opToString(cmp->_ops[i]) + ".");
+                }
+            }
+
             // else it is a bool (b.c. it is a compare statement)
             cmp->setInferredType(python::Type::BOOLEAN);
+        }
+
 
         if(!checkForValidIsComparisons(cmp)) {
             addCompileError(CompileError::TYPE_ERROR_INCOMPATIBLE_TYPES_FOR_IS_COMPARISON);

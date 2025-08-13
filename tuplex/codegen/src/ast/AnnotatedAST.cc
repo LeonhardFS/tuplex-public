@@ -424,6 +424,8 @@ namespace tuplex {
         void AnnotatedAST::hintFunctionParameters(ASTNode *node) {
             assert(node->type() == ASTNodeType::Lambda || node->type() == ASTNodeType::Function);
 
+            //!!! do not reset _treatFirstArgAsTuple for lambda, as this is globally controlled.
+
             if(node->type() == ASTNodeType::Lambda) {
                 // go through all params, check whether there is a type hint or not...
 
@@ -433,7 +435,6 @@ namespace tuplex {
 
                 // reset lambda and param list.
                 lam->setInferredType(python::Type::UNKNOWN);
-                lam->setFirstArgTreatment(false);
                 lam->_arguments->setInferredType(python::Type::UNKNOWN);
             }
 
@@ -443,7 +444,6 @@ namespace tuplex {
                     assignParameterType(arg.get());
                 // reset function and param list.
                 fun->setInferredType(python::Type::UNKNOWN);
-                fun->setFirstArgTreatment(false);
                 fun->_parameters->setInferredType(python::Type::UNKNOWN);
             }
         }

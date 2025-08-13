@@ -368,6 +368,7 @@ namespace tuplex {
             // --> this code here works statically. However, note that there's a simpler version of this possible
             // i.e., run over single dummy input and use result. That won't capture weird if branch behavior though.
             // therefore resort to static annotation here with the if escape hatch if necessary.
+            _ast.setUnpacking(false);
             if(!hintParams({}, {}, true, removeBranches)) {
                 logTypingErrors(printErrors);
                 return false;
@@ -386,15 +387,24 @@ namespace tuplex {
 
             // simpler hinting using row type, for a single param - assume it's the full row
             if(PARAM_USE_ROW_TYPE && hintType.isRowType()) {
-                if(!hintParams({hintType}, params, true, removeBranches)) {
-                    bool rc = false;
+                _ast.setUnpacking(false);
+                auto rc = hintParams({hintType}, params, true, removeBranches);
+                auto return_type = _ast.getReturnType();
+                if (return_type.isExceptionType()) {
+                    std::stringstream ss;
+                    ss<<"Hinting function with "<<hintType.desc()<<" produced only exceptions of type "<<return_type.desc()<<". Retrying by unwrapping single-column parameter.";
+                    logger.debug(ss.str());
+                    rc = false; // <-- try again.
+                }
+
+                if(!rc) {
                     // For the special case of a single column, try to unwrap and hint again.
                     if (hintType.get_column_count() == 1) {
                         auto unwrapped_hint_type = hintType.get_column_type(0);
                         logger.debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " hinting with type " + hintType.desc() + " failed, trying again with unwrapped type " + unwrapped_hint_type.desc() + ".");
                         // need to remove types, to avoid stopping processing prematurely.
                         removeTypes(false, true);
-
+                        _ast.setUnpacking(true);
                         rc = hintParams({unwrapped_hint_type}, params, true, removeBranches);
 
                         // If this worked, track it is unpacked.
@@ -436,6 +446,7 @@ namespace tuplex {
                 // the schema is (i64), (f64), (bool), (string), ([i64]), ...
                 // meaning there is a single element and it is not a tuple
                 // then indexing it is stupid. I.e. avoid x[0], just write x.
+                _ast.setUnpacking(false);
                 if(!hintType.parameters().front().isTupleType()) {
                     if(!hintParams({hintType.parameters()[0]}, params, true, removeBranches)) {
                         logTypingErrors(printErrors);
@@ -455,12 +466,13 @@ namespace tuplex {
                     return true;
                 } else {
                     // hint with first element as tuple unpacked
+                    _ast.setUnpacking(true);
                     if(!hintParams({hintType.parameters()[0]}, params, true, removeBranches)) {
                         logTypingErrors(printErrors);
                         return false;
                     }
                     // @todo: this is bad naming. should be rephrased to treat first arg as tuple or not
-                    _ast.setUnpacking(false);
+                    _ast.setUnpacking(true);
                     _inputSchema = Schema(Schema::MemoryLayout::ROW, python::Type::makeTupleType(_ast.getParameterTypes().argTypes));
                     _outputSchema = Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType()));
                     if(hasPythonObjectTyping())
@@ -489,6 +501,7 @@ namespace tuplex {
                 }
 
                 // only hint with the full set is possible...
+                _ast.setUnpacking(false);
                 if(!hintParams({hintType}, params, true, removeBranches)) {
                     return false;
                 }

@@ -1477,6 +1477,16 @@ namespace tuplex {
                                                    bool include_zero);
 
         /*!
+         * compare whether value of string is equal to given str. This will generate additional block. First, a size-check is performed and then a content check.
+         * if is_null is set in value, also a null-check is performed.
+         * @param builder IR builder
+         * @param value value to compare. If is-null is
+         * @param str string to compare against.
+         * @return true if equal, false else.
+         */
+        extern llvm::Value* stringEquals(const IRBuilder& builder, const SerializableValue& value, const std::string &str);
+
+        /*!
          * renames function args and returns them as hashmap for easy access. Order of names in vector corresponds to order of args
          */
         inline std::unordered_map<std::string, llvm::Value*> mapLLVMFunctionArgs(llvm::Function* func, const std::vector<std::string>& names) {
