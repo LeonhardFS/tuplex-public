@@ -1806,6 +1806,9 @@ namespace tuplex {
                 }
 
                 // TODO: same for dictionaries.
+                if(type != python::Type::EMPTYDICT && type.withoutOption().isDictionaryType() && !param.val->getType()->isPointerTy()) {
+                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " dictionary value must be pointer, not yet implemented.");
+                }
 
                 // // debug:
                 // printValue(builder, param, slot.var.type, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " param " + name);

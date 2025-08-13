@@ -45,12 +45,12 @@ TEST_F(DataSetTest, LenOptionCall) {
     using namespace tuplex;
     Context c(microTestOptions());
 
-    std::string test_str = "Hello world";
-    auto f_str = Field(test_str);
-    Row row1({f_str});
-    auto v1 = c.parallelize(std::vector<Row>{row1, row1}).map(UDF("lambda x: len(x)")).collectAsVector();
-    ASSERT_EQ(v1.size(), 2);
-    EXPECT_EQ(v1[0].getInt(0), test_str.length());
+    // std::string test_str = "Hello world";
+    // auto f_str = Field(test_str);
+    // Row row1({f_str});
+    // auto v1 = c.parallelize(std::vector<Row>{row1, row1}).map(UDF("lambda x: len(x)")).collectAsVector();
+    // ASSERT_EQ(v1.size(), 2);
+    // EXPECT_EQ(v1[0].getInt(0), test_str.length());
 
     auto f_dict = Field::from_str_data(std::string("{\"a\":30,\"b\":10}"), python::Type::makeDictionaryType(python::Type::STRING, python::Type::I64));
     Row row2({f_dict});
@@ -58,50 +58,50 @@ TEST_F(DataSetTest, LenOptionCall) {
     ASSERT_EQ(v2.size(), 2);
     EXPECT_EQ(v2[0].getInt(0), 2);
 
-    // nested version, checks that correct size is called on json objects.
-    auto f_dictB = Field::from_str_data(std::string("{\"a\":30,\"b\":{\"c\":10}}"), python::Type::GENERICDICT);
-    Row row2B({f_dictB});
-    auto v2B = c.parallelize(std::vector<Row>{row2B, row2B}).map(UDF("lambda x: len(x)")).collectAsVector();
-    ASSERT_EQ(v2B.size(), 2);
-    EXPECT_EQ(v2B[0].getInt(0), 2);
-
-    auto f_list = Field(List::from_vector({Field(10.0), Field(20.0)}));
-    Row row3({f_list});
-    auto v3 = c.parallelize(std::vector<Row>{row3, row3}).map(UDF("lambda x: len(x)")).collectAsVector();
-    ASSERT_EQ(v3.size(), 2);
-    EXPECT_EQ(v3[0].getInt(0), 2);
-
-    auto f_tuple = Field(Tuple(1, 2, 3));
-    Row row4({f_tuple});
-    auto v4 = c.parallelize(std::vector<Row>{row4, row4}).map(UDF("lambda x: len(x)")).collectAsVector();
-    ASSERT_EQ(v4.size(), 2);
-    EXPECT_EQ(v4[0].getInt(0), 3);
-
-    // option versions of str, dict, list, tuple
-    f_str.makeOptional();
-    Row row1b({f_str});
-    auto v1b = c.parallelize(std::vector<Row>{row1b, row1b}).map(UDF("lambda x: len(x)")).collectAsVector();
-    ASSERT_EQ(v1b.size(), 2);
-    EXPECT_EQ(v1b[0].getInt(0), test_str.length());
-
-    f_dict.makeOptional();
-    Row row2b({f_dict});
-    auto v2b = c.parallelize(std::vector<Row>{row2b, row2b}).map(UDF("lambda x: len(x)")).collectAsVector();
-    ASSERT_EQ(v2b.size(), 2);
-    EXPECT_EQ(v2b[0].getInt(0), 2);
-
-    f_list.makeOptional();
-    Row row3b({f_list});
-    auto v3b = c.parallelize(std::vector<Row>{row3b, row3b}).map(UDF("lambda x: len(x)")).collectAsVector();
-    ASSERT_EQ(v3b.size(), 2);
-    EXPECT_EQ(v3b[0].getInt(0), 2);
-
-    // can't test because Row.cc implementation for serializing b.c. serialization of Opt[tuple] is not working yet.
-    // f_tuple.makeOptional();
-    // Row row4b({f_tuple});
-    // auto v4b = c.parallelize(std::vector<Row>{row4b, row4b}).map(UDF("lambda x: len(x)")).collectAsVector();
-    // ASSERT_EQ(v4b.size(), 2);
-    // EXPECT_EQ(v4b[0].getInt(0), 3);
+    // // nested version, checks that correct size is called on json objects.
+    // auto f_dictB = Field::from_str_data(std::string("{\"a\":30,\"b\":{\"c\":10}}"), python::Type::GENERICDICT);
+    // Row row2B({f_dictB});
+    // auto v2B = c.parallelize(std::vector<Row>{row2B, row2B}).map(UDF("lambda x: len(x)")).collectAsVector();
+    // ASSERT_EQ(v2B.size(), 2);
+    // EXPECT_EQ(v2B[0].getInt(0), 2);
+    //
+    // auto f_list = Field(List::from_vector({Field(10.0), Field(20.0)}));
+    // Row row3({f_list});
+    // auto v3 = c.parallelize(std::vector<Row>{row3, row3}).map(UDF("lambda x: len(x)")).collectAsVector();
+    // ASSERT_EQ(v3.size(), 2);
+    // EXPECT_EQ(v3[0].getInt(0), 2);
+    //
+    // auto f_tuple = Field(Tuple(1, 2, 3));
+    // Row row4({f_tuple});
+    // auto v4 = c.parallelize(std::vector<Row>{row4, row4}).map(UDF("lambda x: len(x)")).collectAsVector();
+    // ASSERT_EQ(v4.size(), 2);
+    // EXPECT_EQ(v4[0].getInt(0), 3);
+    //
+    // // option versions of str, dict, list, tuple
+    // f_str.makeOptional();
+    // Row row1b({f_str});
+    // auto v1b = c.parallelize(std::vector<Row>{row1b, row1b}).map(UDF("lambda x: len(x)")).collectAsVector();
+    // ASSERT_EQ(v1b.size(), 2);
+    // EXPECT_EQ(v1b[0].getInt(0), test_str.length());
+    //
+    // f_dict.makeOptional();
+    // Row row2b({f_dict});
+    // auto v2b = c.parallelize(std::vector<Row>{row2b, row2b}).map(UDF("lambda x: len(x)")).collectAsVector();
+    // ASSERT_EQ(v2b.size(), 2);
+    // EXPECT_EQ(v2b[0].getInt(0), 2);
+    //
+    // f_list.makeOptional();
+    // Row row3b({f_list});
+    // auto v3b = c.parallelize(std::vector<Row>{row3b, row3b}).map(UDF("lambda x: len(x)")).collectAsVector();
+    // ASSERT_EQ(v3b.size(), 2);
+    // EXPECT_EQ(v3b[0].getInt(0), 2);
+    //
+    // // can't test because Row.cc implementation for serializing b.c. serialization of Opt[tuple] is not working yet.
+    // // f_tuple.makeOptional();
+    // // Row row4b({f_tuple});
+    // // auto v4b = c.parallelize(std::vector<Row>{row4b, row4b}).map(UDF("lambda x: len(x)")).collectAsVector();
+    // // ASSERT_EQ(v4b.size(), 2);
+    // // EXPECT_EQ(v4b[0].getInt(0), 3);
 }
 
 

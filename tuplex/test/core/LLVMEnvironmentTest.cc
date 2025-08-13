@@ -616,8 +616,12 @@ namespace tuplex {
             IRBuilder builder(body);
 
             // parse cjson
-            env->printValue(builder, args["obj"], "Parsing json string:");
+            env->printValue(builder, args["obj"], std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Parsing json string:");
+
             auto j = call_cjson_parse(builder, args["obj"]);
+
+            env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Parsed json.");
+
             llvm::Value* item_found = nullptr;
             auto item = call_cjson_getitem(builder,j, args["key"], &item_found);
 
@@ -761,8 +765,6 @@ TEST(LLVMENV, cJSONGetItem) {
     using namespace tuplex;
     using namespace tuplex::codegen;
 
-    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " need to fix this");
-
 #ifndef USE_YYJSON_INSTEAD
     GTEST_SKIP_("only test with yyjson enabled.");
 #endif
@@ -779,6 +781,10 @@ TEST(LLVMENV, cJSONGetItem) {
     // annotate module with line numbers.
     codegen::annotateModuleWithInstructionPrint(*env->getModule().get());
 
+    // this works NOT under macOS yet.
+#ifdef __APPLE__
+    auto rc = jit->compile(env->getIR());
+#else
     // emit object file (to string)
     auto obj_buf = compileToObjectFile(*env->getModule().get());
 
@@ -791,7 +797,7 @@ TEST(LLVMENV, cJSONGetItem) {
     // compile buffer
     auto object_buf = fileToString(file_path);
     bool rc = jit->compileObjectBuffer(object_buf);
-
+#endif
     EXPECT_TRUE(rc);
 
     // get function (add) and call it

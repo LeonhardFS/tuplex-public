@@ -1191,6 +1191,35 @@ namespace tuplex {
 #endif
         }
 
+        void codegen_debug_printf_value(const IRBuilder& builder, const std::string& message, llvm::Value* value, bool print_ptr_as_str=false) {
+#ifndef NDEBUG
+            auto printf_func = printf_prototype(builder.getContext(), builder.GetInsertBlock()->getModule());
+            llvm::Value *sConst = builder.CreateGlobalStringPtr(message);
+            std::string fmt = "%s";
+
+            if (!value)
+                fmt += "llvm::Value* is <nullptr>";
+            else if (value->getType()->isIntegerTy()) {
+                fmt += " i" + std::to_string(value->getType()->getIntegerBitWidth()) + " ";
+                value = builder.CreateZExtOrTrunc(value, llvm::Type::getInt64Ty(builder.getContext()));
+                fmt += "%" PRId64;
+            } else if (value->getType()->isFloatingPointTy()) {
+                fmt += " f32 %f";
+            } else if (value->getType()->isDoubleTy()) {
+                fmt += " f64 %lf";
+            } else if (value->getType()->isPointerTy() && print_ptr_as_str) {
+                fmt += " str %s";
+            } else {
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " llvm type not supported.");
+            }
+
+            fmt += "\n";
+            llvm::Value *sFormat = builder.CreateGlobalStringPtr(fmt.c_str());
+            builder.CreateCall(printf_func, {sFormat, sConst, value});
+#endif
+        }
+
+
 #ifdef USE_YYJSON_INSTEAD
         // yyjson uses a doc to store a couple values.
         // These structures are detailed in https://github.com/ibireme/yyjson/blob/master/doc/DataStructure.md.
@@ -1797,14 +1826,17 @@ namespace tuplex {
             auto llvm_type = get_or_create_yyjson_shim_type(builder);
             auto yy_ret_val = ctor_builder.CreateAlloca(llvm_type, 0, nullptr, "yy_retval");
 
-            auto func_doc_get_root = getOrInsertFunction(mod, "yyjson_mut_doc_get_root", i8ptrType(ctx), i8ptrType(ctx));
-
-            auto func_parse = getOrInsertFunction(mod, "yyjson_mut_parse", i8ptrType(ctx), i8ptrType(ctx), llvm::Type::getInt64Ty(ctx));
-
-            auto func_strlen = strlen_prototype(ctx, mod);
-            // auto str_size = builder.CreateAdd(builder.CreateCall(func_strlen, {str_ptr}), llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, 1)));
-            auto str_len = builder.CreateCall(func_strlen, {str_ptr});
             codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_yyjson_parse");
+            codegen_debug_printf_value(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " pointer to parse: ", str_ptr, true);
+
+            auto func_doc_get_root = getOrInsertFunction(mod, "yyjson_mut_doc_get_root", i8ptrType(ctx), i8ptrType(ctx));
+            auto func_parse = getOrInsertFunction(mod, "yyjson_mut_parse", i8ptrType(ctx), i8ptrType(ctx), llvm::Type::getInt64Ty(ctx));
+            auto func_strlen = strlen_prototype(ctx, mod);
+
+            // auto str_size = builder.CreateAdd(builder.CreateCall(func_strlen, {str_ptr}), llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, 1)));
+            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_yyjson_parse: strlen");
+            auto str_len = builder.CreateCall(func_strlen, {str_ptr});
+
 
             // yy wants str len, not str size.
             auto yy_doc = builder.CreateCall(func_parse, {str_ptr, str_len});
