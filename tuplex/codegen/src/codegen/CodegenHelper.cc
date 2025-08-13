@@ -1473,16 +1473,19 @@ namespace tuplex {
             // Returns the number of key-value pairs in this object. Returns 0 if obj is NULL or type is not object.
             auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
 
-            // debug print:
-            codegen_debug_printf_value(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " cjson_obj ptr: ", cjson_obj);
-            codegen_debug_printf_value(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " yy_obj ptr: ", cjson_obj);
+            // // debug print:
+            // codegen_debug_printf_value(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " cjson_obj ptr: ", cjson_obj);
+            // codegen_debug_printf_value(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " yy_obj ptr: ", cjson_obj);
 
-            auto dict_as_ptr = call_cjson_to_string(builder, cjson_obj);
-            codegen_debug_printf_value(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " dict is: ", dict_as_ptr.val);
+            // // debug:
+            // auto dict_as_ptr = call_cjson_to_string(builder, cjson_obj);
+            // codegen_debug_printf_value(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " dict is: ", dict_as_ptr.val);
 
             auto func = getOrInsertFunction(mod, "yyjson_mut_obj_size", ctypeToLLVM<size_t>(ctx),
                                             (llvm::Type*)ctypeToLLVM<char*>(ctx));
-            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_get_size (yyjson)");
+
+            // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_get_size (yyjson)");
+
             return builder.CreateZExtOrTrunc(builder.CreateCall(func, {yy_obj}), llvm::Type::getInt64Ty(ctx));
 #else
 #error "not yet implemented, get corresponding cjson function.
@@ -1858,17 +1861,16 @@ namespace tuplex {
             auto llvm_type = get_or_create_yyjson_shim_type(builder);
             auto yy_ret_val = allocate_on_heap ? alloc_on_runtime_heap(builder, llvm_type, "yy_retval") : alloc_on_stack(builder, llvm_type, "yy_retval");
 
-            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_yyjson_parse");
-            codegen_debug_printf_value(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " pointer to parse: ", str_ptr, true);
+            // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_yyjson_parse");
+            // codegen_debug_printf_value(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " pointer to parse: ", str_ptr, true);
 
             auto func_doc_get_root = getOrInsertFunction(mod, "yyjson_mut_doc_get_root", i8ptrType(ctx), i8ptrType(ctx));
             auto func_parse = getOrInsertFunction(mod, "yyjson_mut_parse", i8ptrType(ctx), i8ptrType(ctx), llvm::Type::getInt64Ty(ctx));
             auto func_strlen = strlen_prototype(ctx, mod);
 
             // auto str_size = builder.CreateAdd(builder.CreateCall(func_strlen, {str_ptr}), llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), llvm::APInt(64, 1)));
-            codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_yyjson_parse: strlen");
+            // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_yyjson_parse: strlen");
             auto str_len = builder.CreateCall(func_strlen, {str_ptr});
-
 
             // yy wants str len, not str size.
             auto yy_doc = builder.CreateCall(func_parse, {str_ptr, str_len});

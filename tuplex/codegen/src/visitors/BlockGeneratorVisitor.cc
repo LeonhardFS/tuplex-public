@@ -1776,6 +1776,17 @@ namespace tuplex {
                     fatal_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " unknown node type encountered.");
                 }
 
+                // is paramType != type?
+                if (paramType != type) {
+                    _logger.debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " param type " + paramType.desc() + " differs from type for argument " + name + ", is " + type.desc() + ".");
+
+                    // special case: wrapped tuple -> unwrap.
+                    if (paramType.isTupleType() && paramType.parameters().size() == 1 && paramType.parameters().front() == type) {
+                        // unwrap param & load.
+                        param = tuple_load_element(*_env, builder, param.val, paramType, 0);
+                    }
+                }
+
 
                 VariableSlot slot;
                 slot.type = type; // <-- original type.
@@ -3020,8 +3031,6 @@ namespace tuplex {
                 _blockStack.pop_back();
 
 
-
-
                 // upcast
                 assert(lambda->getInferredType().isFunctionType());
                 auto lamReturnType = lambda->getInferredType().getReturnType();
@@ -3958,6 +3967,11 @@ namespace tuplex {
             if (value_type.isTupleType()) {
                 auto ft = FlattenedTuple::fromLLVMStructVal(_env, builder, value.val, value_type);
                 ft.print(builder);
+            } else if (value_type.isDictionaryType() && value_type != python::Type::EMPTYDICT && !value_type.isStructuredDictionaryType()) {
+                auto dict = value.val;
+                auto dict_as_str = call_cjson_to_string(builder, value.val);
+                _env->printValue(builder, value.val, "dict of type " + value_type.desc()+ " is: ");
+                _lfb->setLastBlock(builder.GetInsertBlock());
             } else {
                 // primitive, print as is.
                 if (value.val)

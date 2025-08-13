@@ -354,14 +354,15 @@ namespace tuplex {
                             auto dictPtr = _env->CreateHeapAlloca(builder, dict->getType());
                             builder.CreateStore(dict, dictPtr);
 
+                            // for generic dict size if required.
+                            // however, could remove in the future.
+                            // set here.
+                            // => can be quick strlen call. But also can simply reuse info from parsing!
+                            // _env->printValue(builder, size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " size of stored cjson: ");
 
-                            // debug: test
-                            auto dict_as_str = call_cjson_to_string(builder, dictPtr);
-                            _env->printValue(builder, dict_as_str.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " parsed following dictionary: ");
-
-                            // dict length
-                            auto dict_size = call_cjson_get_size(builder, dictPtr);
-                            _env->printValue(builder, dict_size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " #elements in dictionary: ");
+                            // // debug: test
+                            // auto dict_as_str = call_cjson_to_string(builder, dictPtr);
+                            // _env->printValue(builder, dict_as_str.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " parsed following dictionary: ");
 
                             _tree.set(i, codegen::SerializableValue(dictPtr, size, isnull));
                         }

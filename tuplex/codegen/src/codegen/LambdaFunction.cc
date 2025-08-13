@@ -193,6 +193,12 @@ namespace tuplex {
 
             assert(args.back()->getName() == "inRow");
 
+            // // debug: print input tuple.
+            // auto in_row_arg = args.back();
+            // auto ft_in = FlattenedTuple::fromLLVMStructVal(_env, builder, args.back(), pyArgType);
+            // _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " for function " + _func._name + " input tuple is: ");
+            // ft_in.print(builder);
+
             // unwrap or not?
             if (_func._unpackFirstArg) {
                 // load as-is

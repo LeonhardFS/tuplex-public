@@ -207,6 +207,11 @@ namespace tuplex {
             // call function --> incl. exception handling
             // process row here -- BEGIN
             Value *inputRowSize = ft.getSize(builder);
+
+            // // debug:
+            // _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " starting main loop in TuplexSourceTaskBuilder.");
+            // ft.print(builder);
+
             processRow(builder, argUserData, ft, normalRowCountVar, badRowCountVar, outRowCountVar, oldInputPtr, inputRowSize, terminateEarlyOnLimitCode, pipeline() ? pipeline()->getFunction() : nullptr);
             // end process row here -- END
             builder.CreateBr(bbLoopCondition);
