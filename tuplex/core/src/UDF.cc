@@ -52,6 +52,10 @@ namespace tuplex {
             // if it fails, make sure a backup solution in the form of pickled code is existing
             _isCompiled = _ast.parseString(_code);
 
+        // If closure is given, check if all modules are supported.
+        if (!globals.modules().empty() || !globals.functions().empty())
+            _isCompiled = supportsCompilationOfModules(_ast, globals);
+
         // backup solution
         if(!_isCompiled && _pickledCode.length() == 0) {
 
@@ -2207,5 +2211,22 @@ namespace tuplex {
         }
 
         return false;
+    }
+
+    extern bool supportsCompilationOfModules(const codegen::AnnotatedAST& ast, const ClosureEnvironment& env) {
+        if (!env.functions().empty())
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " functions check not yet supported.");
+
+        if (env.modules().empty())
+            return true;
+
+        // Check now the other modules, right now do not perform a patial check using the ast.
+        std::set<std::string> supported_modules{"math", "re"}; // <-- only support these. Maybe be more dynamic with symbol table?? Allow users to register function support?
+
+        for (const auto& m : env.modules()) {
+            if (supported_modules.find(m.original_identifier) == supported_modules.end())
+                return false;
+        }
+        return true;
     }
 }

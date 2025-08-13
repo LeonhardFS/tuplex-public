@@ -33,6 +33,9 @@ TEST_F(FallbackTest, Numpy_objects) {
     //           .map(UDF("lambda x: np.zeroes(x)", "", ce))
     //           .collectAsVector();
 
+    // TODO: for the code to run, need to IMPORT numpy first.
+    // Else, will produce exceptions.
+
     // run here
     auto v = c.parallelize({Row(10), Row(20), Row(1)})
             .map(UDF("lambda x: np.zeros(x)", "", ce))

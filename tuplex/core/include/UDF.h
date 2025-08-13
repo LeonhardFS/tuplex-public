@@ -397,6 +397,14 @@ namespace tuplex {
         }
 #endif
     };
+
+    /*!
+     * Checks whether the modules in the function can be compiled, or whether fallback mode is required.
+     * @param ast
+     * @param env
+     * @return true is compilation is possible, false else.
+     */
+    extern bool supportsCompilationOfModules(const codegen::AnnotatedAST& ast, const ClosureEnvironment& env);
 }
 
 #endif //TUPLEX_UDF_H

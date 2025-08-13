@@ -131,6 +131,7 @@ namespace tuplex {
         auto output_columns = columns();
 
         size_t numExceptions = 0;
+        std::unordered_map<ExceptionCode, uint32_t> exception_counts;
         for (const auto& row : vSamples) {
 
             auto rowObj = python::rowToPython(row);
@@ -147,6 +148,8 @@ namespace tuplex {
 
             ec = pcr.exceptionCode;
             auto pyobj_res = pcr.res;
+
+            exception_counts[ec]++;
 
             // only append if success
             if (ec != ExceptionCode::SUCCESS)
