@@ -344,142 +344,243 @@ namespace tuplex {
         return false;
     }
 
-    bool UDF::typeFunctionWithSingleColumn(python::Type& hintType, std::vector<std::tuple<std::string, python::Type>> params, bool removeBranches, bool printErrors, MessageHandler& logger) {
+    bool UDF::typeFunctionWithSingleColumn(python::Type hintType, std::vector<std::tuple<std::string, python::Type>> params, bool removeBranches, bool printErrors, MessageHandler& logger) {
         // This type annotationc case corresponds to:
         // Case 2: function has a single parameter.
         //          Examples:   lambda x: 2 + x
         //                      def foo(x):
         //                      return x * x
 
+        // Row type is the current way of operation.
+        // If tuple type is given, propagate.
+        if(!hintType.isRowType()) {
+#ifndef NDEBUG
+            if (PARAM_USE_ROW_TYPE)
+                logger.warn(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " PARAM_USE_ROW_TYPE activated, but was given hint as type " + hintType.desc() +".");
+#endif
+            if (hintType.isTupleType())
+                hintType = python::Type::makeRowType(hintType.parameters());
+            else
+                hintType = python::Type::makeRowType({hintType});
+            return typeFunctionWithSingleColumn(hintType, params, removeBranches, printErrors, logger);
+        }
 
-        // simpler hinting using row type, for a single param - assume it's the full row
-        if(PARAM_USE_ROW_TYPE && hintType.isRowType()) {
-            _ast.setUnpacking(false);
-            auto rc = hintParams({hintType}, params, true, removeBranches);
-            auto return_type = _ast.getReturnType();
-            if (return_type.isExceptionType()) {
-                std::stringstream ss;
-                ss<<"Hinting function with "<<hintType.desc()<<" produced only exceptions of type "<<return_type.desc()<<". Retrying by unwrapping single-column parameter.";
-                logger.debug(ss.str());
-                rc = false; // <-- try again.
-            }
+        assert(hintType.isRowType());
 
-            if(!rc) {
-                // For the special case of a single column, try to unwrap and hint again.
-                if (hintType.get_column_count() == 1) {
-                    auto unwrapped_hint_type = hintType.get_column_type(0);
-                    logger.debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " hinting with type " + hintType.desc() + " failed, trying again with unwrapped type " + unwrapped_hint_type.desc() + ".");
-                    // need to remove types, to avoid stopping processing prematurely.
-                    removeTypes(false, true);
-                    _ast.setUnpacking(true);
-                    rc = hintParams({unwrapped_hint_type}, params, true, removeBranches);
+        // For Case 2 there's some ambiguity, mostly to enable user convenience.
+        // E.g., considering input objects are rows in the case of a single column the row type will be
+        // Row[T].
+        // Hence to work with this element, a way would be to do
+        // lambda row: row[0] + 1
+        // lambda row: row["column_name"] + 1
+        // However, this feels unnatural. A much easier solution was to use
+        // lambda x: x + 1
+        // Ofc the ambiguity could be resolved using type hints, but they can not be supplied for lambdas
+        // and are not yet supported in Tuplex.
+        // Therefore, use opportunistic type hinting.
+        // Check first for  Case 2a: Unwrap the single column element, and hint with it directly.
+        // Then, for        Case 2b: Treat the row as is.
 
-                    // If this worked, track it is unpacked.
-                    if (rc)
-                        _ast.setUnpacking(true);
+        // For each case, errors can happen now. Either, a type hinting error will occur or the return type is an exception.
+        // If both are exceptions, use the exception type of Case 2b (to avoid retyping).
 
-                    // TODO: save mode in UDF?
-                }
+        // Ensure it's a proper row type and single column.
+        if (!hintType.isRowType() || hintType.get_column_count() != 1)
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " invalid use of function, expected hint type to be row type of a single column, but type is " + hintType.desc() + " instead.");
 
-                // logTypingErrors(printErrors);
-                if (!rc)
-                    return false;
-            }
+        // The single parameter name.
+        assert(params.size() == 1);
+        auto param_name = std::get<0>(params.front());
 
-            // update here
+        bool rc = false;
+        python::Type unwrapped_return_type = python::Type::UNKNOWN;
+
+        // Hint for case 2a.
+        auto unwrapped_hint_type = hintType.get_column_type(0);
+        logger.debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " trying to annotate function with unwrapped type " + unwrapped_hint_type.desc() + ".");
+        // need to remove types, to avoid stopping processing prematurely.
+        removeTypes(false, true);
+        _ast.setUnpacking(true);
+        rc = hintParams({unwrapped_hint_type}, params, true, removeBranches);
+        unwrapped_return_type = _ast.getReturnType();
+
+        // Ignore exception type case.
+        if (unwrapped_return_type.isExceptionType())
+            rc = false;
+
+        // success and not exception type?
+        if (rc) {
             _inputSchema = Schema(Schema::MemoryLayout::ROW, hintType);
             _outputSchema = Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType()));
-            _numInputColumns = hintType.get_column_count();
+            _numInputColumns = 1;
             return true;
         }
 
-        // two options
-        // (1) param is used as tuple
-        // when param is indexed or not used...
-        // (2) param is used as primitive
-        // --> this corresponds to the identifier associated with the single parameter
-        // being never indexed or called upon with a function
+        // Try now hinting with original, wrapped type.
+        _ast.setUnpacking(false);
+        removeTypes(false, true);
+        rc = hintParams({hintType}, params, true, removeBranches);
+        auto wrapped_return_type = _ast.getReturnType();
+        if (wrapped_return_type.isExceptionType())
+            rc = false;
 
-        // for both cases the question is whether a valid typing can be found.
-        // this is done with a succeed first approach
-        // first, it is tested whether treating the single parameter as tuple works.
-        // If this fails, then the parameter is unpacked and again the typing it tried
-        // failure of this indicates a failure of the function.
-
-
-        if(hintType.parameters().size() == 1) {
-            // consider first a basic case:
-            // programming wise, when the schema contains only a primitive type, i.e.
-            // the schema is (i64), (f64), (bool), (string), ([i64]), ...
-            // meaning there is a single element and it is not a tuple
-            // then indexing it is stupid. I.e. avoid x[0], just write x.
-            _ast.setUnpacking(false);
-            if(!hintType.parameters().front().isTupleType()) {
-                if(!hintParams({hintType.parameters()[0]}, params, true, removeBranches)) {
-                    logTypingErrors(printErrors);
-                    return false;
-                }
-                _ast.setUnpacking(true);
-                _inputSchema = Schema(Schema::MemoryLayout::ROW, python::Type::makeTupleType(_ast.getParameterTypes().argTypes));
-                _outputSchema = Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType()));
-
-                // well-typed? -> if not. abort.
-                if(_outputSchema.getRowType().isIllDefined())
-                    return false;
-
-                if(hasPythonObjectTyping())
-                    markAsNonCompilable();
-                _numInputColumns = 1;
-                return true;
-            } else {
-                // hint with first element as tuple unpacked
-                _ast.setUnpacking(true);
-                if(!hintParams({hintType.parameters()[0]}, params, true, removeBranches)) {
-                    logTypingErrors(printErrors);
-                    return false;
-                }
-                // @todo: this is bad naming. should be rephrased to treat first arg as tuple or not
-                _ast.setUnpacking(true);
-                _inputSchema = Schema(Schema::MemoryLayout::ROW, python::Type::makeTupleType(_ast.getParameterTypes().argTypes));
-                _outputSchema = Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType()));
-                if(hasPythonObjectTyping())
-                    markAsNonCompilable();
-                _numInputColumns = hintType.parameters().front().parameters().size();
-                return true;
-            }
-        } else {
-
-            // note: params is one size!
-            // hintType is not one size, i.e. make hinttype tuple
-            assert(params.size() == 1);
-
-            python::Type paramType = std::get<1>(params.front());
-
-            if(paramType != hintType) {
-
-                // if paramType is not unknown (i.e. do not need to decode hinttype) make sure they're compatible here!
-                if(paramType != python::Type::UNKNOWN) {
-                    auto tupledHintType = python::Type::makeTupleType({hintType});
-                    if(tupledHintType == paramType)
-                        hintType = tupledHintType;
-                    // debug print, typically landing here for param rewrite in withcolumn after projection pushdown...
-                    // std::cout<<"paramType: "<<paramType.desc()<<" hintType: "<<hintType.desc()<<std::endl;
-                }
-            }
-
-            // only hint with the full set is possible...
-            _ast.setUnpacking(false);
-            if(!hintParams({hintType}, params, true, removeBranches)) {
-                return false;
-            }
-            _ast.setUnpacking(false);
-            _inputSchema = Schema(Schema::MemoryLayout::ROW, python::Type::makeTupleType(_ast.getParameterTypes().argTypes));
+        if (rc) {
+            _inputSchema = Schema(Schema::MemoryLayout::ROW, hintType);
             _outputSchema = Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType()));
-            if(hasPythonObjectTyping())
-                markAsNonCompilable();
-            _numInputColumns = hintType.parameters().size();
+            _numInputColumns = 1;
             return true;
         }
+
+        // Neither was successful, and both returned exception types. Check now.
+        if (wrapped_return_type.isExceptionType() && unwrapped_return_type.isExceptionType()) {
+            std::stringstream ss;
+            ss<<"Hinting function with a single parameter produced for typing the parameter "<<param_name<<hintType.desc()<<" exceptions:\n";
+            ss<<"\t - for "<<param_name<<" typed as "<<unwrapped_hint_type.desc()<<": "<<unwrapped_return_type.desc()<<"\n";
+            ss<<"\t - for "<<param_name<<" typed as "<<hintType.desc()<<": "<<wrapped_return_type.desc()<<"\n";
+            ss<<"=> typing function as "<<python::Type::makeFunctionType(hintType, wrapped_return_type).desc();
+            logger.info(ss.str());
+            _inputSchema = Schema(Schema::MemoryLayout::ROW, hintType);
+            _outputSchema = Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType()));
+            _numInputColumns = 1;
+            return true;
+        }
+
+        _inputSchema = Schema::UNKNOWN;
+        _outputSchema = Schema::UNKNOWN;
+        _numInputColumns = 1;
+        return false;
+
+        //
+        // // simpler hinting using row type, for a single param - assume it's the full row
+        // if(PARAM_USE_ROW_TYPE && hintType.isRowType()) {
+        //     _ast.setUnpacking(false);
+        //     auto rc = hintParams({hintType}, params, true, removeBranches);
+        //     auto return_type = _ast.getReturnType();
+        //     if (return_type.isExceptionType()) {
+        //         std::stringstream ss;
+        //         ss<<"Hinting function with "<<hintType.desc()<<" produced only exceptions of type "<<return_type.desc()<<". Retrying by unwrapping single-column parameter.";
+        //         logger.debug(ss.str());
+        //         rc = false; // <-- try again.
+        //     }
+        //
+        //     if(!rc) {
+        //         // For the special case of a single column, try to unwrap and hint again.
+        //         if (hintType.get_column_count() == 1) {
+        //             auto unwrapped_hint_type = hintType.get_column_type(0);
+        //             logger.debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " hinting with type " + hintType.desc() + " failed, trying again with unwrapped type " + unwrapped_hint_type.desc() + ".");
+        //             // need to remove types, to avoid stopping processing prematurely.
+        //             removeTypes(false, true);
+        //             _ast.setUnpacking(true);
+        //             rc = hintParams({unwrapped_hint_type}, params, true, removeBranches);
+        //
+        //             // If this worked, track it is unpacked.
+        //             if (rc)
+        //                 _ast.setUnpacking(true);
+        //
+        //             // TODO: save mode in UDF?
+        //         }
+        //
+        //         // logTypingErrors(printErrors);
+        //         if (!rc)
+        //             return false;
+        //     }
+        //
+        //     // update here
+        //     _inputSchema = Schema(Schema::MemoryLayout::ROW, hintType);
+        //     _outputSchema = Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType()));
+        //     _numInputColumns = hintType.get_column_count();
+        //     return true;
+        // }
+        //
+        // return false;
+
+        // // two options
+        // // (1) param is used as tuple
+        // // when param is indexed or not used...
+        // // (2) param is used as primitive
+        // // --> this corresponds to the identifier associated with the single parameter
+        // // being never indexed or called upon with a function
+        //
+        // // for both cases the question is whether a valid typing can be found.
+        // // this is done with a succeed first approach
+        // // first, it is tested whether treating the single parameter as tuple works.
+        // // If this fails, then the parameter is unpacked and again the typing it tried
+        // // failure of this indicates a failure of the function.
+        //
+        //
+        // if(hintType.parameters().size() == 1) {
+        //     // consider first a basic case:
+        //     // programming wise, when the schema contains only a primitive type, i.e.
+        //     // the schema is (i64), (f64), (bool), (string), ([i64]), ...
+        //     // meaning there is a single element and it is not a tuple
+        //     // then indexing it is stupid. I.e. avoid x[0], just write x.
+        //     _ast.setUnpacking(false);
+        //     if(!hintType.parameters().front().isTupleType()) {
+        //         if(!hintParams({hintType.parameters()[0]}, params, true, removeBranches)) {
+        //             logTypingErrors(printErrors);
+        //             return false;
+        //         }
+        //         _ast.setUnpacking(true);
+        //         _inputSchema = Schema(Schema::MemoryLayout::ROW, python::Type::makeTupleType(_ast.getParameterTypes().argTypes));
+        //         _outputSchema = Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType()));
+        //
+        //         // well-typed? -> if not. abort.
+        //         if(_outputSchema.getRowType().isIllDefined())
+        //             return false;
+        //
+        //         if(hasPythonObjectTyping())
+        //             markAsNonCompilable();
+        //         _numInputColumns = 1;
+        //         return true;
+        //     } else {
+        //         // hint with first element as tuple unpacked
+        //         _ast.setUnpacking(true);
+        //         if(!hintParams({hintType.parameters()[0]}, params, true, removeBranches)) {
+        //             logTypingErrors(printErrors);
+        //             return false;
+        //         }
+        //         // @todo: this is bad naming. should be rephrased to treat first arg as tuple or not
+        //         _ast.setUnpacking(true);
+        //         _inputSchema = Schema(Schema::MemoryLayout::ROW, python::Type::makeTupleType(_ast.getParameterTypes().argTypes));
+        //         _outputSchema = Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType()));
+        //         if(hasPythonObjectTyping())
+        //             markAsNonCompilable();
+        //         _numInputColumns = hintType.parameters().front().parameters().size();
+        //         return true;
+        //     }
+        // } else {
+        //
+        //     // note: params is one size!
+        //     // hintType is not one size, i.e. make hinttype tuple
+        //     assert(params.size() == 1);
+        //
+        //     python::Type paramType = std::get<1>(params.front());
+        //
+        //     if(paramType != hintType) {
+        //
+        //         // if paramType is not unknown (i.e. do not need to decode hinttype) make sure they're compatible here!
+        //         if(paramType != python::Type::UNKNOWN) {
+        //             auto tupledHintType = python::Type::makeTupleType({hintType});
+        //             if(tupledHintType == paramType)
+        //                 hintType = tupledHintType;
+        //             // debug print, typically landing here for param rewrite in withcolumn after projection pushdown...
+        //             // std::cout<<"paramType: "<<paramType.desc()<<" hintType: "<<hintType.desc()<<std::endl;
+        //         }
+        //     }
+        //
+        //     // only hint with the full set is possible...
+        //     _ast.setUnpacking(false);
+        //     if(!hintParams({hintType}, params, true, removeBranches)) {
+        //         return false;
+        //     }
+        //     _ast.setUnpacking(false);
+        //     _inputSchema = Schema(Schema::MemoryLayout::ROW, python::Type::makeTupleType(_ast.getParameterTypes().argTypes));
+        //     _outputSchema = Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType()));
+        //     if(hasPythonObjectTyping())
+        //         markAsNonCompilable();
+        //     _numInputColumns = hintType.parameters().size();
+        //     return true;
+        // }
     }
 
     bool UDF::typeFunctionWithMultipleColumns(python::Type& hintType, std::vector<std::tuple<std::string, python::Type>> params, bool removeBranches, bool printErrors, MessageHandler& logger)
