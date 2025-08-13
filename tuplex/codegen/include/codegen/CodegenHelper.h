@@ -545,6 +545,13 @@ namespace tuplex {
                                         const std::string &Name = "",
                                         llvm::MDNode *FPMathTag = nullptr) const {
                  assert(FTy);
+
+#ifndef NDEBUG
+                // catch usage error.
+                if (!FTy->isVarArg())
+                    assert( FTy->getNumParams() == Args.size());
+#endif
+
                 return get_or_throw().CreateCall(FTy, Callee, Args, Name, FPMathTag);
             }
 

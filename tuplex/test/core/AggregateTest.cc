@@ -455,3 +455,33 @@ TEST_F(AggregateTest, ComplaintTypeAgg) {
     std::cout<<"====\n"<<pluralize(total_rows, "row")<<std::endl;
     EXPECT_EQ(total_rows, 2000); // this should work
 }
+
+TEST_F(AggregateTest, CountWithPushdown) {
+    using namespace tuplex;
+    using namespace std;
+
+    // Write a simple CSV file
+    int N = 10;
+    string path = testName + "/test.csv";
+    std::stringstream ss;
+    ss<<"x,x_squared\n";
+    for (unsigned i = 0; i < N; ++i)
+        ss<<i<<","<<i * i<<"\n";
+    stringToFile(path, ss.str());
+
+    auto co = microTestOptions();
+
+    // critical
+    co.set("tuplex.optimizer.projectionPushdown", "true");
+
+    Context c(co);
+    auto v = c.csv(path).aggregate(UDF("lambda a, b: a + b"), UDF("lambda a, x: a + 1"), Row(0)).collectAsVector();
+
+    for (auto r: v)
+        cout<<r.toPythonString()<<endl;
+
+    // the following should result in a proper pushdown.
+    v = c.csv(path).filter(UDF("lambda a, b: b % 2 == 0"))
+                                   .selectColumns(vector<string>())
+    .aggregate(UDF("lambda a, b: a + b"), UDF("lambda a, x: a + 1"), Row(0)).collectAsVector();
+}

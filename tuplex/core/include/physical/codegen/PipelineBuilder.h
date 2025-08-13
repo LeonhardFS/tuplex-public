@@ -283,6 +283,9 @@ namespace tuplex {
 
             llvm::Function *build(); // returns the function to be called
 
+
+            bool hasIntermediate() const { return _intermediateType != python::Type::UNKNOWN; }
+
             // @TODO: what about thread safety here? => i.e. force processing to be single threaded?
             //  combine multiple hashmaps?
 

@@ -1526,6 +1526,10 @@ namespace tuplex {
             if(normal_case_type.isRowType())
                 normal_case_type = normal_case_type.get_columns_as_tuple_type();
 
+            // Intermediate support (agg_by_key, agg_general) not yet available, error out.
+            if (slowPip->hasIntermediate())
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " intermediate not yet supported in resolve code path.");
+
             auto rowProcessFunc = codegen::createProcessExceptionRowWrapper(slowPip->env(),
                                                                             pip_input_row_type,
                                                                             pip_func,
