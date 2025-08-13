@@ -199,8 +199,10 @@ namespace tuplex {
             // _env->debugPrint(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " for function " + _func._name + " input tuple is: ");
             // ft_in.print(builder);
 
+            auto isSingleColumnFunction = params->_args.size() == 1;
+
             // unwrap or not?
-            if (_func._unpackFirstArg) {
+            if (_func._unpackFirstArg && isSingleColumnFunction) {
                 // load as-is
                 assert(params->_args.size() == 1);
                 auto argname = static_cast<NParameter *>(params->_args[0].get())->_identifier->_name;
@@ -220,39 +222,6 @@ namespace tuplex {
                     _paramLookup[argname] = std::make_tuple(ftarg.getLoad(builder, {i}), pyArgType.parameters()[i]);
                 }
             }
-
-            // if (pyArgType.parameters().size() == 1) {
-            //     // throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " need to revisit logic here.");
-            //
-            //     if (isFirstArgTuple && pyArgType.parameters().front() != python::Type::EMPTYTUPLE) {
-            //
-            //         // special case: (Row[]) --> HACK
-            //         if(pyArgType.parameters().front() == python::Type::EMPTYROW)
-            //             pyArgType = python::Type::EMPTYTUPLE;
-            //         // transform row to tuple type (physical representation)
-            //         else if(pyArgType.parameters().front().isRowType())
-            //             pyArgType = pyArgType.parameters().front().get_columns_as_tuple_type();
-            //         // create ftarg from llvm struct val (i.e. the pointer)
-            //         assert(args.back()->getName() == "inRow");
-            //         // Proper way on how to deserialize tuple.
-            //         // auto ftarg = FlattenedTuple::fromLLVMStructVal(_env, builder, args.back(), pyArgType);
-            //         auto argname = static_cast<NParameter *>(params->_args[0].get())->_identifier->_name;
-            //         assert(pyArgType.isTupleType());
-            //         _paramLookup[argname] = std::make_tuple(SerializableValue(args.back(), nullptr, nullptr), pyArgType); // use the pointer as tuple var!
-            //     } else {
-            //         // there is one arg. Because for now, a single arg is always a pointer to a tuple type, load it
-            //         auto ftarg = FlattenedTuple::fromLLVMStructVal(_env, builder, args.back(), pyArgType);
-            //         assert(ftarg.getTupleType().parameters().size() == 1);
-            //
-            //         // simple name lookup
-            //         auto argname = static_cast<NParameter *>(params->_args[0].get())->_identifier->_name;
-            //         auto single_column_type = pyArgType.parameters().front();
-            //         auto single_column_val = ftarg.getElement({0});
-            //         _paramLookup[argname] = std::make_tuple(single_column_val, single_column_type);
-            //     }
-            // } else {
-            //
-            // }
 
             // update insert block
             setLastBlock(builder.GetInsertBlock());

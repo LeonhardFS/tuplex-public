@@ -1764,7 +1764,6 @@ namespace tuplex {
                 case ASTNodeType::Function: {
                         auto f = (NFunction*)func;
                         isUnpacked = !f->isFirstArgTuple();
-                        fatal_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented.");
                         break;
                     }
                 case ASTNodeType::Lambda: {
@@ -1778,12 +1777,15 @@ namespace tuplex {
 
                 // is paramType != type?
                 if (paramType != type) {
-                    _logger.debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " param type " + paramType.desc() + " differs from type for argument " + name + ", is " + type.desc() + ".");
-
                     // special case: wrapped tuple -> unwrap.
                     if (paramType.isTupleType() && paramType.parameters().size() == 1 && paramType.parameters().front() == type) {
                         // unwrap param & load.
                         param = tuple_load_element(*_env, builder, param.val, paramType, 0);
+                    } else if (paramType.isTupleType() && type.isRowType() && type.get_columns_as_tuple_type() == paramType) {
+                        // ok. a row is represented by a tuple.
+                    } else {
+                        // unhandled cases.
+                        fatal_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " param type " + paramType.desc() + " differs from type for argument " + name + ", is " + type.desc() + ".");
                     }
                 }
 

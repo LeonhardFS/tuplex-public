@@ -880,6 +880,11 @@ namespace tuplex {
         cf.output_type = actual_output_type;
         cf.input_type = getInputSchema().getRowType();
 
+        // fix if not tuple type.
+        if (!cf.input_type.isTupleType()) {
+            assert(cf.input_type.isRowType());
+            cf.input_type = cf.input_type.get_columns_as_tuple_type();
+        }
 
         if(isCompiled()) {
             logger.error("generating fallback solution for compilable UDF.");

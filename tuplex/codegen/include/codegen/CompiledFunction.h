@@ -31,7 +31,9 @@ namespace tuplex {
                              function_ptr(other.function_ptr),
                              function(other.function),
                              input_type(other.input_type),
-                             output_type(other.output_type) {}
+                             output_type(other.output_type) {
+                assert(input_type.isTupleType()); // must be tuple type.
+            }
 
             CompiledFunction &operator=(const CompiledFunction &other) {
                 function_ptr = other.function_ptr;
