@@ -347,8 +347,22 @@ namespace tuplex {
 
                             _tree.set(i, dict_val);
                         } else {
-                            // create the dictionary pointer
-                            auto dictPtr = call_cjson_parse(builder, ptr);
+                            // create the dictionary pointer. Allocate on the heap, so it can be passed as reference
+                            // and is modifiable.
+                            auto dict = call_cjson_parse(builder, ptr, false);
+                            assert(dict->getType()->isStructTy());
+                            auto dictPtr = _env->CreateHeapAlloca(builder, dict->getType());
+                            builder.CreateStore(dict, dictPtr);
+
+
+                            // debug: test
+                            auto dict_as_str = call_cjson_to_string(builder, dictPtr);
+                            _env->printValue(builder, dict_as_str.val, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " parsed following dictionary: ");
+
+                            // dict length
+                            auto dict_size = call_cjson_get_size(builder, dictPtr);
+                            _env->printValue(builder, dict_size, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " #elements in dictionary: ");
+
                             _tree.set(i, codegen::SerializableValue(dictPtr, size, isnull));
                         }
                     } else if(type.isListType()) {
@@ -1039,7 +1053,7 @@ namespace tuplex {
 #ifdef USE_YYJSON_INSTEAD
                         auto& ctx = builder.getContext();
                         auto llvm_type = el.val->getType();
-                        assert(llvm_type == get_or_create_yyjson_shim_type(ctx));
+                        assert(llvm_type == get_or_create_yyjson_shim_type(ctx) || llvm_type->isPointerTy());
 #endif
                         // could store size explicitly to avoid the formatting call here...
                         auto f = call_cjson_to_string(builder, el.val);

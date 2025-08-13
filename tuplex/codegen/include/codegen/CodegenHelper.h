@@ -1811,14 +1811,19 @@ namespace tuplex {
         extern SerializableValue get_cjson_as_string_value(const IRBuilder& builder, llvm::Value* cjson_obj);
         extern llvm::Value* call_cjson_get_size(const IRBuilder& builder, llvm::Value* cjson_obj);
 
-        extern llvm::Value* call_cjson_create_empty(const IRBuilder& builder);
-
         extern llvm::Value* call_simdjson_to_cjson_object(const IRBuilder& builder, llvm::Value* json_item);
 
         [[maybe_unused]] extern SerializableValue serialize_cjson_as_runtime_str(const IRBuilder& builder, llvm::Value* cjson_obj);
 
 
-        extern llvm::Value* call_cjson_parse(const IRBuilder& builder, llvm::Value* str_ptr);
+        extern llvm::Value* alloc_on_runtime_heap(const IRBuilder& builder, llvm::Type* type, const std::string& twine="");
+        extern llvm::Value* alloc_on_stack(const IRBuilder& builder, llvm::Type* type, const std::string& twine="");
+
+        // Helper functions to create new objects.
+        extern llvm::Value* call_cjson_create_empty(const IRBuilder& builder, bool allocate_on_heap=false);
+        extern llvm::Value* call_cjson_parse(const IRBuilder& builder, llvm::Value* str_ptr, bool allocate_on_heap=false);
+
+
         extern SerializableValue call_cjson_to_string(const IRBuilder& builder, llvm::Value* cjson_obj);
 
         extern llvm::Value* call_cjson_getarraysize(const IRBuilder& builder, llvm::Value* cjson_array);

@@ -1207,8 +1207,8 @@ namespace tuplex {
                 fmt += " f32 %f";
             } else if (value->getType()->isDoubleTy()) {
                 fmt += " f64 %lf";
-            } else if (value->getType()->isPointerTy() && print_ptr_as_str) {
-                fmt += " str %s";
+            } else if (value->getType()->isPointerTy()) {
+                fmt += print_ptr_as_str ? " str %s" : " ptr %p";
             } else {
                 throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " llvm type not supported.");
             }
@@ -1473,6 +1473,13 @@ namespace tuplex {
             // Returns the number of key-value pairs in this object. Returns 0 if obj is NULL or type is not object.
             auto yy_obj = get_yyjson_mut_obj(builder, cjson_obj);
 
+            // debug print:
+            codegen_debug_printf_value(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " cjson_obj ptr: ", cjson_obj);
+            codegen_debug_printf_value(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " yy_obj ptr: ", cjson_obj);
+
+            auto dict_as_ptr = call_cjson_to_string(builder, cjson_obj);
+            codegen_debug_printf_value(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " dict is: ", dict_as_ptr.val);
+
             auto func = getOrInsertFunction(mod, "yyjson_mut_obj_size", ctypeToLLVM<size_t>(ctx),
                                             (llvm::Type*)ctypeToLLVM<char*>(ctx));
             codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_get_size (yyjson)");
@@ -1732,7 +1739,7 @@ namespace tuplex {
 #endif
         }
 
-        llvm::Value* call_cjson_create_empty(const IRBuilder& builder) {
+        llvm::Value* call_cjson_create_empty(const IRBuilder& builder, bool allocate_on_heap) {
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
 
@@ -1746,8 +1753,7 @@ namespace tuplex {
             auto yy_root_item = builder.CreateCall(func_doc_get_root, {yy_doc});
 
             auto llvm_type = get_or_create_yyjson_shim_type(builder);
-            auto ctor_builder = builder.firstBlockBuilder(false); // insert at beginning.
-            auto yy_ret_val = ctor_builder.CreateAlloca(llvm_type, 0, nullptr, "yy_retval");
+            auto yy_ret_val = allocate_on_heap ? alloc_on_runtime_heap(builder, llvm_type, "yy_retval") : alloc_on_stack(builder,llvm_type, "yy_retval");
 
             // codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_create_empty");
 
@@ -1816,15 +1822,41 @@ namespace tuplex {
 #endif
         }
 
-        extern llvm::Value* call_cjson_parse(const IRBuilder& builder, llvm::Value* str_ptr) {
+        extern llvm::Value* alloc_on_runtime_heap(const IRBuilder& builder, llvm::Type* type, const std::string& twine) {
+            // call rtmalloc with data layout size.
+            auto mod = builder.GetInsertBlock()->getModule();
+
+            const auto& DL = mod->getDataLayout();
+            auto tuple_size = DL.getTypeAllocSize(type);
+
+            auto& ctx = builder.getContext();
+            auto func = getOrInsertFunction(mod, "rtmalloc", llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt8PtrTy(ctx, 0));
+
+            llvm::Value* ptr = builder.CreateCall(func, {i64Const(ctx, tuple_size)});
+            ptr = builder.CreatePointerCast(ptr, type->getPointerTo());
+
+// #ifndef NDEBUG
+//             if(memset_to_zero)
+//                 // memset to zero
+//                     builder.CreateMemSet(ptr, i8Const(0), tuple_size, 0);
+// #endif
+            return ptr;
+        }
+
+        extern llvm::Value* alloc_on_stack(const IRBuilder& builder, llvm::Type* type, const std::string& twine) {
+            auto ctor_builder = builder.firstBlockBuilder(false); // insert at beginning.
+            return ctor_builder.CreateAlloca(type, 0, nullptr, twine);
+        }
+
+        extern llvm::Value* call_cjson_parse(const IRBuilder& builder, llvm::Value* str_ptr, bool allocate_on_heap) {
             auto mod = builder.GetInsertBlock()->getParent()->getParent();
             assert(mod);
             auto& ctx = mod->getContext();
 #ifdef USE_YYJSON_INSTEAD
 
-            auto ctor_builder = builder.firstBlockBuilder(false); // insert at beginning.
+
             auto llvm_type = get_or_create_yyjson_shim_type(builder);
-            auto yy_ret_val = ctor_builder.CreateAlloca(llvm_type, 0, nullptr, "yy_retval");
+            auto yy_ret_val = allocate_on_heap ? alloc_on_runtime_heap(builder, llvm_type, "yy_retval") : alloc_on_stack(builder, llvm_type, "yy_retval");
 
             codegen_debug_printf(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " call_cjson_yyjson_parse");
             codegen_debug_printf_value(builder, std::string(__FILE__) + ":" + std::to_string(__LINE__) + " pointer to parse: ", str_ptr, true);
@@ -1842,7 +1874,8 @@ namespace tuplex {
             auto yy_doc = builder.CreateCall(func_parse, {str_ptr, str_len});
             auto yy_root_object = builder.CreateCall(func_doc_get_root, {yy_doc});
 
-            set_yyjson_mut_doc(builder, yy_ret_val, yy_doc); // <-- this may lead to modificaitons if subdict is returned, this should be correct. dict.copy() creates deep copy of elements.
+            set_yyjson_mut_doc(builder, yy_ret_val, yy_doc); // <-- this may lead to modifications if
+            // subdict is returned, this should be correct. dict.copy() creates deep copy of elements.
             set_yyjson_mut_obj(builder, yy_ret_val, yy_root_object);
             return builder.CreateLoad(llvm_type, yy_ret_val);
 #else
