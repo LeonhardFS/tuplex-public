@@ -392,7 +392,7 @@ namespace tuplex {
         // If both are exceptions, use the exception type of Case 2b (to avoid retyping).
 
         // Ensure it's a proper row type and single column.
-        if (!hintType.isRowType() || hintType.get_column_count() != 1)
+        if (!hintType.isRowType())
             throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " invalid use of function, expected hint type to be row type of a single column, but type is " + hintType.desc() + " instead.");
 
         // The single parameter name.
@@ -401,28 +401,33 @@ namespace tuplex {
 
         bool rc = false;
         python::Type unwrapped_return_type = python::Type::UNKNOWN;
+        python::Type unwrapped_hint_type = python::Type::UNKNOWN;
 
         // Hint for case 2a.
-        auto unwrapped_hint_type = hintType.get_column_type(0);
-        logger.debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " trying to annotate function with unwrapped type " + unwrapped_hint_type.desc() + ".");
-        // need to remove types, to avoid stopping processing prematurely.
-        removeTypes(false, true);
-        _ast.setUnpacking(true);
-        rc = hintParams({unwrapped_hint_type}, params, true, removeBranches);
-        unwrapped_return_type = _ast.getReturnType();
+        // This case is only relevant iff hintType is a row type of a single column, else go straight to case 2b.
+        if (hintType.get_column_count() == 1) {
+            unwrapped_hint_type = hintType.get_column_type(0);
+            logger.debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " trying to annotate function with unwrapped type " + unwrapped_hint_type.desc() + ".");
+            // need to remove types, to avoid stopping processing prematurely.
+            removeTypes(false, true);
+            _ast.setUnpacking(true);
+            rc = hintParams({unwrapped_hint_type}, params, true, removeBranches);
+            unwrapped_return_type = _ast.getReturnType();
 
-        // Ignore exception type case.
-        if (unwrapped_return_type.isExceptionType())
-            rc = false;
+            // Ignore exception type case.
+            if (unwrapped_return_type.isExceptionType())
+                rc = false;
 
-        // success and not exception type?
-        if (rc) {
-            _inputSchema = Schema(Schema::MemoryLayout::ROW, hintType);
-            _outputSchema = Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType()));
-            _numInputColumns = 1;
-            return true;
+            // success and not exception type?
+            if (rc) {
+                _inputSchema = Schema(Schema::MemoryLayout::ROW, hintType);
+                _outputSchema = Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType()));
+                _numInputColumns = 1;
+                return true;
+            }
         }
 
+        // Case 2b:
         // Try now hinting with original, wrapped type.
         _ast.setUnpacking(false);
         removeTypes(false, true);
@@ -438,8 +443,13 @@ namespace tuplex {
             return true;
         }
 
-        // Neither was successful, and both returned exception types. Check now.
+        // If both case 2a and 2b were attempted and returned exception types, display ambiguity and resolve with
+        // return type of case 2b (this is an arbitrary choice, but done here to avoid retyping).
         if (wrapped_return_type.isExceptionType() && unwrapped_return_type.isExceptionType()) {
+
+            // Case 2a should have been hit. Check by asserting that it is a row type of a single column.
+            assert(hintType.get_column_count() == 1);
+
             std::stringstream ss;
             ss<<"Hinting function with a single parameter produced for typing the parameter "<<param_name<<hintType.desc()<<" exceptions:\n";
             ss<<"\t - for "<<param_name<<" typed as "<<unwrapped_hint_type.desc()<<": "<<unwrapped_return_type.desc()<<"\n";
@@ -2221,7 +2231,7 @@ namespace tuplex {
             return true;
 
         // Check now the other modules, right now do not perform a patial check using the ast.
-        std::set<std::string> supported_modules{"math", "re"}; // <-- only support these. Maybe be more dynamic with symbol table?? Allow users to register function support?
+        std::set<std::string> supported_modules{"math", "re", "string"}; // <-- only support these. Maybe be more dynamic with symbol table?? Allow users to register function support?
 
         for (const auto& m : env.modules()) {
             if (supported_modules.find(m.original_identifier) == supported_modules.end())

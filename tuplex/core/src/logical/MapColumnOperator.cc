@@ -75,8 +75,7 @@ namespace tuplex {
 
         } else {
             // not compilable, i.e. use pickled version
-            Logger::instance().defaultLogger().error("mapColumn for uncompilable funcs not supported yet");
-            std::exit(1);
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " mapColumn for uncompilable funcs not supported yet");
         }
 
         return Schema(parentSchema.getMemoryLayout(), create_ret_type(colTypes, input_row_type));
@@ -213,8 +212,7 @@ namespace tuplex {
 
         } else {
             // not compilable, i.e. use pickled version
-            Logger::instance().defaultLogger().error("mapColumn for uncompilable funcs not supported yet");
-            std::exit(1);
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " mapColumn for uncompilable funcs not supported yet");
         }
 
         // success?
