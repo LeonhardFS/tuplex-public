@@ -6,6 +6,11 @@
 
 namespace tuplex {
     bool Symbol::findFunctionTypeBasedOnParameterType(const python::Type& parameterType, python::Type& specializedFunctionType) {
+
+        // uninitialized? skip.
+        if (parameterType.isIllDefined())
+            return false;
+
         // optimized type?
         auto deopt_type = deoptimizedType(parameterType);
         if(deopt_type != parameterType) {

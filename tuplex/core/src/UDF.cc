@@ -460,6 +460,26 @@ namespace tuplex {
             return true;
         }
 
+
+        // Case 2c: Some functions like iter(...), ... may interpret the row when typed as tuple. Try typing as tuple here next.
+        // This case can be deleted if Row object will have implemented in typer properties of tuple. Ultimately it should,
+        // because Row inherits from tuple.
+        _ast.setUnpacking(false);
+        removeTypes(false, true);
+        auto wrapped_tuple_type = hintType.get_columns_as_tuple_type();
+        rc = hintParams({wrapped_tuple_type}, params, true, removeBranches);
+        auto wrapped_tuple_return_type = _ast.getReturnType();
+        if (wrapped_tuple_return_type.isExceptionType())
+            rc = false;
+
+        if (rc) {
+            setInputSchema(Schema(Schema::MemoryLayout::ROW, wrapped_tuple_type)); // <-- mark explicitly as tuple type here.
+            setOutputSchema(Schema(Schema::MemoryLayout::ROW, codegenTypeToRowType(_ast.getReturnType())));
+            assert(_numInputColumns == hintType.get_column_count());
+            return true;
+        }
+
+
         setInputSchema(Schema::UNKNOWN);
         setOutputSchema(Schema::UNKNOWN);
         return false;
