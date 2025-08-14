@@ -18,32 +18,6 @@
 
 namespace tuplex {
 
-    /*!
-     * in tuplex all rows are represented as tuples. To get the corresponding row type for a python primitive,
-     * use this function here
-     * @return
-     */
-    inline python::Type pyTypeToRowType(python::Type type) {
-        auto original_type = type;
-        type = deoptimizedType(type); // deoptimize first...
-
-        if(PARAM_USE_ROW_TYPE) {
-            if(type.isRowType())
-                return type;
-        }
-
-        if (type.isPrimitiveType() || python::Type::EMPTYTUPLE == type || type.isDictionaryType() ||
-            python::Type::NULLVALUE == type || python::Type::GENERICTUPLE == type ||
-            python::Type::PYOBJECT == type ||
-            python::Type::GENERICDICT == type || type.isOptionType() || type.isListType())
-            return python::Type::makeTupleType({original_type});
-        else if (type.isTupleType()) {
-            if (1 == type.parameters().size())
-                return python::Type::makeTupleType({original_type});
-        }
-        return original_type;
-    }
-
     namespace codegen {
 
         /*!

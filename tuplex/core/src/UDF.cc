@@ -740,7 +740,26 @@ namespace tuplex {
     }
 
     python::Type UDF::codegenTypeToRowType(const python::Type &type) const {
-        return pyTypeToRowType(type);
+        // // DO NOT deoptimize.
+        // type = deoptimizedType(type); // deoptimize first...
+
+        if(PARAM_USE_ROW_TYPE) {
+            if(type.isRowType())
+                return type;
+        }
+
+        //
+
+        if (type.isPrimitiveType() || python::Type::EMPTYTUPLE == type || type.isDictionaryType() ||
+            python::Type::NULLVALUE == type || python::Type::GENERICTUPLE == type ||
+            python::Type::PYOBJECT == type ||
+            python::Type::GENERICDICT == type || type.isOptionType() || type.isListType())
+            return python::Type::makeTupleType({type});
+        else if (type.isTupleType()) {
+            if (1 == type.parameters().size())
+                return python::Type::makeTupleType({type});
+        }
+        return type;
     }
 
     Schema UDF::getOutputSchema() const {

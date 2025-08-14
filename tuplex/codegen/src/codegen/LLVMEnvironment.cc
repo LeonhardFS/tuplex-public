@@ -2926,7 +2926,7 @@ namespace tuplex {
                 return upcastValue(builder, u, type.underlying(), targetType);
             }
 
-            throw std::runtime_error("can not generate code to upcast " + type.desc() + " to " + targetType.desc());
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " can not generate code to upcast " + type.desc() + " to " + targetType.desc());
             return val;
         }
 

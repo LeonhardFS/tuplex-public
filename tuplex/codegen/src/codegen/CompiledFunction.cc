@@ -61,32 +61,19 @@ namespace tuplex {
 
             assert(handler);
 
-            // note: this check here is a little weird since depending on the call convention
-            // i.e. whether the function takes a single parameter OR multiple ones args.getTupleType and input_type
-            // do correspond or not
-//            // first check types
-//            if (args.getTupleType() != input_type) {
-//                logger.error("input type is " + args.getTupleType().desc() + " but expected " + input_type.desc());
-//                return FlattenedTuple(nullptr);
-//            }
-
             assert(args.getEnv());
             LLVMEnvironment &env = *args.getEnv();
             auto& context = env.getContext();
 
             // init output tuple
             FlattenedTuple fto(args.getEnv());
-            fto.init(output_type);
+            fto.init(tupleOutputType());
 
 
             /// CREATE CALL TO UDF
             // step 1: param type is always a tuple. So check what values need to be passed...
-            assert(input_type.isTupleType());
-            std::vector<python::Type> typesOfParameters = input_type.parameters();//cg.getParameterTypes().argTypes;
-
-            // fetch UDF implied types
-            python::Type retType = output_type;
-            python::Type paramType = input_type;
+            assert(tupleInputType().isTupleType());
+            std::vector<python::Type> typesOfParameters = tupleInputType().parameters();
 
             // call the udf...
             // calls the function and stores retCode in exception Code
@@ -99,7 +86,7 @@ namespace tuplex {
 
             // if input_type is empty tuple or empty row, then args are ignored. Handle this specially here by simple allocating an empty tuple ptr (should get automatically removed)
             llvm::Value* inRowPtr = nullptr;
-            if(python::Type::EMPTYROW == input_type || python::Type::EMPTYTUPLE == input_type) {
+            if(python::Type::EMPTYTUPLE == tupleInputType()) {
                 inRowPtr = env.CreateFirstBlockAlloca(builder, env.getEmptyTupleType(), "empty_input_row");
             } else {
                 // temp alloc & store flattenedTuple val from args.
@@ -166,13 +153,13 @@ namespace tuplex {
                 builder.CreateCondBr(cond, bSuccess, handler);
                 builder.SetInsertPoint(bSuccess);
 
-                fto = FlattenedTuple::fromLLVMStructVal(&env, builder, resPtr, output_type);
+                fto = FlattenedTuple::fromLLVMStructVal(&env, builder, resPtr, tupleOutputType());
             } else {
 
 #warning "fallback + bitmaps not yet implemented"
 
-                if(input_type.isOptional())
-                    throw std::runtime_error("optional types + fallback not yet implemented!!!");
+                if(tupleInputType().isOptional())
+                    throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " optional types + fallback not yet implemented!!!");
 
                 assert(function);
                 assert(function_ptr);
@@ -210,6 +197,8 @@ namespace tuplex {
                 auto output_var_type = i8ptr_type; // use i8* type.
                 auto outputVar = builder.CreateAlloca(output_var_type);
                 auto outputSizeVar = builder.CreateAlloca(Type::getInt64Ty(context));
+
+                // use here original type hashes, and not the tuple version of them.
                 auto resCode = builder.CreateCall(wrapperFunc, {function_ptr,
                                                                 outputVar,
                                                                 outputSizeVar,
@@ -231,7 +220,7 @@ namespace tuplex {
                 FlattenedTuple ftr(&env);
 
                 // flatten out
-                ftr.init(output_type);
+                ftr.init(tupleOutputType());
                 ftr.deserializationCode(builder, builder.CreateLoad(output_var_type, outputVar));
                 fto = ftr;
             }

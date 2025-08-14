@@ -4869,7 +4869,10 @@ namespace tuplex {
                 return upCastReturnType(builder, u, type.underlying(), targetType);
             }
 
-            error("can not generate code to upcast " + type.desc() + " to " + targetType.desc());
+            if (type.isRowType() && targetType.isRowType())
+                return upCastReturnType(builder, val, type.get_columns_as_tuple_type(), targetType.get_columns_as_tuple_type());
+
+            error(std::string(__FILE__) + ":" + std::to_string(__LINE__) +" can not generate code to upcast " + type.desc() + " to " + targetType.desc());
             return val;
         }
 

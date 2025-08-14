@@ -101,15 +101,33 @@ namespace tuplex {
              * @return LLVM struct type
              */
             inline llvm::Type *getLLVMResultType(LLVMEnvironment &env) const {
+                auto tuple_output_type = output_type;
+                if (tuple_output_type.isRowType())
+                    tuple_output_type = tuple_output_type.get_columns_as_tuple_type();
                 FlattenedTuple ft(&env);
-                ft.init(output_type);
+                ft.init(tuple_output_type);
                 return ft.getLLVMType();
             }
 
             void setPythonInvokeName(const std::string &name) { _pythonInvokeName = name; }
 
+            inline python::Type tupleInputType() const {
+                return to_tuple_type(input_type);
+            }
+            inline python::Type tupleOutputType() const {
+                return to_tuple_type(output_type);
+            }
+
         private:
             std::string _pythonInvokeName;
+
+            inline python::Type to_tuple_type(const python::Type& t) const {
+                if (t.isRowType())
+                    return t.get_columns_as_tuple_type();
+                if (t.isTupleType() && t.parameters().size() == 1 && t.parameters().front().isRowType())
+                    return python::Type::makeTupleType({t.parameters().front().get_columns_as_tuple_type()});
+                return python::Type::propagateToTupleType(t);
+            }
         };
     }
 }

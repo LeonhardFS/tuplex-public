@@ -53,6 +53,9 @@ namespace tuplex {
             if (t.isRowType() && t.get_column_count() == 1)
                 t = t.get_column_type(0);
 
+            if (t.isRowType())
+                return t.get_columns_as_tuple_type();
+
             return python::Type::propagateToTupleType(t);
         }
 
@@ -248,6 +251,36 @@ namespace tuplex {
 
             // @TODO: optimize & test/resolve for tuples! it's not a struct type but rather a pointer to a struct type!
             assert(python::Type::UNKNOWN != output_type);
+
+            // row type returned?
+            if (ret_type.isRowType()) {
+                // special case: EMPTYROW
+                if (ret_type == python::Type::EMPTYROW) {
+                    ret.val = _fto.getLoad(builder);
+                    ret.size = nullptr;
+                } else {
+                    _fto = FlattenedTuple::fromLLVMStructVal(_env, builder, ret.val, output_type);
+                    ret.val = _fto.getLoad(builder);
+                    ret.size = nullptr;
+                }
+
+                assert(ret.val->getType()->isStructTy()); // needs to be tuple type!
+                static_assert((int64_t) ExceptionCode::SUCCESS == 0, "define this as 0");
+
+                // Store result, i.e. the loaded tuple struct into the result pointer.
+                builder.CreateStore(ret.val, _retValPtr);
+                int64_t ec = (int64_t) ExceptionCode::SUCCESS;
+                builder.CreateRet(_env->i64Const(ec));
+                _body = nullptr;
+
+                // save info on this function to static global here (to retrieve later)
+                registeredLambdas[_func._name] = std::make_tuple(_func._pyArgType, _func._pyRetType);
+
+                return _func;
+            }
+
+
+            // Other return types::
 
             // there are a couple special cases to handle here
             // 1. retValue might be representing null or one of the constants

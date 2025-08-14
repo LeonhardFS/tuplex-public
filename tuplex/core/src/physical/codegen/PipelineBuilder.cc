@@ -384,7 +384,7 @@ namespace tuplex {
                     // check type is correct
                     auto expectedType = python::Type::BOOLEAN;
                     if(ft.getTupleType() != expectedType && ft.getTupleType() != python::Type::propagateToTupleType(expectedType)) {
-                        logger.error("wrong output type. Expected " + expectedType.desc() + " got " + ft.getTupleType().desc());
+                        logger.error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " wrong output type. Expected " + expectedType.desc() + " got " + ft.getTupleType().desc());
                         return false;
                     }
 
@@ -572,10 +572,10 @@ namespace tuplex {
             logger.debug("Last LLVM input row is: " + _lastRowResult.getTupleType().desc());
 
             // check compatibility of types -> they HAVE to be compatible on a flattened type basis
-            if(flattenedType(cf.input_type) != flattenedType(_lastRowResult.getTupleType())) {
+            if(flattenedType(cf.tupleInputType()) != flattenedType(_lastRowResult.getTupleType())) {
                 std::stringstream err;
                 err<<"last result and expected UDF input type are not compatible\n"
-                     <<"Compiled function takes input row type: " + cf.input_type.desc() + "\n"
+                     <<"Compiled function takes input row type: " + cf.tupleInputType().desc() + "\n"
                      <<"Last LLVM input row is: " + _lastRowResult.getTupleType().desc();
                 logger.warn(err.str());
             }
@@ -583,8 +583,8 @@ namespace tuplex {
             auto exceptionBlock = createExceptionBlock();
             _lastRowResult = cf.callWithExceptionHandler(builder, _lastRowResult, _lastTupleResultVar, exceptionBlock, getPointerToVariable(builder, "exceptionCode"));
 
-            if(_lastRowResult.getTupleType() != cf.output_type) {
-                logger.error("wrong output type. Expected " + cf.output_type.desc() + " got " + _lastRowResult.getTupleType().desc());
+            if(_lastRowResult.getTupleType() != cf.tupleOutputType()) {
+                logger.error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " wrong output type. Expected " + cf.tupleOutputType().desc() + " got " + _lastRowResult.getTupleType().desc());
                 return false;
             }
 
@@ -593,7 +593,7 @@ namespace tuplex {
 
             // update what the last schema type is
             _lastInputSchemaType = _lastSchemaType;
-            _lastSchemaType = cf.output_type;
+            _lastSchemaType = cf.tupleOutputType();
 
             _lastOperatorType = LogicalOperatorType::MAP;
             _lastOperatorColumnIndex = -1;
@@ -785,12 +785,12 @@ namespace tuplex {
             // check return type..
             if(_lastRowResult.getTupleType().isTupleType()) {
                 if(_lastRowResult.getTupleType().parameters()[columnToMapIndex] != cf.output_python_type) {
-                    logger.error("wrong output type. Expected " + finalType.desc() + " got " + _lastRowResult.getTupleType().desc());
+                    logger.error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " wrong output type. Expected " + finalType.desc() + " got " + _lastRowResult.getTupleType().desc());
                     return false;
                 }
             } else {
-                if(_lastRowResult.getTupleType() != cf.output_python_type) {
-                    logger.error("wrong output type. Expected " + cf.output_type.desc() + " got " + _lastRowResult.getTupleType().desc());
+                if(_lastRowResult.getTupleType() != cf.tupleOutputType()) {
+                    logger.error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " wrong output type. Expected " + cf.tupleOutputType().desc() + " got " + _lastRowResult.getTupleType().desc());
                     return false;
                 }
             }
@@ -916,15 +916,15 @@ namespace tuplex {
             _lastTupleResultVar = ftOut.alloc(variableBuilder);
             ftOut.storeTo(builder, _lastTupleResultVar);
 
-            // check return type..
+            // Check return type:
             if(_lastRowResult.getTupleType().isTupleType()) {
                 if(_lastRowResult.getTupleType().parameters()[columnToMapIndex] != cf.output_python_type) {
-                    logger.error("wrong output type. Expected " + finalType.desc() + " got " + _lastRowResult.getTupleType().desc());
+                    logger.error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " wrong output type. Expected " + finalType.desc() + " got " + _lastRowResult.getTupleType().desc());
                     return false;
                 }
             } else {
                 if(_lastRowResult.getTupleType() != cf.output_python_type) {
-                    logger.error("wrong output type. Expected " + cf.output_type.desc() + " got " + _lastRowResult.getTupleType().desc());
+                    logger.error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " wrong output type. Expected " + cf.tupleOutputType().desc() + " got " + _lastRowResult.getTupleType().desc());
                     return false;
                 }
             }
@@ -1009,6 +1009,11 @@ namespace tuplex {
                 builder.CreateBr(_destructorBlock); // note: is this correct? => prob. yes, reject row at start!
             }
 
+
+            std::stringstream ss;
+            ss<<"Generated pipeline transforming rows: ";
+            ss<<_inputRowType.desc()<<" -> "<<_lastSchemaType.desc();
+            logger.info(ss.str());
             return _func;
         }
 
@@ -3113,10 +3118,9 @@ namespace tuplex {
            ftout.storeTo(builder, intermediateOutputPtr());
            _lastRowResult = FlattenedTuple::fromLLVMStructVal(_env.get(), builder, intermediateOutputPtr(), aggType);
 
-           auto result_type = python::Type::propagateToTupleType(cf.output_type); // progagate b.c. this yields a row.
-
+           auto result_type = cf.tupleOutputType(); // progagate b.c. this yields a row.
            if (_lastRowResult.getTupleType() != result_type) {
-               logger.error("wrong output type. Expected " + result_type.desc() + " got " +
+               logger.error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " wrong output type. Expected " + result_type.desc() + " got " +
                             _lastRowResult.getTupleType().desc());
                return false;
            }
