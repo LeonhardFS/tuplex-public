@@ -677,6 +677,8 @@ namespace tuplex {
                             ss<<"accesses no input columns.";
                         else {
                             auto input_columns = op->inputColumns();
+                            if (input_columns.empty())
+                                input_columns = generate_pseudo_column_names(op->getInputSchema().getColumnCount());
                             std::vector<std::string> acc_input_columns;
                             for (auto idx : accCols) {
                                 assert(idx < input_columns.size());
