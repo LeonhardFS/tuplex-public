@@ -37,7 +37,7 @@ namespace tuplex {
     private:
         ASTNode* _lastParent;
     protected:
-        ASTNode* parent() { return _lastParent; }
+        [[nodiscard]] ASTNode* parent() const { return _lastParent; }
 
         void setLastParent(ASTNode* parent) { _lastParent = parent; }
     public:

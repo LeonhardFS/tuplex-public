@@ -376,6 +376,12 @@ namespace tuplex {
             return;
         }
 
+        // some parent nodes have identifiers that are untyped.
+        auto parent_allows_unknown = parent() && (parent()->type() == ASTNodeType::Function
+                  || parent()->type() == ASTNodeType::Lambda
+                  || parent()->type() == ASTNodeType::Assign
+                  || parent()->type() == ASTNodeType::Tuple);
+
 
         // python is great, int can be both a function OR a type
         // hence, check if is here used as annotation
@@ -473,12 +479,16 @@ namespace tuplex {
             }
 
             // do not add identifier if it has function as parent (this means basically it is the function name)
-            if(   parent()->type() != ASTNodeType::Function
-                  && parent()->type() != ASTNodeType::Lambda
-                  && parent()->type() != ASTNodeType::Assign
-                  // TODO this check is necessary for tuple assignment
-                  && parent()->type() != ASTNodeType::Tuple)
+            if(!parent_allows_unknown)
                 _missingIdentifiers.add(id->_name);
+        }
+
+        // identifier either needs to have been typed or needs to be part of missingIdentifiers set.
+        if (!parent_allows_unknown) {
+            if (id->getInferredType() == python::Type::UNKNOWN)
+            assert(_missingIdentifiers.contains(id->_name));
+        else
+            assert(id->getInferredType() != python::Type::UNKNOWN);
         }
     }
 
@@ -1838,9 +1848,11 @@ namespace tuplex {
 
                 // special case:
                 // emptylist, emptydict (and emptyset) can get promoted
+                // the same is true for optimized types (requires deoptimization).
                 auto type_of_named = _nameTable.at(id->_name);
                 if((type_of_named == python::Type::EMPTYLIST && type.isListType()) ||
-                   (type_of_named == python::Type::EMPTYDICT && type.isDictionaryType()) ) {
+                   (type_of_named == python::Type::EMPTYDICT && type.isDictionaryType())
+                       || deoptimizedType(type_of_named) == deoptimizedType(type) ) {
                     // || (type_of_named == python::Type::EMPTYSET && type.isSetType())
                     auto& logger = Logger::instance().logger("codegen");
                     logger.debug("promoting " + id->_name + " from " + _nameTable.at(id->_name).desc() + " to " + type.desc());

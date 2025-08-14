@@ -926,7 +926,7 @@ TEST_F(LoopTest, CodegenTestGeneralII) {
     }).map(UDF(func)).collectAsVector();
 
     ASSERT_EQ(v.size(), 1);
-    EXPECT_EQ(v[0], 4898);
+    EXPECT_EQ(v[0].toPythonString(), "(4898,)");
 }
 
 TEST_F(LoopTest, CodegenTestMultiIdTupleI) {

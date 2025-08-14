@@ -21,11 +21,11 @@ namespace tuplex {
     class ApplyVisitor : public IPrePostVisitor {
     protected:
         std::function<bool(const ASTNode*)> _predicate;
-        std::function<void(ASTNode&)> _func;
+        std::function<void(const ASTNode*, ASTNode&)> _func;
 
         void postOrder(ASTNode *node) override {
             if(_predicate(node))
-                _func(*node);
+                _func(parent(), *node);
         }
 
         void preOrder(ASTNode *node) override {}
@@ -39,7 +39,10 @@ namespace tuplex {
          * @param followAll whether to visit all nodes, or only follow the normal-case path
          */
         ApplyVisitor(std::function<bool(const ASTNode*)> predicate,
-                std::function<void(ASTNode&)> func, bool followAll=true) : _predicate(predicate), _func(func), _followAll(followAll)   {}
+                std::function<void(const ASTNode*, ASTNode&)> func, bool followAll=true) : _predicate(predicate), _func(func), _followAll(followAll)   {}
+
+        ApplyVisitor(std::function<bool(const ASTNode*)> predicate,
+                std::function<void(ASTNode&)> func, bool followAll=true) : _predicate(std::move(predicate)), _func([func](const ASTNode* parent, ASTNode& node) { func(node); }), _followAll(followAll)   {}
 
         // speculation so far only on ifelse branches
         void visit(NIfElse* ifelse) override {
@@ -69,9 +72,28 @@ namespace tuplex {
         }
 
         void visit(NSuite* suite) override {
-            if (!_followAll)
+            if (!_followAll) {
                 if (suite->hasAnnotation() && suite->annotation().numTimesVisited == 0)
                     return;
+
+                // some statements may stop execution in a suite (break, continue, return).
+                // stop calling in this case.
+                for (auto& stmt : suite->_statements) {
+                    switch (stmt->type()) {
+                        case ASTNodeType::Break:
+                        case ASTNodeType::Continue:
+                        case ASTNodeType::Return: {
+                            // accept visitor, and then stop.
+                            stmt->accept(*this);
+                            return;
+                        }
+                    default:
+                        stmt->accept(*this);
+                        break;
+                    }
+                }
+                return;
+            }
             IPrePostVisitor::visit(suite);
         }
 

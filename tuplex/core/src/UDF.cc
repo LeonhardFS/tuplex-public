@@ -2089,7 +2089,7 @@ namespace tuplex {
         if(_ast.getFunctionAST()) {
             // Check AST, is there any node?
             bool unknown_found = false;
-            ApplyVisitor av([](const ASTNode* node) { return true; }, [&unknown_found](ASTNode& node) {
+            ApplyVisitor av([](const ASTNode* node) { return true; }, [&unknown_found](const ASTNode* parent, ASTNode& node) {
 
                 // Ignore non-visited nodes with annotation that are unvisited.
                 if (node.hasAnnotation() && node.annotation().numTimesVisited == 0)
@@ -2107,6 +2107,15 @@ namespace tuplex {
                     case ASTNodeType::Suite:
                     case ASTNodeType::SliceItem: // <-- its own type?
                         return;
+                case ASTNodeType::Identifier: {
+                        // A couple special cases are ok to be unknown.
+                        if (parent && parent->type() != ASTNodeType::Function
+                        && parent->type() != ASTNodeType::Lambda
+                        && parent->type() != ASTNodeType::Assign
+                        && parent->type() != ASTNodeType::Tuple)
+                            return;
+                        break;
+                    }
                     default:
                         break;
                 }
