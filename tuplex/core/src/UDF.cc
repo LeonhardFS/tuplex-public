@@ -1184,7 +1184,7 @@ namespace tuplex {
 
             // func is compiled, hence need to look at AST tree to find out.
             auto root = getAnnotatedAST().getFunctionAST();
-            LambdaAccessedColumnVisitor acv;
+            LambdaAccessedColumnVisitor acv(_numInputColumns);
             root->accept(acv);
             auto indices = acv.getAccessedIndices();
 
@@ -1221,7 +1221,7 @@ namespace tuplex {
 
         // func is compiled, hence need to look at AST tree to find out.
         auto root = getAnnotatedAST().getFunctionAST();
-        LambdaAccessedColumnVisitor acv;
+        LambdaAccessedColumnVisitor acv(_numInputColumns);
         root->accept(acv);
         auto indices = acv.getAccessedIndices();
 

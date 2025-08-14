@@ -139,24 +139,6 @@ namespace tuplex {
 
                 // are multiple arguments used or not?
                 _multiArgs = lambda->_arguments->_args.size() > 1;
-                if(_multiArgs.value()) {
-                    _numColumns = lambda->_arguments->_args.size();
-                } else {
-
-                    // normalize tuple type argument
-                    auto normalized_input_row_type = itype.isTupleType() && itype.parameters().size() == 1 &&
-                                                     itype.parameters().front().isTupleType() &&
-                                                     itype.parameters().front() != python::Type::EMPTYTUPLE ? itype.parameters().front() : itype;
-                    if(itype.isTupleType() && itype.parameters().size() == 1 && itype.parameters().front().isRowType())
-                        normalized_input_row_type = itype.parameters().front();
-
-                    if(normalized_input_row_type.isTupleType())
-                        _numColumns = normalized_input_row_type.parameters().size();
-                    else if(normalized_input_row_type.isRowType())
-                        _numColumns = normalized_input_row_type.get_column_count();
-                    else
-                        _numColumns = 1;
-                }
 
                 // fetch identifiers for args
                 for(const auto &argNode : lambda->_arguments->_args) {
@@ -181,24 +163,6 @@ namespace tuplex {
 
                 // are multiple arguments used or not?
                 _multiArgs = func->_parameters->_args.size() > 1;
-                if(_multiArgs.value()) {
-                    _numColumns = func->_parameters->_args.size();
-                } else {
-                    // normalize tuple type argument
-                    auto normalized_input_row_type = itype.isTupleType() && itype.parameters().size() == 1 &&
-                                                     itype.parameters().front().isTupleType() &&
-                                                     itype.parameters().front() != python::Type::EMPTYTUPLE ? itype.parameters().front() : itype;
-                    if(itype.isTupleType() && itype.parameters().size() == 1 && itype.parameters().front().isRowType())
-                        normalized_input_row_type = itype.parameters().front();
-
-                    if(normalized_input_row_type.isTupleType())
-                        _numColumns = normalized_input_row_type.parameters().size();
-                    else if(normalized_input_row_type.isRowType())
-                        _numColumns = normalized_input_row_type.get_column_count();
-                    else
-                        _numColumns = 1;
-                }
-
 
                 // fetch identifiers for args
                 for(const auto &argNode : func->_parameters->_args) {

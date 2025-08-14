@@ -24,8 +24,8 @@ namespace tuplex {
         std::unordered_map<std::string, std::vector<size_t>> _argSubscriptIndices;
 
     public:
-        LambdaAccessedColumnVisitor() : _multiArgs(option<bool>::none),
-                                        _numColumns(0), _singleLambda(false), _argUnpacked(false) {}
+        LambdaAccessedColumnVisitor(size_t inputColumnCount) : _multiArgs(option<bool>::none),
+                                        _numColumns(inputColumnCount), _singleLambda(false), _argUnpacked(false) {}
 
         // override subscript to handle special cases, i.e. stop traversal on (nested) dictionaries/lists.
         virtual void visit(NSubscription* n) override;
