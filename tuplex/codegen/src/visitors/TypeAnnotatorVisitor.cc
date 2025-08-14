@@ -2472,6 +2472,32 @@ namespace tuplex {
         }
     }
 
+
+    void annotateLoopForEmptySequences(NFor* forelse, const python::Type& expression_type) {
+        // adds an annotation if not already existing for a loop iterating over e.g. [], (), set(), {}, ...
+        auto expr_type = deoptimizedType(expression_type).withoutOption(); // None will yield type error, can still annotate.
+
+        assert(forelse);
+        assert(!expression_type.isIllDefined());
+
+        if (expr_type == python::Type::EMPTYTUPLE || expr_type == python::Type::EMPTYLIST
+            || expr_type == python::Type::EMPTYDICT || expr_type == python::Type::EMPTYSET
+            || expr_type == python::Type::EMPTYSPARSEDICT || expr_type == python::Type::EMPTYITERATOR) {
+            if (!forelse->hasAnnotation()) {
+                if (forelse->suite_else) {
+                    forelse->suite_body->annotation().numTimesVisited = 0;
+                    forelse->suite_else->annotation().numTimesVisited = 1; // at least once, need to type this.
+                } else {
+                    forelse->suite_body->annotation().numTimesVisited = 0;
+                }
+
+                // Do not visit targets either.
+                if (!forelse->target->hasAnnotation())
+                    forelse->target->annotation().numTimesVisited = 0;
+            }
+        }
+    }
+
     void TypeAnnotatorVisitor::visit(NFor* forelse) {
         assert(forelse->target);
         assert(forelse->expression);
@@ -2485,6 +2511,8 @@ namespace tuplex {
         forelse->expression->accept(*this);
         auto exprType = forelse->expression->getInferredType();
         auto targetASTType = forelse->target->type();
+
+        annotateLoopForEmptySequences(forelse, exprType);
 
         assert(targetASTType == ASTNodeType::Identifier || targetASTType == ASTNodeType::Tuple || targetASTType == ASTNodeType::List);
         if(targetASTType == ASTNodeType::Identifier) {

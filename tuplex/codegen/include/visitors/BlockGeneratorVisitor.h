@@ -503,6 +503,10 @@ namespace codegen {
             _iteratorContextProxy = std::make_shared<IteratorContextProxy>(_env);
         }
 
+        inline void addInstruction(const SerializableValue& v) {
+            addInstruction(v.val, v.size, v.is_null);
+        }
+
         /*!
          * helper function to add an instruction to the stack (i.e. as return value of the visitor)
          * @param val value to be added

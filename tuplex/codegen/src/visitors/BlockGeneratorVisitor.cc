@@ -6189,7 +6189,7 @@ namespace tuplex {
                     end = _env->i64Const(0);
                 } else {
                     // list comes as pointer now, use load therefore
-                    end = builder.CreateLoad(builder.getInt64Ty(), builder.CreateStructGEP(exprAlloc.val, llvm_expr_type, 1));
+                    end = list_length(*_env, builder, exprAlloc.val, exprType);
                 }
             } else if(exprType == python::Type::STRING) {
                 start = _env->i64Const(0);
@@ -6375,54 +6375,30 @@ namespace tuplex {
             auto builder = _lfb->getIRBuilder();
             if(exprType.isListType()) {
                 if(exprType != python::Type::EMPTYLIST) {
-                    auto element_type = exprType.elementType();
-                    auto llvm_element_type = _env->pythonToLLVMType(element_type);
+                    auto list_type = exprType;
+                    auto list_ptr = exprAlloc.val;
 
-                    assert(llvm_element_type);
+                    auto current_value = list_load_value(*_env, builder, list_ptr, list_type, curr);
 
-                    // tuples are stored as pointer
-                    if(element_type.isTupleType() && !element_type.isFixedSizeType())
-                        llvm_element_type = llvm_element_type->getPointerTo();
-
-                    auto list_element_array_ptr = builder.CreateLoad(llvm_element_type->getPointerTo(), builder.CreateStructGEP(exprAlloc.val, llvm_expr_type, 2));
-
-                    auto currVal = builder.CreateLoad(llvm_element_type,
-                                                      builder.CreateGEP(llvm_element_type, list_element_array_ptr, curr));
-                    // _env->printValue(builder, currVal, "currVal in loop body=");
-
-                    if(targetType == python::Type::I64 || targetType == python::Type::F64) {
-                        // loop variable is of type i64 or f64 (has size 8)
-                        addInstruction(currVal, _env->i64Const(8));
-                    } else if(targetType == python::Type::STRING || targetType.isDictionaryType()) {
-
-                        auto list_size_array_ptr = builder.CreateLoad(builder.getInt64Ty()->getPointerTo(), builder.CreateStructGEP(exprAlloc.val, llvm_expr_type, 3));
-
-                        // loop variable is of type string or dictionary (need to extract size)
-                        auto currSize = builder.CreateLoad(builder.getInt64Ty(),
-                                                           builder.CreateGEP(builder.getInt64Ty(),
-                                                                             list_size_array_ptr, curr));
-                        addInstruction(currVal, currSize);
-                    } else if(targetType == python::Type::BOOLEAN) {
-                        // loop variable is of type bool (has size 1)
-                        addInstruction(currVal, _env->i64Const(1));
-                    } else if(targetType.isTupleType()) {
+                    // unpack into multiple values required?
+                    if(targetType.isTupleType()) {
                         // target is of tuple type
                         // either target is a single identifier and needs to be assigned the entire tuple
                         // or target has multiple identifiers and each corresponds to a value in the tuple
-                        FlattenedTuple ft = FlattenedTuple::fromLLVMStructVal(_env, builder, currVal, targetType);
+                        FlattenedTuple ft = FlattenedTuple::fromLLVMStructVal(_env, builder, current_value.val, targetType);
                         // add value to stack for all identifiers in target
                         if(loopVal.size() == 1) {
                             // single identifier
-                            addInstruction(currVal, ft.getSize(builder));
+                            addInstruction(current_value);
                         } else {
                             // multiple identifiers, add each value in tuple to stack in reverse order
                             for (int i = loopVal.size() - 1; i >= 0 ; --i) {
                                 auto idVal = ft.getLoad(builder, {i}); // get the value for the ith identifier from tuple
-                                addInstruction(idVal.val, idVal.size);
+                                addInstruction(idVal);
                             }
                         }
                     } else {
-                        fatal_error("unsupported target type '" + targetType.desc() + "' in for loop encountered");
+                        addInstruction(current_value);
                     }
                 }
             } else if(exprType == python::Type::STRING) {

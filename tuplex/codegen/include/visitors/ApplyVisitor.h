@@ -68,6 +68,34 @@ namespace tuplex {
             IPrePostVisitor::visit(ifelse);
         }
 
+        void visit(NSuite* suite) override {
+            if (!_followAll)
+                if (suite->hasAnnotation() && suite->annotation().numTimesVisited == 0)
+                    return;
+            IPrePostVisitor::visit(suite);
+        }
+
+        // speculation also on for loops/while loops.
+        void visit(NFor* forelse) override {
+            if (!_followAll) {
+                // no visit at all?
+                if (forelse->hasAnnotation() && forelse->annotation().numTimesVisited == 0) {
+                    return;
+                }
+
+                // visit expression if has not annotation.
+                forelse->expression->accept(*this);
+
+                if (forelse->target->hasAnnotation() && forelse->target->annotation().numTimesVisited > 0) {
+                    forelse->target->accept(*this);
+                }
+                forelse->suite_body->accept(*this);
+                // check if else suite exists.
+                if (forelse->suite_else)
+                    forelse->suite_else->accept(*this);
+            }
+        }
+
     private:
         bool _followAll;
     };

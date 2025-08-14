@@ -2080,6 +2080,7 @@ namespace tuplex {
     }
 
     bool UDF::hasWellDefinedTypes() const {
+
         // input schema ok?
         if(getInputSchema() == Schema::UNKNOWN)
             return false;
@@ -2110,9 +2111,12 @@ namespace tuplex {
                         break;
                 }
 
-                if(node.getInferredType() == python::Type::UNKNOWN)
+                if(node.getInferredType() == python::Type::UNKNOWN) {
+                    auto& logger = Logger::instance().defaultLogger();
+                    logger.debug(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " found ast node " + std::to_string(static_cast<int>(node.type())) + " with undefined type.");
                     unknown_found = true;
-            });
+                }
+            }, false);
             _ast.getFunctionAST()->accept(av);
             return !unknown_found;
         }

@@ -260,6 +260,14 @@ namespace tuplex {
                     // first check whether this identifier is in args,
                     // if not ignore.
                     if(std::find(_argNames.begin(), _argNames.end(), id->_name) != _argNames.end()) {
+
+                        // for _numColumns == 1, this is very easy.
+                        // the parameter is either accessed or not.
+                        if (_numColumns == 1) {
+                            _argFullyUsed[id->_name] = true;
+                            return;
+                        }
+
                         // no nested paths yet, i.e. x[0][2]
                         if(sub->_expression->type() == ASTNodeType::Number) {
                             NNumber* num = (NNumber*)sub->_expression.get();
