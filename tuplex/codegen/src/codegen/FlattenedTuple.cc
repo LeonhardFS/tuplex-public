@@ -30,12 +30,8 @@ namespace tuplex {
             assert(env);
             assert(ptr);
 
-            auto tupleType = type.isRowType() ? python::Type::makeTupleType(type.get_column_types()) : python::Type::propagateToTupleType(type); // convenience type for loops down there
-            assert(tupleType.isTupleType());
-
-            // init tuple
             FlattenedTuple t(env);
-            t.init(tupleType); // original type
+            t.init(type);
 
             auto llvmType = ptr->getType();
 
@@ -171,23 +167,34 @@ namespace tuplex {
             _tree.setSubTree(index, t._tree);
         }
 
-        void FlattenedTuple::init(const python::Type &type) {
-
-            // for now: do not support row type
-            if((type.isRowType()) || (type.isTupleType() && type.parameters().size() == 1 && type.parameters().front().isRowType()))
-                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Row type not yet supported.");
+        void FlattenedTuple::initTypes(const python::Type& type) {
+            // the original type.
+            _type = type;
+            // convert row types to tuple types.
+            _tupleType = python::Type::propagateToTupleType(replace_row_types_with_tuple_types(type));
+            // flattened.
 
             // special case: empty tuple
-            if(python::Type::EMPTYTUPLE == type || python::Type::EMPTYROW == type) {
+            if(python::Type::EMPTYTUPLE == _tupleType) {
                 _tree = TupleTree<codegen::SerializableValue>(); // empty tree
                 _flattenedTupleType = python::Type::EMPTYTUPLE;
                 return;
             }
 
-            _tree = TupleTree<codegen::SerializableValue>(type);
+            _tree = TupleTree<codegen::SerializableValue>(_tupleType);
 
             // compute flattened type version
             _flattenedTupleType = python::Type::makeTupleType(getFieldTypes());
+        }
+
+
+        void FlattenedTuple::init(const python::Type &type) {
+            // for now: do not support row type
+            if((type.isRowType()) || (type.isTupleType() && type.parameters().size() == 1 && type.parameters().front().isRowType()))
+                throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Row type not yet supported.");
+
+            // initialize type representations.
+            initTypes(type);
         }
 
         std::vector<llvm::Type*> FlattenedTuple::getTypes() {

@@ -35,7 +35,17 @@ namespace tuplex {
 
             // new: data is represented by tree structure
             TupleTree<tuplex::codegen::SerializableValue> _tree;
-            python::Type _flattenedTupleType; // cache this for fast speed
+
+            // types that this tuple represents.
+            python::Type _type; // the type with which the tuple was initialized.
+            python::Type _tupleType; // the type (wrapped) as (hierarchical) tuple type.
+            python::Type _flattenedTupleType; // a flattened representation of _tupleType.
+
+            /*!
+             * sets _type, _tupleType, _flattenedTupleType based on type. Initializes _tree as well.
+             * @param type the (original) type to use.
+             */
+            void initTypes(const python::Type& type);
 
             inline python::Type tupleType() const {
                 if(0 == _tree.numElements())

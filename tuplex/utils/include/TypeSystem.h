@@ -1049,6 +1049,32 @@ namespace tuplex {
         throw std::runtime_error("can not extract number of columns from type " + row_type.desc());
     }
 
+    inline python::Type replace_row_types_with_tuple_types(const python::Type& type) {
+        if (type == python::Type::EMPTYROW)
+            return python::Type::EMPTYTUPLE;
+
+        // Recursively replace.
+        if (type.isRowType())
+            return replace_row_types_with_tuple_types(type.get_columns_as_tuple_type());
+        if (type.isTupleType()) {
+            auto col_types = type.parameters();
+            for (auto& t: col_types)
+                t = replace_row_types_with_tuple_types(t);
+            return python::Type::makeTupleType(col_types);
+        }
+        if (type.isOptionType())
+            return python::Type::makeOptionType(replace_row_types_with_tuple_types(type.getReturnType()));
+        // if (type.isDictionaryType()) {
+        //     if (type.isStructuredDictionaryType() || type.isSparseStructuredDictionaryType()) {
+        //         throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet supported");
+        //     }
+        // }
+        if (type.isListType())
+            return python::Type::makeListType(replace_row_types_with_tuple_types(type.elementType()));
+
+        return type;
+    }
+
     // Custom binary stream for types to store data efficiently.
     // Also helps to decode.
     class BinaryOutputStream {

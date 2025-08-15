@@ -122,11 +122,7 @@ namespace tuplex {
             std::string _pythonInvokeName;
 
             inline python::Type to_tuple_type(const python::Type& t) const {
-                if (t.isRowType())
-                    return t.get_columns_as_tuple_type();
-                if (t.isTupleType() && t.parameters().size() == 1 && t.parameters().front().isRowType())
-                    return python::Type::makeTupleType({t.parameters().front().get_columns_as_tuple_type()});
-                return python::Type::propagateToTupleType(t);
+                return python::Type::propagateToTupleType(replace_row_types_with_tuple_types(t));
             }
         };
     }
