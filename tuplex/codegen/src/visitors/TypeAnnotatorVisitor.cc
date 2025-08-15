@@ -434,14 +434,17 @@ namespace tuplex {
 
 
             // special case call:
+            // the identifier id is the _func identifier of a call.
             if(parent()->type() == ASTNodeType::Call) {
-                NCall *call = (NCall*)parent();
-
-                auto lastCallParameterType = _lastCallParameterType.top();
-                // deoptimize, no constant functions defined in symbol table
-                lastCallParameterType = deoptimizedType(lastCallParameterType);
-
+                auto call = static_cast<NCall*>(parent());
                 if(call->_func.get() == id) {
+
+                    assert(_lastCallParameterType.size() > 0);
+                    auto lastCallParameterType = _lastCallParameterType.top();
+                    // deoptimize, no constant functions defined in symbol table
+                    lastCallParameterType = deoptimizedType(lastCallParameterType);
+
+
                     // lookup function with parameters
 
                     // when performing null-value optimization, could happen that symbol is there but no type match

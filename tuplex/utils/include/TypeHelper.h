@@ -105,6 +105,9 @@ namespace tuplex {
         if(optType == python::Type::RANGE)
             return optType;
 
+        if (optType.isTypeObjectType())
+            return optType;
+
         throw std::runtime_error("unsupported type " + optType.desc() + " encountered in "
                                  + std::string(__FILE__) + ":" + std::to_string(__LINE__));
     }
