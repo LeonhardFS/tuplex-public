@@ -75,7 +75,7 @@ namespace tuplex {
         // check if MapColumn Operator b.c. this operator doesn't map the full row
         if(getNormalParent()->type() == LogicalOperatorType::MAPCOLUMN) {
             auto mcop = dynamic_cast<MapColumnOperator*>(getNormalParent().get()); assert(mcop);
-            auto colTypes = inputSchema.getRowType().parameters();
+            auto colTypes = inputSchema.getColumnTypes();
             auto hintSchema = Schema(inputSchema.getMemoryLayout(), python::Type::propagateToTupleType(colTypes[mcop->getColumnIndex()]));
             inputSchema = hintSchema;
         }
