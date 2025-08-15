@@ -2224,6 +2224,7 @@ namespace tuplex {
             s.reserve(argsTypes.size());
 
             for(auto t : argsTypes) {
+                t = deoptimizedType(t);
                 if(python::Type::BOOLEAN == t)
                     s += "b";
                 else if(python::Type::I64 == t)
