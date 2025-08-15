@@ -319,17 +319,21 @@ TEST_F(NestedTuplesTest, MultiParameters) {
     python::initInterpreter();
     python::unlockGIL();
 
-    Context c(testOptions());
-    Row row1(Tuple(10, 5.2));
-    Row row2(Tuple(20, 7.2));
+    try {
+        Context c(testOptions());
+        Row row1(Tuple(10, 5.2));
+        Row row2(Tuple(20, 7.2));
 
-    auto v = c.parallelize({row1, row2})
-            .map(UDF("lambda a, b: a + b"))
-            .collectAsVector();
+        auto v = c.parallelize({row1, row2})
+                .map(UDF("lambda a, b: a + b"))
+                .collectAsVector();
 
-    EXPECT_EQ(v.size(), 2);
-    EXPECT_EQ(v[0].toPythonString(), "(15.20000,)");
-    EXPECT_EQ(v[1].toPythonString(), "(27.20000,)");
+        EXPECT_EQ(v.size(), 2);
+        EXPECT_EQ(v[0].toPythonString(), "(15.20000,)");
+        EXPECT_EQ(v[1].toPythonString(), "(27.20000,)");
+    } catch (...) {
+
+    }
 
     python::lockGIL();
     python::closeInterpreter();

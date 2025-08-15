@@ -2124,6 +2124,7 @@ namespace tuplex {
                     case ASTNodeType::While:
                     case ASTNodeType::For:
                     case ASTNodeType::Suite:
+                    case ASTNodeType::Slice:
                     case ASTNodeType::SliceItem: // <-- its own type?
                         return;
                 case ASTNodeType::Identifier: {

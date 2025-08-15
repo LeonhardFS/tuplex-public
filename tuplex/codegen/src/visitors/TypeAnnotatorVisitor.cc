@@ -1742,15 +1742,27 @@ namespace tuplex {
         if(type.isOptionType())
             type = type.getReturnType();
 
+        auto sliceItem = (NSliceItem*)slicing->_slices.front().get();
 
-        if(python::Type::STRING == type) {
-            slicing->setInferredType(type);
+        // deoptimized types.
+        python::Type start_type;
+        python::Type end_type;
+        python::Type stride_type;
+        if (sliceItem->_start)
+            start_type = deoptimizedType(sliceItem->_start->getInferredType());
+        if (sliceItem->_end)
+            end_type = deoptimizedType(sliceItem->_end->getInferredType());
+        if (sliceItem->_stride)
+            stride_type = deoptimizedType(sliceItem->_stride->getInferredType());
+
+        if(python::Type::STRING == type || (python::Type::EMPTYLIST != type && type.isListType())) {
+            slicing->setInferredType(type); // List and string return the same type.
         } else if(type.isTupleType()) {
             assert(slicing->_slices.front()->type() == ASTNodeType::SliceItem);
-            auto sliceItem = (NSliceItem*)slicing->_slices.front().get();
-            if((sliceItem->_start && sliceItem->_start->getInferredType() != python::Type::I64 && sliceItem->_start->getInferredType() != python::Type::BOOLEAN)
-               || (sliceItem->_end && sliceItem->_end->getInferredType() != python::Type::I64 && sliceItem->_end->getInferredType() != python::Type::BOOLEAN)
-               || (sliceItem->_stride && sliceItem->_stride->getInferredType() != python::Type::I64 && sliceItem->_stride->getInferredType() != python::Type::BOOLEAN)) {
+
+            if((sliceItem->_start && start_type != python::Type::I64 && start_type != python::Type::BOOLEAN)
+               || (sliceItem->_end && end_type != python::Type::I64 && end_type != python::Type::BOOLEAN)
+               || (sliceItem->_stride && stride_type != python::Type::I64 && stride_type != python::Type::BOOLEAN)) {
                 error("type error: slice indices must be bool or int");
             }
             else {
@@ -1830,12 +1842,15 @@ namespace tuplex {
                     else slicing->setInferredType(python::Type::makeTupleType(typeVec));
                 }
                 else {
+
+                    // TODO: can do with constant types!
+
                     error("slicing is unsupported on non-static, non-evaluated expressions");
                 }
             }
 
         } else {
-            error("slicing operation is performed on unsupported type " + type.desc());
+            error(std::string(__FILE__) +":" + std::to_string(__LINE__) + " slicing operation is performed on unsupported type " + type.desc());
             slicing->setInferredType(python::Type::UNKNOWN);
         }
     }
