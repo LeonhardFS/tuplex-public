@@ -1746,17 +1746,90 @@ namespace tuplex {
         }
     }
 
+
+    void adjust_slice_values(int64_t size, int64_t& start, int64_t& end, int64_t& stride) {
+        // correct start/end values
+        // case 1: (-inf, -len) => 0 // for negative stride, goes to -1
+        // case 2: [-len, -1] => +len
+        // case 3: [0, len-1] => +0
+        // case 4: [len, inf) => len // for negative stride, goes to len-1
+
+        // start value
+        // correct value
+        if(start < -size) {
+            if(stride < 0) start = -1;
+            else start = 0;
+        } else if(start <= -1)
+            start += size;
+        else if(start >= size) {
+            if(stride < 0) start = size - 1;
+            else start = size;
+        } else {
+            if(stride < 0) start = size - 1;
+            else start = 0;
+        }
+
+        // get value of end
+        // correct value
+        if(end < -size) {
+            if(stride < 0) end = -1;
+            else end = 0;
+        }
+        else if(end  <= -1) end += size;
+        else if(end >= size) {
+            if(stride < 0) end = size-1;
+            else end = size;
+        } else {
+            if(stride < 0) end = -1;
+            else end = size;
+        }
+    }
+
+    std::string str_slice(const std::string& str, option<std::string> start, option<std::string> end, option<std::string> stride) {
+        int64_t s = start.has_value() ? std::stoi(start.value()) : 0;
+        int64_t e = end.has_value() ? std::stoi(end.value()) : str.size();
+        auto step = stride.has_value() ? std::stoi(stride.value()) : 1;
+
+        // adjust negative numbers
+        assert(step > 0);
+
+        std::stringstream ss;
+        for(int64_t i=s; step * i < step * e; i += step)
+            ss<<str.at(i);
+        return ss.str();
+    }
+
     void TypeAnnotatorVisitor::visit(NSlice *slicing) {
         ApatheticVisitor::visit(slicing);
         assert(slicing->_value);
 
         auto type = slicing->_value->getInferredType();
+        auto sliceItem = (NSliceItem*)slicing->_slices.front().get();
+
+        // special case:
+        // slicing a constant.
+        if (type.isConstantValued()) {
+            option<std::string> start;
+            option<std::string> end;
+            option<std::string> stride;
+            if (sliceItem->_start && sliceItem->_start->getInferredType().isConstantValued())
+                start = sliceItem->_start->getInferredType().constant();
+            if (sliceItem->_end && sliceItem->_end->getInferredType().isConstantValued())
+                end = sliceItem->_end->getInferredType().constant();
+            if (sliceItem->_stride && sliceItem->_stride->getInferredType().isConstantValued())
+                stride = sliceItem->_stride->getInferredType().constant();
+
+            if (type.underlying() == python::Type::STRING) {
+                slicing->setInferredType(python::Type::makeConstantValuedType(python::Type::STRING, str_slice(type.constant(), start, end, stride)));
+                return;
+            }
+
+            // tuple handled below.
+        }
 
         // option type ==> use element type for inference (exception needs to be generated)
         if(type.isOptionType())
             type = type.getReturnType();
-
-        auto sliceItem = (NSliceItem*)slicing->_slices.front().get();
 
         // deoptimized types.
         python::Type start_type;
@@ -1768,6 +1841,9 @@ namespace tuplex {
             end_type = deoptimizedType(sliceItem->_end->getInferredType());
         if (sliceItem->_stride)
             stride_type = deoptimizedType(sliceItem->_stride->getInferredType());
+
+        // deopt.
+        type = deoptimizedType(type); // TODO: constant folding?
 
         if(python::Type::STRING == type || (python::Type::EMPTYLIST != type && type.isListType())) {
             slicing->setInferredType(type); // List and string return the same type.
