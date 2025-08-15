@@ -48,6 +48,8 @@ namespace tuplex {
         bool isActionable() override { return false; }
         bool isDataSource() override { return false; }
 
+        std::vector<std::string> columns() const override;
+
         /*!
          * indicates whether the output schema of the resolve operator (after upcast etc.) is compatible with
          * the operator it is resolving exceptions for.

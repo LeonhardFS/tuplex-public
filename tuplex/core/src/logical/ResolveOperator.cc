@@ -206,4 +206,9 @@ namespace tuplex {
     Schema ResolveOperator::throwingOperatorSchema() const {
         return getNormalParent()->getOutputSchema();
     }
+
+    std::vector<std::string> ResolveOperator::columns() const {
+        return getNormalParent()->columns();
+    }
+
 }
