@@ -269,13 +269,15 @@ namespace tuplex {
         // else, it's an option type...
         auto rowType = python::Type::makeTupleType({python::Type::STRING});
 
-        if (PARAM_USE_ROW_TYPE)
-            rowType = python::Type::makeRowType(rowType.parameters());
-
         _normalCaseRowType = rowType; // NVO speculation?
         if(!null_values.empty())
             rowType = python::Type::makeTupleType({python::Type::makeOptionType(python::Type::STRING)});
         _generalCaseRowType = rowType;
+
+        if (PARAM_USE_ROW_TYPE) {
+            _normalCaseRowType = python::Type::makeRowType(_normalCaseRowType.parameters());
+            _generalCaseRowType = python::Type::makeRowType(_generalCaseRowType.parameters());
+        }
 
         // get type & assign schema
         setOutputSchema(Schema(Schema::MemoryLayout::ROW, rowType));
