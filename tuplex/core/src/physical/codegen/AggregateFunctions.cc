@@ -129,7 +129,7 @@ namespace tuplex {
             // it doesn't need to necessarily - i.e. semantics guarantee combiner to be called at least once.
             // In the case of a constant e.g., this means optimizations may occur.
             // ==> right now those optimizations are not supported, instead we upcast to the generic type.
-            auto out_type = python::Type::propagateToTupleType(ftOut.getTupleType());
+            auto out_type = python::Type::propagateToTupleType(ftOut.physicalType());
             if(out_type != python::Type::propagateToTupleType(aggType)) {
 
                 // is it a deoptimization case? I.e., can upcast ftOut?
@@ -239,7 +239,7 @@ namespace tuplex {
             ftin.set(builder, {0}, ftAgg);
             ftin.set(builder, {1}, ftRow);
 
-            logger.debug("ftin type: " + ftin.getTupleType().desc());
+            logger.debug("ftin type: " + ftin.physicalType().desc());
             logger.debug("Compiling aggregate function:\n" + udf.desc());
 
             // compile dependent on udf

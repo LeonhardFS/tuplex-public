@@ -33,12 +33,13 @@ namespace tuplex {
             LLVMEnvironment *_env;
             bool _forceZeroTerminatedStrings;
 
-            // new: data is represented by tree structure
+            // A tuple type internally may be nested, to represent the nesting levels
+            // use a tree structure. Tuplex by default uses a physical layout where a tuple is automatically
+            // unnested. This avoids chasing pointers at the expense of reconstructions if levels are accessed.
             TupleTree<tuplex::codegen::SerializableValue> _tree;
 
             // types that this tuple represents.
             python::Type _type; // the type with which the tuple was initialized.
-            python::Type _tupleType; // the type (wrapped) as (hierarchical) tuple type.
             python::Type _flattenedTupleType; // a flattened representation of _tupleType.
 
             /*!
@@ -46,13 +47,6 @@ namespace tuplex {
              * @param type the (original) type to use.
              */
             void initTypes(const python::Type& type);
-
-            inline python::Type tupleType() const {
-                if(0 == _tree.numElements())
-                    return python::Type::EMPTYTUPLE;
-
-                return _tree.tupleType();
-            }
 
             // the flattened tuple may represent an empty tuple
             // this is a special case
@@ -75,12 +69,14 @@ namespace tuplex {
 
             FlattenedTuple(const FlattenedTuple &other) : _env(other._env),
                                                           _tree(other._tree),
+                                                          _type(other._type),
                                                           _flattenedTupleType(other._flattenedTupleType),
                                                           _forceZeroTerminatedStrings(other._forceZeroTerminatedStrings) {}
 
             FlattenedTuple &operator = (const FlattenedTuple &other) {
                 _env = other._env;
                 _tree = other._tree;
+                _type = other._type;
                 _flattenedTupleType = other._flattenedTupleType;
                 _forceZeroTerminatedStrings = other._forceZeroTerminatedStrings;
                 return *this;
@@ -95,10 +91,21 @@ namespace tuplex {
             void enableForcedZeroTerminatedStrings() { _forceZeroTerminatedStrings = true; }
 
             /*!
+             * the original type on which this tuple is based upon.
+             * @return
+             */
+            inline python::Type type() const { return _type; }
+
+            /*!
              * returns the actual (possibly) nested type of the wrapper
              * @return python::Type of the tuple stored within this wrapper
              */
-            python::Type getTupleType() const { return tupleType(); }
+            inline python::Type physicalType() const {
+                if(0 == _tree.numElements())
+                    return python::Type::EMPTYTUPLE;
+
+                return _tree.tupleType();
+            }
 
             /*!
              * init flattened tuple according to tuple type. Provides nullptrs for elements/sizes.
@@ -397,7 +404,7 @@ namespace tuplex {
                                                    const python::Type& general_case,
                                                    const std::map<int, int>& mapping) {
             auto& logger = Logger::instance().logger("codegen");
-            assert(normal_tuple.getTupleType() == normal_case);
+            assert(normal_tuple.physicalType() == normal_case);
 
             if(normal_case == general_case)
                 return normal_tuple;

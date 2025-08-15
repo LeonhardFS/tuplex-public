@@ -402,7 +402,6 @@ namespace tuplex {
             assert(root);
             assert(other.tupleType() == root->type);
 
-
             // assign using same method as from setElements
             auto v = other.elements();
             int i = 0;

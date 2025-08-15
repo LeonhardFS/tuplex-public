@@ -134,12 +134,12 @@ namespace tuplex {
                 case ExceptionSerializationFormat::NORMALCASE: {
 
                     // is ftIn in normalcase format? ==> serialize out.
-                    if(ftIn.getTupleType() == _inputRowType) {
+                    if(ftIn.physicalType() == _inputRowType) {
                         // perfect, simply serialize
                         auto serialized_row = ftIn.serializeToMemory(builder);
                         return serialized_row;
                     } else {
-                        throw std::runtime_error("format of ftIn " + ftIn.getTupleType().desc() + " does not match normal case input row type " + _inputRowType.desc());
+                        throw std::runtime_error("format of ftIn " + ftIn.physicalType().desc() + " does not match normal case input row type " + _inputRowType.desc());
                     }
                     break;
                 }
@@ -151,15 +151,15 @@ namespace tuplex {
                     assert(input_general_tuple_row_type.isTupleType());
 
                     // is ftIn in general-case format? -> serialize as is
-                    if(ftIn.getTupleType() == input_general_tuple_row_type) {
+                    if(ftIn.physicalType() == input_general_tuple_row_type) {
                         // perfect, simply serialize
                         auto serialized_row = ftIn.serializeToMemory(builder);
                         return serialized_row;
                     } else {
                         // must be in normal-case format
-                        if(ftIn.getTupleType() != input_tuple_row_type) {
+                        if(ftIn.physicalType() != input_tuple_row_type) {
                             std::stringstream ss;
-                            ss<<"ftIn is in unknown format "<<ftIn.getTupleType().desc()<<" that is neither normal-case format "
+                            ss<<"ftIn is in unknown format "<<ftIn.physicalType().desc()<<" that is neither normal-case format "
                             <<_inputRowType.desc()<<" nor general-case format "<<_inputRowTypeGeneralCase.desc();
                             throw std::runtime_error(ss.str());
                         }

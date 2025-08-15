@@ -381,7 +381,7 @@ namespace tuplex {
                         // check type is correct
                         auto expectedType = python::Type::BOOLEAN;
                         llvm::Value *filterCond = nullptr; // i1 filter condition
-                        if (ft.getTupleType() != expectedType) {
+                        if (ft.physicalType() != expectedType) {
                             // perform truthValueTest on result
                             // is it a tuple type?
                             // keep everything!
@@ -1746,12 +1746,12 @@ namespace tuplex {
 
             auto expected_general_case_row_tuple_type = _generalCaseRowType.isTupleType() ? _generalCaseRowType : _generalCaseRowType.get_columns_as_tuple_type();
 
-            if(general_case_row.getTupleType() != expected_general_case_row_tuple_type) {
+            if(general_case_row.physicalType() != expected_general_case_row_tuple_type) {
                 logger().error("Attempting to serialize normal case exception row, however row is"
                                " not in general case row format.\nExpected general case row format: " + expected_general_case_row_tuple_type.desc() +
-                               "\nActual general case row format: " + general_case_row.getTupleType().desc());
+                               "\nActual general case row format: " + general_case_row.physicalType().desc());
             }
-            assert(general_case_row.getTupleType() == expected_general_case_row_tuple_type);
+            assert(general_case_row.physicalType() == expected_general_case_row_tuple_type);
 
 #ifdef JSON_PARSER_TRACE_MEMORY
             _env->printValue(builder, row_no, "row number: ");

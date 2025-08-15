@@ -163,7 +163,7 @@ namespace tuplex {
         void FlattenedTuple::set(const codegen::IRBuilder& builder, const std::vector<int> &index, const FlattenedTuple &t) {
             auto subtree = _tree.subTree(index);
             auto subtree_type = subtree.tupleType();
-            assert(subtree_type == t.tupleType());
+            assert(subtree_type == t.type());
             _tree.setSubTree(index, t._tree);
         }
 
@@ -171,17 +171,17 @@ namespace tuplex {
             // the original type.
             _type = type;
             // convert row types to tuple types.
-            _tupleType = python::Type::propagateToTupleType(replace_row_types_with_tuple_types(type));
-            // flattened.
+            auto mapped_type = replace_row_types_with_tuple_types(type);
 
             // special case: empty tuple
-            if(python::Type::EMPTYTUPLE == _tupleType) {
+            if(python::Type::EMPTYTUPLE == mapped_type) {
                 _tree = TupleTree<codegen::SerializableValue>(); // empty tree
                 _flattenedTupleType = python::Type::EMPTYTUPLE;
                 return;
             }
 
-            _tree = TupleTree<codegen::SerializableValue>(_tupleType);
+            // Construct tuple tree.
+            _tree = TupleTree<codegen::SerializableValue>(mapped_type);
 
             // compute flattened type version
             _flattenedTupleType = python::Type::makeTupleType(getFieldTypes());
@@ -224,7 +224,7 @@ namespace tuplex {
 
             // first: check if bitmap is contained, if so deserialize bitmap!
             vector<llvm::Value*> bitmap;
-            bool hasBitmap = tupleType().isOptional();
+            bool hasBitmap = physicalType().isOptional();
             if(hasBitmap) {
                 auto atype = getLLVMType()->getStructElementType(0); assert(atype->isArrayTy());
                 auto numBits = atype->getArrayNumElements();
@@ -459,7 +459,7 @@ namespace tuplex {
             assert(capacity->getType() == llvm::Type::getInt64Ty(context));
 
             auto types = getFieldTypes();
-            bool hasVarField = !getTupleType().isFixedSizeType();
+            bool hasVarField = !physicalType().isFixedSizeType();
             Value *serializationSize = getSize(builder);
 
 
@@ -524,7 +524,7 @@ namespace tuplex {
             Value *varlenSize = _env->i64Const(0);
 
             // bitmap needed?
-            bool hasBitmap = getTupleType().isOptional();
+            bool hasBitmap = physicalType().isOptional();
             int64_t num_bitmap_blocks = 0;
 
             // step 1: serialize bitmap
@@ -874,7 +874,7 @@ namespace tuplex {
                                         llvm::Value *size,
                                         llvm::Value *is_null) {
             // make sure it is a valid index
-            assert(0 <= iElement && iElement < tupleType().parameters().size());
+            assert(0 <= iElement && iElement < physicalType().parameters().size());
 
             // validate data
             if(size)
@@ -882,7 +882,7 @@ namespace tuplex {
             if(is_null)
                 assert(is_null->getType() == _env->i1Type());
 
-            auto type = tupleType().parameters()[iElement];
+            auto type = physicalType().parameters()[iElement];
 
             // update for option type
             auto elementType = type.isOptionType() ? type.getReturnType() : type;
@@ -949,7 +949,7 @@ namespace tuplex {
         }
 
         bool FlattenedTuple::containsVarLenField() const {
-            return !tupleType().isFixedSizeType();
+            return !physicalType().isFixedSizeType();
         }
 
         llvm::Value* FlattenedTuple::getSize(const codegen::IRBuilder& builder) const {
@@ -1098,7 +1098,7 @@ namespace tuplex {
             // _env->debugPrint(builder, "+fast varlen skipfield that's bytes: ", s);
 
             // if contains bitmap, add multiple of 8 bytes
-            if(tupleType().isOptional()) {
+            if(physicalType().isOptional()) {
                 auto bitmapType = getLLVMType()->getStructElementType(0);
                 assert(bitmapType->isArrayTy());
                 assert(bitmapType->getArrayElementType() == _env->i1Type());
@@ -1587,12 +1587,12 @@ namespace tuplex {
             auto env = _env;
 
             // check, make sure they upcastable...
-            if(!python::canUpcastType(getTupleType(), target_type)) {
+            if(!python::canUpcastType(physicalType(), target_type)) {
 
-                logger.debug("Can not upcast from type " + getTupleType().desc() + " to type " + target_type.desc());
+                logger.debug("Can not upcast from type " + physicalType().desc() + " to type " + target_type.desc());
 
                 // special case: simple tuple wrap, e.g. for a single tuple ()
-                if(!getTupleType().isTupleType() && python::canUpcastType(python::Type::propagateToTupleType(getTupleType()), target_type)) {
+                if(!physicalType().isTupleType() && python::canUpcastType(python::Type::propagateToTupleType(physicalType()), target_type)) {
                     // ok, handle here -> this is a special case!
                     auto num_desired = ft.numElements();
                     auto num_given = numElements();
@@ -1603,7 +1603,7 @@ namespace tuplex {
                     } else {
                         throw std::runtime_error("wrapping not possible for upcast");
                     }
-                } else if(getTupleType().isTupleType() && getTupleType().parameters().size() == 1) {
+                } else if(physicalType().isTupleType() && physicalType().parameters().size() == 1) {
                     // ok, handle here -> this is a special case!
                     auto num_desired = ft.numElements();
                     auto num_given = numElements();
@@ -1613,7 +1613,7 @@ namespace tuplex {
                     logger.debug("another special case encountered...");
 
                 } else {
-                    auto err_msg = "Code generation failure, can't upcast type " + getTupleType().desc() + " to type " + target_type.desc();
+                    auto err_msg = "Code generation failure, can't upcast type " + physicalType().desc() + " to type " + target_type.desc();
                     Logger::instance().logger("codegen").debug(err_msg);
                     throw std::runtime_error(err_msg);
                 }

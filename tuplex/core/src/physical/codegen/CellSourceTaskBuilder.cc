@@ -150,7 +150,7 @@ namespace tuplex {
 
                         // _env->debugPrint(builder, "exception rows serialized to buffer.");
                         // debug print
-                        logger.debug("CellSourceTaskBuilder: input row type in which exceptions from pipeline are stored that are **not** parse-exceptions is " + ft.getTupleType().desc());
+                        logger.debug("CellSourceTaskBuilder: input row type in which exceptions from pipeline are stored that are **not** parse-exceptions is " + ft.physicalType().desc());
                         std::unordered_map<ExceptionSerializationFormat, std::string> name_lookup{{ExceptionSerializationFormat::GENERALCASE, "general"},
                                                                                                      {ExceptionSerializationFormat::NORMALCASE, "normal"}};
                         logger.debug("serializing exceptions in " + name_lookup.at(exception_serialization_format()) + " exception row format");

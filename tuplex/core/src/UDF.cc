@@ -617,8 +617,7 @@ namespace tuplex {
         // }
     }
 
-    bool UDF::typeFunctionWithMultipleParameters(python::Type& hintType, std::vector<std::tuple<std::string, python::Type>> params, bool removeBranches, bool printErrors, MessageHandler& logger)
-    {
+    bool UDF::typeFunctionWithMultipleParameters(python::Type& hintType, std::vector<std::tuple<std::string, python::Type>> params, bool removeBranches, bool printErrors, MessageHandler& logger) {
         // unpack > 1 parameter
         _ast.setUnpacking(true);
 
@@ -748,18 +747,15 @@ namespace tuplex {
                 return type;
         }
 
-        //
-
-        if (type.isPrimitiveType() || python::Type::EMPTYTUPLE == type || type.isDictionaryType() ||
-            python::Type::NULLVALUE == type || python::Type::GENERICTUPLE == type ||
-            python::Type::PYOBJECT == type ||
-            python::Type::GENERICDICT == type || type.isOptionType() || type.isListType())
-            return python::Type::makeTupleType({type});
-        else if (type.isTupleType()) {
-            if (1 == type.parameters().size())
+        // Wrap in tuple if not a tuple.
+        if (type.isTupleType()) {
+            // special case: wrap 1-element tuple to preserve it.
+            if (1 == type.parameters().size() || type == python::Type::EMPTYTUPLE) // wrap empty tuple as well.
                 return python::Type::makeTupleType({type});
+            return type; // return multi-element tuples as is.
+        } else {
+            return python::Type::propagateToTupleType(type);
         }
-        return type;
     }
 
     Schema UDF::getOutputSchema() const {

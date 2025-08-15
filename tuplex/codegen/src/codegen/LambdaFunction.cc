@@ -247,7 +247,7 @@ namespace tuplex {
             assert(_retValPtr);
 
             auto builder = getIRBuilder();
-            auto output_type = _fto.getTupleType();
+            auto output_type = _fto.physicalType();
 
             // @TODO: optimize & test/resolve for tuples! it's not a struct type but rather a pointer to a struct type!
             assert(python::Type::UNKNOWN != output_type);

@@ -1069,6 +1069,10 @@ namespace tuplex {
         //         throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet supported");
         //     }
         // }
+
+        if (type.isSingleValued())
+            return type;
+
         if (type.isListType())
             return python::Type::makeListType(replace_row_types_with_tuple_types(type.elementType()));
 

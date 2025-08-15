@@ -76,7 +76,7 @@ namespace tuplex {
             if(last_tuple_type.isIllDefined())
                 throw std::runtime_error("can not create function, last row type is ill-defined: " + last_tuple_type.desc());
             ft.init(last_tuple_type);
-            assert(!ft.getTupleType().isIllDefined());
+            assert(!ft.physicalType().isIllDefined());
 
             vector<Type*> argsType{resultStructType()->getPointerTo(0),
                                    env().i8ptrType(),
@@ -133,7 +133,7 @@ namespace tuplex {
             assignToVariable(builder, "numOutputRows", env().i64Const(0));
 
             // load the tuple1
-            _lastRowResult = _lastRowInput = FlattenedTuple::fromLLVMStructVal(&env(), builder, argRow, ft.getTupleType());
+            _lastRowResult = _lastRowInput = FlattenedTuple::fromLLVMStructVal(&env(), builder, argRow, ft.physicalType());
 
             // store in var
             _lastTupleResultVar = _lastRowResult.alloc(builder);
@@ -288,7 +288,7 @@ namespace tuplex {
             // update wrapper (through variable load)
             _lastRowResult = FlattenedTuple::fromLLVMStructVal(&env(), builder,
                                                                _lastTupleResultVar,
-                                                               _lastRowResult.getTupleType());
+                                                               _lastRowResult.physicalType());
 
             // last block is continuation block!
             _lastBlock = bbNextBlock;
@@ -363,7 +363,7 @@ namespace tuplex {
                     FlattenedTuple resultRow = cf.callWithExceptionHandler(builder, _lastRowInput, resVal, bbException, getPointerToVariable(builder, "exceptionCode"));
 
                     // check that the output type is the same as the expected one!
-                    if(!checkRowTypesCompatible(resultRow.getTupleType(), _lastRowResult.getTupleType(), "resolve"))
+                    if(!checkRowTypesCompatible(resultRow.physicalType(), _lastRowResult.physicalType(), "resolve"))
                         return false;
 
                     // store result into var
@@ -383,8 +383,8 @@ namespace tuplex {
 
                     // check type is correct
                     auto expectedType = python::Type::BOOLEAN;
-                    if(ft.getTupleType() != expectedType && ft.getTupleType() != python::Type::propagateToTupleType(expectedType)) {
-                        logger.error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " wrong output type. Expected " + expectedType.desc() + " got " + ft.getTupleType().desc());
+                    if(ft.physicalType() != expectedType && ft.physicalType() != python::Type::propagateToTupleType(expectedType)) {
+                        logger.error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " wrong output type. Expected " + expectedType.desc() + " got " + ft.physicalType().desc());
                         return false;
                     }
 
@@ -432,7 +432,7 @@ namespace tuplex {
 
                     auto outVal = cf.callWithExceptionHandler(builder, inVal, resVal, bbException, getPointerToVariable(builder, "exceptionCode"));
 
-                    if(outVal.getTupleType().isTupleType())
+                    if(outVal.physicalType().isTupleType())
                         EXCEPTION("tuples not yet supported...");
                     auto resLoad = codegen::SerializableValue(outVal.get(0), outVal.getSize(0));
 
@@ -441,7 +441,7 @@ namespace tuplex {
 
                     auto params = _lastInputSchemaType.parameters();
                     // update with result of UDF
-                    params[_lastOperatorColumnIndex] = outVal.getTupleType();
+                    params[_lastOperatorColumnIndex] = outVal.physicalType();
                     auto finalType = python::Type::makeTupleType(params);
 
                     ftOut.init(finalType);
@@ -457,7 +457,7 @@ namespace tuplex {
 
                     // store final output to variable
                     // check that the output type is the same as the expected one!
-                    if(!checkRowTypesCompatible(resultRow.getTupleType(), _lastRowResult.getTupleType(), "resolve"))
+                    if(!checkRowTypesCompatible(resultRow.physicalType(), _lastRowResult.physicalType(), "resolve"))
                         return false;
 
                     // store result into var
@@ -473,7 +473,7 @@ namespace tuplex {
                     // as stated in the map operation, the result type needs to be allocated within the entry block
                     auto resVal = variableBuilder.CreateAlloca(cf.getLLVMResultType(env()), 0, nullptr);
                     auto outVal = cf.callWithExceptionHandler(builder, _lastRowInput, resVal, bbException, getPointerToVariable(builder, "exceptionCode"));
-                    if(outVal.getTupleType().isTupleType())
+                    if(outVal.physicalType().isTupleType())
                         EXCEPTION("tuples not yet supported...");
                     // assign to input vals
 #warning "untested code for tuples etc...."
@@ -485,10 +485,10 @@ namespace tuplex {
                     auto params = _lastInputSchemaType.parameters();
                     // update with result of UDF
                     if(_lastOperatorColumnIndex < params.size())
-                        params[_lastOperatorColumnIndex] = outVal.getTupleType();
+                        params[_lastOperatorColumnIndex] = outVal.physicalType();
                     else {
                         assert(_lastOperatorColumnIndex == params.size()); // append!
-                        params.emplace_back(outVal.getTupleType());
+                        params.emplace_back(outVal.physicalType());
                     }
                     auto finalType = python::Type::makeTupleType(params);
 
@@ -504,7 +504,7 @@ namespace tuplex {
 
                     // store final output to variable
                     // check that the output type is the same as the expected one!
-                    if(!checkRowTypesCompatible(resultRow.getTupleType(), _lastRowResult.getTupleType(), "resolve"))
+                    if(!checkRowTypesCompatible(resultRow.physicalType(), _lastRowResult.physicalType(), "resolve"))
                         return false;
 
                     // store result into var
@@ -530,7 +530,7 @@ namespace tuplex {
             // update wrapper (through variable load)
             _lastRowResult = FlattenedTuple::fromLLVMStructVal(&env(), builder,
                                                                _lastTupleResultVar,
-                                                               _lastRowResult.getTupleType());
+                                                               _lastRowResult.physicalType());
 
             // last block is continuation block!
             _lastBlock = bbNextBlock;
@@ -569,22 +569,22 @@ namespace tuplex {
 
             // debug info
             logger.debug("Compiled function takes input row type: " + cf.input_type.desc());
-            logger.debug("Last LLVM input row is: " + _lastRowResult.getTupleType().desc());
+            logger.debug("Last LLVM input row is: " + _lastRowResult.physicalType().desc());
 
             // check compatibility of types -> they HAVE to be compatible on a flattened type basis
-            if(flattenedType(cf.tupleInputType()) != flattenedType(_lastRowResult.getTupleType())) {
+            if(flattenedType(cf.tupleInputType()) != flattenedType(_lastRowResult.physicalType())) {
                 std::stringstream err;
                 err<<"last result and expected UDF input type are not compatible\n"
                      <<"Compiled function takes input row type: " + cf.tupleInputType().desc() + "\n"
-                     <<"Last LLVM input row is: " + _lastRowResult.getTupleType().desc();
+                     <<"Last LLVM input row is: " + _lastRowResult.physicalType().desc();
                 logger.warn(err.str());
             }
 
             auto exceptionBlock = createExceptionBlock();
             _lastRowResult = cf.callWithExceptionHandler(builder, _lastRowResult, _lastTupleResultVar, exceptionBlock, getPointerToVariable(builder, "exceptionCode"));
 
-            if(_lastRowResult.getTupleType() != cf.tupleOutputType()) {
-                logger.error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " wrong output type. Expected " + cf.tupleOutputType().desc() + " got " + _lastRowResult.getTupleType().desc());
+            if(_lastRowResult.physicalType() != cf.tupleOutputType()) {
+                logger.error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " wrong output type. Expected " + cf.tupleOutputType().desc() + " got " + _lastRowResult.physicalType().desc());
                 return false;
             }
 
@@ -658,7 +658,7 @@ namespace tuplex {
             // check type is correct
             auto expectedType = python::Type::BOOLEAN;
             llvm::Value* filterCond = nullptr; // i1 filter condition
-            if(ft.getTupleType() != expectedType) {
+            if(ft.physicalType() != expectedType) {
                 // perform truthValueTest on result
                 // is it a tuple type?
                 // keep everything!
@@ -783,14 +783,14 @@ namespace tuplex {
             ftOut.storeTo(builder, _lastTupleResultVar);
 
             // check return type..
-            if(_lastRowResult.getTupleType().isTupleType()) {
-                if(_lastRowResult.getTupleType().parameters()[columnToMapIndex] != cf.output_python_type) {
-                    logger.error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " wrong output type. Expected " + finalType.desc() + " got " + _lastRowResult.getTupleType().desc());
+            if(_lastRowResult.physicalType().isTupleType()) {
+                if(_lastRowResult.physicalType().parameters()[columnToMapIndex] != cf.output_python_type) {
+                    logger.error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " wrong output type. Expected " + finalType.desc() + " got " + _lastRowResult.physicalType().desc());
                     return false;
                 }
             } else {
-                if(_lastRowResult.getTupleType() != cf.tupleOutputType()) {
-                    logger.error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " wrong output type. Expected " + cf.tupleOutputType().desc() + " got " + _lastRowResult.getTupleType().desc());
+                if(_lastRowResult.physicalType() != cf.tupleOutputType()) {
+                    logger.error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " wrong output type. Expected " + cf.tupleOutputType().desc() + " got " + _lastRowResult.physicalType().desc());
                     return false;
                 }
             }
@@ -917,14 +917,14 @@ namespace tuplex {
             ftOut.storeTo(builder, _lastTupleResultVar);
 
             // Check return type:
-            if(_lastRowResult.getTupleType().isTupleType()) {
-                if(_lastRowResult.getTupleType().parameters()[columnToMapIndex] != cf.output_python_type) {
-                    logger.error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " wrong output type. Expected " + finalType.desc() + " got " + _lastRowResult.getTupleType().desc());
+            if(_lastRowResult.physicalType().isTupleType()) {
+                if(_lastRowResult.physicalType().parameters()[columnToMapIndex] != cf.output_python_type) {
+                    logger.error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " wrong output type. Expected " + finalType.desc() + " got " + _lastRowResult.physicalType().desc());
                     return false;
                 }
             } else {
-                if(_lastRowResult.getTupleType() != cf.output_python_type) {
-                    logger.error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " wrong output type. Expected " + cf.tupleOutputType().desc() + " got " + _lastRowResult.getTupleType().desc());
+                if(_lastRowResult.physicalType() != cf.output_python_type) {
+                    logger.error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " wrong output type. Expected " + cf.tupleOutputType().desc() + " got " + _lastRowResult.physicalType().desc());
                     return false;
                 }
             }
@@ -991,7 +991,7 @@ namespace tuplex {
                     // output original input row
                     // => serialize to runtime memory!
                     logger.debug("Warning: need to make sure types are here correct when using exception handler directly from PipelineBuilder.cc");
-                    logger.info("generating exception handler with input data of type " + _argInputRow.getTupleType().desc());
+                    logger.info("generating exception handler with input data of type " + _argInputRow.physicalType().desc());
 #warning "probably would need to upcast to general case here."
                     auto serialized_row = _argInputRow.serializeToMemory(builder);
 
@@ -1166,7 +1166,7 @@ namespace tuplex {
             using namespace std;
 
             // check colKey and whether it works.
-            auto lastType = _lastRowResult.getTupleType();
+            auto lastType = _lastRowResult.physicalType();
             python::Type keyType;
 
             if(!keyCols.empty()) {
@@ -1450,7 +1450,7 @@ namespace tuplex {
             // start codegen here...
             IRBuilder builder(_lastBlock);
             auto &ctx = env().getContext();
-            auto lastType = _lastRowResult.getTupleType();
+            auto lastType = _lastRowResult.physicalType();
 
             // because key is constant, there's no need to create a key. Simply calling the hash function with the bucket is enough.
             // i.e., only use bucket value (also cmalloc!) => receiving function has to free them
@@ -2580,7 +2580,7 @@ namespace tuplex {
 
             // restricted upcast?
             if(!col_indices.empty()) {
-                auto col_types = _lastRowResult.getTupleType().parameters();
+                auto col_types = _lastRowResult.physicalType().parameters();
                 auto target_col_types = rowType.isRowType() ? rowType.get_column_types() : rowType.parameters();
                 for(auto idx : col_indices) {
                     if(idx < col_types.size())
@@ -2592,7 +2592,7 @@ namespace tuplex {
 
             IRBuilder builder(_lastBlock);
             try {
-                logger.debug("upcasting from " + _lastRowResult.getTupleType().desc() + " to " + rowType.desc());
+                logger.debug("upcasting from " + _lastRowResult.physicalType().desc() + " to " + rowType.desc());
                 _lastRowResult = _lastRowResult.upcastTo(builder, rowType.isRowType() ? rowType.get_columns_as_tuple_type() : rowType, true);
             } catch (const std::exception& e) {
                 logger.error("type upcast failed: " + std::string(e.what()));
@@ -3075,7 +3075,7 @@ namespace tuplex {
            // compile aggregation function and add it in.
 
             // new combined flattened tuple to pass to function
-            auto combinedType = python::Type::makeTupleType({aggType, _lastRowResult.getTupleType()}); // this should be compatible to input type of aggUDF!
+            auto combinedType = python::Type::makeTupleType({aggType, _lastRowResult.physicalType()}); // this should be compatible to input type of aggUDF!
             FlattenedTuple ftin(_env.get());
             ftin.init(combinedType);
             ftin.set(builder, {0}, ftAgg);
@@ -3119,9 +3119,9 @@ namespace tuplex {
            _lastRowResult = FlattenedTuple::fromLLVMStructVal(_env.get(), builder, intermediateOutputPtr(), aggType);
 
            auto result_type = cf.tupleOutputType(); // progagate b.c. this yields a row.
-           if (_lastRowResult.getTupleType() != result_type) {
+           if (_lastRowResult.physicalType() != result_type) {
                logger.error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " wrong output type. Expected " + result_type.desc() + " got " +
-                            _lastRowResult.getTupleType().desc());
+                            _lastRowResult.physicalType().desc());
                return false;
            }
 

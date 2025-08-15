@@ -196,7 +196,7 @@ namespace tuplex {
 
 
             // serialization code with check if enough capacity is left
-            python::Type outputSchema = ft.getTupleType();
+            python::Type outputSchema = ft.physicalType();
 
 
             // check if something needs to be serialized or not. If not, do not bother with serialization code
