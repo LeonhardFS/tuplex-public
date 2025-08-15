@@ -750,6 +750,11 @@ namespace tuplex {
 
             // Check if cmp operator is defined for type pairs, and can be generated.
             for (unsigned i = 0; i < cmp->_ops.size(); ++i) {
+                auto original_left_type = types[i];
+                auto original_right_type = types[i + 1];
+                auto left_type = original_left_type.withoutOption();
+                auto right_type = original_right_type.withoutOption();
+
                 // == and != are always defined for all types.
                 switch (cmp->_ops[i])   {
                     case TokenType::EQEQUAL:
@@ -764,8 +769,6 @@ namespace tuplex {
                             // if types can be unified, comparison ok.
                             // list, tuple, set ok
                             // dict, errors.
-                            auto left_type = types[i];
-                            auto right_type = types[i + 1];
 
                             if (left_type.isDictionaryType() || right_type.isDictionaryType()) {
                                 cmp->setInferredType(type_error);
@@ -784,6 +787,15 @@ namespace tuplex {
                             }
                             break;
                         }
+                case TokenType::IN:
+                case TokenType::NOTIN: {
+                    if (right_type == python::Type::STRING || right_type.isTupleType() || right_type.isListType() || right_type.isDictionaryType())
+                        cmp->setInferredType(python::Type::BOOLEAN);
+                    else {
+                        fatal_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " unsupported binary operation for " + original_left_type.desc() + " " + opToString(cmp->_ops[i]) + original_right_type.desc() + ".");
+                    }
+                    break;
+                }
                 default:
                     fatal_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " unsupported token type " + opToString(cmp->_ops[i]) + ".");
                 }
@@ -792,7 +804,6 @@ namespace tuplex {
             // else it is a bool (b.c. it is a compare statement)
             cmp->setInferredType(python::Type::BOOLEAN);
         }
-
 
         if(!checkForValidIsComparisons(cmp)) {
             addCompileError(CompileError::TYPE_ERROR_INCOMPATIBLE_TYPES_FOR_IS_COMPARISON);
