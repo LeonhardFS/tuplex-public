@@ -125,6 +125,9 @@ RUN /tmp/install_llvm.sh
 # Clean up installation scripts
 RUN rm -f /tmp/install_*.sh
 
+# Clean up downloaded temporary files and build artifacts
+RUN rm -rf /tmp/tuplex-downloads
+
 # Fix CMake issue by using the working pipx-installed version
 RUN ln -sf /opt/_internal/pipx/venvs/cmake/bin/cmake /opt/bin/cmake
 
