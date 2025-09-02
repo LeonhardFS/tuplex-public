@@ -134,7 +134,8 @@ apk add --no-cache \
     tk-dev libffi-dev wget git \
     curl-dev python3-dev py3-pip \
     openjdk11 ninja \
-    linux-headers musl-dev
+    linux-headers musl-dev \
+    openssh
 
 export CC=${CC}
 export CXX=${CXX}
@@ -162,24 +163,38 @@ cmake --version
 
 
 echo ">> Installing Boost"
-mkdir -p ${DOWNLOAD_DIR}/boost
+install_boost() {
+    local boost_version="${1:-$BOOST_VERSION}"
+    local download_dir="${2:-$DOWNLOAD_DIR}"
+    local prefix="${3:-$PREFIX}"
+    local python_executable="${4:-$PYTHON_EXECUTABLE}"
+    local cpu_count="${5:-$CPU_COUNT}"
 
-# -- Install Boost.
-# create underscored version
-# e.g. 1.79.0 -> 1_79_0
-BOOST_UNDERSCORED_VERSION=$(echo ${BOOST_VERSION} | tr . _)
+    echo ">> Installing Boost ${boost_version}"
+    mkdir -p "${download_dir}/boost"
 
-# build incl. boost python
-cd ${DOWNLOAD_DIR}/boost && curl -L -O https://github.com/boostorg/boost/releases/download/boost-${BOOST_VERSION}/boost-${BOOST_VERSION}-b2-nodocs.tar.gz && tar xf boost-${BOOST_VERSION}-b2-nodocs.tar.gz && cd ${DOWNLOAD_DIR}/boost/boost-${BOOST_VERSION} \
-           && ./bootstrap.sh --with-python=${PYTHON_EXECUTABLE} --prefix=${PREFIX} --with-libraries="thread,iostreams,regex,system,filesystem,python,stacktrace,atomic,chrono,date_time" \
-            && ./b2 cxxflags="-fPIC" link=static -j "${CPU_COUNT}" \
-            && ./b2 cxxflags="-fPIC" link=static install && sed -i 's/#if PTHREAD_STACK_MIN > 0/#ifdef PTHREAD_STACK_MIN/g' ${PREFIX}/include/boost/thread/pthread/thread_data.hpp
+    # create underscored version, e.g. 1.79.0 -> 1_79_0
+    local boost_underscored_version
+    boost_underscored_version=$(echo "${boost_version}" | tr . _)
 
-cd $DOWNLOAD_DIR
-rm -rf ${DOWNLOAD_DIR}/boost
+    # Download and build Boost including boost python
+    cd "${download_dir}/boost"
+    curl -L -O "https://github.com/boostorg/boost/releases/download/boost-${boost_version}/boost-${boost_version}-b2-nodocs.tar.gz"
+    tar xf "boost-${boost_version}-b2-nodocs.tar.gz"
+    cd "${download_dir}/boost/boost-${boost_version}"
+    ./bootstrap.sh --with-python="${python_executable}" --prefix="${prefix}" --with-libraries="thread,iostreams,regex,system,filesystem,python,stacktrace,atomic,chrono,date_time"
+    ./b2 cxxflags="-fPIC" link=static -j "${cpu_count}"
+    ./b2 cxxflags="-fPIC" link=static install
+    sed -i 's/#if PTHREAD_STACK_MIN > 0/#ifdef PTHREAD_STACK_MIN/g' "${prefix}/include/boost/thread/pthread/thread_data.hpp"
+
+    cd "${download_dir}"
+    rm -rf "${download_dir}/boost"
+}
+
+install_boost "$BOOST_VERSION" "$DOWNLOAD_DIR" "$PREFIX" "$PYTHON_EXECUTABLE" "$CPU_COUNT"
 
 ## -- install llvm
-#install_llvm $LLVM_VERSION
+install_llvm $LLVM_VERSION
 
 
 echo ">>> Installing tuplex dependencies."
@@ -200,9 +215,9 @@ git clone https://github.com/google/googletest.git -b v1.14.0 && cd googletest &
 git clone https://github.com/google/snappy.git -b ${SNAPPY_VERSION} && cd snappy && git submodule update --init && mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_FLAGS="-fPIC" .. && make -j ${CPU_COUNT} && make install
 
 # SSH setup not needed for Docker build - ssh-keyscan not available
-# mkdir -p /root/.ssh/ &&
-#   touch /root/.ssh/known_hosts &&
-#   ssh-keyscan github.com >> /root/.ssh/known_hosts
+mkdir -p /root/.ssh/ &&
+  touch /root/.ssh/known_hosts &&
+  ssh-keyscan github.com >> /root/.ssh/known_hosts
 
 
 echo ">> Installing YAMLCPP"
@@ -236,7 +251,7 @@ mkdir -p ${DOWNLOAD_DIR}/antlr && cd ${DOWNLOAD_DIR}/antlr \
 echo ">> Installing AWS SDK"
 # Note the z-lib patch here.
 mkdir -p ${DOWNLOAD_DIR}/aws && cd ${DOWNLOAD_DIR}/aws \
-&& git clone --recurse-submodules https://github.com/aws/aws-sdk-cpp.git \
+&& git clone --progress --verbose --recurse-submodules https://github.com/aws/aws-sdk-cpp.git \
 && cd aws-sdk-cpp && git checkout tags/${AWSSDK_CPP_VERSION} && sed -i 's/int ret = Z_NULL;/int ret = static_cast<int>(Z_NULL);/g' src/aws-cpp-sdk-core/source/client/RequestCompression.cpp && mkdir build && cd build \
 && cmake -DCMAKE_BUILD_TYPE=Release -DUSE_OPENSSL=ON -DENABLE_TESTING=OFF -DUSE_CRT_HTTP_CLIENT=ON -DENABLE_UNITY_BUILD=ON -DCPP_STANDARD=17 -DBUILD_SHARED_LIBS=OFF -DBUILD_ONLY="s3;s3-crt;core;lambda;transfer" -DCMAKE_INSTALL_PREFIX=${PREFIX} .. \
 && make -j ${CPU_COUNT} \
