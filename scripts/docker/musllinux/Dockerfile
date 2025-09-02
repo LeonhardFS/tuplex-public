@@ -37,12 +37,24 @@ FROM base-${TARGETPLATFORM#linux/}
 # docker build -t tuplex/musl .
 # docker run -it tuplex/musl bash
 
-ARG BOOST_VERSION=1.79.0
+# Version arguments for dependencies
+ARG BOOST_VERSION=1.88.0
+ARG LLVM_VERSION=16.0.6
+ARG AWSSDK_CPP_VERSION=1.11.524
+ARG ANTLR4_VERSION=4.13.1
+ARG YAML_CPP_VERSION=0.8.0
+ARG AWS_LAMBDA_CPP_VERSION=0.2.10
+ARG PCRE2_VERSION=10.45
+ARG PROTOBUF_VERSION=32.0
+ARG CELERO_VERSION=2.8.3
+ARG SNAPPY_VERSION=1.2.2
+ARG ZLIB_VERSION=2.1.3
+ARG CMAKE_VERSION=3.27.5
 
 # Update package index
 RUN apk update
 
-# Install basic dependencies needed for the script
+# Install basic dependencies needed for the scripts
 RUN apk add --no-cache \
     bash \
     wget \
@@ -59,15 +71,53 @@ RUN apk add --no-cache \
 # Create necessary directories
 RUN mkdir -p /opt/sbin /opt/bin /opt/lib /opt/include
 
-# Copy and make the installation script executable
-ADD install_requirements.sh /opt/sbin/install_requirements.sh
-RUN chmod +x /opt/sbin/install_requirements.sh
+# Copy all installation scripts
+COPY install_alpine.sh install_zlib.sh install_llvm.sh install_boost.sh \
+     install_googletest.sh install_snappy.sh install_yamlcpp.sh install_celero.sh \
+     install_antlr.sh install_pcre2.sh install_protobuf.sh install_aws_sdk.sh \
+     /tmp/
+
+# Make all scripts executable
+RUN chmod +x /tmp/install_*.sh
 
 # Set working directory
 WORKDIR /opt
 
-# Run the installation script
-RUN /opt/sbin/install_requirements.sh
+# Layer 1: Install Alpine packages and CMake (base system dependencies)
+RUN /tmp/install_alpine.sh
+
+# Layer 2: Install zlib-ng (required by AWS SDK)
+RUN /tmp/install_zlib.sh
+
+# Layer 5: Install testing and compression libraries
+RUN /tmp/install_googletest.sh 
+
+RUN /tmp/install_snappy.sh
+
+# Layer 6: Install parsing and data libraries
+RUN /tmp/install_yamlcpp.sh 
+
+RUN /tmp/install_celero.sh
+
+# Layer 7: Install parsing and regex libraries
+RUN /tmp/install_antlr.sh 
+
+RUN /tmp/install_pcre2.sh
+
+# Layer 8: Install Protocol Buffers
+RUN /tmp/install_protobuf.sh
+
+# Layer 9: Install AWS SDK C++ and Lambda runtime
+RUN /tmp/install_aws_sdk.sh
+
+# Layer 4: Install Boost (C++ libraries)
+RUN /tmp/install_boost.sh
+
+# Layer 3: Install LLVM (compiler infrastructure) (this will take a while)
+RUN /tmp/install_llvm.sh
+
+# Clean up installation scripts
+RUN rm -f /tmp/install_*.sh
 
 # Fix CMake issue by using the working pipx-installed version
 RUN ln -sf /opt/_internal/pipx/venvs/cmake/bin/cmake /opt/bin/cmake
@@ -76,6 +126,10 @@ RUN ln -sf /opt/_internal/pipx/venvs/cmake/bin/cmake /opt/bin/cmake
 ENV PATH="/opt/bin:/opt/sbin:$PATH"
 ENV LD_LIBRARY_PATH="/opt/lib:/opt/lib64:$LD_LIBRARY_PATH"
 ENV PKG_CONFIG_PATH="/opt/lib/pkgconfig:$PKG_CONFIG_PATH"
+
+RUN mkdir -p /code
+
+WORKDIR /code
 
 # Default command
 CMD ["/bin/bash"]

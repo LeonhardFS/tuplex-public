@@ -135,7 +135,7 @@ apk add --no-cache \
     curl-dev python3-dev py3-pip \
     openjdk11 ninja \
     linux-headers musl-dev \
-    openssh
+    openssh file-dev
 
 export CC=${CC}
 export CXX=${CXX}
