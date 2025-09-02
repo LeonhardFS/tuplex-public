@@ -33,7 +33,7 @@ namespace tuplex {
         // required for for/while loops b.c. no opt type support there yet.
         void deopt_tables();
 
-        void resolveNameConflicts(const std::unordered_map<std::string, python::Type>& table);
+        bool resolveNameConflicts(const std::unordered_map<std::string, python::Type>& table);
         bool resolveNamesForIfStatement(std::unordered_map<std::string, python::Type>& if_table,
                                         std::unordered_map<std::string, python::Type>& else_table);
 

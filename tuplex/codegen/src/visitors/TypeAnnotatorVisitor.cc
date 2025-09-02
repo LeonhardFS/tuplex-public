@@ -2129,7 +2129,8 @@ namespace tuplex {
         }
     }
 
-    void TypeAnnotatorVisitor::resolveNameConflicts(const std::unordered_map<std::string, python::Type> &table) {
+    bool TypeAnnotatorVisitor::resolveNameConflicts(const std::unordered_map<std::string, python::Type> &table) {
+        bool ans = true;
         for(const auto &kv : table) {
             auto name = kv.first;
             auto type = kv.second;
@@ -2141,10 +2142,11 @@ namespace tuplex {
                     if(uni_type != python::Type::UNKNOWN)
                         _nameTable[name] = uni_type;
                     else {
-                        // need to speculate on this if-branch!
-                        error("need to speculate because of type conflict for variable "
-                              + name + " which has been declared within a branch  as " + type.desc()
-                              + ", declared previously as " + _nameTable[name].desc());
+                        // // need to speculate on this if-branch!
+                        // error("need to speculate because of type conflict for variable "
+                        //       + name + " which has been declared within a branch  as " + type.desc()
+                        //       + ", declared previously as " + _nameTable[name].desc());
+                        ans = false;
                     }
                 }
             } else {
@@ -2153,6 +2155,7 @@ namespace tuplex {
                 _nameTable[name] = type;
             }
         }
+        return ans;
     }
 
     bool TypeAnnotatorVisitor::resolveNamesForIfStatement(std::unordered_map<std::string, python::Type> &if_table,
@@ -2173,6 +2176,9 @@ namespace tuplex {
             // exists in both tables?
             auto it = if_table.find(name);
             auto jt = else_table.find(name);
+
+            // Name exists in both branches.
+            // If they can be unified, overwrite (outer) name table.
             if(it != if_table.end() && jt != else_table.end()) {
                 // check if there's a conflict
                 auto if_type = it->second;
@@ -2184,12 +2190,13 @@ namespace tuplex {
                     auto uni_type = unifyTypes(if_type, else_type, _typeUnificationPolicy);
                     if(uni_type != python::Type::UNKNOWN) {
                         if_table[name] = uni_type;
-                        else_table[name] = else_type;
+                        else_table[name] = uni_type;
+                        _nameTable[name] = uni_type;
                     } else {
-                        // need to speculate!
-                        error("need to speculate, because can't unify variable " + name +
-                              " type " + if_type.desc() + " in if branch with its type " +
-                              else_type.desc() + " in else branch.");
+                        // // need to speculate!
+                        // error("need to speculate, because can't unify variable " + name +
+                        //       " type " + if_type.desc() + " in if branch with its type " +
+                        //       else_type.desc() + " in else branch.");
 
                         // restore tables, and abort
                         _nameTable = name_table_backup;
@@ -2203,14 +2210,30 @@ namespace tuplex {
                     // same type, simply assign!
                     _nameTable[name] = if_type;
                 }
+            } else {
+                // check if-table compatible with outer name table.
+                // @TODO:
+                // check else-table compatible with outer name table.
+                // @TODO:
             }
         }
 
-        // resolve conflicts from if/else with before table
-        resolveNameConflicts(if_table);
-        resolveNameConflicts(else_table);
-
         return true;
+
+        // old ???
+        // bool ans = true;
+        // // resolve conflicts from if/else with before table
+        // ans = resolveNameConflicts(if_table);
+        // ans = resolveNameConflicts(else_table);
+        //
+        // if (!ans) {
+        //     // restore tables.
+        //     _nameTable = name_table_backup;
+        //     if_table = if_table_backup;
+        //     else_table = else_table_backup;
+        // }
+        //
+        // return ans;
     }
 
     void TypeAnnotatorVisitor::visit(NIfElse* ifelse) {
@@ -2346,7 +2369,6 @@ namespace tuplex {
 //                    // result:
 //                }
 
-
                 // store table
                 auto name_table_backup = _nameTable;
                 bool can_resolve_name_conflicts = resolveNamesForIfStatement(if_table, else_table); // <-- this modifies iftable, elsetable and name table.
@@ -2405,7 +2427,10 @@ namespace tuplex {
                 }
             } else {
                 // attempt type unification
-                resolveNamesForIfStatement(if_table, else_table);
+                auto can_resolve_names = resolveNamesForIfStatement(if_table, else_table);
+                if (!can_resolve_names) {
+                    fatal_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " need to speculate, because types can't be resolved in if-else.");
+                }
             }
         }
 

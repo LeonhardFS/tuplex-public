@@ -2606,7 +2606,7 @@ namespace tuplex {
                 // important to call this before the individual update functions!
                 updateSlotsWithSharedTypes(builder, if_var_realizations, else_var_realizations);
 
-                // update with variables occuring in each branch
+                // update with variables occurring in each branch
                 updateSlotsBasedOnRealizations(builder, if_var_realizations, "if-branch", allowNumericUpcasting);
                 updateSlotsBasedOnRealizations(builder, else_var_realizations, "else-branch", allowNumericUpcasting);
 
@@ -4623,7 +4623,7 @@ namespace tuplex {
                     return true;
                 }
                 // if not, fetch from FlattenedTuple index
-                auto ft = FlattenedTuple::fromLLVMStructVal(_env, builder, value.val, value_type);
+                auto ft = FlattenedTuple::fromLLVMStructVal(_env, builder, value.val, value_type.get_columns_as_tuple_type());
                 auto ret = ft.getLoad(builder, {idx});
 
 #ifndef NDEBUG
@@ -5993,7 +5993,7 @@ namespace tuplex {
                     auto uni_type = unifyTypes(slot.type, var.second.type, t_policy);
                     if(uni_type == python::Type::UNKNOWN) {
                         error("variable " + name + " declared in " + branch_name + " with type "
-                              + var.second.type.desc() + " conflicts with slot type" +
+                              + var.second.type.desc() + " conflicts with slot type " +
                               slot.type.desc());
                     }
 

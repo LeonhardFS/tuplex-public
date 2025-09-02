@@ -220,6 +220,9 @@ TEST_F(VariableTest, IfAndVariables) {
 
 TEST_F(VariableTest, ExtractPriceRedef) {
     using namespace tuplex;
+
+    // The following function should be typed as (f64,str,str) -> i64
+    // because the variable price gets overwritten to i64 in both branches.
     auto extractPrice_c = "def extractPrice(x):\n"
                           "    price = x['price']\n"
                           "\n"
@@ -231,7 +234,8 @@ TEST_F(VariableTest, ExtractPriceRedef) {
                           "\n"
                           "    return price";
 
-    Context c(microTestOptions());
+    // Context c(microTestOptions());
+    Context c(tracingMicroTestOptions());
     auto res = c.parallelize({Row(10.0, "Coca Cola", "sold"),
                               Row(5.0, "Sprite", "available")},
                              {"price", "name", "offer"})
