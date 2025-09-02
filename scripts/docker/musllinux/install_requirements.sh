@@ -16,6 +16,7 @@ AWS_LAMBDA_CPP_VERSION=0.2.10
 PCRE2_VERSION=10.45
 PROTOBUF_VERSION=24.3
 CELERO_VERSION=2.8.3
+SNAPPY_VERSION=1.2.2
 CC=gcc
 CXX=g++
 
@@ -177,8 +178,8 @@ cd ${DOWNLOAD_DIR}/boost && curl -L -O https://github.com/boostorg/boost/release
 cd $DOWNLOAD_DIR
 rm -rf ${DOWNLOAD_DIR}/boost
 
-# -- install llvm
-install_llvm $LLVM_VERSION
+## -- install llvm
+#install_llvm $LLVM_VERSION
 
 
 echo ">>> Installing tuplex dependencies."
@@ -196,12 +197,12 @@ git clone https://github.com/zlib-ng/zlib-ng.git && cd zlib-ng && git checkout t
 git clone https://github.com/google/googletest.git -b v1.14.0 && cd googletest && mkdir build && cd build && cmake -DBUILD_SHARED_LIBS=ON -DCMAKE_CXX_FLAGS="-fPIC" -DCMAKE_BUILD_TYPE=Release .. && make -j ${CPU_COUNT} && make install
 
 # build snappy as static lib
-git clone https://github.com/google/snappy.git -b 1.1.10 && cd snappy && git submodule update --init && mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_FLAGS="-fPIC" .. && make -j ${CPU_COUNT} && make install
+git clone https://github.com/google/snappy.git -b ${SNAPPY_VERSION} && cd snappy && git submodule update --init && mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_FLAGS="-fPIC" .. && make -j ${CPU_COUNT} && make install
 
-# add github to known hosts
-mkdir -p /root/.ssh/ &&
-  touch /root/.ssh/known_hosts &&
-  ssh-keyscan github.com >> /root/.ssh/known_hosts
+# SSH setup not needed for Docker build - ssh-keyscan not available
+# mkdir -p /root/.ssh/ &&
+#   touch /root/.ssh/known_hosts &&
+#   ssh-keyscan github.com >> /root/.ssh/known_hosts
 
 
 echo ">> Installing YAMLCPP"
@@ -270,3 +271,12 @@ mkdir -p ${DOWNLOAD_DIR}/protobuf && cd ${DOWNLOAD_DIR}/protobuf \
 rm -rf ${DOWNLOAD_DIR}
 
 echo "-- Done, all Tuplex requirements installed to /opt --"
+
+# Verify that key tools are available
+echo ">> Verifying installation..."
+ls -la /opt/bin/
+echo ">> PATH: $PATH"
+echo ">> CMake version:"
+/opt/bin/cmake --version || echo "CMake not found in /opt/bin"
+echo ">> Python version:"
+python3 --version || echo "Python3 not found"
