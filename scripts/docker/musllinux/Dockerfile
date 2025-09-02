@@ -105,22 +105,22 @@ RUN /tmp/install_celero.sh
 # Layer 7: Install parsing and regex libraries
 RUN /tmp/install_antlr.sh 
 
-RUN /tmp/install_pcre2.sh
+# RUN /tmp/install_pcre2.sh
 
-# Layer 8: Install Protocol Buffers
-RUN /tmp/install_protobuf.sh
+# # Layer 8: Install Protocol Buffers
+# RUN /tmp/install_protobuf.sh
 
-# Layer 9: Install AWS SDK C++ and Lambda runtime
-RUN /tmp/install_aws_sdk.sh
+# # Layer 9: Install AWS SDK C++ and Lambda runtime
+# RUN /tmp/install_aws_sdk.sh
 
-# Layer 4: Install Boost (C++ libraries)
-RUN /tmp/install_boost.sh
+# # Layer 4: Install Boost (C++ libraries)
+# RUN /tmp/install_boost.sh
 
-# Layer 3: Install LLVM (compiler infrastructure) (this will take a while)
-RUN /tmp/install_llvm.sh
+# # Layer 3: Install LLVM (compiler infrastructure) (this will take a while)
+# RUN /tmp/install_llvm.sh
 
-# Clean up installation scripts
-RUN rm -f /tmp/install_*.sh
+# # Clean up installation scripts
+# RUN rm -f /tmp/install_*.sh
 
 # Fix CMake issue by using the working pipx-installed version
 RUN ln -sf /opt/_internal/pipx/venvs/cmake/bin/cmake /opt/bin/cmake
