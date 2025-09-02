@@ -22,12 +22,6 @@
 #
 # To see available platforms:
 #   docker buildx inspect --bootstrap
-#
-# RUN INSTRUCTIONS:
-# ================
-#   docker run -it tuplex/musl:latest bash
-#   docker run -it tuplex/musl:amd64 bash    # AMD64 specific
-#   docker run -it tuplex/musl:arm64 bash    # ARM64 specific
 
 # Set platform-specific base image
 ARG TARGETPLATFORM
@@ -45,25 +39,22 @@ FROM base-${TARGETPLATFORM#linux/}
 
 ARG BOOST_VERSION=1.79.0
 
-# Update package index and install basic dependencies
-RUN apk update && \
-    apk add --no-cache \
-        python3 \
-        py3-pip \
-        bash \
-        wget \
-        curl \
-        git \
-        make \
-        gcc \
-        g++ \
-        cmake \
-        ninja \
-        autoconf \
-        automake \
-        libtool \
-        linux-headers \
-        musl-dev
+# Update package index
+RUN apk update
+
+# Install basic dependencies needed for the script
+RUN apk add --no-cache \
+    bash \
+    wget \
+    curl \
+    git \
+    make \
+    gcc \
+    g++ \
+    cmake \
+    ninja \
+    python3 \
+    py3-pip
 
 # Create necessary directories
 RUN mkdir -p /opt/sbin /opt/bin /opt/lib /opt/include
@@ -78,9 +69,13 @@ WORKDIR /opt
 # Run the installation script
 RUN /opt/sbin/install_requirements.sh
 
+# Fix CMake issue by using the working pipx-installed version
+RUN ln -sf /opt/_internal/pipx/venvs/cmake/bin/cmake /opt/bin/cmake
+
 # Set environment variables
-ENV PATH="/opt/bin:$PATH"
-ENV LD_LIBRARY_PATH="/opt/lib:$LD_LIBRARY_PATH"
+ENV PATH="/opt/bin:/opt/sbin:$PATH"
+ENV LD_LIBRARY_PATH="/opt/lib:/opt/lib64:$LD_LIBRARY_PATH"
+ENV PKG_CONFIG_PATH="/opt/lib/pkgconfig:$PKG_CONFIG_PATH"
 
 # Default command
 CMD ["/bin/bash"]
