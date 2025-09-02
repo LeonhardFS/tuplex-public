@@ -1,6 +1,6 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # (c) Tuplex team 2017-2023
-# Installs all tuplex dependencies required to build tuplex.
+# Installs all tuplex dependencies required to build tuplex on Alpine Linux.
 
 # Variables needed incl. defaults.
 PREFIX=${PREFIX:-/opt}
@@ -19,7 +19,7 @@ CELERO_VERSION=2.8.3
 CC=gcc
 CXX=g++
 
-CPU_COUNT=$(( 1 * $( egrep '^processor[[:space:]]+:' /proc/cpuinfo | wc -l ) ))
+CPU_COUNT=$(( 1 * $( grep '^processor[[:space:]]*:' /proc/cpuinfo | wc -l ) ))
 
 PYTHON_VERSION=$(echo $(python3 --version) | cut -d ' ' -f2)
 PYTHON_MAJMIN_VERSION=${PYTHON_VERSION%.*}
@@ -31,7 +31,7 @@ function version { echo "$@" | awk -F. '{ printf("%d%03d%03d%03d\n", $1,$2,$3,$4
 set -euxo pipefail
 
 # need to run this with root privileges
-if [[ $(id -u) -ne 0 ]]; then
+if [ "$(id -u)" -ne 0 ]; then
   echo "Please run this script with root privileges"
   exit 1
 fi
@@ -51,7 +51,7 @@ function parse_semver() {
     local minor=0
     local patch=0
 
-    if egrep '^[0-9]+\.[0-9]+\.[0-9]+' <<<"$token" >/dev/null 2>&1 ; then
+    if echo "$token" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+' >/dev/null 2>&1 ; then
         # It has the correct syntax.
         local n=${token//[!0-9]/ }
         local a=(${n//\./ })
@@ -87,12 +87,12 @@ function install_llvm {
    echo ">> Downloading prerequisites for llvm ${LLVM_VERSION}}"
    LLVM_WORKDIR=${WORKDIR}/llvm${LLVM_VERSION}
    mkdir -p ${LLVM_WORKDIR}
-   pushd "${LLVM_WORKDIR}" || exit 1
+   cd "${LLVM_WORKDIR}" || exit 1
 
    wget ${LLVM_URL} && tar xf llvm-${LLVM_VERSION}.src.tar.xz
    wget ${CLANG_URL} && tar xf clang-${LLVM_VERSION}.src.tar.xz && mv clang-${LLVM_VERSION}.src llvm-${LLVM_VERSION}.src/../clang
 
-   if (( LLVM_MAJOR_VERSION >= 15 )); then
+   if [ $LLVM_MAJOR_VERSION -ge 15 ]; then
       wget ${LLVM_CMAKE_URL} && tar xf cmake-${LLVM_VERSION}.src.tar.xz && mv cmake-${LLVM_VERSION}.src cmake
    fi
 
@@ -102,12 +102,8 @@ function install_llvm {
          -DCMAKE_BUILD_TYPE=Release -DLLVM_INCLUDE_TESTS=OFF -DLLVM_INCLUDE_BENCHMARKS=OFF  \
          -DCMAKE_INSTALL_PREFIX=/opt/llvm-${LLVM_VERSION} ..
    ninja install
-  popd
+  cd /tmp
 }
-
-export DEBIAN_FRONTEND=noninteractive
-
-
 
 echo ">> Installing packages into ${PREFIX}"
 mkdir -p $PREFIX && chmod 0755 $PREFIX
@@ -124,16 +120,22 @@ mkdir -p $WORKDIR
 PYTHON_BASENAME="$(basename -- $PYTHON_EXECUTABLE)"
 PYTHON_VERSION=$(${PYTHON_EXECUTABLE} --version)
 echo ">> Building dependencies for ${PYTHON_VERSION}"
-echo ">> Installing all build dependencies for Tuplex under Ubuntu 24.04"
+echo ">> Installing all build dependencies for Tuplex under Alpine Linux"
 
-echo ">> Installing apt dependencies"
-apt update -y
+echo ">> Installing apk dependencies"
+apk update
 
-apt-get install -y apt-utils dh-autoreconf libmagic-dev curl libxml2-dev vim build-essential libssl-dev zlib1g-dev libncurses5-dev \
-libncursesw5-dev libreadline-dev libsqlite3-dev libgdbm-dev libdb5.3-dev openssh-client unzip \
-libbz2-dev libexpat1-dev liblzma-dev tk-dev libffi-dev wget git libcurl4-openssl-dev python3-dev python3-pip openjdk-11-jdk ninja-build
+apk add --no-cache \
+    autoconf automake libtool \
+    curl libxml2-dev vim build-base \
+    openssl-dev zlib-dev ncurses-dev \
+    readline-dev sqlite-dev \
+    bzip2-dev expat-dev xz-dev \
+    tk-dev libffi-dev wget git \
+    curl-dev python3-dev py3-pip \
+    openjdk11 ninja \
+    linux-headers musl-dev
 
-ldconfig
 export CC=${CC}
 export CXX=${CXX}
 
