@@ -56,7 +56,7 @@ mkdir -p llvm-${LLVM_VERSION}.src/build && cd llvm-${LLVM_VERSION}.src/build
 
 cmake -GNinja -DLLVM_ENABLE_RTTI=ON -DLLVM_ENABLE_EH=ON -DLLVM_ENABLE_PROJECTS="clang" -DLLVM_TARGETS_TO_BUILD="X86;AArch64" \
       -DCMAKE_BUILD_TYPE=Release -DLLVM_INCLUDE_TESTS=OFF -DLLVM_INCLUDE_BENCHMARKS=OFF  \
-      -DCMAKE_INSTALL_PREFIX=/opt/llvm-${LLVM_VERSION} ..
+               -DCMAKE_INSTALL_PREFIX=${PREFIX}/llvm-${LLVM_VERSION} ..
 ninja install
 cd /tmp
 

@@ -7,6 +7,7 @@ set -e
 # Default values
 PLATFORM=""
 TAG="tuplex/musl"
+PREFIX="/opt"
 PUSH=false
 BUILDX=false
 
@@ -19,6 +20,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --tag)
             TAG="$2"
+            shift 2
+            ;;
+        --prefix)
+            PREFIX="$2"
             shift 2
             ;;
         --push)
@@ -34,6 +39,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --platform PLATFORM    Target platform (amd64, arm64, or both)"
             echo "  --tag TAG              Docker image tag (default: tuplex/musl)"
+            echo "  --prefix PREFIX        Installation prefix (default: /opt)"
             echo "  --push                 Push image to registry after build"
             echo "  --buildx               Use docker buildx for multi-platform builds"
             echo "  --help                 Show this help message"
@@ -48,6 +54,7 @@ done
 
 echo "Building Tuplex musllinux Docker image..."
 echo "Tag: $TAG"
+echo "Prefix: $PREFIX"
 echo "Platform: ${PLATFORM:-auto-detect}"
 echo "Buildx: $BUILDX"
 echo "Push: $PUSH"
@@ -60,6 +67,7 @@ build_single() {
     
     echo "Building for platform: $platform"
     docker build --platform linux/$platform \
+                 --build-arg PREFIX=$PREFIX \
                  --build-arg BOOST_VERSION=1.88.0 \
                  --build-arg LLVM_VERSION=16.0.6 \
                  --build-arg AWSSDK_CPP_VERSION=1.11.524 \
@@ -90,6 +98,7 @@ build_multi() {
     fi
     
     docker buildx build --platform linux/amd64,linux/arm64 \
+                       --build-arg PREFIX=$PREFIX \
                        --build-arg BOOST_VERSION=1.88.0 \
                        --build-arg LLVM_VERSION=16.0.6 \
                        --build-arg AWSSDK_CPP_VERSION=1.11.524 \

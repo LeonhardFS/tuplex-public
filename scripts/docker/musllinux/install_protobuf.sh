@@ -26,6 +26,6 @@ echo ">> Installing Protocol Buffers ${PROTOBUF_VERSION}"
 # Create download directory
 DOWNLOAD_DIR=${WORKDIR}/tuplex-downloads
 mkdir -p ${DOWNLOAD_DIR}/protobuf && cd ${DOWNLOAD_DIR}/protobuf \
-&& git clone -b v${PROTOBUF_VERSION} https://github.com/protocolbuffers/protobuf.git && cd protobuf && git submodule update --init --recursive && mkdir build && cd build && cmake -DCMAKE_CXX_FLAGS="-fPIC" -DCMAKE_CXX_STANDARD=17 -Dprotobuf_BUILD_TESTS=OFF .. && make -j ${CPU_COUNT} && make install
+&& git clone -b v${PROTOBUF_VERSION} https://github.com/protocolbuffers/protobuf.git && cd protobuf && git submodule update --init --recursive && mkdir build && cd build && cmake -DCMAKE_CXX_FLAGS="-fPIC" -DCMAKE_CXX_STANDARD=17 -Dprotobuf_BUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX=${PREFIX} .. && make -j ${CPU_COUNT} && make install
 
 echo ">> Protocol Buffers ${PROTOBUF_VERSION} installation completed successfully"

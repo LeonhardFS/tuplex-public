@@ -28,6 +28,6 @@ LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}
 export LD_LIBRARY_PATH=$PREFIX/lib:$PREFIX/lib64:$LD_LIBRARY_PATH
 
 # note that zlib defines Z_NULL=0 whereas zlib-ng defines it as NULL, patch aws sdk accordingly
-git clone https://github.com/zlib-ng/zlib-ng.git && cd zlib-ng && git checkout tags/${ZLIB_VERSION} && mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-fPIC" -DZLIB_COMPAT=ON .. && make -j ${CPU_COUNT} && make install
+git clone https://github.com/zlib-ng/zlib-ng.git && cd zlib-ng && git checkout tags/${ZLIB_VERSION} && mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-fPIC" -DZLIB_COMPAT=ON -DCMAKE_INSTALL_PREFIX=${PREFIX} .. && make -j ${CPU_COUNT} && make install
 
 echo ">> zlib-ng ${ZLIB_VERSION} installation completed successfully"

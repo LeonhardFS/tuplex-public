@@ -37,6 +37,9 @@ FROM base-${TARGETPLATFORM#linux/}
 # docker build -t tuplex/musl .
 # docker run -it tuplex/musl bash
 
+# Installation prefix - all dependencies will be installed to this directory
+ARG PREFIX=/opt
+
 # Version arguments for dependencies
 ARG BOOST_VERSION=1.88.0
 ARG LLVM_VERSION=16.0.6

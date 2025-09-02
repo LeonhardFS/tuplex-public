@@ -72,6 +72,9 @@ Use the provided build script for easy Docker builds:
 
 # Build and push to registry
 ./build.sh --platform both --buildx --push
+
+# Build with custom installation prefix
+./build.sh --prefix /usr/local
 ```
 
 ### Manual Docker Build
@@ -108,15 +111,28 @@ RUN /tmp/install_pcre2.sh && /tmp/install_protobuf.sh
 RUN /tmp/install_aws_sdk.sh
 ```
 
-### Customizing Versions
-Override dependency versions using Docker build arguments:
+### Customizing Versions and Installation Path
+Override dependency versions and installation path using Docker build arguments:
 
 ```bash
+# Custom versions
 docker build \
   --build-arg BOOST_VERSION=1.89.0 \
   --build-arg LLVM_VERSION=17.0.0 \
   --build-arg AWSSDK_CPP_VERSION=1.12.0 \
   -t tuplex/musl:custom .
+
+# Custom installation prefix
+docker build \
+  --build-arg PREFIX=/usr/local \
+  -t tuplex/musl:custom-prefix .
+
+# Both custom versions and prefix
+docker build \
+  --build-arg PREFIX=/usr/local \
+  --build-arg BOOST_VERSION=1.89.0 \
+  --build-arg LLVM_VERSION=17.0.0 \
+  -t tuplex/musl:custom-all .
 ```
 
 ## Environment Variables

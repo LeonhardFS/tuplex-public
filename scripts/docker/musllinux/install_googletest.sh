@@ -23,6 +23,6 @@ fi
 
 echo ">> Installing Google Test ${GOOGLETEST_VERSION}"
 
-git clone https://github.com/google/googletest.git -b v${GOOGLETEST_VERSION} && cd googletest && mkdir build && cd build && cmake -DBUILD_SHARED_LIBS=ON -DCMAKE_CXX_FLAGS="-fPIC" -DCMAKE_BUILD_TYPE=Release .. && make -j ${CPU_COUNT} && make install
+git clone https://github.com/google/googletest.git -b v${GOOGLETEST_VERSION} && cd googletest && mkdir build && cd build && cmake -DBUILD_SHARED_LIBS=ON -DCMAKE_CXX_FLAGS="-fPIC" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${PREFIX} .. && make -j ${CPU_COUNT} && make install
 
 echo ">> Google Test ${GOOGLETEST_VERSION} installation completed successfully"

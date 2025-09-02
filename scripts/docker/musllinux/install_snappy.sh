@@ -24,6 +24,6 @@ fi
 echo ">> Installing Snappy ${SNAPPY_VERSION}"
 
 # build snappy as static lib
-git clone https://github.com/google/snappy.git -b ${SNAPPY_VERSION} && cd snappy && git submodule update --init && mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_FLAGS="-fPIC" .. && make -j ${CPU_COUNT} && make install
+git clone https://github.com/google/snappy.git -b ${SNAPPY_VERSION} && cd snappy && git submodule update --init && mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_FLAGS="-fPIC" -DCMAKE_INSTALL_PREFIX=${PREFIX} .. && make -j ${CPU_COUNT} && make install
 
 echo ">> Snappy ${SNAPPY_VERSION} installation completed successfully"
