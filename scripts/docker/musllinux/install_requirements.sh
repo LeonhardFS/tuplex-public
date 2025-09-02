@@ -25,7 +25,7 @@ PYTHON_VERSION=$(echo $(python3 --version) | cut -d ' ' -f2)
 PYTHON_MAJMIN_VERSION=${PYTHON_VERSION%.*}
 echo ">> Installing dependencies for Python version ${PYTHON_VERSION}"
 
-function version { echo "$@" | awk -F. '{ printf("%d%03d%03d%03d\n", $1,$2,$3,$4); }'; }
+version() { echo "$@" | awk -F. '{ printf("%d%03d%03d%03d\n", $1,$2,$3,$4); }'; }
 
 # Start script.
 set -euxo pipefail
@@ -45,25 +45,24 @@ fi
 #    minor=${a[1]}
 #    patch=${a[2]}
 #    printf "%-32s %4d %4d %4d\n" "$semver" $major $minor $patch
-function parse_semver() {
-    local token="$1"
-    local major=0
-    local minor=0
-    local patch=0
+parse_semver() {
+    token="$1"
+    major=0
+    minor=0
+    patch=0
 
     if echo "$token" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+' >/dev/null 2>&1 ; then
         # It has the correct syntax.
-        local n=${token//[!0-9]/ }
-        local a=(${n//\./ })
-        major=${a[0]}
-        minor=${a[1]}
-        patch=${a[2]}
+        n=$(echo "$token" | tr -cd '0-9.' | tr '.' ' ')
+        major=$(echo "$n" | cut -d' ' -f1)
+        minor=$(echo "$n" | cut -d' ' -f2)
+        patch=$(echo "$n" | cut -d' ' -f3)
     fi
 
     echo "$major $minor $patch"
 }
 
-function install_llvm {
+install_llvm() {
    LLVM_VERSION=$1
    LLVM_MAJOR_VERSION=`echo ${LLVM_VERSION} | cut -d. -f1`
    LLVM_MINOR_VERSION=`echo ${LLVM_VERSION} | cut -d. -f2`
@@ -85,7 +84,7 @@ function install_llvm {
    echo ">> Building dependencies for ${PYTHON_VERSION}"
 
    echo ">> Downloading prerequisites for llvm ${LLVM_VERSION}}"
-   LLVM_WORKDIR=${WORKDIR}/llvm${LLVM_VERSION}
+   LLVM_WORKDIR=${DOWNLOAD_DIR}/llvm${LLVM_VERSION}
    mkdir -p ${LLVM_WORKDIR}
    cd "${LLVM_WORKDIR}" || exit 1
 
@@ -114,8 +113,8 @@ mkdir -p $PREFIX/include
 mkdir -p $PREFIX/lib
 
 echo ">> Files will be downloaded to ${WORKDIR}/tuplex-downloads"
-WORKDIR=$WORKDIR/tuplex-downloads
-mkdir -p $WORKDIR
+DOWNLOAD_DIR=$WORKDIR/tuplex-downloads
+mkdir -p $DOWNLOAD_DIR
 
 PYTHON_BASENAME="$(basename -- $PYTHON_EXECUTABLE)"
 PYTHON_VERSION=$(${PYTHON_EXECUTABLE} --version)
@@ -140,23 +139,29 @@ export CC=${CC}
 export CXX=${CXX}
 
 echo ">> Installing recent cmake"
-# fetch recent cmake & install
-URL=https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
-mkdir -p ${WORKDIR}/cmake && cd ${WORKDIR}/cmake &&
-  curl -sSL $URL -o cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz &&
-  tar -v -zxf cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz &&
-  rm -f cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz &&
-  cd cmake-${CMAKE_VERSION}-linux-x86_64 &&
+# fetch recent cmake & install - detect architecture
+ARCH=$(uname -m)
+if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+    CMAKE_ARCH="aarch64"
+else
+    CMAKE_ARCH="x86_64"
+fi
+URL=https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-${CMAKE_ARCH}.tar.gz
+mkdir -p ${DOWNLOAD_DIR}/cmake && cd ${DOWNLOAD_DIR}/cmake &&
+  curl -sSL $URL -o cmake-${CMAKE_VERSION}-linux-${CMAKE_ARCH}.tar.gz &&
+  tar -v -zxf cmake-${CMAKE_VERSION}-linux-${CMAKE_ARCH}.tar.gz &&
+  rm -f cmake-${CMAKE_VERSION}-linux-${CMAKE_ARCH}.tar.gz &&
+  cd cmake-${CMAKE_VERSION}-linux-${CMAKE_ARCH} &&
   cp -rp bin/* ${PREFIX}/bin/ &&
   cp -rp share/* ${PREFIX}/share/ &&
-  cd / && rm -rf ${WORKDIR}/cmake
+  cd / && rm -rf ${DOWNLOAD_DIR}/cmake
 
 export PATH=$PREFIX/bin:$PATH
 cmake --version
 
 
 echo ">> Installing Boost"
-mkdir -p ${WORKDIR}/boost
+mkdir -p ${DOWNLOAD_DIR}/boost
 
 # -- Install Boost.
 # create underscored version
@@ -164,13 +169,13 @@ mkdir -p ${WORKDIR}/boost
 BOOST_UNDERSCORED_VERSION=$(echo ${BOOST_VERSION} | tr . _)
 
 # build incl. boost python
-cd ${WORKDIR}/boost && curl -L -O https://github.com/boostorg/boost/releases/download/boost-${BOOST_VERSION}/boost-${BOOST_VERSION}-b2-nodocs.tar.gz && tar xf boost-${BOOST_VERSION}-b2-nodocs.tar.gz && cd ${WORKDIR}/boost/boost-${BOOST_VERSION} \
+cd ${DOWNLOAD_DIR}/boost && curl -L -O https://github.com/boostorg/boost/releases/download/boost-${BOOST_VERSION}/boost-${BOOST_VERSION}-b2-nodocs.tar.gz && tar xf boost-${BOOST_VERSION}-b2-nodocs.tar.gz && cd ${DOWNLOAD_DIR}/boost/boost-${BOOST_VERSION} \
            && ./bootstrap.sh --with-python=${PYTHON_EXECUTABLE} --prefix=${PREFIX} --with-libraries="thread,iostreams,regex,system,filesystem,python,stacktrace,atomic,chrono,date_time" \
-            && ./b2 cxxflags="-fPIC" link=static -j "$(nproc)" \
+            && ./b2 cxxflags="-fPIC" link=static -j "${CPU_COUNT}" \
             && ./b2 cxxflags="-fPIC" link=static install && sed -i 's/#if PTHREAD_STACK_MIN > 0/#ifdef PTHREAD_STACK_MIN/g' ${PREFIX}/include/boost/thread/pthread/thread_data.hpp
 
-cd $WORKDIR
-rm -rf ${WORKDIR}/boost
+cd $DOWNLOAD_DIR
+rm -rf ${DOWNLOAD_DIR}/boost
 
 # -- install llvm
 install_llvm $LLVM_VERSION
@@ -200,7 +205,7 @@ mkdir -p /root/.ssh/ &&
 
 
 echo ">> Installing YAMLCPP"
-mkdir -p ${WORKDIR}/yamlcpp && cd ${WORKDIR}/yamlcpp \
+mkdir -p ${DOWNLOAD_DIR}/yamlcpp && cd ${DOWNLOAD_DIR}/yamlcpp \
 && git clone https://github.com/jbeder/yaml-cpp.git yaml-cpp \
 && cd yaml-cpp \
 && git checkout tags/${YAML_CPP_VERSION} \
@@ -209,7 +214,7 @@ mkdir -p ${WORKDIR}/yamlcpp && cd ${WORKDIR}/yamlcpp \
 && make -j ${CPU_COUNT} && make install
 
 echo ">> Installing Celero"
-mkdir -p ${WORKDIR}/celero && cd ${WORKDIR}/celero \
+mkdir -p ${DOWNLOAD_DIR}/celero && cd ${DOWNLOAD_DIR}/celero \
 &&  git clone https://github.com/DigitalInBlue/Celero.git celero && cd celero \
 && git checkout tags/v${CELERO_VERSION} \
 && mkdir build && cd build \
@@ -217,7 +222,7 @@ mkdir -p ${WORKDIR}/celero && cd ${WORKDIR}/celero \
 && make -j ${CPU_COUNT} && make install
 
 echo ">> Installing ANTLR"
-mkdir -p ${WORKDIR}/antlr && cd ${WORKDIR}/antlr \
+mkdir -p ${DOWNLOAD_DIR}/antlr && cd ${DOWNLOAD_DIR}/antlr \
 && curl -O https://www.antlr.org/download/antlr-${ANTLR4_VERSION}-complete.jar \
 && cp antlr-${ANTLR4_VERSION}-complete.jar ${PREFIX}/lib/ \
 && curl -O https://www.antlr.org/download/antlr4-cpp-runtime-${ANTLR4_VERSION}-source.zip \
@@ -229,7 +234,7 @@ mkdir -p ${WORKDIR}/antlr && cd ${WORKDIR}/antlr \
 
 echo ">> Installing AWS SDK"
 # Note the z-lib patch here.
-mkdir -p ${WORKDIR}/aws && cd ${WORKDIR}/aws \
+mkdir -p ${DOWNLOAD_DIR}/aws && cd ${DOWNLOAD_DIR}/aws \
 && git clone --recurse-submodules https://github.com/aws/aws-sdk-cpp.git \
 && cd aws-sdk-cpp && git checkout tags/${AWSSDK_CPP_VERSION} && sed -i 's/int ret = Z_NULL;/int ret = static_cast<int>(Z_NULL);/g' src/aws-cpp-sdk-core/source/client/RequestCompression.cpp && mkdir build && cd build \
 && cmake -DCMAKE_BUILD_TYPE=Release -DUSE_OPENSSL=ON -DENABLE_TESTING=OFF -DUSE_CRT_HTTP_CLIENT=ON -DENABLE_UNITY_BUILD=ON -DCPP_STANDARD=17 -DBUILD_SHARED_LIBS=OFF -DBUILD_ONLY="s3;s3-crt;core;lambda;transfer" -DCMAKE_INSTALL_PREFIX=${PREFIX} .. \
@@ -237,7 +242,7 @@ mkdir -p ${WORKDIR}/aws && cd ${WORKDIR}/aws \
 && make install
 
 # Installing AWS Lambda C++ runtime.
-cd ${WORKDIR}/aws \
+cd ${DOWNLOAD_DIR}/aws \
 && git clone https://github.com/awslabs/aws-lambda-cpp.git \
 && cd aws-lambda-cpp \
 && git fetch && git fetch --tags \
@@ -245,23 +250,23 @@ cd ${WORKDIR}/aws \
 && mkdir build \
 && cd build \
 && cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${PREFIX} .. \
-&& make -j$(nproc) && make install
+&& make -j${CPU_COUNT} && make install
 
 echo ">> Installing PCRE2"
-mkdir -p ${WORKDIR}/pcre2 && cd ${WORKDIR}/pcre2 \
+mkdir -p ${DOWNLOAD_DIR}/pcre2 && cd ${DOWNLOAD_DIR}/pcre2 \
 && curl -LO https://github.com/PhilipHazel/pcre2/releases/download/pcre2-${PCRE2_VERSION}/pcre2-${PCRE2_VERSION}.zip \
 && unzip pcre2-${PCRE2_VERSION}.zip \
 && rm pcre2-${PCRE2_VERSION}.zip \
 && cd pcre2-${PCRE2_VERSION} \
 && ./configure CFLAGS="-O2 -fPIC" --prefix=${PREFIX} --enable-jit=auto --disable-shared \
-&& make -j$(nproc) && make install
+&& make -j${CPU_COUNT} && make install
 
 echo ">> Installing protobuf"
-mkdir -p ${WORKDIR}/protobuf && cd ${WORKDIR}/protobuf \
+mkdir -p ${DOWNLOAD_DIR}/protobuf && cd ${DOWNLOAD_DIR}/protobuf \
 && git clone -b v${PROTOBUF_VERSION} https://github.com/protocolbuffers/protobuf.git && cd protobuf && git submodule update --init --recursive && mkdir build && cd build && cmake -DCMAKE_CXX_FLAGS="-fPIC" -DCMAKE_CXX_STANDARD=17 -Dprotobuf_BUILD_TESTS=OFF .. && make -j ${CPU_COUNT} && make install
 
 
 # delete workdir (downloads dir) to clean up space
-rm -rf ${WORKDIR}
+rm -rf ${DOWNLOAD_DIR}
 
 echo "-- Done, all Tuplex requirements installed to /opt --"
