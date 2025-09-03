@@ -388,7 +388,12 @@ endif()
 # use march=native if available and NOT building wheels
 
 # specific Release flags, i.e. targeting loop unrolling.
-ucm_add_flags(-m64 -O3 -funroll-loops CONFIG Release)
+# Only use -m64 for x86_64 architectures
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    ucm_add_flags(-m64 -O3 -funroll-loops CONFIG Release)
+else()
+    ucm_add_flags(-O3 -funroll-loops CONFIG Release)
+endif()
 
 # for GCC add stack protector
 # -fstack-protector-strong
@@ -411,30 +416,38 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # for release mode, don't use Ofast unless you're ok to break NAN/INF compatibility.
 if(BUILD_FOR_LAMBDA)
-    ucm_add_flags(-march=haswell)
+    # Only use x86_64 specific march flags for x86_64 architectures
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+        ucm_add_flags(-march=haswell)
+    endif()
 endif()
 
 # add compiler flags for specific SIMD instructions
-include(FindSSE)
-include(FindSIMD)
-CHECK_FOR_SSE42()
-CHECK_FOR_AVX()
-# add compiler flags
-if(HAVE_SSE42)
-    message(STATUS "Found SSE4.2 support, adding -msse4.2")
-    # no msvc support, so use clang/gcc flag approach!
-    add_compile_options("-msse4.2")
-endif()
-if(HAVE_AVX)
-    # only add avx (because not any architecture supports it) if native build is enabled or build for lambda
-    # because Haswell supports both AVX and AVX2!
-    if(BUILD_NATIVE OR BUILD_FOR_LAMBDA)
-        message(STATUS "Found AVX support, adding -mavx")
+# Only include SSE/AVX checks for x86_64 architectures
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    include(FindSSE)
+    include(FindSIMD)
+    CHECK_FOR_SSE42()
+    CHECK_FOR_AVX()
+    # add compiler flags
+    if(HAVE_SSE42)
+        message(STATUS "Found SSE4.2 support, adding -msse4.2")
         # no msvc support, so use clang/gcc flag approach!
-        add_compile_options("-mavx")
+        add_compile_options("-msse4.2")
+    endif()
+    if(HAVE_AVX)
+        # only add avx (because not any architecture supports it) if native build is enabled or build for lambda
+        # because Haswell supports both AVX and AVX2!
+        if(BUILD_NATIVE OR BUILD_FOR_LAMBDA)
+            message(STATUS "Found AVX support, adding -mavx")
+            # no msvc support, so use clang/gcc flag approach!
+            add_compile_options("-mavx")
+        endif()
+    else()
+        message(STATUS "no avx support, build with -DBUILD_NATIVE=ON to enable")
     endif()
 else()
-    message(STATUS "no avx support, build with -DBUILD_NATIVE=ON to enable")
+    message(STATUS "Skipping SSE/AVX checks for non-x86_64 architecture: ${CMAKE_SYSTEM_PROCESSOR}")
 endif()
 
 ###########################################################################
