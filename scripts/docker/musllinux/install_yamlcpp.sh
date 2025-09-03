@@ -30,7 +30,7 @@ mkdir -p ${DOWNLOAD_DIR}/yamlcpp && cd ${DOWNLOAD_DIR}/yamlcpp \
 && cd yaml-cpp \
 && git checkout tags/${YAML_CPP_VERSION} \
 && mkdir build && cd build \
-&& cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${PREFIX} -DYAML_CPP_BUILD_TESTS=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_FLAGS="-fPIC" .. \
+&& cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${PREFIX} -DYAML_CPP_BUILD_TESTS=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_FLAGS="-fPIC" .. \
 && make -j ${CPU_COUNT} && make install
 
 echo ">> YAML-CPP ${YAML_CPP_VERSION} installation completed successfully"
