@@ -76,7 +76,7 @@ RUN mkdir -p /opt/sbin /opt/bin /opt/lib /opt/include
 
 # Copy all installation scripts
 COPY install_alpine.sh install_zlib.sh install_llvm.sh install_boost.sh \
-     install_googletest.sh install_snappy.sh install_yamlcpp.sh install_celero.sh \
+     install_googletest.sh install_snappy.sh install_zstd.sh install_yamlcpp.sh install_celero.sh \
      install_antlr.sh install_pcre2.sh install_protobuf.sh install_aws_sdk.sh \
      /tmp/
 
@@ -98,28 +98,31 @@ RUN /tmp/install_googletest.sh
 # Layer 4: Install snappy compression library
 RUN /tmp/install_snappy.sh
 
-# Layer 5: Install parsing and data libraries
+# Layer 5: Install zstd compression library
+RUN /tmp/install_zstd.sh
+
+# Layer 6: Install parsing and data libraries
 RUN /tmp/install_yamlcpp.sh 
 
-# Layer 6: Install celero benchmarking library
+# Layer 7: Install celero benchmarking library
 RUN /tmp/install_celero.sh
 
-# Layer 7: Install parsing and regex libraries
+# Layer 8: Install parsing and regex libraries
 RUN /tmp/install_antlr.sh 
 
-# Layer 8: Install parsing and regex library
+# Layer 9: Install parsing and regex library
 RUN /tmp/install_pcre2.sh
 
-# Layer 9: Install Protocol Buffers
+# Layer 10: Install Protocol Buffers
 RUN /tmp/install_protobuf.sh
 
-# Layer 10: Install AWS SDK C++ and Lambda runtime
+# Layer 11: Install AWS SDK C++ and Lambda runtime
 RUN /tmp/install_aws_sdk.sh
 
-# Layer 11: Install Boost (C++ libraries)
+# Layer 12: Install Boost (C++ libraries)
 RUN /tmp/install_boost.sh
 
-# Layer 12: Install LLVM (compiler infrastructure) (this will take a while)
+# Layer 13: Install LLVM (compiler infrastructure) (this will take a while)
 RUN /tmp/install_llvm.sh
 
 # Clean up installation scripts
