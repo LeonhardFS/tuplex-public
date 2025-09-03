@@ -210,7 +210,7 @@ if(BUILD_WITH_ORC)
 
     ExternalProject_Add(orc
             GIT_REPOSITORY https://github.com/apache/orc.git
-            GIT_TAG rel/release-2.1.3
+            GIT_TAG rel/release-2.2.0
             TIMEOUT 5
             CMAKE_ARGS -DBUILD_LIBHDFSPP=OFF -DSNAPPY_HOME=${SNAPPY_HOME}
             -DLZ4_HOME=${LZ4_HOME} -DZSTD_HOME=${ZSTD_HOME} -DZLIB_HOME=${ZLIB_HOME}
@@ -218,6 +218,7 @@ if(BUILD_WITH_ORC)
             -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS} -DCMAKE_INSTALL_PREFIX=${EXTERNAL_INSTALL_LOCATION}
             -DSTOP_BUILD_ON_WARNING=OFF -DBUILD_JAVA=OFF -DBUILD_TOOLS=OFF -DBUILD_CPP_TESTS=OFF
             -DBUILD_POSITION_INDEPENDENT_LIB=ON -DPROTOBUF_HOME=${Protobuf_HOME}
+            -DPROTOBUF_BUILD_TESTS=OFF -DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON
             PREFIX "${EXTERNAL_INSTALL_LOCATION}"
             UPDATE_COMMAND "" # Disable update step: clones the project only once
             BUILD_BYPRODUCTS ${orc_LIBRARY} ${ORC_THIRD_PARTY_LIBS}
