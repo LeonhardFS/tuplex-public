@@ -142,7 +142,7 @@ fi
 
 # add to environment, e.g. TUPLEX_BUILD_TYPE=tsan to force a tsan build. Release is the default mode
 # Note: The tuplex/musl image uses /opt as the installation prefix for both architectures
-export CIBW_ENVIRONMENT="TUPLEX_LAMBDA_ZIP='./tuplex/other/tplxlam.zip' CMAKE_ARGS='-DBUILD_WITH_AWS=ON -DBUILD_WITH_ORC=ON' LD_LIBRARY_PATH=/opt/lib:/opt/lib64"
+export CIBW_ENVIRONMENT="CMAKE_ARGS='-DBUILD_WITH_AWS=ON -DBUILD_WITH_ORC=ON' LD_LIBRARY_PATH=/opt/lib:/opt/lib64"
 
 # Build only musllinux wheels for Python 3.11+
 export CIBW_BUILD="cp3{11,12,13}-*"

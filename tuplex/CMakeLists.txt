@@ -797,7 +797,10 @@ if(Python3_FOUND)
     endif()
     message(STATUS "Found python${Python3_VERSION} - if you'd like to change a to different python version, use -DPython3_ROOT_DIR=<prefix> or -DPYTHON3_VERSION=<major.minor.micro> or set an environment variable PYTHON3_VERSION")
 
-    set(Boost_NO_BOOST_CMAKE ON) # findboost from cmake is buggy and does not work, explicitly disable here
+
+    # For cmake < 4.0, finding boost may be buggy.
+    # set(Boost_NO_BOOST_CMAKE ON) # findboost from cmake is buggy and does not work, explicitly disable here
+
     if(APPLE AND BREW_FOUND) # i.e. boost-python via brew? --> check maybe better in the future...
         set(CMAKE_FIND_PACKAGE_PREFER_CONFIG TRUE) # gets rid off annoying boost warning.
     endif()
