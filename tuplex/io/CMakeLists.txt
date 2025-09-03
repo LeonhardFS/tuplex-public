@@ -213,7 +213,7 @@ if(BUILD_WITH_ORC)
             GIT_TAG rel/release-2.2.0
             TIMEOUT 5
             PATCH_COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/patches/orc/0001-fix-protobuf-int64-compatibility.patch ${CMAKE_CURRENT_BINARY_DIR}/orc-patch.patch &&
-                        cd ${CMAKE_CURRENT_BINARY_DIR}/orc-prefix/src/orc &&
+                        cd ${EXTERNAL_INSTALL_LOCATION}/src/orc &&
                         patch -p1 < ${CMAKE_CURRENT_BINARY_DIR}/orc-patch.patch
             CMAKE_ARGS -DBUILD_LIBHDFSPP=OFF -DSNAPPY_HOME=${SNAPPY_HOME}
             -DLZ4_HOME=${LZ4_HOME} -DZSTD_HOME=${ZSTD_HOME} -DZLIB_HOME=${ZLIB_HOME}
