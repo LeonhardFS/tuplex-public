@@ -10,7 +10,7 @@ include(ExternalProject)
 set(EXTERNAL_INSTALL_LOCATION ${CMAKE_BINARY_DIR}/third_party)
 ExternalProject_Add(fmt
         GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-        GIT_TAG 6.2.0
+        GIT_TAG 11.2.0
         GIT_CONFIG advice.detachedHead=false
         TIMEOUT 5
         CMAKE_ARGS -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}
