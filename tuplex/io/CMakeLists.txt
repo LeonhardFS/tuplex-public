@@ -109,7 +109,7 @@ if(BUILD_WITH_ORC)
                             "${CMAKE_CURRENT_BINARY_DIR}/lz4_ep-prefix/src/lz4_ep/contrib/cmake_unofficial")
                 endif()
 
-                ExternalProject_Add (lz4_ep URL "https://github.com/lz4/lz4/archive/v${LZ4_VERSION}.tar.gz"s
+                ExternalProject_Add (lz4_ep URL "https://github.com/lz4/lz4/archive/v${LZ4_VERSION}.tar.gz"
                         ${LZ4_CONFIGURE}
                         BUILD_BYPRODUCTS "${LZ4_STATIC_LIB}")
 
@@ -218,7 +218,6 @@ if(BUILD_WITH_ORC)
             -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS} -DCMAKE_INSTALL_PREFIX=${EXTERNAL_INSTALL_LOCATION}
             -DSTOP_BUILD_ON_WARNING=OFF -DBUILD_JAVA=OFF -DBUILD_TOOLS=OFF -DBUILD_CPP_TESTS=OFF
             -DBUILD_POSITION_INDEPENDENT_LIB=ON -DPROTOBUF_HOME=${Protobuf_HOME}
-            -DPROTOBUF_BUILD_TESTS=OFF -DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON
             PREFIX "${EXTERNAL_INSTALL_LOCATION}"
             UPDATE_COMMAND "" # Disable update step: clones the project only once
             BUILD_BYPRODUCTS ${orc_LIBRARY} ${ORC_THIRD_PARTY_LIBS}
@@ -234,7 +233,6 @@ if(BUILD_WITH_ORC)
     set_target_properties(liborc PROPERTIES IMPORTED_LOCATION ${orc_LIBRARY})
 
     add_dependencies(liborc orc)
-    include_directories(${orc_INCLUDE_DIR})
     set(ORC_LIBRARIES
             ${SNAPPY_LIBRARIES}
             ${LZ4_LIBRARIES}
@@ -242,6 +240,7 @@ if(BUILD_WITH_ORC)
     # set also for parent scope (don't set liborc?)
     set(ORC_LIBRARIES ${SNAPPY_LIBRARIES} ${LZ4_LIBRARIES} PARENT_SCOPE)
 endif()
+
 
 add_library(libio OBJECT
         ${CMAKE_CURRENT_BINARY_DIR} ${SOURCES} ${INCLUDES})
