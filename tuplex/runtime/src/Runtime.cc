@@ -24,6 +24,7 @@
 #include <random>
 #include <cstdio>
 #include <cstdlib> // for aligned_malloc
+#include <cstdarg> // for va_arg
 
 #define RUNTIME_DEFAULT_BLOCK_SIZE (4 * 1024 * 1024)
 
