@@ -13,6 +13,9 @@ ExternalProject_Add(fmt
         GIT_TAG 11.2.0
         GIT_CONFIG advice.detachedHead=false
         TIMEOUT 5
+        PATCH_COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/patches/fmtlib.diff ${CMAKE_BINARY_DIR}/fmtlib-patch.diff &&
+                        cd ${CMAKE_BINARY_DIR}/third_party/src/fmt &&
+                        patch -p1 < ${CMAKE_BINARY_DIR}/fmtlib-patch.diff
         CMAKE_ARGS -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER} -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}
         PREFIX "${EXTERNAL_INSTALL_LOCATION}"
         CONFIGURE_COMMAND "" # Disable configure step
