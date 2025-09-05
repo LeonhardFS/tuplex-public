@@ -114,9 +114,6 @@ target_link_libraries(libcore
         ${YAMLCPP_LIBRARY}
         ${CURL_LIBRARIES}
         ${AWSSDK_LINK_LIBRARIES}
-        ${Protobuf_LIBRARIES}
-        proto-objects
-        protobuf::libprotobuf
         Boost::iostreams
         Boost::thread
         Boost::filesystem
@@ -124,3 +121,12 @@ target_link_libraries(libcore
         ${ZLIB_LIBRARIES}
         ${ZSTD_LIBRARIES}
         )
+
+# Add protobuf dependencies only if required.
+if(BUILD_WITH_AWS OR BUILD_WITH_ORC)
+    target_link_libraries(libcore
+            ${Protobuf_LIBRARIES}
+            proto-objects
+            protobuf::libprotobuf
+            )
+endif()
