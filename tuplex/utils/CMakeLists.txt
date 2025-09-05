@@ -55,13 +55,10 @@ if(NOT BUILD_WITH_AWS)
         GIT_TAG        v1.7.14
         GIT_CONFIG advice.detachedHead=false
     )
-    FetchContent_GetProperties(cJSON)
-    if(NOT cjson_Populated)
-        FetchContent_Populate(cJSON)
-        message(STATUS "cJSON Source Dir: ${cjson_SOURCE_DIR}")
-        message(STATUS "cJSON Binary Dir: ${cjson_BINARY_DIR}")
+    FetchContent_MakeAvailable(cJSON)
+    message(STATUS "cJSON Source Dir: ${cjson_SOURCE_DIR}")
+    message(STATUS "cJSON Binary Dir: ${cjson_BINARY_DIR}")
     #    add_subdirectory(${cjson_SOURCE_DIR} ${cjson_BINARY_DIR})
-    endif()
 else()
     message(STATUS "Using cJSON shipped with AWSSDK")
     # Note: alternative is to use CJSON_HIDE_SYMBOLS IWTH AWS SDK.

@@ -1,6 +1,11 @@
 # (c) 2017-2023 Leonhard Spiegelberg
 cmake_minimum_required(VERSION 3.16 FATAL_ERROR)
 
+# Set policies to suppress warnings
+if(POLICY CMP0144)
+    cmake_policy(SET CMP0144 NEW) # FindPython3: Honor Python3_FIND_REGISTRY
+endif()
+
 # top-level language specification
 # enable c++17
 set(CMAKE_CXX_STANDARD 17)
@@ -600,6 +605,8 @@ if(PYTHON3_EXECUTABLE)
     set(Python3_EXECUTABLE ${Python3_EXECUTABLE})
     message(STATUS "Using specific python executable ${PYTHON3_EXECUTABLE}")
     unset(PYTHON3_VERSION)
+    # Unset the legacy Python_EXECUTABLE variable to avoid CMake warnings
+    unset(Python_EXECUTABLE CACHE)
 
     # get version from executable
     execute_process (COMMAND "${PYTHON3_EXECUTABLE}" -c "import sys;print('{}.{}.{}'.format(sys.version_info.major,sys.version_info.minor,sys.version_info.micro))"

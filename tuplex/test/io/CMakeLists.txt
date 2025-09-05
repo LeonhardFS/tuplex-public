@@ -30,4 +30,4 @@ if(BUILD_WITH_AWS OR BUILD_WITH_ORC)
             )
 endif()
 
-gtest_add_tests(TARGET testio TEST_PREFIX "")
+gtest_add_tests(TARGET testio)
