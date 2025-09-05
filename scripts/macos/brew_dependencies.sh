@@ -16,6 +16,10 @@ brew install openjdk@11 cmake coreutils protobuf zstd zlib libmagic llvm@15 pcre
 echo "Linking packages..."
 brew link --overwrite cmake coreutils protobuf zstd zlib libmagic llvm@15 pcre2 gflags yaml-cpp celero wget boost googletest libdwarf libelf abseil
 
+
+# protobuf seems to have an issue on github actions, force reinstall therefore. 
+brew reinstall -f protobuf
+
 # Verify protobuf installation
 echo "Verifying protobuf installation..."
 protoc --version || echo "Warning: protoc not found in PATH"
