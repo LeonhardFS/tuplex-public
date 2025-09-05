@@ -229,19 +229,9 @@ if(PROTOBUF_REQUIRED)
     set(Protobuf_USE_STATIC_LIBS ON)
     # https://github.com/protocolbuffers/protobuf/issues/12637
     
-    # Try to find Protobuf using different methods
-    # First try with explicit paths for common installation locations
-    set(PROTOBUF_SEARCH_PATHS "/opt/homebrew" "/usr/local" "/usr")
-    foreach(SEARCH_PATH ${PROTOBUF_SEARCH_PATHS})
-        if(EXISTS "${SEARCH_PATH}/lib/cmake/protobuf")
-            set(Protobuf_DIR "${SEARCH_PATH}/lib/cmake/protobuf")
-            set(Protobuf_ROOT "${SEARCH_PATH}")
-            message(STATUS "Trying Protobuf at ${SEARCH_PATH}")
-            break()
-        endif()
-    endforeach()
-    
+    # Try CONFIG method first (preferred for modern protobuf installations)
     find_package(Protobuf CONFIG QUIET)
+    
     if(NOT Protobuf_FOUND)
         message(STATUS "Protobuf CONFIG not found, trying REQUIRED method")
         find_package(Protobuf REQUIRED)
@@ -249,7 +239,7 @@ if(PROTOBUF_REQUIRED)
         message(STATUS "Found Protobuf using CONFIG method")
     endif()
     
-    # Additional check for CI environments
+    # Final verification
     if(NOT Protobuf_FOUND)
         message(FATAL_ERROR "Protobuf not found. Please install protobuf development libraries. "
                            "On macOS: brew install protobuf\n"

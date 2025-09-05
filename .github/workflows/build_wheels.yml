@@ -126,7 +126,7 @@ jobs:
           CIBW_BUILD: ${{ matrix.cibw-build }}
 
           # macOS dependencies separate, for Linux use docker tuplex/ci:3.x images.
-          CIBW_BEFORE_ALL_MACOS: bash ./scripts/macos/install_antlr4_cpp_runtime.sh && bash ./scripts/macos/brew_dependencies.sh && bash ./scripts/macos/install_aws-sdk-cpp.sh && echo 'export PATH="/usr/local/opt/openjdk@11/bin:$PATH"' >> /Users/runner/.bash_profile && echo "Protobuf installation check:" && find /opt/homebrew /usr/local -name "protobuf*" -type d 2>/dev/null | head -5
+          CIBW_BEFORE_ALL_MACOS: bash ./scripts/macos/install_antlr4_cpp_runtime.sh && bash ./scripts/macos/brew_dependencies.sh && bash ./scripts/macos/install_aws-sdk-cpp.sh && echo 'export PATH="/usr/local/opt/openjdk@11/bin:$PATH"' >> /Users/runner/.bash_profile && echo "Verifying protobuf installation:" && protoc --version && find /opt/homebrew /usr/local -name "protobuf*" -type d 2>/dev/null | head -5
 
           # If CI complains about missing /usr/local/libexec/git-core/git-remote-https: error while loading shared libraries: libssl.so.3: cannot open shared object file: No such file or directory
           # the OpenSSL3 lib is stored under /usr/local/lib64.
@@ -136,7 +136,7 @@ jobs:
           # To avoid issues, simply use 13.6 for now.
           # Fix for Java home from https://github.com/actions/runner-images/discussions/9266.
           # For github actions, $HOME is /Users/runner/
-          CIBW_ENVIRONMENT_MACOS: "ARCH=${{ matrix.arch }} PREFIX=${HOME}/.local MACOSX_DEPLOYMENT_TARGET=${{ matrix.macos-target }} CMAKE_ARGS='-DCMAKE_PREFIX_PATH=/Users/runner/.local:/opt/homebrew:/usr/local -DCMAKE_MODULE_PATH=/Users/runner/.local/cmake/ -DBUILD_WITH_AWS=ON -DBUILD_WITH_ORC=ON -DProtobuf_ROOT=/opt/homebrew -DProtobuf_DIR=/opt/homebrew/lib/cmake/protobuf' JAVA_HOME=${JAVA_HOME_11_X64:-$JAVA_HOME_11_arm64}"
+          CIBW_ENVIRONMENT_MACOS: "ARCH=${{ matrix.arch }} PREFIX=${HOME}/.local MACOSX_DEPLOYMENT_TARGET=${{ matrix.macos-target }} CMAKE_ARGS='-DCMAKE_PREFIX_PATH=/Users/runner/.local:/opt/homebrew:/usr/local -DCMAKE_MODULE_PATH=/Users/runner/.local/cmake/ -DBUILD_WITH_AWS=ON -DBUILD_WITH_ORC=ON' JAVA_HOME=${JAVA_HOME_11_X64:-$JAVA_HOME_11_arm64}"
 
           # run all python tests to make sure wheels are not defunct
           CIBW_TEST_REQUIRES: "pytest pytest-timeout numpy nbformat jupyter"
