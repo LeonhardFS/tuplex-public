@@ -12,17 +12,21 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 SET(MODULE_NAME tuplex)
 
 # deprecated
-include(FetchContent)
 #set(PYBIND11_NOPYTHON ON CACHE INTERNAL "") 
 message(STATUS "Pybind11 uses python version ${Python3_VERSION}")
 set(PYBIND11_FINDPYTHON OFF CACHE INTERNAL "") 
 set(PYBIND11_PYTHON_VERSION "${Python3_VERSION}" CACHE INTERNAL "")
+# 3.0.0 requires python 3.10+
 FetchContent_Declare(pybind11 GIT_REPOSITORY https://github.com/pybind/pybind11
-                             GIT_TAG        v3.0.1)
-FetchContent_MakeAvailable(pybind11)
-
-# Source code & linking
-file(GLOB_RECURSE SOURCES src/*.cc)
+                             GIT_TAG        v3.0.0)
+FetchContent_GetProperties(pybind11)
+if(NOT pybind11_POPULATED)
+    # Disable cmake warning, need to update to FetchContent_MakeAvailable eventually.
+    cmake_policy(SET CMP0169 OLD)
+    FetchContent_Populate(pybind11)
+    cmake_policy(SET CMP0169 NEW)
+    add_subdirectory(${pybind11_SOURCE_DIR} ${pybind11_BINARY_DIR})
+endif()
 
 # this is the syntax for the old deprecated packages, switching out to newer one.
 #PYTHON_ADD_MODULE(${MODULE_NAME} ${SOURCES})
