@@ -72,7 +72,6 @@ target_link_libraries(${MODULE_NAME} PUBLIC Backward::Interface
         libio
         Boost::iostreams
         Boost::thread
-        Boost::system
         Boost::filesystem)
 else()
     target_link_libraries(${MODULE_NAME}
@@ -84,7 +83,6 @@ else()
             libio
             Boost::iostreams
             Boost::thread
-            Boost::system
             Boost::filesystem)
 endif()
 

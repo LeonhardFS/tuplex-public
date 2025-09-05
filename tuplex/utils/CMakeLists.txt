@@ -109,4 +109,4 @@ target_include_directories(libutils PUBLIC
         ${AWSSDK_INCLUDE_DIR})
 
 # Specify here the libraries this program depends on
-target_link_libraries(libutils Boost::filesystem Boost::thread Boost::system Boost::system Boost::iostreams ${AWSSDK_LINK_LIBRARIES})
+target_link_libraries(libutils Boost::filesystem Boost::thread Boost::iostreams ${AWSSDK_LINK_LIBRARIES})
