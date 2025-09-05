@@ -798,7 +798,7 @@ execute_process (COMMAND "${Python3_EXECUTABLE}" -c "from distutils import sysco
 message(STATUS "Python3 extension module suffix is: ${PYTHON_MODULE_EXTENSION}")
 
 set(Boost_NO_WARN_NEW_VERSIONS ON) # cmake 3.20 finally has a switch to kill the boost warnings...
-set(BOOST_COMPONENTS iostreams thread system filesystem)
+set(BOOST_COMPONENTS iostreams thread filesystem)
 if(Python3_FOUND)
     if(Python3_VERSION_MAJOR LESS 3 OR Python3_VERSION_MINOR LESS 5)
         message(FATAL_ERROR "Tuplex requires python3.5 at least, found incompatible python ${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR}")
