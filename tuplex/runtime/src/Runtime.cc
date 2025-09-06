@@ -18,9 +18,9 @@
 #include <StringUtils.h> // <-- implemented in StringUtils
 #include <ExceptionCodes.h>
 #include <fmt/format.h>
-#if FMT_VERSION <= 90000
+//#if FMT_VERSION <= 90000
 #include <fmt/args.h>
-#endif
+//#endif
 #include <pcre2.h>
 #include <Logger.h>
 #include <random>
@@ -604,7 +604,17 @@ bool is_fmt_float_type(const fmt::detail::type& t) {
     }
 }
 #else
-#error "newer fmtlib version not yet supported"
+bool is_fmt_float_type(const fmt::detail::type& t) {
+    switch(t) {
+    case fmt::detail::type::float_type:
+    case fmt::detail::type::double_type:
+    case fmt::detail::type::long_double_type:
+        return true;
+    default:
+        return false;
+    }
+}
+//#error "newer fmtlib version not yet supported"
 #endif
 
 std::string pyfmtToFmtlib(size_t argNo, const std::string& fmt, const fmt::format_args& args) {

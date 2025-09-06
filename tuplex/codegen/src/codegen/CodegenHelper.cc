@@ -1833,7 +1833,7 @@ namespace tuplex {
             auto tuple_size = DL.getTypeAllocSize(type);
 
             auto& ctx = builder.getContext();
-            auto func = getOrInsertFunction(mod, "rtmalloc", llvm::Type::getInt8PtrTy(ctx, 0), llvm::Type::getInt8PtrTy(ctx, 0));
+            auto func = getOrInsertFunction(mod, "rtmalloc", i8ptrType(ctx), i8ptrType(ctx));
 
             llvm::Value* ptr = builder.CreateCall(func, {i64Const(ctx, tuple_size)});
             ptr = builder.CreatePointerCast(ptr, type->getPointerTo());
