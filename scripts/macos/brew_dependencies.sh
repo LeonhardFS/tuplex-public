@@ -122,11 +122,11 @@ echo "Home directory: $HOME"
 
 # Update brew first
 echo "Updating brew..."
-brew update --quiet || echo "Warning: brew update failed"
+brew update --quiet 2>/dev/null || echo "Warning: brew update failed"
 
 # Uninstall conflicting cmake first if it exists from a different tap
 echo "Checking for conflicting cmake installations..."
-brew uninstall cmake --ignore-dependencies || true
+brew uninstall cmake --ignore-dependencies 2>/dev/null || true
 
 # Install dependencies with better error handling
 echo "Installing dependencies..."
@@ -135,15 +135,24 @@ echo "Installing dependencies..."
 CORE_DEPENDENCIES="llvm@15 openjdk@11 cmake coreutils zstd zlib libmagic pcre2 gflags yaml-cpp celero wget googletest libdwarf libelf protobuf boost"
 
 for dep in $CORE_DEPENDENCIES; do
-    echo "Installing $dep..."
-    if brew install "$dep"; then
-        echo "✅ $dep installed successfully"
+    # Check if package is already installed
+    if brew list "$dep" &>/dev/null; then
+        version=$(brew list --versions "$dep" | awk '{print $2}')
+        echo "✅ $dep $version already installed, skipping."
     else
-        echo "❌ Failed to install $dep"
-        echo "Attempting to reinstall $dep with --force ..."
-        brew reinstall -f "$dep" || {
-            echo "❌ Failed to reinstall $dep, continuing..."
-        }
+        if brew install "$dep" 2>/dev/null; then
+            version=$(brew list --versions "$dep" | awk '{print $2}')
+            echo "✅ $dep $version installed successfully."
+        else
+            echo "❌ Failed to install $dep"
+            echo "Attempting to reinstall $dep with --force ..."
+            if brew reinstall -f "$dep" 2>/dev/null; then
+                version=$(brew list --versions "$dep" | awk '{print $2}')
+                echo "✅ $dep $version reinstalled successfully."
+            else
+                echo "❌ Failed to reinstall $dep, continuing..."
+            fi
+        fi
     fi
 done
 
