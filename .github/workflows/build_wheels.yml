@@ -88,25 +88,42 @@ jobs:
             macos-target: "14.0"
             arch: "arm64"
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      # disable cache for now.
-      #- name: Cache brew dependencies
-      #  if: runner.os == 'macOS'
-      #  uses: actions/cache@v4.2.1
-      #  with:
-      #    # Paths to cache:
-      #    # /usr/local/Homebrew - installation folder of Homebrew
-      #    # /usr/local/Cellar - installation folder of Homebrew formulae
-      #    # /usr/local/Frameworks, /usr/local/bin, /usr/local/opt - contain (links to) binaries installed by Homebrew formulae
-      #    path: |
-      #      /usr/local/Homebrew
-      #      /usr/local/Cellar
-      #      /usr/local/Frameworks
-      #      /usr/local/bin
-      #      /usr/local/opt
-      #    # macos13 runners are x86, macos14 are arm. --> use os therefore as cache key.
-      #    key: ${{ matrix.os }}-build-cache-${{ hashFiles('./scripts/macos/brew_dependencies.sh') }}-v2
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: |
+          set -euxo pipefail
+          echo "=== Starting macOS dependency installation ==="
+          
+          # Install dependencies with comprehensive verification
+          bash ./scripts/macos/install_antlr4_cpp_runtime.sh
+          bash ./scripts/macos/brew_dependencies.sh
+          bash ./scripts/macos/install_aws-sdk-cpp.sh
+          
+          # Set up Java environment
+          echo 'export PATH="/usr/local/opt/openjdk@11/bin:$PATH"' >> /Users/runner/.bash_profile
+          export PATH="/usr/local/opt/openjdk@11/bin:$PATH"
+          
+          # Update environment variables for the build
+          export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+          export PKG_CONFIG_PATH="/opt/homebrew/lib/pkgconfig:/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH"
+          export CMAKE_PREFIX_PATH="/opt/homebrew:/usr/local:$CMAKE_PREFIX_PATH"
+          
+          # Run comprehensive build environment test
+          echo "=== Running build environment test ==="
+          bash ./scripts/macos/test_build_environment.sh
+          
+          # Final verification
+          echo "=== Final verification ==="
+          echo "Protobuf version: $(protoc --version)"
+          echo "Protobuf cmake files:"
+          find /opt/homebrew/lib/cmake /usr/local/lib/cmake -name "*protobuf*" 2>/dev/null | head -5
+          echo "CMake version: $(cmake --version | head -1)"
+          echo "Java version: $(java -version 2>&1 | head -1)"
+          
+          echo "=== macOS dependency installation completed ==="
 
       - name: Setup python
         uses: actions/setup-python@v5
@@ -126,38 +143,6 @@ jobs:
           CIBW_MANYLINUX_X86_64_IMAGE: "registry-1.docker.io/tuplex/ci:${{ matrix.python-version }}"
           CIBW_BUILD: ${{ matrix.cibw-build }}
 
-          # macOS dependencies separate, for Linux use docker tuplex/ci:3.x images.
-          CIBW_BEFORE_ALL_MACOS: |
-            set -euxo pipefail
-            echo "=== Starting macOS dependency installation ==="
-            
-            # Install dependencies with comprehensive verification
-            bash ./scripts/macos/install_antlr4_cpp_runtime.sh
-            bash ./scripts/macos/brew_dependencies.sh
-            bash ./scripts/macos/install_aws-sdk-cpp.sh
-            
-            # Set up Java environment
-            echo 'export PATH="/usr/local/opt/openjdk@11/bin:$PATH"' >> /Users/runner/.bash_profile
-            export PATH="/usr/local/opt/openjdk@11/bin:$PATH"
-            
-            # Update environment variables for the build
-            export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
-            export PKG_CONFIG_PATH="/opt/homebrew/lib/pkgconfig:/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH"
-            export CMAKE_PREFIX_PATH="/opt/homebrew:/usr/local:$CMAKE_PREFIX_PATH"
-            
-            # Run comprehensive build environment test
-            echo "=== Running build environment test ==="
-            bash ./scripts/macos/test_build_environment.sh
-            
-            # Final verification
-            echo "=== Final verification ==="
-            echo "Protobuf version: $(protoc --version)"
-            echo "Protobuf cmake files:"
-            find /opt/homebrew/lib/cmake /usr/local/lib/cmake -name "*protobuf*" 2>/dev/null | head -5
-            echo "CMake version: $(cmake --version | head -1)"
-            echo "Java version: $(java -version 2>&1 | head -1)"
-            
-            echo "=== macOS dependency installation completed ==="
 
           # If CI complains about missing /usr/local/libexec/git-core/git-remote-https: error while loading shared libraries: libssl.so.3: cannot open shared object file: No such file or directory
           # the OpenSSL3 lib is stored under /usr/local/lib64.
@@ -167,7 +152,7 @@ jobs:
           # To avoid issues, simply use 13.6 for now.
           # Fix for Java home from https://github.com/actions/runner-images/discussions/9266.
           # For github actions, $HOME is /Users/runner/
-          CIBW_ENVIRONMENT_MACOS: "ARCH=${{ matrix.arch }} PREFIX=${HOME}/.local MACOSX_DEPLOYMENT_TARGET=${{ matrix.macos-target }} PATH=/opt/homebrew/bin:/usr/local/bin:/usr/local/opt/openjdk@11/bin:$PATH PKG_CONFIG_PATH=/opt/homebrew/lib/pkgconfig:/usr/local/lib/pkgconfig CMAKE_PREFIX_PATH=/opt/homebrew:/usr/local:/Users/runner/.local CMAKE_ARGS='-DCMAKE_PREFIX_PATH=/Users/runner/.local:/opt/homebrew:/usr/local -DCMAKE_MODULE_PATH=/Users/runner/.local/cmake/ -DBUILD_WITH_AWS=ON -DBUILD_WITH_ORC=ON -DProtobuf_ROOT=/opt/homebrew -DBoost_ROOT=/opt/homebrew -DBoost_INCLUDE_DIR=/opt/homebrew/include -DBoost_LIBRARY_DIR=/opt/homebrew/lib -DLLVM_ROOT=/opt/homebrew/Cellar/llvm@15' JAVA_HOME=${JAVA_HOME_11_X64:-$JAVA_HOME_11_arm64}"
+          CIBW_ENVIRONMENT_MACOS: "ARCH=${{ matrix.arch }} PREFIX=${HOME}/.local MACOSX_DEPLOYMENT_TARGET=${{ matrix.macos-target }} PATH=/opt/homebrew/bin:/usr/local/bin:/usr/local/opt/openjdk@11/bin:$PATH PKG_CONFIG_PATH=/opt/homebrew/lib/pkgconfig:/usr/local/lib/pkgconfig CMAKE_PREFIX_PATH=/opt/homebrew:/usr/local:/Users/runner/.local CMAKE_ARGS='-DCMAKE_PREFIX_PATH=/Users/runner/.local:/opt/homebrew:/usr/local -DCMAKE_MODULE_PATH=/Users/runner/.local/cmake/ -DBUILD_WITH_AWS=ON -DBUILD_WITH_ORC=ON -DProtobuf_ROOT=/opt/homebrew -DBoost_ROOT=/opt/homebrew -DBoost_INCLUDE_DIR=/opt/homebrew/include -DBoost_LIBRARY_DIR=/opt/homebrew/lib' JAVA_HOME=${JAVA_HOME_11_X64:-$JAVA_HOME_11_arm64}"
 
           # ensure build requirements are available during wheel building
           CIBW_BUILD_REQUIRES: "cloudpickle numpy"
