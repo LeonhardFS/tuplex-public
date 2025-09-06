@@ -115,14 +115,6 @@ jobs:
           echo "=== Running build environment test ==="
           bash ./scripts/macos/test_build_environment.sh
           
-          # Final verification
-          echo "=== Final verification ==="
-          echo "Protobuf version: $(protoc --version)"
-          echo "Protobuf cmake files:"
-          find /opt/homebrew/lib/cmake /usr/local/lib/cmake -name "*protobuf*" 2>/dev/null | head -5
-          echo "CMake version: $(cmake --version | head -1)"
-          echo "Java version: $(java -version 2>&1 | head -1)"
-          
           echo "=== macOS dependency installation completed ==="
 
       - name: Setup python

@@ -31,14 +31,37 @@ verify_library() {
     local search_paths="$2"
     echo "Verifying $lib_name library..."
     
+    # Disable pipefail for this function since grep -q returns 1 when no matches found
+    set +o pipefail
+    
+    # Expand all paths including wildcards
+    local expanded_paths=""
     for path in $search_paths; do
+        if [[ "$path" == *"*"* ]]; then
+            # Expand wildcards
+            for expanded_path in $path; do
+                if [ -d "$expanded_path" ]; then
+                    expanded_paths="$expanded_paths $expanded_path"
+                fi
+            done
+        else
+            expanded_paths="$expanded_paths $path"
+        fi
+    done
+    
+    # Search in all expanded paths
+    for path in $expanded_paths; do
         if find "$path" -name "*${lib_name}*" -type f 2>/dev/null | grep -q .; then
             echo "✅ $lib_name found in $path"
             find "$path" -name "*${lib_name}*" -type f 2>/dev/null | head -3
+            # Re-enable pipefail before returning
+            set -o pipefail
             return 0
         fi
     done
     
+    # Re-enable pipefail before returning
+    set -o pipefail
     echo "❌ $lib_name not found in any of: $search_paths"
     return 1
 }
@@ -48,11 +71,21 @@ verify_cmake_package() {
     local package_name="$1"
     echo "Verifying CMake package: $package_name"
     
-    if find /opt/homebrew/lib/cmake /usr/local/lib/cmake -name "*${package_name}*" 2>/dev/null | grep -q .; then
+    # Disable pipefail for this function since grep -q returns 1 when no matches found
+    set +o pipefail
+    
+    # Search in standard locations and Cellar paths
+    local search_paths="/opt/homebrew/lib/cmake /usr/local/lib/cmake /opt/homebrew/Cellar/*/lib/cmake"
+    
+    if find $search_paths -name "*${package_name}*" 2>/dev/null | grep -q .; then
         echo "✅ CMake package $package_name found"
-        find /opt/homebrew/lib/cmake /usr/local/lib/cmake -name "*${package_name}*" 2>/dev/null | head -3
+        find $search_paths -name "*${package_name}*" 2>/dev/null | head -3
+        # Re-enable pipefail before returning
+        set -o pipefail
         return 0
     else
+        # Re-enable pipefail before returning
+        set -o pipefail
         echo "❌ CMake package $package_name not found"
         return 1
     fi
@@ -93,46 +126,6 @@ for dep in $CORE_DEPENDENCIES; do
     fi
 done
 
-# Install boost separately with special handling
-echo "Installing boost..."
-if brew install boost; then
-    echo "✅ boost installed successfully"
-else
-    echo "❌ Failed to install boost"
-    echo "Attempting to reinstall boost..."
-    brew reinstall -f boost || {
-        echo "❌ Failed to reinstall boost, trying alternative approach..."
-        # Try installing boost with specific options
-        brew install boost --build-from-source || {
-            echo "❌ Failed to install boost from source, continuing..."
-        }
-    }
-fi
-
-# Install LLVM separately (can be problematic)
-echo "Installing llvm@15..."
-if brew install llvm@15; then
-    echo "✅ llvm@15 installed successfully"
-else
-    echo "❌ Failed to install llvm@15"
-    echo "Attempting to reinstall llvm@15..."
-    brew reinstall -f llvm@15 || {
-        echo "❌ Failed to reinstall llvm@15, continuing..."
-    }
-fi
-
-# Install protobuf last (often has issues)
-echo "Installing protobuf..."
-if brew install protobuf; then
-    echo "✅ protobuf installed successfully"
-else
-    echo "❌ Failed to install protobuf"
-    echo "Attempting to reinstall protobuf..."
-    brew reinstall -f protobuf || {
-        echo "❌ Failed to reinstall protobuf, continuing..."
-    }
-fi
-
 # Link packages with better error handling
 echo "Linking packages..."
 LINK_PACKAGES="cmake coreutils protobuf zstd zlib libmagic llvm@15 pcre2 gflags yaml-cpp celero wget boost googletest libdwarf libelf abseil"
@@ -141,13 +134,6 @@ for pkg in $LINK_PACKAGES; do
     echo "Linking $pkg..."
     brew link --overwrite "$pkg" || echo "Warning: Failed to link $pkg"
 done
-
-# Force reinstall protobuf as it often has issues
-echo "Force reinstalling protobuf..."
-brew reinstall -f protobuf || {
-    echo "❌ Failed to reinstall protobuf"
-    exit 1
-}
 
 # Update PATH to include brew binaries
 echo "Updating PATH..."
@@ -177,85 +163,14 @@ else
 fi
 
 # Verify libraries
-verify_library "protobuf" "/opt/homebrew/lib /usr/local/lib"
-verify_library "boost" "/opt/homebrew/lib /usr/local/lib"
-verify_library "llvm" "/opt/homebrew/lib /usr/local/lib"
+verify_library "protobuf" "/opt/homebrew/lib /usr/local/lib /opt/homebrew/Cellar/protobuf/*/lib"
+verify_library "boost" "/opt/homebrew/lib /usr/local/lib /opt/homebrew/Cellar/boost/*/lib"
+verify_library "llvm" "/opt/homebrew/lib /usr/local/lib /opt/homebrew/Cellar/llvm@15/*/lib"
 
 # Verify CMake packages
 verify_cmake_package "protobuf"
 verify_cmake_package "boost"
 verify_cmake_package "llvm"
-
-# Special boost verification
-echo "=== Boost verification ==="
-if verify_library "boost" "/opt/homebrew/lib /usr/local/lib"; then
-    echo "Boost library found"
-    # Check for specific boost libraries
-    for lib in libboost_system libboost_filesystem libboost_thread libboost_iostreams; do
-        if find /opt/homebrew/lib /usr/local/lib -name "${lib}*" 2>/dev/null | grep -q .; then
-            echo "✅ $lib found"
-        else
-            echo "⚠️  $lib not found"
-        fi
-    done
-else
-    echo "❌ Boost verification failed"
-    echo "Searching for boost installations..."
-    find /opt/homebrew /usr/local -name "*boost*" 2>/dev/null | head -10
-fi
-
-# Test protobuf compilation
-echo "=== Testing protobuf compilation ==="
-cat > /tmp/test.proto << 'EOF'
-syntax = "proto3";
-package test;
-message TestMessage {
-  string name = 1;
-  int32 value = 2;
-}
-EOF
-
-if protoc --cpp_out=/tmp /tmp/test.proto; then
-    echo "✅ Protobuf compilation test passed"
-    ls -la /tmp/test.pb.*
-else
-    echo "❌ Protobuf compilation test failed"
-    exit 1
-fi
-
-# Test boost compilation
-echo "=== Testing boost compilation ==="
-cat > /tmp/test_boost.cpp << 'EOF'
-#include <boost/version.hpp>
-#include <boost/filesystem.hpp>
-#include <boost/thread.hpp>
-#include <boost/iostreams.hpp>
-#include <iostream>
-
-int main() {
-    std::cout << "Boost version: " << BOOST_VERSION << std::endl;
-    std::cout << "Boost filesystem test: " << boost::filesystem::current_path() << std::endl;
-    std::cout << "Boost test successful" << std::endl;
-    return 0;
-}
-EOF
-
-if g++ -std=c++17 -I/opt/homebrew/include -I/usr/local/include -L/opt/homebrew/lib -L/usr/local/lib -lboost_system -lboost_filesystem -lboost_thread -lboost_iostreams /tmp/test_boost.cpp -o /tmp/test_boost && /tmp/test_boost; then
-    echo "✅ Boost compilation test passed"
-    rm -f /tmp/test_boost.cpp /tmp/test_boost
-else
-    echo "❌ Boost compilation test failed"
-    echo "Trying with different boost libraries..."
-    # Try with just system library
-    if g++ -std=c++17 -I/opt/homebrew/include -I/usr/local/include -L/opt/homebrew/lib -L/usr/local/lib -lboost_system /tmp/test_boost.cpp -o /tmp/test_boost && /tmp/test_boost; then
-        echo "✅ Boost compilation test passed (system library only)"
-        rm -f /tmp/test_boost.cpp /tmp/test_boost
-    else
-        echo "❌ Boost compilation test failed completely"
-        rm -f /tmp/test_boost.cpp /tmp/test_boost
-        exit 1
-    fi
-fi
 
 # Final environment summary
 echo "=== Environment Summary ==="

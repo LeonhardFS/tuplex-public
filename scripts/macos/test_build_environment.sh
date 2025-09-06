@@ -138,15 +138,15 @@ test_command "pip3" "" "pip3 --version"
 echo "=== Testing Libraries ==="
 
 # Test protobuf
-test_library "protobuf" "/opt/homebrew/lib /usr/local/lib" "protobuf"
+test_library "protobuf" "/opt/homebrew/lib /usr/local/lib /opt/homebrew/Cellar/protobuf/*/lib" "protobuf"
 
 # Test boost
-test_library "boost" "/opt/homebrew/lib /usr/local/lib" "boost"
+test_library "boost" "/opt/homebrew/lib /usr/local/lib /opt/homebrew/Cellar/boost/*/lib" "boost"
 
 # Test specific boost libraries
 echo "Testing specific boost libraries..."
 for lib in libboost_system libboost_filesystem libboost_thread libboost_iostreams; do
-    if find /opt/homebrew/lib /usr/local/lib -name "${lib}*" 2>/dev/null | grep -q .; then
+    if find /opt/homebrew/lib /usr/local/lib /opt/homebrew/Cellar/boost/*/lib -name "${lib}*" 2>/dev/null | grep -q .; then
         echo "✅ $lib found"
     else
         echo "❌ $lib not found"
@@ -154,7 +154,7 @@ for lib in libboost_system libboost_filesystem libboost_thread libboost_iostream
 done
 
 # Test LLVM
-test_library "llvm" "/opt/homebrew/lib /usr/local/lib" "llvm"
+test_library "llvm" "/opt/homebrew/lib /usr/local/lib /opt/homebrew/Cellar/llvm@15/*/lib" "llvm"
 
 # Test other libraries
 test_library "zstd" "/opt/homebrew/lib /usr/local/lib" "libzstd"
@@ -189,7 +189,7 @@ int main() {
     std::cout << \"Boost filesystem test: \" << boost::filesystem::current_path() << std::endl;
     return 0;
 }" \
-"g++ -std=c++17 -I/opt/homebrew/include -I/usr/local/include -L/opt/homebrew/lib -L/usr/local/lib -lboost_system -lboost_filesystem $temp_file -o /tmp/test_boost"
+"g++ -std=c++17 -I/opt/homebrew/include -I/usr/local/include -L/opt/homebrew/lib -L/usr/local/lib -L/opt/homebrew/Cellar/boost/*/lib -lboost_system -lboost_filesystem $temp_file -o /tmp/test_boost"
 
 echo "=== Testing Environment Variables ==="
 
