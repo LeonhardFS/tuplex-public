@@ -145,8 +145,9 @@ echo "Updated PATH: $PATH"
 echo "=== Verifying installations ==="
 
 # For debugging
-brew install tree
-sudo tree /opt/homebrew/lib
+echo "Listing /opt/homebrew/lib (2-3 levels deep):"
+find /opt/homebrew/lib -maxdepth 3 -mindepth 1 -print
+
 
 # Verify essential commands
 verify_command "protoc" "libprotoc"

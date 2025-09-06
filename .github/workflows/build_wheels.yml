@@ -51,8 +51,9 @@ jobs:
           sudo chown $USER /opt
           touch /opt/test
 
-          brew install tree
-          sudo tree /opt/homebrew/lib
+          ls /opt/homebrew
+          ls /opt/homebrew/lib
+          find /opt/homebrew/lib -maxdepth 3 -mindepth 1 -print
 
           # Install dependencies with comprehensive verification
           PREFIX=/opt bash ./scripts/macos/brew_dependencies.sh
