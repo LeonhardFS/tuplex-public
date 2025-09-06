@@ -104,14 +104,6 @@ verify_cmake_package() {
     return 1
 }
 
-echo "=== Starting macOS dependency installation ==="
-echo "Current PATH: $PATH"
-echo "Current architecture: $(uname -m)"
-echo "macOS version: $(sw_vers -productVersion)"
-echo "Current working directory: $(pwd)"
-echo "User: $(whoami)"
-echo "Home directory: $HOME"
-
 # Update brew first
 echo "Updating brew..."
 brew update --quiet 2>/dev/null || echo "Warning: brew update failed"
@@ -179,13 +171,3 @@ verify_library "llvm" "/opt/homebrew/lib /usr/local/lib /opt/homebrew/Cellar/llv
 # Verify cmake packages
 verify_cmake_package "protobuf"
 verify_cmake_package "boost"
-
-# Final environment summary
-echo "=== Environment Summary ==="
-echo "PATH: $PATH"
-echo "PKG_CONFIG_PATH: ${PKG_CONFIG_PATH:-not set}"
-echo "CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH:-not set}"
-echo "Protobuf locations:"
-find /opt/homebrew /usr/local -name "*protobuf*" 2>/dev/null | head -5
-
-echo "=== Installation completed successfully! ==="
