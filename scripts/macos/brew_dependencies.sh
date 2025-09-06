@@ -108,6 +108,16 @@ verify_cmake_package() {
     return 1
 }
 
+# Detect Homebrew paths dynamically
+HOMEBREW_PREFIX="$(brew --prefix)"
+HOMEBREW_CELLAR="$(brew --cellar)"
+ARCH="$(uname -m)"
+
+echo "Detected Homebrew configuration:"
+echo "  Architecture: $ARCH"
+echo "  Homebrew prefix: $HOMEBREW_PREFIX"
+echo "  Homebrew cellar: $HOMEBREW_CELLAR"
+
 # Update brew first
 echo "Updating brew..."
 brew update --quiet 2>/dev/null || echo "Warning: brew update failed"
@@ -140,16 +150,6 @@ for dep in $CORE_DEPENDENCIES; do
     fi
 done
 
-# Detect Homebrew paths dynamically
-HOMEBREW_PREFIX="$(brew --prefix)"
-HOMEBREW_CELLAR="$(brew --cellar)"
-ARCH="$(uname -m)"
-
-echo "Detected Homebrew configuration:"
-echo "  Architecture: $ARCH"
-echo "  Homebrew prefix: $HOMEBREW_PREFIX"
-echo "  Homebrew cellar: $HOMEBREW_CELLAR"
-
 # Update PATH to include brew binaries
 echo "Updating PATH..."
 export PATH="$HOMEBREW_PREFIX/bin:/usr/local/bin:$PATH"
@@ -157,13 +157,6 @@ echo "Updated PATH: $PATH"
 
 # Comprehensive verification
 echo "=== Verifying installations ==="
-
-# For debugging - show library paths for both architectures
-echo "Listing $HOMEBREW_PREFIX/lib (2-3 levels deep):"
-find "$HOMEBREW_PREFIX/lib" -maxdepth 3 -mindepth 1 -print 2>/dev/null || echo "No libraries found in $HOMEBREW_PREFIX/lib"
-echo "Listing /usr/local/lib:"
-find /usr/local/lib -maxdepth 3 -mindepth 1 -print 2>/dev/null || echo "No libraries found in /usr/local/lib"
-
 
 # Verify essential commands
 verify_command "protoc" "libprotoc"
