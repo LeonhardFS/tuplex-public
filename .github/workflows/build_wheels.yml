@@ -53,7 +53,48 @@ jobs:
           sudo chown $USER /opt
           touch /opt/test
 
-          # Under intel based macs, the cellar dir is /usr/local/Cellar whereas Apple Silicon based macs have it in /opt/homebrew/Cellar
+          # Handle different Homebrew cellar directories between Apple Silicon and x86_64
+          # Apple Silicon: /opt/homebrew/Cellar
+          # Intel x86_64: /usr/local/Cellar
+          
+          HOMEBREW_PREFIX="$(brew --prefix)"
+          HOMEBREW_CELLAR="$(brew --cellar)"
+          ARCH="$(uname -m)"
+          
+          echo "Homebrew prefix: $HOMEBREW_PREFIX"
+          echo "Homebrew cellar: $HOMEBREW_CELLAR"
+          echo "Architecture: $ARCH"
+          
+          # Ensure /opt/homebrew exists and points to the correct location
+          if [[ "$ARCH" == "arm64" ]]; then
+            # Apple Silicon - Homebrew should already be in /opt/homebrew
+            echo "Apple Silicon detected - using native /opt/homebrew"
+            if [ ! -d /opt/homebrew ]; then
+              echo "ERROR: /opt/homebrew not found on Apple Silicon!"
+              exit 1
+            fi
+          else
+            # Intel x86_64 - Homebrew is in /usr/local, create symlink to /opt/homebrew
+            echo "Intel x86_64 detected - creating /opt/homebrew symlink"
+            if [ -L /opt/homebrew ]; then
+              echo "/opt/homebrew already exists as a symlink"
+            elif [ -d /opt/homebrew ]; then
+              echo "Removing existing /opt/homebrew directory"
+              sudo rm -rf /opt/homebrew
+            fi
+            
+            # Create symlink from /opt/homebrew to actual Homebrew prefix
+            sudo ln -s "$HOMEBREW_PREFIX" /opt/homebrew
+            echo "Created symlink: /opt/homebrew -> $HOMEBREW_PREFIX"
+          fi
+          
+          # Verify the setup
+          echo "Verifying Homebrew setup:"
+          echo "  /opt/homebrew exists: $([ -e /opt/homebrew ] && echo 'YES' || echo 'NO')"
+          echo "  /opt/homebrew/bin exists: $([ -d /opt/homebrew/bin ] && echo 'YES' || echo 'NO')"
+          echo "  /opt/homebrew/lib exists: $([ -d /opt/homebrew/lib ] && echo 'YES' || echo 'NO')"
+          echo "  /opt/homebrew/Cellar exists: $([ -d /opt/homebrew/Cellar ] && echo 'YES' || echo 'NO')"
+
 
           # Install dependencies with comprehensive verification
           PREFIX=/opt bash ./scripts/macos/brew_dependencies.sh

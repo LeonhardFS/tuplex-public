@@ -74,12 +74,16 @@ verify_cmake_package() {
     local package_name="$1"
     echo "Verifying CMake package: $package_name"
     
+    # Get Homebrew paths dynamically
+    local homebrew_prefix="${HOMEBREW_PREFIX:-$(brew --prefix)}"
+    local homebrew_cellar="${HOMEBREW_CELLAR:-$(brew --cellar)}"
+    
     # Search in standard locations and Cellar paths
     # Use find to get all CMake directories
-    local expanded_paths="/opt/homebrew/lib/cmake /usr/local/lib/cmake"
+    local expanded_paths="$homebrew_prefix/lib/cmake /usr/local/lib/cmake"
     
     # Add Cellar paths using find to get actual paths
-    cellar_cmake_paths=$(find /opt/homebrew/Cellar -name "cmake" -type d -path "*/lib/cmake" 2>/dev/null)
+    cellar_cmake_paths=$(find "$homebrew_cellar" -name "cmake" -type d -path "*/lib/cmake" 2>/dev/null)
     if [ -n "$cellar_cmake_paths" ]; then
         expanded_paths="$expanded_paths $cellar_cmake_paths"
     fi
@@ -136,19 +140,29 @@ for dep in $CORE_DEPENDENCIES; do
     fi
 done
 
-# # Update PATH to include brew binaries
+# Detect Homebrew paths dynamically
+HOMEBREW_PREFIX="$(brew --prefix)"
+HOMEBREW_CELLAR="$(brew --cellar)"
+ARCH="$(uname -m)"
+
+echo "Detected Homebrew configuration:"
+echo "  Architecture: $ARCH"
+echo "  Homebrew prefix: $HOMEBREW_PREFIX"
+echo "  Homebrew cellar: $HOMEBREW_CELLAR"
+
+# Update PATH to include brew binaries
 echo "Updating PATH..."
-export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+export PATH="$HOMEBREW_PREFIX/bin:/usr/local/bin:$PATH"
 echo "Updated PATH: $PATH"
 
 # Comprehensive verification
 echo "=== Verifying installations ==="
 
-# For debugging
-echo "Listing /opt/homebrew/lib (2-3 levels deep):"
-find /opt/homebrew/lib -maxdepth 3 -mindepth 1 -print
-echo "printing /usr/local/lib:"
-find /usr/local/lib -maxdepth 3 -mindepth 1 -print
+# For debugging - show library paths for both architectures
+echo "Listing $HOMEBREW_PREFIX/lib (2-3 levels deep):"
+find "$HOMEBREW_PREFIX/lib" -maxdepth 3 -mindepth 1 -print 2>/dev/null || echo "No libraries found in $HOMEBREW_PREFIX/lib"
+echo "Listing /usr/local/lib:"
+find /usr/local/lib -maxdepth 3 -mindepth 1 -print 2>/dev/null || echo "No libraries found in /usr/local/lib"
 
 
 # Verify essential commands
@@ -166,14 +180,14 @@ if verify_command "protoc" "libprotoc"; then
 else
     echo "❌ Protobuf verification failed"
     echo "Searching for protobuf installations..."
-    find /opt/homebrew /usr/local -name "*protobuf*" 2>/dev/null | head -10
+    find "$HOMEBREW_PREFIX" /usr/local -name "*protobuf*" 2>/dev/null | head -10
     exit 1
 fi
 
-# Verify libraries
-verify_library "protobuf" "/opt/homebrew/lib /usr/local/lib /opt/homebrew/Cellar/protobuf/*/lib"
-verify_library "boost" "/opt/homebrew/lib /usr/local/lib /opt/homebrew/Cellar/boost/*/lib"
-verify_library "llvm" "/opt/homebrew/lib /usr/local/lib /opt/homebrew/Cellar/llvm@15/*/lib"
+# Verify libraries using dynamic paths
+verify_library "protobuf" "$HOMEBREW_PREFIX/lib /usr/local/lib $HOMEBREW_CELLAR/protobuf/*/lib"
+verify_library "boost" "$HOMEBREW_PREFIX/lib /usr/local/lib $HOMEBREW_CELLAR/boost/*/lib"
+verify_library "llvm" "$HOMEBREW_PREFIX/lib /usr/local/lib $HOMEBREW_CELLAR/llvm@15/*/lib"
 
 # Verify cmake packages
 verify_cmake_package "protobuf"
