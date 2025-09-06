@@ -144,6 +144,10 @@ echo "Updated PATH: $PATH"
 # Comprehensive verification
 echo "=== Verifying installations ==="
 
+brew install tree
+tree /opt/homebrew/lib
+
+
 # Verify essential commands
 verify_command "protoc" "libprotoc"
 verify_command "cmake" "cmake version"
