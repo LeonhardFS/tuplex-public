@@ -111,7 +111,7 @@ brew uninstall cmake --ignore-dependencies || true
 echo "Installing dependencies..."
 
 # Install core dependencies first
-CORE_DEPENDENCIES="openjdk@11 cmake coreutils zstd zlib libmagic pcre2 gflags yaml-cpp celero wget googletest libdwarf libelf"
+CORE_DEPENDENCIES="openjdk@11 cmake coreutils zstd zlib libmagic pcre2 gflags yaml-cpp celero wget googletest libdwarf libelf protobuf boost"
 
 for dep in $CORE_DEPENDENCIES; do
     echo "Installing $dep..."
@@ -119,23 +119,14 @@ for dep in $CORE_DEPENDENCIES; do
         echo "✅ $dep installed successfully"
     else
         echo "❌ Failed to install $dep"
-        echo "Attempting to reinstall $dep..."
+        echo "Attempting to reinstall $dep with --force ..."
         brew reinstall -f "$dep" || {
             echo "❌ Failed to reinstall $dep, continuing..."
         }
     fi
 done
 
-# Link packages with better error handling
-echo "Linking packages..."
-LINK_PACKAGES="cmake coreutils protobuf zstd zlib libmagic llvm@15 pcre2 gflags yaml-cpp celero wget boost googletest libdwarf libelf abseil"
-
-for pkg in $LINK_PACKAGES; do
-    echo "Linking $pkg..."
-    brew link --overwrite "$pkg" || echo "Warning: Failed to link $pkg"
-done
-
-# Update PATH to include brew binaries
+# # Update PATH to include brew binaries
 echo "Updating PATH..."
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 echo "Updated PATH: $PATH"

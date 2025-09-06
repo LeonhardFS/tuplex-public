@@ -98,8 +98,8 @@ jobs:
           echo "=== Starting macOS dependency installation ==="
           
           # Install dependencies with comprehensive verification
-          bash ./scripts/macos/install_antlr4_cpp_runtime.sh
           bash ./scripts/macos/brew_dependencies.sh
+          bash ./scripts/macos/install_antlr4_cpp_runtime.sh
           bash ./scripts/macos/install_aws-sdk-cpp.sh
           
           # Set up Java environment
