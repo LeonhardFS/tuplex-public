@@ -44,12 +44,16 @@ jobs:
           echo "Current working directory: $(pwd)"
           echo "User: $(whoami)"
           echo "Home directory: $HOME"
+          echo "Brew cellar directory: $(brew --cellar)"
+          echo "Brew prefix directory: $(brew --prefix)"
 
           # Create /opt directory with correct permissions
           USER=$(whoami)
           sudo mkdir -p /opt
           sudo chown $USER /opt
           touch /opt/test
+
+          # Under intel based macs, the cellar dir is /usr/local/Cellar whereas Apple Silicon based macs have it in /opt/homebrew/Cellar
 
           # Install dependencies with comprehensive verification
           PREFIX=/opt bash ./scripts/macos/brew_dependencies.sh
