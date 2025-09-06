@@ -31,8 +31,51 @@ verify_library() {
     local search_paths="$2"
     echo "Verifying $lib_name library..."
     
-    # Disable pipefail for this function since grep -q returns 1 when no matches found
-    set +o pipefail
+    # Expand all paths including wildcards
+    local expanded_paths=""
+    for path in $search_paths; do
+        if [[ "$path" == *"*"* ]]; then
+            # Expand wildcards
+            for expanded_path in $path; do
+                if [ -d "$expanded_path" ]; then
+                    expanded_paths="$expanded_paths $expanded_path"
+                fi
+            done
+        else
+            expanded_paths="$expanded_paths $path"
+        fi
+    done
+    
+    # Search in all expanded paths
+    for path in $expanded_paths; do
+        echo "  Searching in: $path"
+        # Check if directory exists before searching
+        if [ ! -d "$path" ]; then
+            echo "  Directory does not exist, skipping"
+            continue
+        fi
+        # Use a temporary variable to capture output and check length
+        local found_files
+        found_files=$(find "$path" -name "*${lib_name}*" -type f 2>/dev/null)
+        echo "  Found $(echo "$found_files" | wc -l) files"
+        if [ -n "$found_files" ]; then
+            echo "✅ $lib_name found in $path"
+            echo "$found_files" | head -3
+            return 0
+        fi
+    done
+    
+    echo "❌ $lib_name not found in any of: $search_paths"
+    return 1
+}
+
+# Function to verify cmake package
+verify_cmake_package() {
+    local package_name="$1"
+    echo "Verifying CMake package: $package_name"
+    
+    # Search in standard locations and Cellar paths
+    local search_paths="/opt/homebrew/lib/cmake /usr/local/lib/cmake /opt/homebrew/Cellar/*/lib/cmake"
     
     # Expand all paths including wildcards
     local expanded_paths=""
@@ -51,44 +94,22 @@ verify_library() {
     
     # Search in all expanded paths
     for path in $expanded_paths; do
-        if find "$path" -name "*${lib_name}*" -type f 2>/dev/null | grep -q .; then
-            echo "✅ $lib_name found in $path"
-            find "$path" -name "*${lib_name}*" -type f 2>/dev/null | head -3
-            # Re-enable pipefail before returning
-            set -o pipefail
+        # Check if directory exists before searching
+        if [ ! -d "$path" ]; then
+            continue
+        fi
+        # Use a temporary variable to capture output and check length
+        local found_packages
+        found_packages=$(find "$path" -name "*${package_name}*" 2>/dev/null)
+        if [ -n "$found_packages" ]; then
+            echo "✅ CMake package $package_name found"
+            echo "$found_packages" | head -3
             return 0
         fi
     done
     
-    # Re-enable pipefail before returning
-    set -o pipefail
-    echo "❌ $lib_name not found in any of: $search_paths"
+    echo "❌ CMake package $package_name not found"
     return 1
-}
-
-# Function to verify cmake package
-verify_cmake_package() {
-    local package_name="$1"
-    echo "Verifying CMake package: $package_name"
-    
-    # Disable pipefail for this function since grep -q returns 1 when no matches found
-    set +o pipefail
-    
-    # Search in standard locations and Cellar paths
-    local search_paths="/opt/homebrew/lib/cmake /usr/local/lib/cmake /opt/homebrew/Cellar/*/lib/cmake"
-    
-    if find $search_paths -name "*${package_name}*" 2>/dev/null | grep -q .; then
-        echo "✅ CMake package $package_name found"
-        find $search_paths -name "*${package_name}*" 2>/dev/null | head -3
-        # Re-enable pipefail before returning
-        set -o pipefail
-        return 0
-    else
-        # Re-enable pipefail before returning
-        set -o pipefail
-        echo "❌ CMake package $package_name not found"
-        return 1
-    fi
 }
 
 echo "=== Starting macOS dependency installation ==="
@@ -158,7 +179,7 @@ verify_library "protobuf" "/opt/homebrew/lib /usr/local/lib /opt/homebrew/Cellar
 verify_library "boost" "/opt/homebrew/lib /usr/local/lib /opt/homebrew/Cellar/boost/*/lib"
 verify_library "llvm" "/opt/homebrew/lib /usr/local/lib /opt/homebrew/Cellar/llvm@15/*/lib"
 
-# Verify CMake packages
+# Verify cmake packages
 verify_cmake_package "protobuf"
 verify_cmake_package "boost"
 verify_cmake_package "llvm"
