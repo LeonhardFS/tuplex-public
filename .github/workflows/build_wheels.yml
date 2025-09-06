@@ -17,13 +17,18 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        # Build only Python 3.13 for macOS 14
+        # Build only Python 3.13 for macOS 13
         include:
-          - os: macos-14
+          # - os: macos-14
+          #   python-version: "3.13"
+          #   cibw-build: "cp313-macosx_arm64"
+          #   macos-target: "14.0"
+          #   arch: "arm64"
+          - os: macos-13
             python-version: "3.13"
-            cibw-build: "cp313-macosx_arm64"
-            macos-target: "14.0"
-            arch: "arm64"
+            cibw-build: "cp313-macosx_x86_64"
+            macos-target: "13.6"
+            arch: "x86_64"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
