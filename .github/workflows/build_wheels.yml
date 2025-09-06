@@ -94,7 +94,7 @@ jobs:
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
         run: |
-          set -euxo pipefail
+          set -euo pipefail
           echo "=== Starting macOS dependency installation ==="
           
           # Install dependencies with comprehensive verification

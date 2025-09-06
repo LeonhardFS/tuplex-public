@@ -2,7 +2,7 @@
 # This script installs all required dependencies via brew
 # for instructions on how to install brew, visit https://brew.sh/
 
-set -euxo pipefail
+set -euo pipefail
 
 # Function to verify a command exists and is working
 verify_command() {
@@ -101,7 +101,7 @@ echo "Home directory: $HOME"
 
 # Update brew first
 echo "Updating brew..."
-brew update || echo "Warning: brew update failed"
+brew update --quiet || echo "Warning: brew update failed"
 
 # Uninstall conflicting cmake first if it exists from a different tap
 echo "Checking for conflicting cmake installations..."
@@ -111,7 +111,7 @@ brew uninstall cmake --ignore-dependencies || true
 echo "Installing dependencies..."
 
 # Install core dependencies first
-CORE_DEPENDENCIES="openjdk@11 cmake coreutils zstd zlib libmagic pcre2 gflags yaml-cpp celero wget googletest libdwarf libelf protobuf boost"
+CORE_DEPENDENCIES="llvm@15 openjdk@11 cmake coreutils zstd zlib libmagic pcre2 gflags yaml-cpp celero wget googletest libdwarf libelf protobuf boost"
 
 for dep in $CORE_DEPENDENCIES; do
     echo "Installing $dep..."
