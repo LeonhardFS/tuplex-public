@@ -12,3 +12,7 @@ requires = [
     "requests"
 ]
 build-backend = "setuptools.build_meta"
+
+# Ensure cloudpickle and numpy are installed as build-time dependencies when building the wheel.
+[tool.cibuildwheel]
+before-build = "pip install cloudpickle numpy"
