@@ -161,7 +161,6 @@ target_link_libraries(libcore
         protobuf::libprotobuf
         Boost::iostreams
         Boost::thread
-        Boost::system
         Boost::filesystem
 	    util
         ${ZLIB_LIBRARIES}

@@ -133,8 +133,7 @@ set(UTILS_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${AWSSDK_INCLUDE_DIR}
         ${ZLIB_INCLUDE_DIRS}
         ${simdjson_INCLUDE_DIRS})
-set(UTILS_LIBRARIES Boost::filesystem Boost::thread Boost::system
-        Boost::system Boost::iostreams ${ZLIB_LIBRARIES} ${AWSSDK_LINK_LIBRARIES} simdjson::simdjson)
+set(UTILS_LIBRARIES Boost::filesystem Boost::thread Boost::iostreams ${ZLIB_LIBRARIES} ${AWSSDK_LINK_LIBRARIES} simdjson::simdjson)
 
 # set here dependencies, include_targets, link_targets
 set(UTILS_DEPENDENCIES fmt spdlog json simdjson)
