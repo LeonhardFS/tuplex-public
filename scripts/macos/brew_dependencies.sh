@@ -147,6 +147,8 @@ echo "=== Verifying installations ==="
 # For debugging
 echo "Listing /opt/homebrew/lib (2-3 levels deep):"
 find /opt/homebrew/lib -maxdepth 3 -mindepth 1 -print
+echo "printing /usr/local/lib:"
+find /usr/local/lib -maxdepth 3 -mindepth 1 -print
 
 
 # Verify essential commands
