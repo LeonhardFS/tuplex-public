@@ -14,13 +14,13 @@ verify_command() {
         if [ -n "$expected_output" ]; then
             local actual_output
             actual_output=$($cmd --version 2>/dev/null || echo "version check failed")
-            echo "✅ $cmd found: $actual_output"
+            echo "$cmd found: $actual_output"
         else
-            echo "✅ $cmd found"
+            echo "$cmd found"
         fi
         return 0
     else
-        echo "❌ $cmd not found in PATH"
+        echo "ERROR: $cmd not found in PATH"
         return 1
     fi
 }
@@ -59,13 +59,13 @@ verify_library() {
         found_files=$(find "$path" -name "*${lib_name}*" -type f 2>/dev/null)
         echo "  Found $(echo "$found_files" | wc -l) files"
         if [ -n "$found_files" ]; then
-            echo "✅ $lib_name found in $path"
+            echo "$lib_name found in $path"
             echo "$found_files" | head -3
             return 0
         fi
     done
     
-    echo "❌ $lib_name not found in any of: $search_paths"
+    echo "ERROR: $lib_name not found in any of: $search_paths"
     return 1
 }
 
@@ -98,13 +98,13 @@ verify_cmake_package() {
         local found_packages
         found_packages=$(find "$path" -name "*${package_name}*" 2>/dev/null)
         if [ -n "$found_packages" ]; then
-            echo "✅ CMake package $package_name found"
+            echo "CMake package $package_name found"
             echo "$found_packages" | head -3
             return 0
         fi
     done
     
-    echo "❌ CMake package $package_name not found"
+    echo "ERROR: CMake package $package_name not found"
     return 1
 }
 
@@ -132,19 +132,19 @@ for dep in $CORE_DEPENDENCIES; do
     # Check if package is already installed
     if brew list "$dep" &>/dev/null; then
         version=$(brew list --versions "$dep" | awk '{print $2}')
-        echo "✅ $dep $version already installed, skipping."
+        echo "$dep $version already installed, skipping."
     else
         if brew install "$dep" 2>/dev/null; then
             version=$(brew list --versions "$dep" | awk '{print $2}')
-            echo "✅ $dep $version installed successfully."
+            echo "$dep $version installed successfully."
         else
-            echo "❌ Failed to install $dep"
+            echo "ERROR: Failed to install $dep"
             echo "Attempting to reinstall $dep with --force ..."
             if brew reinstall -f "$dep" 2>/dev/null; then
                 version=$(brew list --versions "$dep" | awk '{print $2}')
-                echo "✅ $dep $version reinstalled successfully."
+                echo "$dep $version reinstalled successfully."
             else
-                echo "❌ Failed to reinstall $dep, continuing..."
+                echo "ERROR: Failed to reinstall $dep, continuing..."
             fi
         fi
     fi
@@ -171,7 +171,7 @@ if verify_command "protoc" "libprotoc"; then
     echo "Protobuf include path: $(pkg-config --variable=includedir protobuf 2>/dev/null || echo 'not found')"
     echo "Protobuf lib path: $(pkg-config --variable=libdir protobuf 2>/dev/null || echo 'not found')"
 else
-    echo "❌ Protobuf verification failed"
+    echo "ERROR: Protobuf verification failed"
     echo "Searching for protobuf installations..."
     find "$HOMEBREW_PREFIX" /usr/local -name "*protobuf*" 2>/dev/null | head -10
     exit 1
