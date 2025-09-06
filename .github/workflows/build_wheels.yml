@@ -103,6 +103,12 @@ jobs:
           echo "User: $(whoami)"
           echo "Home directory: $HOME"
 
+          # Create /opt directory with correct permissions
+          USER=$(whoami)
+          sudo mkdir -p /opt
+          sudo chown $USER /opt
+          touch /opt/test
+
           # Install dependencies with comprehensive verification
           PREFIX=/opt bash ./scripts/macos/brew_dependencies.sh
           PREFIX=/opt bash ./scripts/macos/install_antlr4_cpp_runtime.sh
