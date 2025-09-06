@@ -104,18 +104,18 @@ jobs:
           echo "Home directory: $HOME"
 
           # Install dependencies with comprehensive verification
-          bash ./scripts/macos/brew_dependencies.sh
-          bash ./scripts/macos/install_antlr4_cpp_runtime.sh
-          bash ./scripts/macos/install_aws-sdk-cpp.sh
+          PREFIX=/opt bash ./scripts/macos/brew_dependencies.sh
+          PREFIX=/opt bash ./scripts/macos/install_antlr4_cpp_runtime.sh
+          PREFIX=/opt bash ./scripts/macos/install_aws-sdk-cpp.sh
           
           # Set up Java environment
           echo 'export PATH="/usr/local/opt/openjdk@11/bin:$PATH"' >> /Users/runner/.bash_profile
           export PATH="/usr/local/opt/openjdk@11/bin:$PATH"
           
           # Update environment variables for the build
-          export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
-          export PKG_CONFIG_PATH="/opt/homebrew/lib/pkgconfig:/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH"
-          export CMAKE_PREFIX_PATH="/opt/homebrew:/usr/local:$CMAKE_PREFIX_PATH"
+          export PATH="/opt/homebrew/bin:/opt/bin:/usr/local/bin:$PATH"
+          export PKG_CONFIG_PATH="/opt/homebrew/lib/pkgconfig:/opt/lib/pkgconfig:/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH"
+          export CMAKE_PREFIX_PATH="/opt/homebrew:/opt:/usr/local:$CMAKE_PREFIX_PATH"
           
           echo "=== macOS dependency installation completed ==="
 
