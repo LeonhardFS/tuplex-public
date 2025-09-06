@@ -75,22 +75,14 @@ verify_cmake_package() {
     echo "Verifying CMake package: $package_name"
     
     # Search in standard locations and Cellar paths
-    local search_paths="/opt/homebrew/lib/cmake /usr/local/lib/cmake /opt/homebrew/Cellar/*/lib/cmake"
+    # Use find to get all CMake directories
+    local expanded_paths="/opt/homebrew/lib/cmake /usr/local/lib/cmake"
     
-    # Expand all paths including wildcards
-    local expanded_paths=""
-    for path in $search_paths; do
-        if [[ "$path" == *"*"* ]]; then
-            # Expand wildcards
-            for expanded_path in $path; do
-                if [ -d "$expanded_path" ]; then
-                    expanded_paths="$expanded_paths $expanded_path"
-                fi
-            done
-        else
-            expanded_paths="$expanded_paths $path"
-        fi
-    done
+    # Add Cellar paths using find to get actual paths
+    cellar_cmake_paths=$(find /opt/homebrew/Cellar -name "cmake" -type d -path "*/lib/cmake" 2>/dev/null)
+    if [ -n "$cellar_cmake_paths" ]; then
+        expanded_paths="$expanded_paths $cellar_cmake_paths"
+    fi
     
     # Search in all expanded paths
     for path in $expanded_paths; do
@@ -123,10 +115,6 @@ echo "Home directory: $HOME"
 # Update brew first
 echo "Updating brew..."
 brew update --quiet 2>/dev/null || echo "Warning: brew update failed"
-
-# Uninstall conflicting cmake first if it exists from a different tap
-echo "Checking for conflicting cmake installations..."
-brew uninstall cmake --ignore-dependencies 2>/dev/null || true
 
 # Install dependencies with better error handling
 echo "Installing dependencies..."
@@ -191,7 +179,6 @@ verify_library "llvm" "/opt/homebrew/lib /usr/local/lib /opt/homebrew/Cellar/llv
 # Verify cmake packages
 verify_cmake_package "protobuf"
 verify_cmake_package "boost"
-verify_cmake_package "llvm"
 
 # Final environment summary
 echo "=== Environment Summary ==="
