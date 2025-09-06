@@ -76,9 +76,11 @@ brew uninstall cmake --ignore-dependencies || true
 
 # Install dependencies with better error handling
 echo "Installing dependencies..."
-DEPENDENCIES="openjdk@11 cmake coreutils protobuf zstd zlib libmagic llvm@15 pcre2 gflags yaml-cpp celero wget boost googletest libdwarf libelf"
 
-for dep in $DEPENDENCIES; do
+# Install core dependencies first
+CORE_DEPENDENCIES="openjdk@11 cmake coreutils zstd zlib libmagic pcre2 gflags yaml-cpp celero wget googletest libdwarf libelf"
+
+for dep in $CORE_DEPENDENCIES; do
     echo "Installing $dep..."
     if brew install "$dep"; then
         echo "✅ $dep installed successfully"
@@ -90,6 +92,46 @@ for dep in $DEPENDENCIES; do
         }
     fi
 done
+
+# Install boost separately with special handling
+echo "Installing boost..."
+if brew install boost; then
+    echo "✅ boost installed successfully"
+else
+    echo "❌ Failed to install boost"
+    echo "Attempting to reinstall boost..."
+    brew reinstall -f boost || {
+        echo "❌ Failed to reinstall boost, trying alternative approach..."
+        # Try installing boost with specific options
+        brew install boost --build-from-source || {
+            echo "❌ Failed to install boost from source, continuing..."
+        }
+    }
+fi
+
+# Install LLVM separately (can be problematic)
+echo "Installing llvm@15..."
+if brew install llvm@15; then
+    echo "✅ llvm@15 installed successfully"
+else
+    echo "❌ Failed to install llvm@15"
+    echo "Attempting to reinstall llvm@15..."
+    brew reinstall -f llvm@15 || {
+        echo "❌ Failed to reinstall llvm@15, continuing..."
+    }
+fi
+
+# Install protobuf last (often has issues)
+echo "Installing protobuf..."
+if brew install protobuf; then
+    echo "✅ protobuf installed successfully"
+else
+    echo "❌ Failed to install protobuf"
+    echo "Attempting to reinstall protobuf..."
+    brew reinstall -f protobuf || {
+        echo "❌ Failed to reinstall protobuf, continuing..."
+    }
+fi
 
 # Link packages with better error handling
 echo "Linking packages..."
@@ -144,6 +186,24 @@ verify_cmake_package "protobuf"
 verify_cmake_package "boost"
 verify_cmake_package "llvm"
 
+# Special boost verification
+echo "=== Boost verification ==="
+if verify_library "boost" "/opt/homebrew/lib /usr/local/lib"; then
+    echo "Boost library found"
+    # Check for specific boost libraries
+    for lib in libboost_system libboost_filesystem libboost_thread libboost_iostreams; do
+        if find /opt/homebrew/lib /usr/local/lib -name "${lib}*" 2>/dev/null | grep -q .; then
+            echo "✅ $lib found"
+        else
+            echo "⚠️  $lib not found"
+        fi
+    done
+else
+    echo "❌ Boost verification failed"
+    echo "Searching for boost installations..."
+    find /opt/homebrew /usr/local -name "*boost*" 2>/dev/null | head -10
+fi
+
 # Test protobuf compilation
 echo "=== Testing protobuf compilation ==="
 cat > /tmp/test.proto << 'EOF'
@@ -161,6 +221,40 @@ if protoc --cpp_out=/tmp /tmp/test.proto; then
 else
     echo "❌ Protobuf compilation test failed"
     exit 1
+fi
+
+# Test boost compilation
+echo "=== Testing boost compilation ==="
+cat > /tmp/test_boost.cpp << 'EOF'
+#include <boost/version.hpp>
+#include <boost/filesystem.hpp>
+#include <boost/thread.hpp>
+#include <boost/iostreams.hpp>
+#include <iostream>
+
+int main() {
+    std::cout << "Boost version: " << BOOST_VERSION << std::endl;
+    std::cout << "Boost filesystem test: " << boost::filesystem::current_path() << std::endl;
+    std::cout << "Boost test successful" << std::endl;
+    return 0;
+}
+EOF
+
+if g++ -std=c++17 -I/opt/homebrew/include -I/usr/local/include -L/opt/homebrew/lib -L/usr/local/lib -lboost_system -lboost_filesystem -lboost_thread -lboost_iostreams /tmp/test_boost.cpp -o /tmp/test_boost && /tmp/test_boost; then
+    echo "✅ Boost compilation test passed"
+    rm -f /tmp/test_boost.cpp /tmp/test_boost
+else
+    echo "❌ Boost compilation test failed"
+    echo "Trying with different boost libraries..."
+    # Try with just system library
+    if g++ -std=c++17 -I/opt/homebrew/include -I/usr/local/include -L/opt/homebrew/lib -L/usr/local/lib -lboost_system /tmp/test_boost.cpp -o /tmp/test_boost && /tmp/test_boost; then
+        echo "✅ Boost compilation test passed (system library only)"
+        rm -f /tmp/test_boost.cpp /tmp/test_boost
+    else
+        echo "❌ Boost compilation test failed completely"
+        rm -f /tmp/test_boost.cpp /tmp/test_boost
+        exit 1
+    fi
 fi
 
 # Final environment summary
