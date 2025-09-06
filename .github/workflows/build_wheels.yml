@@ -138,7 +138,7 @@ jobs:
           # To avoid issues, simply use 13.6 for now.
           # Fix for Java home from https://github.com/actions/runner-images/discussions/9266.
           # For github actions, $HOME is /Users/runner/
-          CIBW_ENVIRONMENT_MACOS: "ARCH=${{ matrix.arch }} PREFIX=${HOME}/.local MACOSX_DEPLOYMENT_TARGET=${{ matrix.macos-target }} PATH=/opt/homebrew/bin:/usr/local/bin:/usr/local/opt/openjdk@11/bin:$PATH PKG_CONFIG_PATH=/opt/homebrew/lib/pkgconfig:/usr/local/lib/pkgconfig CMAKE_PREFIX_PATH=/opt/homebrew:/usr/local:/Users/runner/.local CMAKE_ARGS='-DCMAKE_PREFIX_PATH=/Users/runner/.local:/opt/homebrew:/usr/local -DCMAKE_MODULE_PATH=/Users/runner/.local/cmake/ -DBUILD_WITH_AWS=ON -DBUILD_WITH_ORC=ON -DProtobuf_ROOT=/opt/homebrew -DBoost_ROOT=/opt/homebrew -DBoost_INCLUDE_DIR=/opt/homebrew/include -DBoost_LIBRARY_DIR=/opt/homebrew/lib' JAVA_HOME=${JAVA_HOME_11_X64:-$JAVA_HOME_11_arm64}"
+          CIBW_ENVIRONMENT_MACOS: "ARCH=${{ matrix.arch }} PREFIX=${HOME}/.local MACOSX_DEPLOYMENT_TARGET=${{ matrix.macos-target }} PATH=/opt/homebrew/bin:/usr/local/bin:/usr/local/opt/openjdk@11/bin:$PATH PKG_CONFIG_PATH=/opt/homebrew/lib/pkgconfig:/usr/local/lib/pkgconfig CMAKE_PREFIX_PATH=/opt/homebrew:/usr/local:/Users/runner/.local CMAKE_ARGS='-DCMAKE_PREFIX_PATH=/Users/runner/.local:/opt/homebrew:/usr/local -DCMAKE_MODULE_PATH=/Users/runner/.local/cmake/ -DBUILD_WITH_AWS=ON -DBUILD_WITH_ORC=ON -DProtobuf_ROOT=/opt/homebrew -DBoost_ROOT=/opt/homebrew -DBoost_INCLUDE_DIR=/opt/homebrew/include -DBoost_LIBRARY_DIR=/opt/homebrew/lib -DLLVM_ROOT=/opt/homebrew/opt/llvm@15' JAVA_HOME=${JAVA_HOME_11_X64:-$JAVA_HOME_11_arm64}"
 
           # ensure build requirements are available during wheel building
           CIBW_BUILD_REQUIRES: "cloudpickle numpy"
