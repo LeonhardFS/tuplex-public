@@ -113,11 +113,6 @@ jobs:
         with:
           python-version: '3.11' 
 
-      - name: Setup protobuf
-        uses: arduino/setup-protoc@v3
-        with:
-          version: "32.x"
-
       - name: Install cibuildwheel
         # by default use the latest version, if there are issues use 3.1.4.
         run: python -m pip install cibuildwheel
