@@ -146,7 +146,7 @@ echo "=== Verifying installations ==="
 
 # For debugging
 brew install tree
-tree /opt/homebrew/lib
+sudo tree /opt/homebrew/lib
 
 # Verify essential commands
 verify_command "protoc" "libprotoc"
