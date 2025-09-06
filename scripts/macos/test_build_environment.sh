@@ -220,12 +220,18 @@ if [ -f "tuplex/CMakeLists.txt" ]; then
     cd /tmp/cmake_test_build
     
     # Test basic CMake configuration
-    if cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_WITH_AWS=ON -DBUILD_WITH_ORC=ON /Users/runner/work/tuplex/tuplex/tuplex 2>/dev/null; then
-        echo "✅ CMake configuration successful"
+    local project_dir
+    project_dir=$(find /Users/runner/work -name "tuplex" -type d 2>/dev/null | head -1 || echo ".")
+    if [ -d "$project_dir/tuplex" ]; then
+        if cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_WITH_AWS=ON -DBUILD_WITH_ORC=ON "$project_dir/tuplex" 2>/dev/null; then
+            echo "✅ CMake configuration successful"
+        else
+            echo "❌ CMake configuration failed"
+            echo "CMake error output:"
+            cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_WITH_AWS=ON -DBUILD_WITH_ORC=ON "$project_dir/tuplex" 2>&1 | head -20
+        fi
     else
-        echo "❌ CMake configuration failed"
-        echo "CMake error output:"
-        cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_WITH_AWS=ON -DBUILD_WITH_ORC=ON /Users/runner/work/tuplex/tuplex/tuplex 2>&1 | head -20
+        echo "⚠️  Project directory not found, skipping CMake test"
     fi
     
     cd - >/dev/null

@@ -62,6 +62,9 @@ echo "=== Starting macOS dependency installation ==="
 echo "Current PATH: $PATH"
 echo "Current architecture: $(uname -m)"
 echo "macOS version: $(sw_vers -productVersion)"
+echo "Current working directory: $(pwd)"
+echo "User: $(whoami)"
+echo "Home directory: $HOME"
 
 # Update brew first
 echo "Updating brew..."

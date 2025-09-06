@@ -38,5 +38,11 @@ cd /tmp &&
   make -j${CPU_CORES} &&
   make install &&
   popd &&
-  cd - || echo ">> error: AWS SDK failed"
+  cd - || {
+    echo ">> error: AWS SDK installation failed"
+    echo "Current directory: $(pwd)"
+    echo "Build directory contents:"
+    ls -la build/ 2>/dev/null || echo "Build directory not found"
+    exit 1
+  }
 
