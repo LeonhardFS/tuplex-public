@@ -135,12 +135,20 @@ endfunction()
 detect_musl(MUSL_DETECTED)
 
 if(MUSL_DETECTED)
+    # Option 1:
     # There's something going wrong on Alpine, all the symbols get optimized away. Therefore manually disable for target.
     message(STATUS "Detected musl libc or Alpine Linux, disabling interprocedural optimization for ${MODULE_NAME}")
     set_target_properties(${MODULE_NAME} PROPERTIES
             INTERPROCEDURAL_OPTIMIZATION OFF
             CXX_VISIBILITY_PRESET hidden
             VISIBILITY_INLINES_HIDDEN ON)
+
+    # Option 2:
+    # The alternative is to have a dedicated file to tell which symbols are required to be preserved during the LTO phase.
+    # Add linker flags to preserve PyInit_ symbols during LTO
+    target_link_options(${MODULE_NAME} PRIVATE
+            "-Wl,--export-dynamic"
+            "-Wl,--retain-symbols-file=${CMAKE_CURRENT_SOURCE_DIR}/preserve_symbols.txt")
 endif()
 
 add_dependencies(${MODULE_NAME} libcore libcodegen)
