@@ -71,11 +71,77 @@ message(STATUS "includes: ${Python3_INCLUDE_DIRS}")
 find_package(Python COMPONENTS Interpreter Development)
 Python3_add_library(${MODULE_NAME} ${SOURCES})
 target_link_libraries(${MODULE_NAME} PUBLIC pybind11::headers)
-set_target_properties(${MODULE_NAME} PROPERTIES
-        INTERPROCEDURAL_OPTIMIZATION ON
-        CXX_VISIBILITY_PRESET hidden
-        VISIBILITY_INLINES_HIDDEN ON)
 
+
+# Macro/function to detect musl libc or Alpine Linux
+function(detect_musl OUT_VAR)
+    include(CheckCXXSourceCompiles)
+    set(_musl_detected OFF)
+
+    # Method 1: Check for musl-specific functions that don't exist in glibc
+    check_cxx_source_compiles("
+        #include <stdio.h>
+        #include <stdlib.h>
+        int main() {
+            // musl has __progname, glibc doesn't
+            extern char *__progname;
+            return 0;
+        }
+    " _musl_progname_detected)
+
+    if(_musl_progname_detected)
+        set(_musl_detected ON)
+    else()
+        # Method 2: Check for musl-specific header behavior
+        check_cxx_source_compiles("
+            #include <sys/types.h>
+            #include <sys/socket.h>
+            int main() {
+                // musl defines MSG_NOSIGNAL, glibc doesn't always
+                int flag = MSG_NOSIGNAL;
+                return 0;
+            }
+        " _musl_socket_detected)
+
+        if(_musl_socket_detected)
+            set(_musl_detected ON)
+        else()
+            # Method 3: Check for Alpine Linux specific behavior
+            check_cxx_source_compiles("
+                #include <features.h>
+                int main() {
+                    // Check if we're on Alpine/musl by looking for specific defines
+                    #ifdef __GLIBC__
+                    #error glibc detected
+                    #endif
+                    return 0;
+                }
+            " _musl_features_detected)
+
+            if(_musl_features_detected)
+                set(_musl_detected ON)
+            endif()
+        endif()
+    endif()
+
+    if(APPLE)
+        set(_musl_detected OFF)
+    endif()
+
+    set(${OUT_VAR} ${_musl_detected} PARENT_SCOPE)
+endfunction()
+
+# Detect whether muslc is being used.
+detect_musl(MUSL_DETECTED)
+
+if(MUSL_DETECTED)
+    # There's something going wrong on Alpine, all the symbols get optimized away. Therefore manually disable for target.
+    message(STATUS "Detected musl libc or Alpine Linux, disabling interprocedural optimization for ${MODULE_NAME}")
+    set_target_properties(${MODULE_NAME} PROPERTIES
+            INTERPROCEDURAL_OPTIMIZATION OFF
+            CXX_VISIBILITY_PRESET hidden
+            VISIBILITY_INLINES_HIDDEN ON)
+endif()
 
 add_dependencies(${MODULE_NAME} libcore libcodegen)
 target_include_directories(${MODULE_NAME} PUBLIC
