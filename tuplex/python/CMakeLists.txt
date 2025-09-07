@@ -60,11 +60,23 @@ message(STATUS "includes: ${Python3_INCLUDE_DIRS}")
 #include(${pybind11_SOURCE_DIR}/tools/pybind11Tools.cmake)
 #include(${pybind11_SOURCE_DIR}/tools/pybind11NewTools.cmake)
 
+## Method 1:
+## cf. https://pybind11.readthedocs.io/en/stable/cmake/index.html
+#pybind11_add_module(${MODULE_NAME} ${SOURCES})
+#set(PYMODULE "PYBIND11_MODULE(${MODULE_NAME}, m)")
+#target_compile_definitions(${MODULE_NAME} PRIVATE PYMODULE=${PYMODULE})
 
-# cf. https://pybind11.readthedocs.io/en/stable/cmake/index.html
-pybind11_add_module(${MODULE_NAME} ${SOURCES})
-set(PYMODULE "PYBIND11_MODULE(${MODULE_NAME}, m)")
-target_compile_definitions(${MODULE_NAME} PRIVATE PYMODULE=${PYMODULE})
+# Method 2:
+# Python method:
+find_package(Python COMPONENTS Interpreter Development)
+Python3_add_library(${MODULE_NAME} ${SOURCES})
+target_link_libraries(${MODULE_NAME} PUBLIC pybind11::headers)
+set_target_properties(${MODULE_NAME} PROPERTIES
+        INTERPROCEDURAL_OPTIMIZATION ON
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN ON)
+
+
 add_dependencies(${MODULE_NAME} libcore libcodegen)
 target_include_directories(${MODULE_NAME} PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
