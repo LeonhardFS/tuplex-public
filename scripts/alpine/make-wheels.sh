@@ -45,20 +45,21 @@ docker build -t tuplex/alpine-wheel-builder -f "$SCRIPT_DIR/builder/Dockerfile" 
 echo -e "${GREEN}✓ tuplex/alpine-wheel-builder Docker image built successfully.${NC}"
 
 # Prepare Docker mount options
-# Exclude build/ and other temp files using .dockerignore if present, otherwise use :ro as fallback
+# Mount the entire project root to /code so setup.py and other files are accessible
+# Note: Must be writable as setup.py needs to create directories during build
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")/.."
-MOUNT_OPTS="-v $PROJECT_ROOT/tuplex:/code/tuplex:ro"
+MOUNT_OPTS="-v $PROJECT_ROOT:/code"
 
 echo "Launching tuplex/alpine-wheel-builder container with tuplex/ mounted..."
 
 # Ensure wheelhouse/ exists in the project root directory
-if [ ! -d "$PROJECT_ROOT/wheelhouse" ]; then
+if [ ! -d "$SCRIPT_DIR/wheelhouse" ]; then
     echo "Creating wheelhouse/ directory for output wheels..."
-    mkdir -p "$PROJECT_ROOT/wheelhouse"
+    mkdir -p "$SCRIPT_DIR/wheelhouse"
 fi
 
 # Add wheelhouse mount to Docker options
-MOUNT_OPTS="$MOUNT_OPTS -v $PROJECT_ROOT/wheelhouse:/wheelhouse"
+MOUNT_OPTS="$MOUNT_OPTS -v $SCRIPT_DIR/wheelhouse:/wheelhouse"
 
 
 # You can add --rm to auto-remove the container after exit
