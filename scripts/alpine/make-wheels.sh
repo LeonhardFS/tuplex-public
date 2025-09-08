@@ -6,6 +6,9 @@
 
 set -e
 
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -32,6 +35,37 @@ fi
 
 echo -e "${GREEN}✓ tuplex/musl Docker image found locally.${NC}"
 echo "Proceeding with wheel building..."
+
+
+
+# Build the tuplex/alpine-wheel-builder image based on scripts/alpine/builder/Dockerfile
+echo "Building tuplex/alpine-wheel-builder Docker image..."
+docker build -t tuplex/alpine-wheel-builder -f "$SCRIPT_DIR/builder/Dockerfile" "$SCRIPT_DIR/builder"
+
+echo -e "${GREEN}✓ tuplex/alpine-wheel-builder Docker image built successfully.${NC}"
+
+# Prepare Docker mount options
+# Exclude build/ and other temp files using .dockerignore if present, otherwise use :ro as fallback
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")/.."
+MOUNT_OPTS="-v $PROJECT_ROOT/tuplex:/code/tuplex:ro"
+
+echo "Launching tuplex/alpine-wheel-builder container with tuplex/ mounted..."
+
+# Ensure wheelhouse/ exists in the project root directory
+if [ ! -d "$PROJECT_ROOT/wheelhouse" ]; then
+    echo "Creating wheelhouse/ directory for output wheels..."
+    mkdir -p "$PROJECT_ROOT/wheelhouse"
+fi
+
+# Add wheelhouse mount to Docker options
+MOUNT_OPTS="$MOUNT_OPTS -v $PROJECT_ROOT/wheelhouse:/wheelhouse"
+
+
+# You can add --rm to auto-remove the container after exit
+docker run -it --rm \
+    $MOUNT_OPTS \
+    --name tuplex-alpine-wheel-builder \
+    tuplex/alpine-wheel-builder
 
 # TODO: Add the actual wheel building logic here
 echo "Wheel building functionality to be implemented..."
