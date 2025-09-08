@@ -144,11 +144,15 @@ if(MUSL_DETECTED)
     #         VISIBILITY_INLINES_HIDDEN ON)
 
     # Option 2:
-    # The alternative is to have a dedicated file to tell which symbols are required to be preserved during the LTO phase.
-    # Add linker flags to preserve PyInit_ symbols during LTO
+    # Pass the right linker flags for Alpine.
+    # If there are still missing symbols, can also add an option
+    #  "-Wl,--retain-symbols-file=${CMAKE_CURRENT_SOURCE_DIR}/preserve_symbols.txt"
+    # And have a file with a list of symbols to preserve.
+    # E.g.,
+    # PyInit_
+    # ...
     target_link_options(${MODULE_NAME} PRIVATE
             "-Wl,--export-dynamic"
-            "-Wl,--retain-symbols-file=${CMAKE_CURRENT_SOURCE_DIR}/preserve_symbols.txt"
             "-Wl,--allow-shlib-undefined")
 endif()
 
