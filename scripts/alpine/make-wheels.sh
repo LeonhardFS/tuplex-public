@@ -56,7 +56,7 @@ echo -e "${GREEN}✓ tuplex/alpine-wheel-builder Docker image built successfully
 # Mount the entire project root to /code so setup.py and other files are accessible
 # Note: Must be writable as setup.py needs to create directories during build
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")/.."
-MOUNT_OPTS="-v $PROJECT_ROOT:/code"
+MOUNT_OPTS="-v $PROJECT_ROOT:/code:ro"
 
 echo "Launching tuplex/alpine-wheel-builder container with tuplex/ mounted..."
 
