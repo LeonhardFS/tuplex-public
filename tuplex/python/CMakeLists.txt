@@ -135,6 +135,8 @@ endfunction()
 detect_musl(MUSL_DETECTED)
 
 if(MUSL_DETECTED)
+    message(STATUS "muslc detected, adjusting linker flags")
+    
     # # Option 1:
     # # There's something going wrong on Alpine, all the symbols get optimized away. Therefore manually disable for target.
     # message(STATUS "Detected musl libc or Alpine Linux, disabling interprocedural optimization for ${MODULE_NAME}")
