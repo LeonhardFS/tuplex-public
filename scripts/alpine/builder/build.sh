@@ -36,7 +36,7 @@ fi
 
 if [ "$TEST_ONLY" = false ]; then
     echo "Installing required dependencies..."
-    $PIP install setuptools wheel cloudpickle numpy attrs dill pluggy py pygments six wcwidth astor prompt_toolkit jedi PyYAML psutil pymongo iso8601
+    $PIP install setuptools wheel cloudpickle numpy attrs dill pluggy py pygments six wcwidth astor prompt_toolkit jedi PyYAML psutil iso8601
 
     export LLVM_ROOT_DIR="/opt/llvm-16.0.6"
     export LLVM_CONFIG="/opt/llvm-16.0.6/bin/llvm-config"
@@ -71,7 +71,9 @@ if [ "$TEST_ONLY" = false ]; then
 
     # Build the wheel using setup.py
     echo "Building wheel with setup.py..."
-    CMAKE_ARGS="$CMAKE_ARGS" $PYTHON setup.py bdist_wheel
+    # Exclude history server from the wheel to reduce size and dependencies
+    echo "Setting TUPLEX_INCLUDE_HISTORYSERVER=False to exclude history server"
+    TUPLEX_INCLUDE_HISTORYSERVER=False CMAKE_ARGS="$CMAKE_ARGS" $PYTHON setup.py bdist_wheel
 
     # Find the built wheel
     WHEEL_FILE=$(find dist/ -name "*.whl" | head -1)
@@ -82,6 +84,44 @@ if [ "$TEST_ONLY" = false ]; then
     fi
 
     echo "Built wheel: $WHEEL_FILE"
+
+    check_pyinit_tuplex_symbol() {
+        # Check that the symbol PyInit_tuplex is present in the tuplex .so
+        echo "Checking for PyInit_tuplex symbol in the built .so..."
+
+        # Find the .so file in the wheel
+        local so_file
+        so_file=$(unzip -l "$WHEEL_FILE" | grep '\.so$' | awk '{print $4}' | head -1)
+        if [ -z "$so_file" ]; then
+            echo "Error: No .so file found in the wheel."
+            exit 1
+        fi
+
+        # Extract the .so file to a temp location
+        local tmp_so_dir
+        tmp_so_dir=$(mktemp -d)
+        unzip -j "$WHEEL_FILE" "$so_file" -d "$tmp_so_dir" >/dev/null
+
+        local so_path="$tmp_so_dir/$(basename "$so_file")"
+
+        if [ ! -f "$so_path" ]; then
+            echo "Error: Failed to extract .so file from wheel."
+            exit 1
+        fi
+
+        # Check for PyInit_tuplex symbol
+        if ! nm -D "$so_path" 2>/dev/null | grep -q 'PyInit_tuplex'; then
+            echo "Error: PyInit_tuplex symbol not found in $so_path"
+            exit 1
+        else
+            echo "✓ PyInit_tuplex symbol found in $so_path"
+        fi
+
+        # Clean up temp .so extraction directory
+        rm -rf "$tmp_so_dir"
+    }
+
+    check_pyinit_tuplex_symbol
 
     # Use auditwheel to repair/delocate the wheel
     echo "Repairing wheel with auditwheel..."
