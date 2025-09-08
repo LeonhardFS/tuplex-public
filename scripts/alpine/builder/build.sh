@@ -22,17 +22,21 @@ PIP="/opt/_internal/cpython-3.11.13/bin/pip"
 echo "Using Python: $PYTHON"
 echo "Python version: $($PYTHON --version)"
 
-# Check if the project root is mounted
-if [ ! -f "/code/setup.py" ]; then
-    echo "Error: /code/setup.py not found. Make sure the project root is mounted."
-    exit 1
-fi
+    # Check if the project root is mounted
+    if [ ! -f "/code/setup.py" ]; then
+        echo "Error: /code/setup.py not found. Make sure the project root is mounted."
+        exit 1
+    fi
 
-# Check if wheelhouse directory is mounted
-if [ ! -d "/wheelhouse" ]; then
-    echo "Error: /wheelhouse directory not found. Make sure the wheelhouse is mounted."
-    exit 1
-fi
+    # Check if wheelhouse directory is mounted
+    if [ ! -d "/wheelhouse" ]; then
+        echo "Error: /wheelhouse directory not found. Make sure the wheelhouse is mounted."
+        exit 1
+    fi
+
+    # Create a writable build directory in /work (since /code is read-only)
+    echo "Setting up writable build directory in /work..."
+    mkdir -p /work/build
 
 if [ "$TEST_ONLY" = false ]; then
     echo "Installing required dependencies..."
@@ -43,9 +47,6 @@ if [ "$TEST_ONLY" = false ]; then
     export PATH="/opt/llvm-16.0.6/bin:$PATH"
 
     echo "Building wheel for tuplex..."
-
-    # Change to the tuplex source directory
-    cd /code
 
     export CMAKE_ARGS="
        -DCMAKE_BUILD_TYPE=RelWithDebInfo \
@@ -61,7 +62,6 @@ if [ "$TEST_ONLY" = false ]; then
        -DCMAKE_SHARED_LINKER_FLAGS=\"-Wl,--export-dynamic -Wl,--no-as-needed\" \
        -DLLVM_ROOT=/opt/llvm-16.0.6 \
        -DLLVM_ROOT_DIR=/opt/llvm-16.0.6 \
-       
        -DLLVM_CONFIG=/opt/llvm-16.0.6/bin/llvm-config \
        -DPython3_EXECUTABLE=/opt/_internal/cpython-3.11.13/bin/python3.11 \
        -DPython3_ROOT_DIR=/opt/_internal/cpython-3.11.13 \
@@ -77,7 +77,12 @@ if [ "$TEST_ONLY" = false ]; then
     echo "Setting TUPLEX_INCLUDE_HISTORYSERVER=False to exclude history server"
     export TUPLEX_INCLUDE_HISTORYSERVER=False
     echo "Environment variable TUPLEX_INCLUDE_HISTORYSERVER is set to: $TUPLEX_INCLUDE_HISTORYSERVER"
-    CMAKE_ARGS="$CMAKE_ARGS" $PYTHON setup.py bdist_wheel
+    
+    # Change to the source directory and build with writable build directory
+    cd /code
+    export TMPDIR=/work/tmp
+    mkdir -p /work/tmp
+    CMAKE_ARGS="$CMAKE_ARGS" $PYTHON setup.py build --build-base /work/build bdist_wheel
 
     # Find the built wheel
     WHEEL_FILE=$(find dist/ -name "*.whl" | head -1)
