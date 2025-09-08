@@ -3,8 +3,16 @@
 # Script to build Tuplex wheels for musl-based Alpine Linux images
 # This script checks for the required tuplex/musl Docker image and provides
 # instructions if it doesn't exist.
+# Usage: make-wheels.sh [--test-only]
 
 set -e
+
+# Check for --test-only parameter
+TEST_ONLY=false
+if [ "$1" = "--test-only" ]; then
+    TEST_ONLY=true
+    echo "Test-only mode: will test existing wheel without rebuilding"
+fi
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -63,10 +71,18 @@ MOUNT_OPTS="$MOUNT_OPTS -v $SCRIPT_DIR/wheelhouse:/wheelhouse"
 
 
 # You can add --rm to auto-remove the container after exit
-docker run -it --rm \
-    $MOUNT_OPTS \
-    --name tuplex-alpine-wheel-builder \
-    tuplex/alpine-wheel-builder
+if [ "$TEST_ONLY" = true ]; then
+    echo "Running container in test-only mode..."
+    docker run -it --rm \
+        $MOUNT_OPTS \
+        --name tuplex-alpine-wheel-builder \
+        tuplex/alpine-wheel-builder --test-only
+else
+    echo "Running container in build mode..."
+    docker run -it --rm \
+        $MOUNT_OPTS \
+        --name tuplex-alpine-wheel-builder \
+        tuplex/alpine-wheel-builder
+fi
 
-# TODO: Add the actual wheel building logic here
-echo "Wheel building functionality to be implemented..."
+echo "Container execution completed."

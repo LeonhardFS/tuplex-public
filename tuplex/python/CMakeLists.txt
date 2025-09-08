@@ -144,15 +144,11 @@ if(MUSL_DETECTED)
     #         VISIBILITY_INLINES_HIDDEN ON)
 
     # Option 2:
-    # Pass the right linker flags for Alpine.
-    # If there are still missing symbols, can also add an option
-    #  "-Wl,--retain-symbols-file=${CMAKE_CURRENT_SOURCE_DIR}/preserve_symbols.txt"
-    # And have a file with a list of symbols to preserve.
-    # E.g.,
-    # PyInit_
-    # ...
+    # Pass the right linker flags for Alpine. In addition, need to have a list of symbols to preserve as
+    # they need to be present when using the C-extension module.
     target_link_options(${MODULE_NAME} PRIVATE
             "-Wl,--export-dynamic"
+            "-Wl,--retain-symbols-file=${CMAKE_CURRENT_SOURCE_DIR}/preserve_symbols.txt"
             "-Wl,--allow-shlib-undefined")
 endif()
 

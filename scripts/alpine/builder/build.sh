@@ -2,8 +2,16 @@
 
 # Alpine wheel builder script
 # This script will be executed when the container starts
+# Usage: build.sh [--test-only]
 
 set -e
+
+# Check for --test-only parameter
+TEST_ONLY=false
+if [ "$1" = "--test-only" ]; then
+    TEST_ONLY=true
+    echo "Test-only mode: will skip wheel building and test existing wheel"
+fi
 
 echo "Alpine wheel builder container started"
 
@@ -26,70 +34,121 @@ if [ ! -d "/wheelhouse" ]; then
     exit 1
 fi
 
-echo "Installing required dependencies..."
-$PIP install setuptools wheel cloudpickle numpy attrs dill pluggy py pygments six wcwidth astor prompt_toolkit jedi PyYAML psutil pymongo iso8601
+if [ "$TEST_ONLY" = false ]; then
+    echo "Installing required dependencies..."
+    $PIP install setuptools wheel cloudpickle numpy attrs dill pluggy py pygments six wcwidth astor prompt_toolkit jedi PyYAML psutil pymongo iso8601
 
-export LLVM_ROOT_DIR="/opt/llvm-16.0.6"
-export LLVM_CONFIG="/opt/llvm-16.0.6/bin/llvm-config"
-export PATH="/opt/llvm-16.0.6/bin:$PATH"
+    export LLVM_ROOT_DIR="/opt/llvm-16.0.6"
+    export LLVM_CONFIG="/opt/llvm-16.0.6/bin/llvm-config"
+    export PATH="/opt/llvm-16.0.6/bin:$PATH"
 
+    echo "Building wheel for tuplex..."
 
-echo "Building wheel for tuplex..."
+    # Change to the tuplex source directory
+    cd /code
 
-# Change to the tuplex source directory
-cd /code
+    export CMAKE_ARGS="
+       -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+       -DBUILD_WITH_AWS=OFF \
+       -DBUILD_WITH_ORC=OFF \
+       -DBUILD_SHARED_LIBS=ON \
+       -DSKIP_AWS_TESTS=ON \
+       -DBUILD_FOR_CI=ON \
+       -DBUILD_TESTING=OFF \
+       -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
+       -DCMAKE_CXX_FLAGS=\"-O3 -DNDEBUG\" \
+       -DCMAKE_C_FLAGS=\"-O3 -DNDEBUG\" \
+       -DLLVM_ROOT=/opt/llvm-16.0.6 \
+       -DLLVM_ROOT_DIR=/opt/llvm-16.0.6 \
+       -DLLVM_CONFIG=/opt/llvm-16.0.6/bin/llvm-config \
+       -DPython3_EXECUTABLE=/opt/_internal/cpython-3.11.13/bin/python3.11 \
+       -DPython3_ROOT_DIR=/opt/_internal/cpython-3.11.13 \
+       -DPython3_LIBRARY=/opt/_internal/cpython-3.11.13/lib/libpython3.11.so \
+       -DPython3_INCLUDE_DIR=/opt/python/cp311-cp311/include/python3.11 \
+       -DPYTHON3_VERSION=3.11 \
+       -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+    "
 
-export CMAKE_ARGS="
-   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-   -DBUILD_WITH_AWS=OFF \
-   -DBUILD_WITH_ORC=OFF \
-   -DBUILD_SHARED_LIBS=ON \
-   -DSKIP_AWS_TESTS=ON \
-   -DBUILD_FOR_CI=ON \
-   -DBUILD_TESTING=OFF \
-   -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
-   -DCMAKE_CXX_FLAGS=\"-O3 -DNDEBUG\" \
-   -DCMAKE_C_FLAGS=\"-O3 -DNDEBUG\" \
-   -DLLVM_ROOT=/opt/llvm-16.0.6 \
-   -DLLVM_ROOT_DIR=/opt/llvm-16.0.6 \
-   -DLLVM_CONFIG=/opt/llvm-16.0.6/bin/llvm-config \
-   -DPython3_EXECUTABLE=/opt/_internal/cpython-3.11.13/bin/python3.11 \
-   -DPython3_ROOT_DIR=/opt/_internal/cpython-3.11.13 \
-   -DPython3_LIBRARY=/opt/_internal/cpython-3.11.13/lib/libpython3.11.so \
-   -DPython3_INCLUDE_DIR=/opt/python/cp311-cp311/include/python3.11 \
-   -DPYTHON3_VERSION=3.11 \
-   -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-"
+    # Build the wheel using setup.py
+    echo "Building wheel with setup.py..."
+    CMAKE_ARGS="$CMAKE_ARGS" $PYTHON setup.py bdist_wheel
 
+    # Find the built wheel
+    WHEEL_FILE=$(find dist/ -name "*.whl" | head -1)
 
+    if [ -z "$WHEEL_FILE" ]; then
+        echo "Error: No wheel file found in dist/ directory"
+        exit 1
+    fi
 
-# Build the wheel using setup.py
-echo "Building wheel with setup.py..."
-CMAKE_ARGS="$CMAKE_ARGS" $PYTHON setup.py bdist_wheel
+    echo "Built wheel: $WHEEL_FILE"
 
-# Find the built wheel
-WHEEL_FILE=$(find dist/ -name "*.whl" | head -1)
+    # Use auditwheel to repair/delocate the wheel
+    echo "Repairing wheel with auditwheel..."
+    $PIP install auditwheel
+    auditwheel repair "$WHEEL_FILE" -w /wheelhouse
 
-if [ -z "$WHEEL_FILE" ]; then
-    echo "Error: No wheel file found in dist/ directory"
-    exit 1
+    # Find the repaired wheel
+    REPAIRED_WHEEL=$(find /wheelhouse -name "*.whl" | head -1)
+
+    if [ -z "$REPAIRED_WHEEL" ]; then
+        echo "Error: No repaired wheel found in /wheelhouse"
+        exit 1
+    fi
+
+    echo "Successfully built and repaired wheel: $REPAIRED_WHEEL"
+    echo "Wheel stored in: /wheelhouse"
+else
+    echo "Skipping wheel building (test-only mode)"
+    # Find the existing repaired wheel
+    REPAIRED_WHEEL=$(find /wheelhouse -name "*.whl" | head -1)
+    
+    if [ -z "$REPAIRED_WHEEL" ]; then
+        echo "Error: No wheel file found in /wheelhouse for testing"
+        exit 1
+    fi
+    
+    echo "Found existing wheel for testing: $REPAIRED_WHEEL"
 fi
 
-echo "Built wheel: $WHEEL_FILE"
 
-# Use auditwheel to repair/delocate the wheel
-echo "Repairing wheel with auditwheel..."
-$PIP install auditwheel
-auditwheel repair "$WHEEL_FILE" -w /wheelhouse
 
-# Find the repaired wheel
-REPAIRED_WHEEL=$(find /wheelhouse -name "*.whl" | head -1)
 
-if [ -z "$REPAIRED_WHEEL" ]; then
-    echo "Error: No repaired wheel found in /wheelhouse"
-    exit 1
+echo "=============================="
+echo "Testing built wheel in a fresh virtual environment..."
+echo "=============================="
+
+# Create a temporary directory for the venv
+VENV_DIR=$(mktemp -d)
+echo "Created temporary venv directory: $VENV_DIR"
+
+# Create a new virtual environment
+$PYTHON -m venv "$VENV_DIR/venv"
+source "$VENV_DIR/venv/bin/activate"
+
+# Upgrade pip and install wheel
+pip install --upgrade pip wheel
+
+# Install the repaired wheel
+pip install "$REPAIRED_WHEEL"
+
+# Install test dependencies (pytest, etc.)
+pip install pytest
+
+# Run the tests in tuplex/python/tests
+echo "Running tests in tuplex/python/tests..."
+pytest /code/tuplex/python/tests
+
+TEST_EXIT_CODE=$?
+
+# Deactivate and remove the virtual environment
+deactivate
+rm -rf "$VENV_DIR"
+
+if [ $TEST_EXIT_CODE -eq 0 ]; then
+    echo "All tests passed successfully!"
+else
+    echo "Some tests failed. Exit code: $TEST_EXIT_CODE"
+    exit $TEST_EXIT_CODE
 fi
-
-echo "Successfully built and repaired wheel: $REPAIRED_WHEEL"
-echo "Wheel stored in: /wheelhouse"
 
