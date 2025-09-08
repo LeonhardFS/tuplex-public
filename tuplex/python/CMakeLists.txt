@@ -60,18 +60,11 @@ message(STATUS "includes: ${Python3_INCLUDE_DIRS}")
 #include(${pybind11_SOURCE_DIR}/tools/pybind11Tools.cmake)
 #include(${pybind11_SOURCE_DIR}/tools/pybind11NewTools.cmake)
 
-## Method 1:
-## cf. https://pybind11.readthedocs.io/en/stable/cmake/index.html
-#pybind11_add_module(${MODULE_NAME} ${SOURCES})
-#set(PYMODULE "PYBIND11_MODULE(${MODULE_NAME}, m)")
-#target_compile_definitions(${MODULE_NAME} PRIVATE PYMODULE=${PYMODULE})
-
-# Method 2:
-# Python method:
-find_package(Python COMPONENTS Interpreter Development)
-Python3_add_library(${MODULE_NAME} ${SOURCES})
-target_link_libraries(${MODULE_NAME} PUBLIC pybind11::headers)
-
+# Method 1:
+# cf. https://pybind11.readthedocs.io/en/stable/cmake/index.html
+pybind11_add_module(${MODULE_NAME} ${SOURCES})
+set(PYMODULE "PYBIND11_MODULE(${MODULE_NAME}, m)")
+target_compile_definitions(${MODULE_NAME} PRIVATE PYMODULE=${PYMODULE})
 
 # Macro/function to detect musl libc or Alpine Linux
 function(detect_musl OUT_VAR)
@@ -136,7 +129,7 @@ detect_musl(MUSL_DETECTED)
 
 if(MUSL_DETECTED)
     message(STATUS "muslc detected, adjusting linker flags")
-    
+
     # # Option 1:
     # # There's something going wrong on Alpine, all the symbols get optimized away. Therefore manually disable for target.
     # message(STATUS "Detected musl libc or Alpine Linux, disabling interprocedural optimization for ${MODULE_NAME}")

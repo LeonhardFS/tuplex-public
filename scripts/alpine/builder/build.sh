@@ -58,8 +58,10 @@ if [ "$TEST_ONLY" = false ]; then
        -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
        -DCMAKE_CXX_FLAGS=\"-O3 -DNDEBUG\" \
        -DCMAKE_C_FLAGS=\"-O3 -DNDEBUG\" \
+       -DCMAKE_SHARED_LINKER_FLAGS=\"-Wl,--export-dynamic -Wl,--no-as-needed\" \
        -DLLVM_ROOT=/opt/llvm-16.0.6 \
        -DLLVM_ROOT_DIR=/opt/llvm-16.0.6 \
+       
        -DLLVM_CONFIG=/opt/llvm-16.0.6/bin/llvm-config \
        -DPython3_EXECUTABLE=/opt/_internal/cpython-3.11.13/bin/python3.11 \
        -DPython3_ROOT_DIR=/opt/_internal/cpython-3.11.13 \
@@ -73,7 +75,9 @@ if [ "$TEST_ONLY" = false ]; then
     echo "Building wheel with setup.py..."
     # Exclude history server from the wheel to reduce size and dependencies
     echo "Setting TUPLEX_INCLUDE_HISTORYSERVER=False to exclude history server"
-    TUPLEX_INCLUDE_HISTORYSERVER=False CMAKE_ARGS="$CMAKE_ARGS" $PYTHON setup.py bdist_wheel
+    export TUPLEX_INCLUDE_HISTORYSERVER=False
+    echo "Environment variable TUPLEX_INCLUDE_HISTORYSERVER is set to: $TUPLEX_INCLUDE_HISTORYSERVER"
+    CMAKE_ARGS="$CMAKE_ARGS" $PYTHON setup.py bdist_wheel
 
     # Find the built wheel
     WHEEL_FILE=$(find dist/ -name "*.whl" | head -1)
