@@ -1,0 +1,37 @@
+#!/bin/bash
+
+# Script to build Tuplex wheels for musl-based Alpine Linux images
+# This script checks for the required tuplex/musl Docker image and provides
+# instructions if it doesn't exist.
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+echo "Checking for tuplex/musl Docker image..."
+
+# Check if the tuplex/musl image exists locally
+if ! docker image inspect tuplex/musl >/dev/null 2>&1; then
+    echo -e "${RED}Error: tuplex/musl Docker image not found locally.${NC}"
+    echo ""
+    echo -e "${YELLOW}To build the required tuplex/musl image, please run:${NC}"
+    echo ""
+    echo "  docker build -t tuplex/musl -f scripts/docker/musllinux/Dockerfile ."
+    echo ""
+    echo "This will create the musl-based image needed for building Alpine-compatible wheels."
+    echo ""
+    echo -e "${YELLOW}Note:${NC} The build process may take some time as it needs to compile"
+    echo "Tuplex and all its dependencies for the musl libc environment."
+    echo ""
+    exit 1
+fi
+
+echo -e "${GREEN}✓ tuplex/musl Docker image found locally.${NC}"
+echo "Proceeding with wheel building..."
+
+# TODO: Add the actual wheel building logic here
+echo "Wheel building functionality to be implemented..."
