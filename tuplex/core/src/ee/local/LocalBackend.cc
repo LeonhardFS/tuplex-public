@@ -864,6 +864,11 @@ namespace tuplex {
             return;
         }
 
+        // Processing in pure python mode (slowest, basically compiler deactivated)?
+        if (_options.PURE_PYTHON_MODE()) {
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " python mode not implemented");
+        }
+
         // HACK (for testing, perform hyper specialization on stage)
         if(_options.USE_EXPERIMENTAL_HYPERSPECIALIZATION() && !tstage->input_files().empty()) {
             auto files = tstage->input_files();

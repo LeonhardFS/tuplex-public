@@ -92,3 +92,40 @@ TEST_F(TupleAccess, MultiColumnKeyIndex) {
     EXPECT_EQ(v3[0], Row("hello_str"));
     EXPECT_EQ(v3[1], Row("tux_str"));
 }
+
+TEST_F(TupleAccess, PythonCodePath) {
+    // Check that the python code path works for a few special cases.
+    using namespace tuplex;
+    using namespace std;
+
+    // Test cases:
+    // input_row, expected_result, map UDF.
+    vector<tuple<Row, Row, string>> test_cases{{Row("hello world"), Row("Hello world"), "lambda x: x[0].upper() + x[1:].lower()"},
+    {Row(Tuple(42)), Row(42), "lambda t: t[0]"},
+    {Row(10), Row(false), "lambda x: x > 42"}};
+
+    auto opt = microTestOptions();
+    opt.set("tuplex.useInterpreterOnly", "True"); // <-- only python interpreter.
+    Context ctx(opt);
+
+    for (const auto& test_case : test_cases) {
+        // Process with pure python.
+        auto input_row = std::get<0>(test_case);
+        auto expected_output_row = std::get<1>(test_case);
+        auto udf_code = std::get<2>(test_case);
+        auto& ds = ctx.parallelize({input_row}).map(udf_code);
+        auto ans = ds.collectAsVector();
+
+        // Print test-case info for easy debugging.
+        stringstream ss;
+        ss<<" -- test: "<<udf_code<<"\n";
+        ss<<"\ttyped to return: "<<ds.schema().getRowType().desc()<<"\n";
+        ss<<"\tinput: "<<input_row.toPythonString()<<"\n";
+        ss<<"\texpected: "<<expected_output_row.toPythonString()<<"\n";
+        ss<<"\tactual: "<<ans.front().toPythonString()<<"\n";
+        cout<<ss.str()<<endl;
+
+        ASSERT_EQ(ans.size(), 1);
+        EXPECT_EQ(ans.front(), expected_output_row);
+    }
+}
