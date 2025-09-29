@@ -70,6 +70,8 @@ namespace codegen {
     class BlockGeneratorVisitor : public ApatheticVisitor, public IFailable {
     private:
 
+
+
         void generateReturnWithNullExtraction(const IRBuilder& builder,
                                           const SerializableValue& retVal,
                                           const python::Type& retType,
@@ -376,6 +378,12 @@ namespace codegen {
                 r.original_defined_ptr = slot.definedPtr;
                 return std::move(r);
             }
+        };
+
+        // a snapshot of variable names, values, slots. E.g., a frame.
+        struct VariableEnvironment {
+            std::unordered_map<std::string, VariableRealization> values;
+            std::unordered_map<std::string, VariableSlot> slots;
         };
 
         inline std::unordered_map<std::string, VariableRealization> snapshotVariableValues(codegen::IRBuilder&builder) {

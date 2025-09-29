@@ -2212,28 +2212,52 @@ namespace tuplex {
                 }
             } else {
                 // check if-table compatible with outer name table.
-                // @TODO:
+                auto kt = _nameTable.find(name);
+                if(kt != _nameTable.end() && it != if_table.end()) {
+                    auto if_type = it->second;
+                    auto outer_type = kt->second;
+
+                    auto uni_type = unifyTypes(if_type, outer_type, _typeUnificationPolicy);
+                    if(uni_type != python::Type::UNKNOWN) {
+                        if_table[name] = uni_type;
+                        _nameTable[name] = uni_type;
+                    } else {
+                        // need to speculate; restore tables, and abort
+                        _nameTable = name_table_backup;
+                        if_table = if_table_backup;
+                        else_table = else_table_backup;
+
+                        // return false.
+                        return false;
+                    }
+                }
+
+
                 // check else-table compatible with outer name table.
-                // @TODO:
+                // --> do it sequentially, so refresh type of outer table.
+                kt = _nameTable.find(name);
+                if(kt != _nameTable.end() && jt != else_table.end()) {
+                    auto else_type = jt->second;
+                    auto outer_type = kt->second;
+
+                    auto uni_type = unifyTypes(else_type, outer_type, _typeUnificationPolicy);
+                    if(uni_type != python::Type::UNKNOWN) {
+                        else_table[name] = uni_type;
+                        _nameTable[name] = uni_type;
+                    } else {
+                        // need to speculate; restore tables, and abort
+                        _nameTable = name_table_backup;
+                        if_table = if_table_backup;
+                        else_table = else_table_backup;
+
+                        // return false.
+                        return false;
+                    }
+                }
             }
         }
 
         return true;
-
-        // old ???
-        // bool ans = true;
-        // // resolve conflicts from if/else with before table
-        // ans = resolveNameConflicts(if_table);
-        // ans = resolveNameConflicts(else_table);
-        //
-        // if (!ans) {
-        //     // restore tables.
-        //     _nameTable = name_table_backup;
-        //     if_table = if_table_backup;
-        //     else_table = else_table_backup;
-        // }
-        //
-        // return ans;
     }
 
     void TypeAnnotatorVisitor::visit(NIfElse* ifelse) {

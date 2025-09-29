@@ -39,7 +39,7 @@ fi
 export CIBW_ENVIRONMENT="TUPLEX_LAMBDA_ZIP='./tuplex/other/tplxlam.zip' CMAKE_ARGS='-DBUILD_WITH_AWS=ON -DBUILD_WITH_ORC=ON' LD_LIBRARY_PATH=/usr/local/lib:/opt/lib"
 
 # Use the following line to build only python3.7-3.9 wheel
-export CIBW_BUILD="cp3{9,10,11,12,13}-*"
+export CIBW_BUILD="cp311*"
 export CIBW_ARCHS_LINUX="x86_64"
 
 # do not build musllinux yet

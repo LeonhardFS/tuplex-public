@@ -2457,13 +2457,21 @@ namespace tuplex {
                 bool exceptOnElse) {
             assert(!ifelse->isExpression());
 
+            {
+                std::stringstream ss;
+                ss<<__FILE__<<":"<<__LINE__<<" Generating code for if-else statement:\n";
+                ss<<" -- condition: "<<astToString(ifelse->_expression.get())<<"\n";
+                ss<<" -- exceptOnThen="<<std::boolalpha<<exceptOnThen<<" exceptOnElse="<<std::boolalpha<<exceptOnElse;
+                _logger.debug(ss.str());
+            }
+
             // save stack info
             auto num_stack_before = _blockStack.size();
 
             // check if it is only a single IF block or whether there is also an else statement
             ifelse->_expression->accept(*this);
 
-            // was an early exit (i.e. an always excepting code path) generated?
+            // was an early exit (i.e. an always-excepting code path) generated?
             if(earlyExit()) {
                 while(_blockStack.size() > num_stack_before)
                     _blockStack.pop_back();
@@ -2486,6 +2494,17 @@ namespace tuplex {
             // -> for now, due to simplicity reasons, simply load everything.
             auto var_realizations = snapshotVariableValues(builder);
             auto slots_backup = _variableSlots;
+
+            {
+                // Print in debug mode realizations (types) and names.
+                std::stringstream ss;
+                ss<<__FILE__<<":"<<__LINE__<<" snapshotting following variables before entering if/else:\n";
+                for (const auto& kv : var_realizations) {
+                    ss<<" -- "<<kv.first<<": "<<kv.second.type.desc()<<"\n";
+                }
+                _logger.debug(ss.str());
+            }
+
 
             // realizations of variables after EACH block is processed from the statement.
             std::unordered_map<std::string, VariableRealization> if_var_realizations;
@@ -2808,7 +2827,11 @@ namespace tuplex {
                 if(ifelse->_else)
                     numTimesElseVisited = ifelse->_else->annotation().numTimesVisited;
 
-                // skip?
+                // skip? This may be the case if e.g.,
+                // if <cond>:
+                //    <if_body>
+                // <next_body>
+                // but the condition is mostly (speculatively) not true, so the <if_body> is skipped.
                 if(ifelse->annotation().numTimesVisited == 0 || ifelse->annotation().follow_branch == FollowBranch::NONE)
                     visit_ifelse = false;
 
@@ -2830,11 +2853,29 @@ namespace tuplex {
                     if(numTimesElseVisited == 0)
                         except_on_else = true;
                 }
-            }
 
-            auto dbg_cond = astToString(ifelse->_expression.get());
-            if("'FollowEvent' == row['type']" == dbg_cond && speculate) {
-                std::cout<<"test found"<<std::endl;
+
+                // Because speculation is active, need to check the if condition.
+                // I.e., if it is true -> normal-case exception.
+                if(!visit_ifelse) {
+                    assert(!ifelse->_else); // Should not have else.
+
+                    std::stringstream ss;
+                    ss<<__FILE__<<":"<<__LINE__<<" speculative processing on for if-else statement with condition "<<astToString(ifelse->_expression.get())<<", but if body not visited";
+                    _logger.debug(ss.str());
+
+                    // Visit expression and to fill stack.
+                    ifelse->_expression->accept(*this);
+                    assert(!_blockStack.empty());
+
+                    auto cond = _blockStack.back();
+                    _blockStack.pop_back();
+
+                    auto builder = _lfb->getIRBuilder();
+                    auto cond_is_true = _env->truthValueTest(builder, cond, ifelse->_expression->getInferredType());
+                    _lfb->addException(builder, ExceptionCode::NORMALCASEVIOLATION, cond_is_true, "if speculation");
+                    return;
+                }
             }
 
             if(!visit_ifelse) {
@@ -2848,133 +2889,8 @@ namespace tuplex {
             assert(ifelse->_then);
             assert(ifelse->_expression);
 
-            // regular
+            // Generate code for if-else statment.
             generateIfElse(ifelse, except_on_then, except_on_else);
-
-//            if(ifelse->_else) {
-//                // else branch exists
-//                // do both have annotations or none?
-//                //assert((ifelse->_then->hasAnnotation() && ifelse->_else->hasAnnotation()) ||
-//                //               (!ifelse->_then->hasAnnotation() && !ifelse->_else->hasAnnotation()));
-//                // decide which branch should be generated, the other one results in a not normal case exception
-//                if(speculate) {
-//                    bool branchToExcept = ifelse->_then->annotation().numTimesVisited >= ifelse->_else->annotation().numTimesVisited;
-//                    generateIfElse(ifelse, !branchToExcept, branchToExcept);
-//                } else {
-//                    // regular compilation
-//                    generateIfElse(ifelse);
-//                }
-//            } else {
-//                // only if branch exists, no else.
-//
-//                // annotation existing on if branch?
-//                if(speculate) {
-//                    // is the branch rarely visited, i.e. less than 50% of the time?
-//                    // => this would indicate a rare condition on whose removal is being speculated.
-//                    // => other reason could be a type conflict of declared variables.
-//                    // Note: There might be a better way to estimate the frequency + variable conflict.
-//                    //       => should use that.
-//                    // the speculation rule.
-//                    // decide which branch to visit based on majority
-//                    auto numTimesIfVisited = ifelse->_then->annotation().numTimesVisited;
-//                    // for else, if else branch exists, take that annotation number. Else, simply check how often if is not visited.
-//                    auto numTimesElseVisited = ifelse->annotation().numTimesVisited - numTimesIfVisited;
-//
-//#warning "TODO: in general-case mode, unify the if blocks if possible."
-//
-//                    if(numTimesIfVisited < numTimesElseVisited) {
-//                        // always throw exception to force interpreter path!
-//                        generateIfElse(ifelse, true);
-//                        std::stringstream ss;
-//                        ss<<"if branch optimized away, as attained in trace only "<<std::setprecision(2)
-//                          <<100.0 * numTimesIfVisited / (1.0 * numTimesIfVisited + numTimesElseVisited)
-//                          <<"% of all cases";
-//                        _logger.debug(ss.str());
-//                    } else {
-//                        // generate sole if branch
-//                        generateIfElse(ifelse);
-//                    }
-//                } else {
-//                    // regular ifelse compilation, i.e. both branches active.
-//                    generateIfElse(ifelse);
-//                }
-//            }
-
-
-            // OLD:
-//            // @TODO: use annotations here to decide which block to use/follow
-//            // => there is also the option that ifelse might be ignored!
-//            auto visit_t = whichBranchToVisit(ifelse);
-//            auto visit_ifelse = std::get<0>(visit_t);
-//            auto visit_if = std::get<1>(visit_t);
-//            auto visit_else = std::get<2>(visit_t);
-//
-//            // speculative processing on this ifelse?
-//            bool speculate = ifelse->annotation().numTimesVisited > 0;
-//
-//            auto dbg_cond = astToString(ifelse->_expression.get());
-//            if("'FollowEvent' == row['type']" == dbg_cond && speculate) {
-//                std::cout<<"test found"<<std::endl;
-//            }
-//
-//            if(!visit_ifelse) {
-//                _logger.debug("ifelse skipped.");
-//                return;
-//            }
-//
-//            // annotations available?
-//            // ==> check what to compile
-//            // no? then regular compilation
-//            assert(ifelse->_then);
-//            assert(ifelse->_expression);
-//            if(ifelse->_else) {
-//                // else branch exists
-//                // do both have annotations or none?
-//                //assert((ifelse->_then->hasAnnotation() && ifelse->_else->hasAnnotation()) ||
-//                //               (!ifelse->_then->hasAnnotation() && !ifelse->_else->hasAnnotation()));
-//                // decide which branch should be generated, the other one results in a not normal case exception
-//                if(speculate) {
-//                    bool branchToExcept = ifelse->_then->annotation().numTimesVisited >= ifelse->_else->annotation().numTimesVisited;
-//                    generateIfElse(ifelse, !branchToExcept, branchToExcept);
-//                } else {
-//                    // regular compilation
-//                    generateIfElse(ifelse);
-//                }
-//            } else {
-//                // only if branch exists, no else.
-//
-//                // annotation existing on if branch?
-//                if(speculate) {
-//                    // is the branch rarely visited, i.e. less than 50% of the time?
-//                    // => this would indicate a rare condition on whose removal is being speculated.
-//                    // => other reason could be a type conflict of declared variables.
-//                    // Note: There might be a better way to estimate the frequency + variable conflict.
-//                    //       => should use that.
-//                    // the speculation rule.
-//                    // decide which branch to visit based on majority
-//                    auto numTimesIfVisited = ifelse->_then->annotation().numTimesVisited;
-//                    // for else, if else branch exists, take that annotation number. Else, simply check how often if is not visited.
-//                    auto numTimesElseVisited = ifelse->annotation().numTimesVisited - numTimesIfVisited;
-//
-//#warning "TODO: in general-case mode, unify the if blocks if possible."
-//
-//                    if(numTimesIfVisited < numTimesElseVisited) {
-//                        // always throw exception to force interpreter path!
-//                        generateIfElse(ifelse, true);
-//                        std::stringstream ss;
-//                        ss<<"if branch optimized away, as attained in trace only "<<std::setprecision(2)
-//                         <<100.0 * numTimesIfVisited / (1.0 * numTimesIfVisited + numTimesElseVisited)
-//                         <<"% of all cases";
-//                        _logger.debug(ss.str());
-//                    } else {
-//                        // generate sole if branch
-//                        generateIfElse(ifelse);
-//                    }
-//                } else {
-//                    // regular ifelse compilation, i.e. both branches active.
-//                    generateIfElse(ifelse);
-//                }
-//            }
         }
 
         void BlockGeneratorVisitor::visit(NLambda *lambda) {
