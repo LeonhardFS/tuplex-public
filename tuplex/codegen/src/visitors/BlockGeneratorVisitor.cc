@@ -2859,7 +2859,7 @@ namespace tuplex {
                 // I.e., if it is true -> normal-case exception.
                 if(!visit_ifelse) {
                     assert(!ifelse->_else); // Should not have else.
-
+                    assert(!except_on_then && !except_on_else); // If either is true, should have visit_ifelse true?
                     std::stringstream ss;
                     ss<<__FILE__<<":"<<__LINE__<<" speculative processing on for if-else statement with condition "<<astToString(ifelse->_expression.get())<<", but if body not visited";
                     _logger.debug(ss.str());

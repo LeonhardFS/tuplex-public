@@ -628,11 +628,11 @@ default:
 #endif
 
 #ifndef NDEBUG
-                // // get the input row for debugging purposes...
-                // // to print python object
-                // Py_XINCREF(tuple);
-                // PyObject_Print(tuple, stdout, 0);
-                // std::cout<<std::endl;
+                // get the input row for debugging purposes...
+                // to print python object
+                Py_XINCREF(tuple);
+                PyObject_Print(tuple, stdout, 0);
+                std::cout<<std::endl;
                 // store in exception reservoir -> for debugging??
                 putExceptionSample(ecCode, operatorID, tuple, false);
 #endif
@@ -693,12 +693,12 @@ default:
                             ecCode = ecToI64(python::translatePythonExceptionType(exceptionType));
 
 #ifndef NDEBUG
-                            // // debug printing of exception and what the reason is...
-                            // // print res obj
-                            // Py_XINCREF(pcr.res);
-                            // std::cout<<"exception occurred while processing using python: "<<std::endl;
-                            // PyObject_Print(pcr.res, stdout, 0);
-                            // std::cout<<std::endl;
+                            // debug printing of exception and what the reason is...
+                            // print res obj
+                            Py_XINCREF(pcr.res);
+                            std::cout<<"exception occurred while processing using python: "<<std::endl;
+                            PyObject_Print(pcr.res, stdout, 0);
+                            std::cout<<std::endl;
 #endif
 
                             // the callback exceptionCallback(ecCode, opID, _rowNumber, ebuf, eSize) gets called below...!
