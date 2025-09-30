@@ -93,11 +93,10 @@ namespace tuplex {
                                              const std::vector<Partition*>& taskFallbackPartitions,
                                              bool invalidateAfterUse, const Schema& outputSchema);
         
-        PythonTransformTask* makeMemoryPythonTransformTask(TransformStage* tstage, const std::shared_ptr<TransformStage::JITSymbols>& syms,
+        PythonTransformTask* makeMemoryPythonTransformTask(TransformStage* tstage,
                                                           const std::vector<Partition*>& taskNormalPartitions,
                                                           const std::vector<Partition*>& taskGeneralPartitions,
-                                                          const std::vector<Partition*>& taskFallbackPartitions,
-                                                          bool invalidateAfterUse, const Schema& outputSchema);
+                                                          const std::vector<Partition*>& taskFallbackPartitions);
 
         /*!
          * Create the final hashmap from all of the input [tasks] (e.g. either merge them (join) or combine them (aggregate)

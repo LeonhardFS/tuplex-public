@@ -11,30 +11,27 @@
 #include "ExceptionCodes.h"
 #include <hashmap.h>
 
+#include "TransformTask.h"
+#include "logical/AggregateOperator.h"
+
 namespace tuplex {
     class PythonTransformTask : public IExecutorTask {
     public:
         PythonTransformTask() = default;
         virtual ~PythonTransformTask() = default;
 
-        std::vector<Partition*> getOutputPartitions() const override { return _outputPartitions; }
-        std::vector<Partition*> getExceptionPartitions() const { return _exceptionPartitions; }
-        std::vector<Partition*> getGeneralPartitions() const { return _generalPartitions; }
-        std::vector<Partition*> getFallbackPartitions() const { return _fallbackPartitions; }
+        std::vector<Partition*> getOutputPartitions() const override { return {}; }
+        std::vector<Partition*> getExceptionPartitions() const { return _exceptions.partitions; }
+        std::vector<Partition*> getGeneralPartitions() const { return {}; }
+        std::vector<Partition*> getFallbackPartitions() const { return _output.partitions; }
         std::unordered_map<std::tuple<int64_t, ExceptionCode>, size_t> exceptionCounts() const { return _exceptionCounts; }
 
         TaskType type() const override { return TaskType::PYTHONTRAFOTASK; }
 
         double wallTime() const override { return _wallTime; }
 
-        void execute() override {
-            // TODO: Implement Python transform execution
-            // This is a placeholder implementation
-        }
-
-        void releaseAllLocks() override {
-            // TODO: Implement lock release if needed
-        }
+        void execute() override;
+        void releaseAllLocks() override;
 
         size_t getNumInputRows() const override {
             return _numInputRowsRead;
@@ -57,28 +54,51 @@ namespace tuplex {
             _outputLimit = limit;
         }
 
+        // Set the Python functor to call
+        void setPythonFunctor(PyObject* functor) {
+            _pyFunctor = functor;
+        }
+        
+        // Hash table sink support
+        bool hasHashTableSink() const { return _htableFormat != HashTableFormat::UNKNOWN; }
     private:
         // Helper methods for processing partitions and rows
-        void processPartition(Partition* inputPartition, std::vector<Partition*>& outputPartitions);
+        void processPartition(Partition* inputPartition, bool isFallback);
         void processRows(const uint8_t* dataPtr, int64_t dataSize, int64_t numRows, 
-                        std::vector<Partition*>& outputPartitions);
+                        const Schema& inputSchema, bool isFallback);
+        
+        // Helper methods for row processing
+        PyObject* deserializeRowToPython(const uint8_t* dataPtr, int64_t remaining_size, int64_t& bytes_read,
+                                                         const Schema& schema, bool isFallback=false);
+        void writePythonResultToPartition(PyObject* result);
                         
         size_t _numInputRowsRead = 0;
         double _wallTime = 0.0;
         int64_t _stageID = -1;
         size_t _outputLimit = 0;
         
+        // Python functor
+        PyObject* _pyFunctor = nullptr;
+        
         // Input partitions
         std::vector<Partition*> _inputNormalPartitions;
         std::vector<Partition*> _inputGeneralPartitions;
         std::vector<Partition*> _inputFallbackPartitions;
         
-        // Output partitions
-        std::vector<Partition*> _outputPartitions;
-        std::vector<Partition*> _exceptionPartitions;
-        std::vector<Partition*> _generalPartitions;
-        std::vector<Partition*> _fallbackPartitions;
+        // Output partitions (python transform task will produce ONLY fallback partitions)
+        MemorySink _output;
+
+        // exception partitions (sunk to memory)
+        MemorySink _exceptions;
         std::unordered_map<std::tuple<int64_t, ExceptionCode>, size_t> _exceptionCounts;
+        
+        // Hash table sink support
+        HashTableFormat _htableFormat = HashTableFormat::UNKNOWN;
+        AggregateType _hash_agg_type = AggregateType::AGG_NONE;
+        HashTableSink* _htable = nullptr;
+        
+        // Python intermediates support
+        std::vector<PyObject*> _py_intermediates;
 
     };
 }

@@ -35,6 +35,7 @@ namespace tuplex {
                             a.fallback + b.fallback, a.unresolved + b.unresolved);
     }
 
+
     /*!
      * special class used for task to be delivered to executors
      */

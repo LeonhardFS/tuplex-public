@@ -625,12 +625,9 @@ namespace tuplex {
     // Helper function to create a PythonTransformTask for memory input (pure Python mode)
     PythonTransformTask* LocalBackend::makeMemoryPythonTransformTask(
             TransformStage *tstage,
-            const std::shared_ptr<TransformStage::JITSymbols>& syms,
             const std::vector<Partition*>& taskNormalPartitions,
             const std::vector<Partition*>& taskGeneralPartitions,
-            const std::vector<Partition*>& taskFallbackPartitions,
-            bool invalidateAfterUse,
-            const Schema& outputSchema) {
+            const std::vector<Partition*>& taskFallbackPartitions) {
         
         auto task = new PythonTransformTask();
         
@@ -642,6 +639,13 @@ namespace tuplex {
         // Note: PythonTransformTask is a minimal implementation for pure Python mode
         // The actual processing is handled at a higher level (e.g., in WorkerApp::processTransformStagePython)
         // This task mainly serves as a placeholder for the pure Python execution path
+
+        // Prepare python pipeline.
+        auto pip_object = preparePythonPipeline(tstage->purePythonCode(), tstage->pythonPipelineName());
+        if (!pip_object) {
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Failed to prepare Python pipeline");
+        }
+        task->setPythonFunctor(pip_object);
         
         return task;
     }
@@ -805,8 +809,8 @@ namespace tuplex {
 
                 IExecutorTask* task = nullptr;
                 if (options.PURE_PYTHON_MODE()) {
-                    task = makeMemoryPythonTransformTask(tstage, syms, taskNormalPartitions, taskGeneralPartitions, 
-                                                        taskFallbackPartitions, invalidateAfterUse, outputSchema);
+                    task = makeMemoryPythonTransformTask(tstage, taskNormalPartitions, taskGeneralPartitions,
+                                                        taskFallbackPartitions);
                 } else {
                     task = makeMemoryTransformTask(tstage, syms, taskNormalPartitions, taskGeneralPartitions, 
                                                   taskFallbackPartitions, invalidateAfterUse, outputSchema);

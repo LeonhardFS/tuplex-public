@@ -3,12 +3,12 @@
 //
 #include <physical/execution/PythonTransformTask.h>
 #include <physical/execution/TransformTask.h>
-#include <python/PythonHelpers.h>
-#include <python/PythonTypes.h>
+#include <PythonHelpers.h>
 #include <physical/memory/Partition.h>
-#include <utils/Timer.h>
-#include <utils/Utils.h>
+#include <Timer.h>
+#include <Utils.h>
 #include <iostream>
+#include <cstring>
 
 namespace tuplex {
 
@@ -22,37 +22,46 @@ namespace tuplex {
             throw std::runtime_error("PythonTransformTask has no input partitions");
         }
         
-        // Reset counters
+        // Reset counters and sinks
         _numInputRowsRead = 0;
         _wallTime = 0.0;
+        _output.reset();
+        _exceptions.reset();
+        
+        // Initialize hash table if needed
+        if (hasHashTableSink() && !_htable) {
+            _htable = new HashTableSink();
+        }
         
         // Process normal partitions
         for (auto& partition : _inputNormalPartitions) {
-            processPartition(partition, _outputPartitions);
+            processPartition(partition, false);
         }
         
         // Process general partitions
         for (auto& partition : _inputGeneralPartitions) {
-            processPartition(partition, _generalPartitions);
+            processPartition(partition, false);
         }
         
         // Process fallback partitions
         for (auto& partition : _inputFallbackPartitions) {
-            processPartition(partition, _fallbackPartitions);
+            processPartition(partition, true);
         }
-        
+
+        releaseAllLocks();
+
         // Record wall time
         _wallTime = timer.time();
         
 #ifndef NDEBUG
         owner()->info("PythonTransformTask completed (" + 
                      pluralize(_numInputRowsRead, "input row") + 
-                     ", " + pluralize(_outputPartitions.size(), "output partition") + 
-                     ", " + pluralize(_exceptionPartitions.size(), "exception partition") + ")");
+                     ", " + pluralize(_output.partitions.size(), "output partition") +
+                     ", " + pluralize(_exceptions.partitions.size(), "exception partition") + ")");
 #endif
     }
     
-    void PythonTransformTask::processPartition(Partition* inputPartition, std::vector<Partition*>& outputPartitions) {
+    void PythonTransformTask::processPartition(Partition* inputPartition, bool isFallback) {
         if (!inputPartition) {
             return;
         }
@@ -70,8 +79,11 @@ namespace tuplex {
             const uint8_t* dataPtr = inPtr + sizeof(int64_t);
             int64_t dataSize = inSize - sizeof(int64_t);
             
+            // Get the input schema from the partition
+            Schema inputSchema = inputPartition->schema();
+            
             // Process each row in the partition
-            processRows(dataPtr, dataSize, numRows, outputPartitions);
+            processRows(dataPtr, dataSize, numRows, inputSchema, isFallback);
             
             // Unlock input partition (assume this doesn't throw an exception)
             inputPartition->unlock();
@@ -91,85 +103,217 @@ namespace tuplex {
     void PythonTransformTask::processRows(const uint8_t* dataPtr, 
                                          int64_t dataSize, 
                                          int64_t numRows, 
-                                         std::vector<Partition*>& outputPartitions) {
-        // This is a placeholder implementation
-        // In a real implementation, this would:
-        // 1. Deserialize each row from the partition data
-        // 2. Convert to Python objects
-        // 3. Call the Python transform function
-        // 4. Convert results back to Tuplex rows
-        // 5. Write to output partitions
-        
-        // For now, we'll create a simple pass-through implementation
-        // that just copies the data to output partitions
-        
+                                         const Schema& inputSchema, bool isFallback) {
         if (numRows == 0) {
             return;
         }
+
+        assert(_pyFunctor);
         
-        // Create output partition if needed
-        if (outputPartitions.empty()) {
-            // This would need proper schema and context information
-            // For now, we'll skip actual partition creation
+        python::lockGIL();
+        try {
+            const uint8_t* currentPtr = dataPtr;
+            
+            // write as fallback partition/general python object
+            for (int64_t i = 0; i < numRows; ++i) {
+                int64_t bytes_read = 0;
+                int64_t remaining_size = dataSize - (currentPtr - dataPtr);
+
+                // Deserialize row to Python object
+                PyObject* pyRow = deserializeRowToPython(currentPtr, remaining_size, bytes_read, inputSchema, isFallback);
+                
+                if (!pyRow) {
+                   // TODO: error handling
+                   continue;
+                }
+
+
+#ifndef NDEBUG
+                // Print row for inspection purposes.
+                Py_XINCREF(pyRow);
+                PyObject_Print(pyRow, stdout, 0);
+                std::cout<<std::endl;
+#endif
+
+
+                // call pipFunctor
+                size_t num_python_args = 1 + _py_intermediates.size() + hasHashTableSink();
+
+                // special case unique, no arg required (done via output)
+                if(hasHashTableSink() && _hash_agg_type == AggregateType::AGG_UNIQUE)
+                    num_python_args -= 1;
+
+                PyObject* args = PyTuple_New(num_python_args);
+                PyTuple_SET_ITEM(args, 0, pyRow);
+                for(unsigned i = 0; i < _py_intermediates.size(); ++i) {
+                    Py_XINCREF(_py_intermediates[i]);
+                    PyTuple_SET_ITEM(args, i + 1, _py_intermediates[i]);
+                }
+                // set hash table sink
+                if(hasHashTableSink() && _hash_agg_type != AggregateType::AGG_UNIQUE) { // special case: unique -> note: unify handling this with the other cases...
+                    assert(_htable->hybrid_hm);
+                    Py_XINCREF(_htable->hybrid_hm);
+                    PyTuple_SET_ITEM(args, num_python_args - 1, _htable->hybrid_hm);
+                }
+
+                auto kwargs = PyDict_New();
+                auto pcr = python::callFunctionEx(_pyFunctor, args, kwargs);
+
+                if(pcr.exceptionCode != ExceptionCode::SUCCESS) {
+                    // this should not happen, bad internal error. codegen'ed python should capture everything.
+                    owner()->error("bad internal python error: " + pcr.exceptionMessage);
+                    // cleanup and continue to next row
+                    Py_DECREF(args);
+                    Py_DECREF(kwargs);
+                    continue;
+                } else {
+                    // all good, row is fine. exception occurred?
+                    assert(pcr.res);
+
+                    // type check: save to regular rows OR save to python row collection
+                    if(!pcr.res) {
+                        owner()->error("bad internal python error, NULL object returned");
+                    } else {
+                        // write result to fallback partition
+                        writePythonResultToPartition(pcr.res);
+                    }
+                }
+
+                // cleanup
+                Py_DECREF(args);
+                Py_DECREF(kwargs);
+                
+                // Advance to next row
+                currentPtr += bytes_read;
+            }
+            
+        } catch (const std::exception& e) {
+            std::cerr << "Error processing rows: " << e.what() << std::endl;
+            python::unlockGIL();
+            throw;
+        } catch (...) {
+            std::cerr << "Unknown exception while processing rows" << std::endl;
+            python::unlockGIL();
+            throw;
+        }
+        
+        python::unlockGIL();
+    }
+    
+    PyObject* PythonTransformTask::deserializeRowToPython(const uint8_t* dataPtr, int64_t remaining_size, int64_t& bytes_read,
+                                                         const Schema& schema, bool isFallback) {
+        if (isFallback) {
+            throw std::runtime_error(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " not yet implemented, need to fix.");
+            // // For fallback partitions, the data is a pickled Python object
+            // // Format: 4 * sizeof(int64_t) header + pickled data
+            // if (dataSize < 4 * sizeof(int64_t)) {
+            //     return nullptr;
+            // }
+            //
+            // const uint8_t* headerPtr = dataPtr;
+            // int64_t rowNumber = *reinterpret_cast<const int64_t*>(headerPtr); headerPtr += sizeof(int64_t);
+            // int64_t ecCode = *reinterpret_cast<const int64_t*>(headerPtr); headerPtr += sizeof(int64_t);
+            // int64_t opID = *reinterpret_cast<const int64_t*>(headerPtr); headerPtr += sizeof(int64_t);
+            // int64_t pyObjectSize = *reinterpret_cast<const int64_t*>(headerPtr); headerPtr += sizeof(int64_t);
+            //
+            // if (dataSize < 4 * sizeof(int64_t) + pyObjectSize) {
+            //     return nullptr;
+            // }
+            //
+            // // Deserialize the pickled Python object
+            // return python::deserializePickledObject(python::getMainModule(),
+            //                                        reinterpret_cast<const char*>(headerPtr),
+            //                                        pyObjectSize);
+        } else {
+            // For normal and general partitions, deserialize using Row::fromMemory
+            try {
+                // TODO: this here is inefficient.
+                Row row = Row::fromMemory(schema, dataPtr, remaining_size);
+                bytes_read = row.serializedLength();
+
+                return python::rowToPython(row, false);
+            } catch (const std::exception& e) {
+                std::cerr << "Error deserializing row: " << e.what() << std::endl;
+                return nullptr;
+            }
+        }
+    }
+    
+    void PythonTransformTask::writePythonResultToPartition(PyObject* result) {
+        if (!result) {
             return;
         }
         
-        // In a real implementation, we would:
-        // 1. Lock GIL: python::lockGIL();
-        // 2. Deserialize rows and convert to Python objects
-        // 3. Call Python function: python::callFunctionEx(pythonFunc, args, kwargs);
-        // 4. Convert results back to Tuplex format
-        // 5. Write to output partitions using rowToMemorySink
-        // 6. Unlock GIL: python::unlockGIL();
-        
-        // Placeholder: just count the rows processed
-        // The actual Python execution would happen here
+        try {
+
+
+            auto exceptionObject = PyDict_GetItemString(result, "exception");
+            if(exceptionObject) {
+
+                // overwrite operatorID which is throwing.
+                auto exceptionOperatorID = PyDict_GetItemString(result, "exceptionOperatorID");
+                //operatorID = PyLong_AsLong(exceptionOperatorID);
+                auto exceptionType = PyObject_Type(exceptionObject);
+                // can ignore input row.
+                auto ecCode = ecToI64(python::translatePythonExceptionType(exceptionType));
+
+#ifndef NDEBUG
+                // debug printing of exception and what the reason is...
+                // print res obj
+                Py_XINCREF(result);
+                std::cout<<"exception occurred while processing using python: "<<std::endl;
+                PyObject_Print(result, stdout, 0);
+                std::cout<<std::endl;
+#endif
+            } else {
+#ifndef NDEBUG
+                // debug printing of exception and what the reason is...
+                // print res obj
+                Py_XINCREF(result);
+                std::cout<<"result to be written is: "<<std::endl;
+                PyObject_Print(result, stdout, 0);
+                std::cout<<std::endl;
+#endif
+            }
+
+
+            // TODO: need to fix code blow....
+            // // Always write Python objects as pickled data to fallback partitions
+            // // This follows the same pattern as ResolveTask::writePythonObjectToFallbackSink
+            //
+            // // Pickle the Python object
+            // auto pickledObject = python::pickleObject(python::getMainModule(), result);
+            // auto pyObjectSize = pickledObject.size();
+            // auto bufSize = 4 * sizeof(int64_t) + pyObjectSize;
+            //
+            // uint8_t* buf = new uint8_t[bufSize];
+            // auto ptr = buf;
+            //
+            // // Write header: row number, exception code, operator ID, object size
+            // *((int64_t*)ptr) = 0; ptr += sizeof(int64_t);  // row number (placeholder)
+            // *((int64_t*)ptr) = ecToI64(ExceptionCode::PYTHON_PARALLELIZE); ptr += sizeof(int64_t);
+            // *((int64_t*)ptr) = -1; ptr += sizeof(int64_t);  // operator ID (placeholder)
+            // *((int64_t*)ptr) = pyObjectSize; ptr += sizeof(int64_t);
+            //
+            // // Copy pickled data
+            // memcpy(ptr, pickledObject.c_str(), pyObjectSize);
+            //
+            // static Schema fallbackSchema(Schema::MemoryLayout::ROW, python::Type::makeTupleType({python::Type::PYOBJECT}));
+            //
+            // // Create a MemorySink from the partition
+            // rowToMemorySink(owner(), _output, fallbackSchema, 0, _stageID, buf, bufSize);
+            //
+            // delete[] buf;
+            
+        } catch (const std::exception& e) {
+            std::cerr << "Error writing Python result to partition: " << e.what() << std::endl;
+        }
     }
     
     void PythonTransformTask::releaseAllLocks() {
-        // Unlock all input partitions
-        for (auto& partition : _inputNormalPartitions) {
-            if (partition) {
-                partition->unlock();
-            }
-        }
-        
-        for (auto& partition : _inputGeneralPartitions) {
-            if (partition) {
-                partition->unlock();
-            }
-        }
-        
-        for (auto& partition : _inputFallbackPartitions) {
-            if (partition) {
-                partition->unlock();
-            }
-        }
-        
         // Unlock all output partitions
-        for (auto& partition : _outputPartitions) {
-            if (partition) {
-                partition->unlockWrite();
-            }
-        }
-        
-        for (auto& partition : _exceptionPartitions) {
-            if (partition) {
-                partition->unlockWrite();
-            }
-        }
-        
-        for (auto& partition : _generalPartitions) {
-            if (partition) {
-                partition->unlockWrite();
-            }
-        }
-        
-        for (auto& partition : _fallbackPartitions) {
-            if (partition) {
-                partition->unlockWrite();
-            }
-        }
+        _output.unlock();
+        _exceptions.unlock();
     }
 
 }
