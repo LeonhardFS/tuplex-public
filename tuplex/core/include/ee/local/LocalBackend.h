@@ -157,6 +157,9 @@ namespace tuplex {
             if(task->type() == TaskType::RESOLVE)
                 return dynamic_cast<ResolveTask*>(task)->getOutputPartitions();
 
+            if(task->type() == TaskType::PYTHONTRAFOTASK)
+                return dynamic_cast<PythonTransformTask*>(task)->getOutputPartitions();
+
             throw std::runtime_error("unknown task type seen");
             return std::vector<Partition*>();
         }
@@ -170,6 +173,9 @@ namespace tuplex {
 
             if(task->type() == TaskType::RESOLVE)
                 return dynamic_cast<ResolveTask*>(task)->getExceptions();
+
+            if(task->type() == TaskType::PYTHONTRAFOTASK)
+                return dynamic_cast<PythonTransformTask*>(task)->getExceptionPartitions();
 
             throw std::runtime_error("unknown task type seen in " + std::string(__FILE_NAME__) + ":" + std::to_string(__LINE__));
             return std::vector<Partition*>();
@@ -185,6 +191,9 @@ namespace tuplex {
             if(task->type() == TaskType::RESOLVE)
                 return dynamic_cast<ResolveTask *>(task)->exceptionsFromTargetSchema();
 
+            if(task->type() == TaskType::PYTHONTRAFOTASK)
+                return dynamic_cast<PythonTransformTask*>(task)->getGeneralPartitions();
+
             throw std::runtime_error("unknown task type seen in " + std::string(__FILE_NAME__) + ":" + std::to_string(__LINE__));
             return std::vector<Partition*>();
         }
@@ -199,6 +208,9 @@ namespace tuplex {
             if(task->type() == TaskType::RESOLVE)
                 return dynamic_cast<ResolveTask*>(task)->exceptionCounts();
 
+            if(task->type() == TaskType::PYTHONTRAFOTASK)
+                return dynamic_cast<PythonTransformTask*>(task)->exceptionCounts();
+
             throw std::runtime_error("unknown task type seen in " + std::string(__FILE_NAME__) + ":" + std::to_string(__LINE__));
             return std::unordered_map<std::tuple<int64_t, ExceptionCode>, size_t>();
         }
@@ -212,6 +224,9 @@ namespace tuplex {
 
             if(task->type() == TaskType::RESOLVE)
                 return dynamic_cast<ResolveTask*>(task)->getOutputFallbackPartitions();
+
+            if(task->type() == TaskType::PYTHONTRAFOTASK)
+                return dynamic_cast<PythonTransformTask*>(task)->getFallbackPartitions();
 
             throw std::runtime_error("unknown task type seen in " + std::string(__FILE_NAME__) + ":" + std::to_string(__LINE__));
             return std::vector<Partition*>();

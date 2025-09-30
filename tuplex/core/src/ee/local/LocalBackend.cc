@@ -563,7 +563,7 @@ namespace tuplex {
             const std::vector<bool>& colsToKeep,
             bool normalCaseEnabled) {
 
-        return makeCompiledTransformTask(
+        return makeCompiledFileTransformTask(
             tstage,
             syms,
             uri,
