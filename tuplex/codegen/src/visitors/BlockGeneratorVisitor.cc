@@ -4938,7 +4938,14 @@ namespace tuplex {
             // }
 #endif
 
-            if(python::canUpcastType(deopt_target_type, deopt_func_return_type)) {
+            // old: upcast, this means type erasure (implicit cast). However, closer to python is keeping actual types.
+            // auto are_return_types_compatible = python::canUpcastType(deopt_target_type, deopt_func_return_type);
+
+            // new: no type erasure on return.
+            auto uni_type = unifyTypes(deopt_target_type, deopt_func_return_type, getTypePolicy());
+            bool are_return_types_compatible = uni_type != python::Type::UNKNOWN;
+
+            if(are_return_types_compatible) {
                 // ok, fits the globally agreed function return type!
                 _logger.debug("emit return type upcast  " + expression_type.desc() + " -> " + funcReturnType.desc());
                 // the retval popped could need extension to an option type!

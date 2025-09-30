@@ -386,6 +386,11 @@ namespace codegen {
             std::unordered_map<std::string, VariableSlot> slots;
         };
 
+        inline TypeUnificationPolicy getTypePolicy() const {
+            TypeUnificationPolicy t_policy; t_policy.allowAutoUpcastOfNumbers = _policy.allowNumericTypeUnification;
+            return t_policy;
+        }
+
         inline std::unordered_map<std::string, VariableRealization> snapshotVariableValues(codegen::IRBuilder&builder) {
             std::unordered_map<std::string, VariableRealization> var_realizations;
             for(auto p : _variableSlots) {
