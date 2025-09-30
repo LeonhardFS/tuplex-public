@@ -802,7 +802,7 @@ TEST_F(IteratorTest, CodegenTestNestedIteratorIV) {
         Row(List(-1111, 2021, 21))
     }).map(UDF(func)).collectAsVector();
 
-    EXPECT_EQ(v.size(), 1);
+    ASSERT_EQ(v.size(), 1);
     EXPECT_EQ(v[0].toPythonString(), "((2018,(0,'z'),2022),(1913,(5,'u'),1497),(1808,(10,'p'),972),(1703,(15,'k'),447),(1598,(20,'f'),-78))");
 }
 
