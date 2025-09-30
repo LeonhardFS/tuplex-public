@@ -116,6 +116,8 @@ TEST_F(TupleAccess, PythonCodePath) {
         auto& ds = ctx.parallelize({input_row}).map(udf_code);
         auto ans = ds.collectAsVector();
 
+        ASSERT_EQ(ans.size(), 1);
+
         // Print test-case info for easy debugging.
         stringstream ss;
         ss<<" -- test: "<<udf_code<<"\n";

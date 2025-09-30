@@ -634,13 +634,14 @@ namespace tuplex {
         
         auto task = new PythonTransformTask();
         
-        // Note: PythonTransformTask appears to be a minimal implementation
-        // In pure Python mode, the actual processing is typically handled
-        // at a higher level (e.g., in WorkerApp::processTransformStagePython)
-        // This task mainly serves as a placeholder for the pure Python execution path
+        // Configure the PythonTransformTask with the input partitions
+        task->setInputPartitions(taskNormalPartitions, taskGeneralPartitions, taskFallbackPartitions);
+        task->setStageID(tstage->getID());
+        task->setOutputLimit(tstage->outputLimit());
         
-        // TODO: Add proper configuration for PythonTransformTask when the class is fully implemented
-        // For now, this is a basic implementation that follows the same pattern
+        // Note: PythonTransformTask is a minimal implementation for pure Python mode
+        // The actual processing is handled at a higher level (e.g., in WorkerApp::processTransformStagePython)
+        // This task mainly serves as a placeholder for the pure Python execution path
         
         return task;
     }
