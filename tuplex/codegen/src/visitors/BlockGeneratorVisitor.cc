@@ -5961,8 +5961,9 @@ namespace tuplex {
             for(const auto& if_var : if_var_realizations) {
                 auto it = else_var_realizations.find(if_var.first);
                 if(it != else_var_realizations.end()) {
-                    if(it->second.type == if_var.second.type)
-                        shared_types.push_back(std::make_pair(if_var.first, if_var.second.type));
+                    auto uni_type = unifyTypes(it->second.type, if_var.second.type, getTypePolicy());
+                    if(uni_type != python::Type::UNKNOWN)
+                        shared_types.push_back(std::make_pair(if_var.first, uni_type));
                 }
             }
             // for all these shared types, now do check whether they conflict with the beforeIf state:

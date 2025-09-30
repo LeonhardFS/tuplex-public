@@ -877,7 +877,7 @@ namespace tuplex {
                 // So, if a simple number is present, then we can decide statically.
                 if(right->type() == ASTNodeType::Number) {
                     auto n = (NNumber*)right;
-                    assert(n->getInferredType() == python::Type::I64);
+                    assert(deoptimizedType(n->getInferredType()) == python::Type::I64);
                     auto val = n->getI64();
                     if(val >= 0)
                         return a;
