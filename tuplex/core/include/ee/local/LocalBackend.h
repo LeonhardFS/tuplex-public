@@ -20,6 +20,7 @@
 #include <physical/execution/IExceptionableTask.h>
 #include <numeric>
 #include <physical/execution/TransformTask.h>
+#include <physical/execution/PythonTransformTask.h>
 #include <physical/execution/ResolveTask.h>
 
 namespace tuplex {
@@ -69,6 +70,34 @@ namespace tuplex {
         std::vector<IExecutorTask*> createLoadAndTransformToMemoryTasks(TransformStage* tstage, const ContextOptions& options, const std::shared_ptr<TransformStage::JITSymbols>& syms);
         void executeTransformStage(TransformStage* tstage);
 
+        // Helper functions for creating TransformTasks
+        TransformTask* makeCompiledFileTransformTask(TransformStage* tstage, const std::shared_ptr<TransformStage::JITSymbols>& syms,
+                                               const URI& uri, size_t rangeStart, size_t rangeSize,
+                                               const Schema& inputSchema, const Schema& outputSchema,
+                                               const python::Type& inputRowType, const std::vector<std::string>& header,
+                                               size_t numColumns, char delimiter, char quotechar,
+                                               const std::vector<bool>& colsToKeep, bool normalCaseEnabled,
+                                               const ContextOptions& options);
+        
+        TransformTask* makeFileTransformTask(TransformStage* tstage, const ContextOptions& options, 
+                                           const std::shared_ptr<TransformStage::JITSymbols>& syms,
+                                           const URI& uri, size_t rangeStart, size_t rangeSize,
+                                           const Schema& inputSchema, const Schema& outputSchema,
+                                           const python::Type& inputRowType, const std::vector<std::string>& header,
+                                           size_t numColumns, char delimiter, char quotechar,
+                                           const std::vector<bool>& colsToKeep, bool normalCaseEnabled);
+        
+        TransformTask* makeMemoryTransformTask(TransformStage* tstage, const std::shared_ptr<TransformStage::JITSymbols>& syms,
+                                             const std::vector<Partition*>& taskNormalPartitions,
+                                             const std::vector<Partition*>& taskGeneralPartitions,
+                                             const std::vector<Partition*>& taskFallbackPartitions,
+                                             bool invalidateAfterUse, const Schema& outputSchema);
+        
+        PythonTransformTask* makeMemoryPythonTransformTask(TransformStage* tstage, const std::shared_ptr<TransformStage::JITSymbols>& syms,
+                                                          const std::vector<Partition*>& taskNormalPartitions,
+                                                          const std::vector<Partition*>& taskGeneralPartitions,
+                                                          const std::vector<Partition*>& taskFallbackPartitions,
+                                                          bool invalidateAfterUse, const Schema& outputSchema);
 
         /*!
          * Create the final hashmap from all of the input [tasks] (e.g. either merge them (join) or combine them (aggregate)

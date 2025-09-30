@@ -343,7 +343,6 @@ namespace tuplex {
             return _numInputRowsRead;
         }
 
-
     };
 
     // thread-local helper funcs for aggregates!

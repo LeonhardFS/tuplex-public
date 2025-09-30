@@ -21,7 +21,8 @@ namespace tuplex {
         UDFTRAFOTASK=10,
         RESOLVE=11,
         HASHPROBE=12,
-        SIMPLEFILEWRITE=13
+        SIMPLEFILEWRITE=13,
+        PYTHONTRAFOTASK=14,
     };
 }
 
