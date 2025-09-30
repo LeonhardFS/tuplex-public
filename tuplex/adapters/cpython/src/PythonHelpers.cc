@@ -1204,6 +1204,11 @@ namespace python {
         } else if(type.isRowType()) {
             // a tuple is stored
             auto numElements = type.get_column_count();
+
+            // Also provide the unpack option here.
+            if (numElements == 1 && unpackPrimitives)
+                return fieldToPython(row.get(0));
+
             auto tupleObj = PyTuple_New(numElements);
             for(unsigned i = 0; i < numElements; ++i) {
                 PyObject* field = fieldToPython(row.get(i));

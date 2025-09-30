@@ -441,6 +441,14 @@ namespace tuplex {
                 auto row = Row::fromMemory(general_case_schema, ebuf, eSize);
 
                 tuple = python::rowToPython(row, true);
+
+#ifndef NDEBUG
+                    // Py_XINCREF(tuple);
+                    // std::cout<<"Pyobject from normal case is: "<<std::endl;
+                    // PyObject_Print(tuple, stdout, 0);
+                    // std::cout<<std::endl;
+#endif
+
                 parse_cells = false;
                 // called below...
                 break;
