@@ -58,6 +58,11 @@ namespace tuplex {
         }
 
     private:
+        // Helper methods for processing partitions and rows
+        void processPartition(Partition* inputPartition, std::vector<Partition*>& outputPartitions);
+        void processRows(const uint8_t* dataPtr, int64_t dataSize, int64_t numRows, 
+                        std::vector<Partition*>& outputPartitions);
+                        
         size_t _numInputRowsRead = 0;
         double _wallTime = 0.0;
         int64_t _stageID = -1;
