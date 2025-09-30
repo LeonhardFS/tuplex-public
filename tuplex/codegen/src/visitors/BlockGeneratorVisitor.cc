@@ -4218,12 +4218,23 @@ namespace tuplex {
                     return;
                 }
 
+                // both index and value type are constants, but expected type is defined.
+                // ==> deopt.
+                if (index_type.isConstantValued() && value_type.isConstantValued() && !expected_subscript_return_type.isIllDefined()) {
+                    _logger.warn(std::string(__FILE__) + ":" + std::to_string(__LINE__) + " Optimization opportunity for " + index_type.desc() + " indexing " + value_type.desc());
+
+                    auto c_index = constantValuedTypeToLLVM(builder, index_type);
+                    auto c_value = constantValuedTypeToLLVM(builder, value_type);
+                    subscript(expected_subscript_return_type, c_value, value_type.underlying(), c_index, index_type.underlying());
+                    return;
+                }
 
                 // undefined
                 std::stringstream ss;
                 ss << "unsupported type encountered with [] operator.";
                 ss << "\nindex type: " << expression_node->getInferredType().desc();
                 ss << "\nvalue type: " << value_node->getInferredType().desc();
+                ss << "\nresult type of []: " << expected_subscript_return_type.desc();
                 if(index.val)
                     ss << "\nindex llvm type: " << _env->getLLVMTypeName(index.val->getType());
                 else
