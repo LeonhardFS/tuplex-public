@@ -410,23 +410,23 @@ TEST_F(VariableTest, SingleIf) {
     ASSERT_EQ(in.size(), ref_undef.size());
     ASSERT_EQ(in.size(), ref_noundef.size());
 
-    // // Test 1: Check with auto-upcast=True.
-    // // check with autoupcast true first
-    // auto& ds_undef = c_undef.parallelize(in).map(UDF(code));
-    //
-    // // Ensure the correct type is detected, should be f64.
-    // ASSERT_EQ(ds_undef.schema().getRowType().desc(), "(i64,f64)");
-    //
-    // auto res_undef = ds_undef.collectAsVector();
-    // ASSERT_EQ(res_undef.size(), ref_undef.size());
-    // for(int i = 0; i < res_undef.size(); ++i)
-    //     EXPECT_EQ(res_undef[i].toPythonString(), ref_undef[i].toPythonString());
-    //
-    //  // // for debug purposes, print valuef
-    //  // cout<<"\nN\tres\tref\n";
-    //  // for(int i = 0; i < res_undef.size(); ++i) {
-    //  //     cout<<i<<":\t"<<res_undef[i].toPythonString()<<"\t"<<ref_undef[i].toPythonString()<<endl;
-    //  // }
+    // Test 1: Check with auto-upcast=True.
+    // check with autoupcast true first
+    auto& ds_undef = c_undef.parallelize(in).map(UDF(code));
+
+    // Ensure the correct type is detected, should be f64.
+    ASSERT_EQ(ds_undef.schema().getRowType().desc(), "(i64,f64)");
+
+    auto res_undef = ds_undef.collectAsVector();
+    ASSERT_EQ(res_undef.size(), ref_undef.size());
+    for(int i = 0; i < res_undef.size(); ++i)
+        EXPECT_EQ(res_undef[i].toPythonString(), ref_undef[i].toPythonString());
+
+     // // for debug purposes, print valuef
+     // cout<<"\nN\tres\tref\n";
+     // for(int i = 0; i < res_undef.size(); ++i) {
+     //     cout<<i<<":\t"<<res_undef[i].toPythonString()<<"\t"<<ref_undef[i].toPythonString()<<endl;
+     // }
 
     // Test 2: Check with auto-upcast=False.
     // now, check when autoupcast is disabled. I.e., two cases need to get processed separately.
