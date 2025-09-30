@@ -270,7 +270,7 @@ TEST_F(VariableTest, IfBranchTypeSpeculation) {
     // works.
     // optimized, i.e. z's return type gets unified as float
     auto& dsIIa = c_undef.parallelize({Row(22), Row(18)}).map(UDF(codeII));
-    auto rowtypeIIa = dsIIa.schema().getRowType();
+    auto rowtypeIIa = deoptimizedType(dsIIa.schema().getRowType());
     EXPECT_EQ(rowtypeIIa.desc(), python::Type::makeTupleType({python::Type::I64, python::Type::F64}).desc());
     // compute results
     auto resIIa = dsIIa.collectAsVector();
@@ -283,7 +283,7 @@ TEST_F(VariableTest, IfBranchTypeSpeculation) {
     // and hence interpreter needs to get invoked.
     // for this, simply deduce from input sample!
     auto& dsIIb1 = c_noundef.parallelize({Row(22), Row(21), Row(18)}).map(UDF(codeII));
-    auto rowtypeIIb1 = dsIIb1.schema().getRowType();
+    auto rowtypeIIb1 = deoptimizedType(dsIIb1.schema().getRowType());
     EXPECT_EQ(rowtypeIIb1.desc(), python::Type::makeTupleType({python::Type::I64, python::Type::BOOLEAN}).desc());
 
     auto resIIb1 = dsIIb1.collectAsVector();
@@ -294,7 +294,7 @@ TEST_F(VariableTest, IfBranchTypeSpeculation) {
 
 
     auto& dsIIb2 = c_noundef.parallelize({Row(22), Row(19), Row(18)}).map(UDF(codeII));
-    auto rowtypeIIb2 = dsIIb2.schema().getRowType();
+    auto rowtypeIIb2 = deoptimizedType(dsIIb2.schema().getRowType());
     EXPECT_EQ(rowtypeIIb2.desc(), python::Type::makeTupleType({python::Type::I64, python::Type::F64}).desc());
 
     auto resIIb2 = dsIIb2.collectAsVector();
