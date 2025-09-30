@@ -12,6 +12,8 @@
 #include <tuple>
 #include <memory>
 
+#include "ast/ASTHelpers.h"
+
 namespace tuplex {
     std::tuple<bool, bool, bool> whichBranchToVisit(NIfElse* ifelse) {
         assert(ifelse);
@@ -49,6 +51,12 @@ namespace tuplex {
                 visit_if = false;
                 visit_else = false;
             }
+
+            // special case: If one is exit path, can always visit the other one safely. If both are exit paths, both good.
+            if (isExitPath(ifelse->_then.get()) && ifelse->_else)
+                visit_else = true;
+            if (ifelse->_else && isExitPath(ifelse->_else.get()))
+                visit_if = true;
 
             return std::make_tuple(visit_ifelse, visit_if, visit_else);
         } else {

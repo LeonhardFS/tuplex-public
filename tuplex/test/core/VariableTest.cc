@@ -570,8 +570,6 @@ TEST_F(VariableTest, IfElseReturnAndVars) {
     }
 }
 
-#warning "TODO: speculation on return type for lambda function as well!"
-
 TEST_F(VariableTest, AugAssign) {
     using namespace tuplex;
 
